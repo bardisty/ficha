@@ -756,20 +756,43 @@ func (m Model) renderAgentBreakdown() string {
 	// Show parent session cost with highlight and magnitude shading
 	parentHighlighted := m.isHighlighted("parent_cost")
 	parentCostStr := formatCostStyledWithMagnitude(a.ParentCost.TotalCost, 14, parentHighlighted, m.noColor, totalCost)
-	sb.WriteString(fmt.Sprintf("  %-20s %s\n", "Parent session:", parentCostStr))
+	if !m.noColor {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", dimStyle.Render("Parent session:"), parentCostStr))
+	} else {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", "Parent session:", parentCostStr))
+	}
 
-	// Show each agent with highlight and magnitude shading
-	for _, agent := range a.Agents {
-		label := fmt.Sprintf("Agent %s:", agent.AgentID)
+	// Show each agent with sequential numbering matching breakdown view [A1], [A2], etc.
+	for i, agent := range a.Agents {
+		agentNum := fmt.Sprintf("%d", i+1)
 		agentHighlighted := m.isHighlighted("agent_" + agent.AgentID)
 		costStr := formatCostStyledWithMagnitude(agent.TotalCost.TotalCost, 14, agentHighlighted, m.noColor, totalCost)
-		sb.WriteString(fmt.Sprintf("  %-20s %s  (%d msgs)\n", label, costStr, agent.MessageCount))
+
+		if !m.noColor {
+			// Color the [An] marker to match breakdown view
+			agentColor := styles.GetAgentColor(agentNum)
+			agentStyle := lipgloss.NewStyle().Foreground(agentColor)
+			marker := agentStyle.Render(fmt.Sprintf("[A%s]", agentNum))
+			// Show truncated raw ID in dim for reference
+			shortID := agent.AgentID
+			if len(shortID) > 7 {
+				shortID = shortID[:7]
+			}
+			idRef := dimStyle.Render(fmt.Sprintf("(%s)", shortID))
+			sb.WriteString(fmt.Sprintf("  %s %s  %s  %s\n", marker, idRef, costStr, dimStyle.Render(fmt.Sprintf("%d msgs", agent.MessageCount))))
+		} else {
+			sb.WriteString(fmt.Sprintf("  [A%s] (%s)       %s  %d msgs\n", agentNum, agent.AgentID[:7], costStr, agent.MessageCount))
+		}
 	}
 
 	// Show agents subtotal with highlight and magnitude shading
 	subtotalHighlighted := m.isHighlighted("agents_subtotal")
 	subtotalStr := formatCostStyledWithMagnitude(a.AgentsCost.TotalCost, 14, subtotalHighlighted, m.noColor, totalCost)
-	sb.WriteString(fmt.Sprintf("  %-20s %s\n", "Agents subtotal:", subtotalStr))
+	if !m.noColor {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", dimStyle.Render("Agents subtotal:"), subtotalStr))
+	} else {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", "Agents subtotal:", subtotalStr))
+	}
 
 	return sb.String()
 }

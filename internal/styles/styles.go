@@ -10,7 +10,7 @@ import (
 // Shared color palette
 var (
 	PrimaryColor   = lipgloss.Color("99")  // Purple
-	SecondaryColor = lipgloss.Color("240") // Gray
+	SecondaryColor = lipgloss.Color("245") // Gray (dimmed but readable)
 	SuccessColor   = lipgloss.Color("42")  // Green
 	InfoColor      = lipgloss.Color("43")  // Cyan
 	WarningColor   = lipgloss.Color("221") // Yellow
@@ -142,7 +142,7 @@ var (
 var (
 	CostHighColor   = lipgloss.Color("255") // Bright white - high proportion
 	CostMediumColor = lipgloss.Color("250") // Normal white - medium proportion
-	CostLowColor    = lipgloss.Color("240") // Dimmed - low proportion
+	CostLowColor    = lipgloss.Color("245") // Dimmed - low proportion
 )
 
 // Context usage level colors
