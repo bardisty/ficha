@@ -122,6 +122,12 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 		sb.WriteString(formatAgentBreakdown(analysis, noColor))
 	}
 
+	// Message insights (shown when insights are available)
+	if analysis.Insights != nil {
+		sb.WriteString("\n\n")
+		sb.WriteString(formatInsightsSection(analysis.Insights, noColor))
+	}
+
 	return sb.String()
 }
 
@@ -175,6 +181,12 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 	if analysis.HasAgents {
 		sb.WriteString("\n\n")
 		sb.WriteString(formatAgentBreakdown(analysis, true))
+	}
+
+	// Message insights (shown when insights are available)
+	if analysis.Insights != nil {
+		sb.WriteString("\n\n")
+		sb.WriteString(formatInsightsSection(analysis.Insights, true))
 	}
 
 	return sb.String()
@@ -401,6 +413,133 @@ func truncateID(id string) string {
 		return id
 	}
 	return id[:37] + "..."
+}
+
+// formatInsightsSection formats the message insights section
+func formatInsightsSection(insights *models.MessageInsights, noColor bool) string {
+	var sb strings.Builder
+
+	title := "Message Insights"
+	if !noColor {
+		title = headerStyle.Render(title)
+	}
+	sb.WriteString(title + "\n")
+
+	// First message
+	if insights.FirstMessage != nil {
+		first := insights.FirstMessage
+		componentLabel := formatCostComponentLabel(first.MainCostComponent)
+		if !noColor {
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
+				"First:",
+				formatCostStyled(first.Cost, 10, noColor),
+				first.Timestamp.Format("15:04:05"),
+				styles.DimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, formatCostStyled(first.MainCostValue, 0, noColor)))))
+		} else {
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
+				"First:",
+				formatCostStyled(first.Cost, 10, noColor),
+				first.Timestamp.Format("15:04:05"),
+				componentLabel,
+				formatCostStyled(first.MainCostValue, 0, noColor)))
+		}
+	}
+
+	// Last message
+	if insights.LastMessage != nil {
+		last := insights.LastMessage
+		componentLabel := formatCostComponentLabel(last.MainCostComponent)
+		if !noColor {
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
+				"Last:",
+				formatCostStyled(last.Cost, 10, noColor),
+				last.Timestamp.Format("15:04:05"),
+				styles.DimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, formatCostStyled(last.MainCostValue, 0, noColor)))))
+		} else {
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
+				"Last:",
+				formatCostStyled(last.Cost, 10, noColor),
+				last.Timestamp.Format("15:04:05"),
+				componentLabel,
+				formatCostStyled(last.MainCostValue, 0, noColor)))
+		}
+	}
+
+	// Highest cost (only if notably above average)
+	if insights.HighestCost != nil {
+		highest := insights.HighestCost
+		multiplier := insights.CostMultiplier()
+		warningStr := fmt.Sprintf("%.1fx avg cost", multiplier)
+		if !noColor {
+			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render("⚠ " + warningStr)
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
+				"Highest:",
+				formatCostStyled(highest.Cost, 10, noColor),
+				highest.Timestamp.Format("15:04:05"),
+				warningStyled))
+		} else {
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  ! %s\n",
+				"Highest:",
+				formatCostStyled(highest.Cost, 10, noColor),
+				highest.Timestamp.Format("15:04:05"),
+				warningStr))
+		}
+	}
+
+	// Trend (only for sessions with 5+ messages)
+	if insights.MessageCount >= 5 {
+		trendDesc := insights.TrendDescription()
+		trendSymbol := insights.CostTrend.Symbol()
+
+		earlyStr := fmt.Sprintf("$%.2f/msg", insights.EarlyAvgCost)
+		lateStr := fmt.Sprintf("$%.2f/msg", insights.LateAvgCost)
+
+		if !noColor {
+			// Color the trend symbol based on direction
+			var symbolStyled string
+			switch insights.CostTrend {
+			case models.TrendIncreasing:
+				symbolStyled = lipgloss.NewStyle().Foreground(styles.WarningColor).Render(trendSymbol)
+			case models.TrendDecreasing:
+				symbolStyled = lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(trendSymbol)
+			default:
+				symbolStyled = styles.DimStyle.Render(trendSymbol)
+			}
+			sb.WriteString(fmt.Sprintf("  %-10s %s → %s  %s %s\n",
+				"Trend:",
+				earlyStr,
+				lateStr,
+				symbolStyled,
+				trendDesc))
+		} else {
+			sb.WriteString(fmt.Sprintf("  %-10s %s -> %s  %s %s\n",
+				"Trend:",
+				earlyStr,
+				lateStr,
+				trendSymbol,
+				trendDesc))
+		}
+	}
+
+	return sb.String()
+}
+
+// formatCostComponentLabel returns a human-readable label for a cost component
+func formatCostComponentLabel(component string) string {
+	switch component {
+	case "input":
+		return "input"
+	case "output":
+		return "output"
+	case "cache_write_5m":
+		return "cache_write"
+	case "cache_write_1h":
+		return "cache_write"
+	case "cache_read":
+		return "cache_read"
+	default:
+		return component
+	}
 }
 
 // formatContextProgressBar creates a visual progress bar showing context usage

@@ -199,6 +199,9 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 	analysis.LastMessageUsage = lastMsg.Usage
 	analysis.LastMessageModel = lastMsg.Model
 
+	// Calculate message insights (always computed when messages available)
+	analysis.Insights = CalculateInsights(messageAnalyses)
+
 	return analysis
 }
 

@@ -107,6 +107,7 @@ type SessionAnalysis struct {
 	TotalCost     CostBreakdown            `json:"total_cost"`
 	CostByModel   map[string]CostBreakdown `json:"cost_by_model"`
 	Messages      []MessageAnalysis        `json:"messages,omitempty"`
+	Insights      *MessageInsights         `json:"insights,omitempty"` // Cost insights (populated when messages available)
 	// Last message usage for context window calculation (matches /context output)
 	LastMessageUsage TokenUsage `json:"last_message_usage"`
 	LastMessageModel string     `json:"last_message_model"` // Model used for last message (for context limit lookup)
@@ -181,4 +182,85 @@ func (c *CostBreakdown) Add(other CostBreakdown) {
 	c.CacheReadCost += other.CacheReadCost
 	c.TotalCost += other.TotalCost
 	c.CacheSavings += other.CacheSavings
+}
+
+// TrendDirection indicates the cost trend direction
+type TrendDirection int
+
+const (
+	// TrendStable indicates costs are stable (within 20% variance)
+	TrendStable TrendDirection = iota
+	// TrendIncreasing indicates costs are increasing
+	TrendIncreasing
+	// TrendDecreasing indicates costs are decreasing
+	TrendDecreasing
+)
+
+// String returns a human-readable representation of the trend direction
+func (t TrendDirection) String() string {
+	switch t {
+	case TrendIncreasing:
+		return "increasing"
+	case TrendDecreasing:
+		return "decreasing"
+	default:
+		return "stable"
+	}
+}
+
+// Symbol returns a visual symbol for the trend direction
+func (t TrendDirection) Symbol() string {
+	switch t {
+	case TrendIncreasing:
+		return "▲"
+	case TrendDecreasing:
+		return "▼"
+	default:
+		return "═"
+	}
+}
+
+// MessageSnapshot captures key data about a single message for insights
+type MessageSnapshot struct {
+	Timestamp         time.Time `json:"timestamp"`
+	Cost              float64   `json:"cost"`
+	MainCostComponent string    `json:"main_cost_component"` // "cache_write", "cache_read", "output", "input"
+	MainCostValue     float64   `json:"main_cost_value"`
+}
+
+// MessageInsights contains computed insights about message costs
+type MessageInsights struct {
+	FirstMessage *MessageSnapshot `json:"first_message,omitempty"`
+	LastMessage  *MessageSnapshot `json:"last_message,omitempty"`
+	HighestCost  *MessageSnapshot `json:"highest_cost,omitempty"` // nil if not notably higher than average
+	CostTrend    TrendDirection   `json:"cost_trend"`
+	EarlyAvgCost float64          `json:"early_avg_cost"` // Average cost of first 3 messages
+	LateAvgCost  float64          `json:"late_avg_cost"`  // Average cost of last 3 messages
+	AverageCost  float64          `json:"average_cost"`   // Overall average cost per message
+	MessageCount int              `json:"message_count"`  // Total message count for insights
+}
+
+// CostMultiplier returns how many times above average the highest cost is
+// Returns 0 if there's no notable highest cost
+func (i *MessageInsights) CostMultiplier() float64 {
+	if i.HighestCost == nil || i.AverageCost == 0 {
+		return 0
+	}
+	return i.HighestCost.Cost / i.AverageCost
+}
+
+// TrendDescription returns a human-readable description of the cost trend
+func (i *MessageInsights) TrendDescription() string {
+	if i.MessageCount < 5 {
+		return ""
+	}
+
+	switch i.CostTrend {
+	case TrendIncreasing:
+		return "increasing"
+	case TrendDecreasing:
+		return "stabilizing"
+	default:
+		return "stable"
+	}
 }

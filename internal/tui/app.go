@@ -234,6 +234,35 @@ func (m *Model) detectChanges(old, new *models.SessionAnalysis) {
 		m.changedAt["context_window"] = now
 	}
 
+	// Compare insights
+	if new.Insights != nil {
+		if old.Insights == nil {
+			// Insights newly appeared
+			m.changedAt["insights_first"] = now
+			m.changedAt["insights_last"] = now
+			if new.Insights.HighestCost != nil {
+				m.changedAt["insights_highest"] = now
+			}
+			if new.Insights.MessageCount >= 5 {
+				m.changedAt["insights_trend"] = now
+			}
+		} else {
+			// Compare individual insight fields
+			if old.Insights.LastMessage == nil || new.Insights.LastMessage.Cost != old.Insights.LastMessage.Cost {
+				m.changedAt["insights_last"] = now
+			}
+			if (old.Insights.HighestCost == nil) != (new.Insights.HighestCost == nil) ||
+				(new.Insights.HighestCost != nil && old.Insights.HighestCost != nil &&
+					new.Insights.HighestCost.Cost != old.Insights.HighestCost.Cost) {
+				m.changedAt["insights_highest"] = now
+			}
+			if old.Insights.LateAvgCost != new.Insights.LateAvgCost ||
+				old.Insights.CostTrend != new.Insights.CostTrend {
+				m.changedAt["insights_trend"] = now
+			}
+		}
+	}
+
 	// Compare agent breakdown
 	if old.ParentCost.TotalCost != new.ParentCost.TotalCost {
 		m.changedAt["parent_cost"] = now
@@ -448,6 +477,12 @@ func (m Model) renderAnalysis() string {
 		sb.WriteString(m.renderAgentBreakdown())
 	}
 
+	// Message insights (shown when insights are available)
+	if a.Insights != nil {
+		sb.WriteString("\n\n")
+		sb.WriteString(m.renderInsights())
+	}
+
 	return sb.String()
 }
 
@@ -513,6 +548,12 @@ func (m Model) renderAnalysisPlain() string {
 	if a.HasAgents {
 		sb.WriteString("\n\n")
 		sb.WriteString(m.renderAgentBreakdown())
+	}
+
+	// Message insights (shown when insights are available)
+	if a.Insights != nil {
+		sb.WriteString("\n\n")
+		sb.WriteString(m.renderInsights())
 	}
 
 	return sb.String()
@@ -722,6 +763,150 @@ func (m Model) renderAgentBreakdown() string {
 	sb.WriteString(fmt.Sprintf("  %-20s %s\n", "Agents subtotal:", subtotalStr))
 
 	return sb.String()
+}
+
+func (m Model) renderInsights() string {
+	var sb strings.Builder
+	insights := m.analysis.Insights
+
+	title := "Message Insights"
+	if !m.noColor {
+		title = headerStyle.Render(title)
+	}
+	sb.WriteString(title + "\n")
+
+	// First message
+	if insights.FirstMessage != nil {
+		first := insights.FirstMessage
+		componentLabel := formatCostComponentLabel(first.MainCostComponent)
+		highlighted := m.isHighlighted("insights_first")
+
+		if !m.noColor {
+			costStr := formatCostStyled(first.Cost, 10, highlighted, m.noColor)
+			componentStr := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, formatCost(first.MainCostValue)))
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
+				"First:",
+				costStr,
+				first.Timestamp.Format("15:04:05"),
+				componentStr))
+		} else {
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
+				"First:",
+				formatCost(first.Cost),
+				first.Timestamp.Format("15:04:05"),
+				componentLabel,
+				formatCost(first.MainCostValue)))
+		}
+	}
+
+	// Last message
+	if insights.LastMessage != nil {
+		last := insights.LastMessage
+		componentLabel := formatCostComponentLabel(last.MainCostComponent)
+		highlighted := m.isHighlighted("insights_last")
+
+		if !m.noColor {
+			costStr := formatCostStyled(last.Cost, 10, highlighted, m.noColor)
+			componentStr := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, formatCost(last.MainCostValue)))
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
+				"Last:",
+				costStr,
+				last.Timestamp.Format("15:04:05"),
+				componentStr))
+		} else {
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
+				"Last:",
+				formatCost(last.Cost),
+				last.Timestamp.Format("15:04:05"),
+				componentLabel,
+				formatCost(last.MainCostValue)))
+		}
+	}
+
+	// Highest cost (only if notably above average)
+	if insights.HighestCost != nil {
+		highest := insights.HighestCost
+		multiplier := insights.CostMultiplier()
+		warningStr := fmt.Sprintf("%.1fx avg cost", multiplier)
+		highlighted := m.isHighlighted("insights_highest")
+
+		if !m.noColor {
+			costStr := formatCostStyled(highest.Cost, 10, highlighted, m.noColor)
+			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render("⚠ " + warningStr)
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
+				"Highest:",
+				costStr,
+				highest.Timestamp.Format("15:04:05"),
+				warningStyled))
+		} else {
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  ! %s\n",
+				"Highest:",
+				formatCost(highest.Cost),
+				highest.Timestamp.Format("15:04:05"),
+				warningStr))
+		}
+	}
+
+	// Trend (only for sessions with 5+ messages)
+	if insights.MessageCount >= 5 {
+		trendDesc := insights.TrendDescription()
+		trendSymbol := insights.CostTrend.Symbol()
+		highlighted := m.isHighlighted("insights_trend")
+
+		earlyStr := fmt.Sprintf("$%.2f/msg", insights.EarlyAvgCost)
+		lateStr := fmt.Sprintf("$%.2f/msg", insights.LateAvgCost)
+
+		if !m.noColor {
+			// Color the trend symbol based on direction
+			var symbolStyled string
+			switch insights.CostTrend {
+			case models.TrendIncreasing:
+				symbolStyled = lipgloss.NewStyle().Foreground(styles.WarningColor).Render(trendSymbol)
+			case models.TrendDecreasing:
+				symbolStyled = lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(trendSymbol)
+			default:
+				symbolStyled = dimStyle.Render(trendSymbol)
+			}
+			var trendLine string
+			if highlighted {
+				trendLine = highlightStyle.Render(fmt.Sprintf("%s → %s", earlyStr, lateStr))
+			} else {
+				trendLine = fmt.Sprintf("%s → %s", earlyStr, lateStr)
+			}
+			sb.WriteString(fmt.Sprintf("  %-10s %s  %s %s\n",
+				"Trend:",
+				trendLine,
+				symbolStyled,
+				trendDesc))
+		} else {
+			sb.WriteString(fmt.Sprintf("  %-10s %s -> %s  %s %s\n",
+				"Trend:",
+				earlyStr,
+				lateStr,
+				trendSymbol,
+				trendDesc))
+		}
+	}
+
+	return sb.String()
+}
+
+// formatCostComponentLabel returns a human-readable label for a cost component
+func formatCostComponentLabel(component string) string {
+	switch component {
+	case "input":
+		return "input"
+	case "output":
+		return "output"
+	case "cache_write_5m":
+		return "cache_write"
+	case "cache_write_1h":
+		return "cache_write"
+	case "cache_read":
+		return "cache_read"
+	default:
+		return component
+	}
 }
 
 // Commands
