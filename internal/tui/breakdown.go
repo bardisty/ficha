@@ -26,6 +26,8 @@ type BreakdownModel struct {
 
 	messages    []models.BreakdownMessage
 	totalCost   float64
+	minCost     float64 // For cost gradient coloring
+	maxCost     float64 // For cost gradient coloring
 	insights    *models.MessageInsights
 	err         error
 	loading     bool
@@ -55,6 +57,8 @@ type (
 	breakdownMsgsMsg struct {
 		messages  []models.BreakdownMessage
 		totalCost float64
+		minCost   float64
+		maxCost   float64
 		insights  *models.MessageInsights
 	}
 	breakdownErrorMsg error
@@ -178,6 +182,8 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.messages = msg.messages
 		m.totalCost = msg.totalCost
+		m.minCost = msg.minCost
+		m.maxCost = msg.maxCost
 		m.insights = msg.insights
 		m.loading = false
 		m.lastUpdated = time.Now()
@@ -388,8 +394,8 @@ func (m BreakdownModel) renderCompactInsights() string {
 
 // renderTableHeader renders the table header row
 func (m BreakdownModel) renderTableHeader() string {
-	header := fmt.Sprintf("%-5s  %-8s  %-10s  %-10s  %6s  %5s  %7s",
-		"#", "TIME", "MODEL", "COST", "IN", "OUT", "CACHE")
+	header := fmt.Sprintf("%-5s  %-8s  %-10s  %-10s  %6s  %5s  %6s  %6s",
+		"#", "TIME", "MODEL", "COST", "IN", "OUT", "C_WR", "C_RD")
 	if !m.noColor {
 		return headerStyle.Render(header)
 	}
@@ -398,7 +404,7 @@ func (m BreakdownModel) renderTableHeader() string {
 
 // renderTableSeparator renders the separator line
 func (m BreakdownModel) renderTableSeparator() string {
-	sep := strings.Repeat("-", 62)
+	sep := strings.Repeat("-", 70)
 	if !m.noColor {
 		return tableBorderStyle.Render(sep)
 	}
@@ -421,11 +427,16 @@ func (m BreakdownModel) renderTableContent() string {
 
 // renderRow renders a single message row
 func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool) string {
-	// Index
-	indexStr := fmt.Sprintf("%d", msg.Index)
-
-	// Model display name (short form like "Sonnet 4", "Haiku 4.5")
+	// Format column values
+	indexStr := fmt.Sprintf("%-5d", msg.Index)
+	timeStr := fmt.Sprintf("%-8s", msg.Timestamp.Format("15:04:05"))
 	modelName := pricing.GetModelDisplayName(msg.Model)
+	modelStr := fmt.Sprintf("%-10s", modelName)
+	costStr := fmt.Sprintf("%-10s", formatCompactCost(msg.Cost.TotalCost))
+	inStr := fmt.Sprintf("%6s", formatCompactNumber(msg.Usage.InputTokens))
+	outStr := fmt.Sprintf("%5s", formatCompactNumber(msg.Usage.OutputTokens))
+	cacheWriteStr := fmt.Sprintf("%6s", formatCompactNumber(msg.Usage.CacheCreationInputTokens))
+	cacheReadStr := fmt.Sprintf("%6s", formatCompactNumber(msg.Usage.CacheReadInputTokens))
 
 	// Agent marker at the end
 	agentMarker := ""
@@ -433,25 +444,52 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool) strin
 		agentMarker = fmt.Sprintf("[A%s]", msg.AgentID)
 	}
 
-	// Format row content
-	row := fmt.Sprintf("%-5s  %-8s  %-10s  %-10s  %6s  %5s  %7s  %s",
-		indexStr,
-		msg.Timestamp.Format("15:04:05"),
-		modelName,
-		formatCompactCost(msg.Cost.TotalCost),
-		formatCompactNumber(msg.Usage.InputTokens),
-		formatCompactNumber(msg.Usage.OutputTokens),
-		formatCompactNumber(msg.Usage.CacheReadInputTokens),
-		agentMarker)
-
 	if m.noColor {
-		return row
+		return fmt.Sprintf("%s  %s  %s  %s  %s  %s  %s  %s  %s",
+			indexStr, timeStr, modelStr, costStr, inStr, outStr, cacheWriteStr, cacheReadStr, agentMarker)
 	}
 
+	// Apply per-column styling
+	dimStyle := lipgloss.NewStyle().Foreground(styles.SecondaryColor)
+	modelStyle := lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName))
+	costColor := styles.GetCostGradientColor(msg.Cost.TotalCost, m.minCost, m.maxCost)
+	costStyle := lipgloss.NewStyle().Foreground(costColor)
+	outStyle := lipgloss.NewStyle().Foreground(styles.OutputTokenColor)
+	cacheWriteStyle := lipgloss.NewStyle().Foreground(styles.CacheWriteTokenColor)
+	cacheReadStyle := lipgloss.NewStyle().Foreground(styles.CacheReadTokenColor)
+
+	// For new messages, override with highlight style
 	if isNew {
-		return styles.HighlightStyle.Render(row)
+		highlightStyle := styles.HighlightStyle
+		return fmt.Sprintf("%s  %s  %s  %s  %s  %s  %s  %s  %s",
+			highlightStyle.Render(indexStr),
+			highlightStyle.Render(timeStr),
+			highlightStyle.Render(modelStr),
+			highlightStyle.Render(costStr),
+			highlightStyle.Render(inStr),
+			highlightStyle.Render(outStr),
+			highlightStyle.Render(cacheWriteStr),
+			highlightStyle.Render(cacheReadStr),
+			highlightStyle.Render(agentMarker))
 	}
-	return row
+
+	// Agent marker with its own color
+	agentRendered := ""
+	if agentMarker != "" {
+		agentStyle := lipgloss.NewStyle().Foreground(styles.GetAgentColor(msg.AgentID))
+		agentRendered = agentStyle.Render(agentMarker)
+	}
+
+	return fmt.Sprintf("%s  %s  %s  %s  %s  %s  %s  %s  %s",
+		dimStyle.Render(indexStr),
+		dimStyle.Render(timeStr),
+		modelStyle.Render(modelStr),
+		costStyle.Render(costStr),
+		inStr, // Input stays white/default
+		outStyle.Render(outStr),
+		cacheWriteStyle.Render(cacheWriteStr),
+		cacheReadStyle.Render(cacheReadStr),
+		agentRendered)
 }
 
 // Commands
@@ -462,11 +500,27 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 		return breakdownErrorMsg(err)
 	}
 
-	// Calculate total cost and get insights
+	// Calculate total cost, min/max cost, and get insights
 	var totalCost float64
+	var minCost, maxCost float64
 	var messageAnalyses []models.MessageAnalysis
-	for _, msg := range messages {
+
+	for i, msg := range messages {
 		totalCost += msg.Cost.TotalCost
+
+		// Track min/max for cost gradient
+		if i == 0 {
+			minCost = msg.Cost.TotalCost
+			maxCost = msg.Cost.TotalCost
+		} else {
+			if msg.Cost.TotalCost < minCost {
+				minCost = msg.Cost.TotalCost
+			}
+			if msg.Cost.TotalCost > maxCost {
+				maxCost = msg.Cost.TotalCost
+			}
+		}
+
 		messageAnalyses = append(messageAnalyses, models.MessageAnalysis{
 			Timestamp: msg.Timestamp,
 			Model:     msg.Model,
@@ -480,6 +534,8 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	return breakdownMsgsMsg{
 		messages:  messages,
 		totalCost: totalCost,
+		minCost:   minCost,
+		maxCost:   maxCost,
 		insights:  insights,
 	}
 }

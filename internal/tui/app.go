@@ -369,34 +369,43 @@ func (m Model) renderAnalysis() string {
 		tableBorderStyle.Render("│") + "\n")
 	sb.WriteString(tableBorderStyle.Render("├───────────────────────────┼────────────────┤") + "\n")
 
-	// Cost rows with field tracking for highlights
+	// Cost rows with field tracking for highlights and colors
 	type costRow struct {
 		label string
 		value float64
-		field string // field name for highlight tracking
+		field string          // field name for highlight tracking
+		color lipgloss.Color  // label color for consistency with token breakdown
 	}
 
 	rows := []costRow{
-		{"Input tokens", a.TotalCost.InputCost, "input_cost"},
-		{"Output tokens", a.TotalCost.OutputCost, "output_cost"},
+		{"Input tokens", a.TotalCost.InputCost, "input_cost", lipgloss.Color("")},
+		{"Output tokens", a.TotalCost.OutputCost, "output_cost", styles.OutputTokenColor},
 	}
 
 	if a.TotalCost.CacheWrite5mCost > 0 {
-		rows = append(rows, costRow{"Cache write (5m TTL)", a.TotalCost.CacheWrite5mCost, "cache_write_5m"})
+		rows = append(rows, costRow{"Cache write (5m TTL)", a.TotalCost.CacheWrite5mCost, "cache_write_5m", styles.CacheWriteTokenColor})
 	}
 
 	if a.TotalCost.CacheWrite1hCost > 0 {
-		rows = append(rows, costRow{"Cache write (1h TTL)", a.TotalCost.CacheWrite1hCost, "cache_write_1h"})
+		rows = append(rows, costRow{"Cache write (1h TTL)", a.TotalCost.CacheWrite1hCost, "cache_write_1h", styles.CacheWriteTokenColor})
 	}
 
 	if a.TotalCost.CacheReadCost > 0 {
-		rows = append(rows, costRow{"Cache read", a.TotalCost.CacheReadCost, "cache_read"})
+		rows = append(rows, costRow{"Cache read", a.TotalCost.CacheReadCost, "cache_read", styles.CacheReadTokenColor})
 	}
 
 	for _, row := range rows {
 		highlighted := m.isHighlighted(row.field)
+		// Apply color to label if specified
+		var labelStr string
+		if row.color != "" {
+			labelStyle := lipgloss.NewStyle().Foreground(row.color)
+			labelStr = labelStyle.Render(fmt.Sprintf(" %-25s ", row.label))
+		} else {
+			labelStr = fmt.Sprintf(" %-25s ", row.label)
+		}
 		sb.WriteString(tableBorderStyle.Render("│") +
-			labelStyle.Render(fmt.Sprintf(" %-25s ", row.label)) +
+			labelStr +
 			tableBorderStyle.Render("│") +
 			" " + formatCostStyled(row.value, 14, highlighted, m.noColor) + " " +
 			tableBorderStyle.Render("│") + "\n")

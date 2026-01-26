@@ -1,6 +1,11 @@
 package styles
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Shared color palette
 var (
@@ -162,4 +167,85 @@ func GetContextUsageColor(usagePct float64) lipgloss.Color {
 	default:
 		return ContextLowColor
 	}
+}
+
+// Agent marker colors - cycling palette for distinguishing sub-agents
+var AgentColors = []lipgloss.Color{
+	lipgloss.Color("212"), // Pink - A1
+	lipgloss.Color("214"), // Orange - A2
+	lipgloss.Color("221"), // Yellow - A3
+	lipgloss.Color("75"),  // Blue - A4
+	lipgloss.Color("43"),  // Cyan - A5
+}
+
+// GetAgentColor returns a color for the given agent ID (cycles through palette)
+func GetAgentColor(agentID string) lipgloss.Color {
+	if agentID == "" {
+		return SecondaryColor
+	}
+	// Parse agent number from ID (e.g., "1", "2", "3")
+	var num int
+	_, _ = fmt.Sscanf(agentID, "%d", &num)
+	if num < 1 {
+		num = 1
+	}
+	// Cycle through the palette (0-indexed)
+	return AgentColors[(num-1)%len(AgentColors)]
+}
+
+// GetModelColor returns the tier-appropriate color for a model display name
+func GetModelColor(modelName string) lipgloss.Color {
+	// Check for tier keywords in the model name
+	switch {
+	case contains(modelName, "Opus"):
+		return OpusColor
+	case contains(modelName, "Sonnet"):
+		return SonnetColor
+	case contains(modelName, "Haiku"):
+		return HaikuColor
+	default:
+		return SecondaryColor
+	}
+}
+
+// contains checks if s contains substr (case-insensitive)
+func contains(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
+}
+
+// GetCostGradientColor returns a color based on cost position in the session's range
+// Neutral (cheap) -> Yellow -> Orange -> Red (expensive)
+// Only expensive items "heat up" - cheap items stay unobtrusive
+func GetCostGradientColor(cost, minCost, maxCost float64) lipgloss.Color {
+	// Handle edge cases
+	if maxCost <= minCost {
+		return lipgloss.Color("252") // Single value - neutral white
+	}
+
+	// Normalize to 0.0-1.0 range
+	normalized := (cost - minCost) / (maxCost - minCost)
+
+	// Clamp to valid range
+	if normalized < 0 {
+		normalized = 0
+	}
+	if normalized > 1 {
+		normalized = 1
+	}
+
+	// Neutral -> Warm gradient (only expensive items draw attention)
+	// 0-50%: neutral white (blends in)
+	// 50-75%: yellow (starting to warm up)
+	// 75-90%: orange (getting hot)
+	// 90%+: red (expensive!)
+	if normalized < 0.5 {
+		return lipgloss.Color("252") // Neutral white - cheap, unobtrusive
+	}
+	if normalized < 0.75 {
+		return WarningColor // Yellow (221)
+	}
+	if normalized < 0.9 {
+		return lipgloss.Color("214") // Orange
+	}
+	return ErrorColor // Red (196)
 }
