@@ -9,8 +9,6 @@ import (
 	"github.com/bardisty/ccusage/internal/analyzer"
 	"github.com/bardisty/ccusage/internal/formatter"
 	"github.com/bardisty/ccusage/internal/models"
-	"github.com/bardisty/ccusage/internal/parser"
-	"github.com/bardisty/ccusage/internal/paths"
 	"github.com/bardisty/ccusage/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -33,43 +31,10 @@ Examples:
 }
 
 func runShow(cmd *cobra.Command, args []string) {
-	// Get project path
-	projPath, err := getProjectPath()
+	sessions, err := loadProjectSessions()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
-	}
-
-	// Get Claude project directory
-	projectDir, err := paths.GetProjectDirForPath(projPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Scan disk for session files
-	diskSessions, err := parser.DiscoverSessionsFromDisk(projectDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error scanning sessions: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Project directory: %s\n", projectDir)
-		os.Exit(1)
-	}
-
-	// Try to load index (may fail or be incomplete)
-	indexPath := paths.GetSessionsIndexPath(projectDir)
-	index, _ := parser.ParseSessionsIndex(indexPath) // Ignore error
-
-	// Merge sources
-	sessions, orphanCount := parser.MergeSessionSources(index, diskSessions)
-
-	if len(sessions) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: no sessions found")
-		os.Exit(1)
-	}
-
-	// Warn about orphans
-	if orphanCount > 0 {
-		fmt.Fprintf(os.Stderr, "Note: Found %d session(s) not in sessions-index.json\n", orphanCount)
 	}
 
 	// Find the session to show
@@ -80,7 +45,7 @@ func runShow(cmd *cobra.Command, args []string) {
 		var err error
 		session, err = findSessionByPartialID(sessions, sessionID)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 		if session == nil {
@@ -109,6 +74,11 @@ func runShow(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	// Warn about skipped agents
+	if analysis.SkippedAgents > 0 {
+		fmt.Fprintf(os.Stderr, "Warning: %d agent sub-session(s) could not be parsed\n", analysis.SkippedAgents)
+	}
+
 	// Output in requested format
 	output, err := formatOutput(analysis, includeMessages)
 	if err != nil {
@@ -134,7 +104,7 @@ func formatOutput(analysis *models.SessionAnalysis, includeMessages bool) (strin
 	case "json":
 		return formatter.FormatSessionJSON(analysis, true)
 	case "csv":
-		return formatter.FormatSessionCSV(analysis, includeMessages), nil
+		return formatter.FormatSessionCSV(analysis, includeMessages)
 	default:
 		return formatter.FormatSessionTable(analysis, noColor), nil
 	}

@@ -135,12 +135,11 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 	sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Category", "Amount"))
 	sb.WriteString("+---------------------------+----------------+\n")
 
-	if analysis.TotalCost.InputCost > 0 {
-		sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Input tokens", formatCost(analysis.TotalCost.InputCost)))
-	}
-	if analysis.TotalCost.OutputCost > 0 {
-		sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Output tokens", formatCost(analysis.TotalCost.OutputCost)))
-	}
+	// Always show input and output tokens (consistent with color formatter)
+	sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Input tokens", formatCost(analysis.TotalCost.InputCost)))
+	sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Output tokens", formatCost(analysis.TotalCost.OutputCost)))
+
+	// Only show cache rows if they have values
 	if analysis.TotalCost.CacheWrite5mCost > 0 {
 		sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Cache write (5m TTL)", formatCost(analysis.TotalCost.CacheWrite5mCost)))
 	}

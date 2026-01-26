@@ -37,10 +37,12 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 	if len(agentPaths) > 0 {
 		analysis.HasAgents = true
 		analysis.AgentCount = len(agentPaths)
+		skippedAgents := 0
 
 		for _, agentPath := range agentPaths {
 			agentAnalysis, err := AnalyzeAgent(agentPath, includeMessages)
 			if err != nil {
+				skippedAgents++
 				continue // Skip agents that can't be parsed
 			}
 
@@ -70,6 +72,9 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 				analysis.EndTime = agentAnalysis.EndTime
 			}
 		}
+
+		// Track skipped agents count for caller visibility
+		analysis.SkippedAgents = skippedAgents
 
 		// Recalculate duration after including agents
 		if !analysis.StartTime.IsZero() && !analysis.EndTime.IsZero() {
@@ -206,13 +211,16 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 
 	var firstTime, lastTime time.Time
 	firstTimeSet := false
+	skippedSessions := 0
 
 	for _, entry := range entries {
 		sessionAnalysis, err := AnalyzeSession(entry.FullPath, entry.SessionID, false)
 		if err != nil {
-			// Skip sessions that can't be parsed
-			continue
+			skippedSessions++
+			continue // Skip sessions that can't be parsed
 		}
+		// Also aggregate skipped agents from individual sessions
+		aggregate.SkippedAgents += sessionAnalysis.SkippedAgents
 
 		aggregate.MessageCount += sessionAnalysis.MessageCount
 		aggregate.TotalUsage.Add(sessionAnalysis.TotalUsage)
@@ -243,6 +251,8 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 		aggregate.EndTime = lastTime
 		aggregate.Duration = models.Duration(lastTime.Sub(firstTime))
 	}
+
+	aggregate.SkippedSessions = skippedSessions
 
 	return aggregate, nil
 }

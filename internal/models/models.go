@@ -44,7 +44,10 @@ func (d Duration) Duration() time.Duration {
 	return time.Duration(d)
 }
 
-// TokenUsage represents token usage from a single API call
+// TokenUsage represents token usage from a single API call.
+// Note: Token counts use int which is 64-bit on modern systems but 32-bit on
+// older 32-bit systems. For typical usage this is sufficient, but aggregating
+// across many large sessions on 32-bit systems could theoretically overflow.
 type TokenUsage struct {
 	InputTokens              int `json:"input_tokens"`
 	OutputTokens             int `json:"output_tokens"`
@@ -108,11 +111,13 @@ type SessionAnalysis struct {
 	LastMessageUsage TokenUsage `json:"last_message_usage"`
 	LastMessageModel string     `json:"last_message_model"` // Model used for last message (for context limit lookup)
 	// Agent-related fields
-	Agents     []AgentAnalysis `json:"agents,omitempty"`
-	ParentCost CostBreakdown   `json:"parent_cost"`  // Cost excluding agents
-	AgentsCost CostBreakdown   `json:"agents_cost"`  // Sum of agent costs
-	HasAgents  bool            `json:"has_agents"`
-	AgentCount int             `json:"agent_count"`
+	Agents        []AgentAnalysis `json:"agents,omitempty"`
+	ParentCost    CostBreakdown   `json:"parent_cost"`     // Cost excluding agents
+	AgentsCost    CostBreakdown   `json:"agents_cost"`     // Sum of agent costs
+	HasAgents     bool            `json:"has_agents"`
+	AgentCount    int             `json:"agent_count"`
+	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agents that failed to parse
+	SkippedSessions int `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)
 }
 
 // SessionEntry represents an entry in sessions-index.json

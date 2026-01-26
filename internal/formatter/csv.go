@@ -9,7 +9,7 @@ import (
 )
 
 // FormatSessionCSV formats a session analysis as CSV
-func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) string {
+func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
 
@@ -26,7 +26,9 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) st
 		"message_count",
 		"duration_seconds",
 	}
-	w.Write(header)
+	if err := w.Write(header); err != nil {
+		return "", fmt.Errorf("writing CSV header: %w", err)
+	}
 
 	// Write session row
 	row := []string{
@@ -41,21 +43,30 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) st
 		fmt.Sprintf("%d", analysis.MessageCount),
 		fmt.Sprintf("%.0f", analysis.Duration.Duration().Seconds()),
 	}
-	w.Write(row)
+	if err := w.Write(row); err != nil {
+		return "", fmt.Errorf("writing CSV row: %w", err)
+	}
 
 	w.Flush()
+	if err := w.Error(); err != nil {
+		return "", fmt.Errorf("flushing CSV: %w", err)
+	}
 
 	// Optionally include individual messages
 	if includeMessages && len(analysis.Messages) > 0 {
 		sb.WriteString("\n")
-		sb.WriteString(formatMessagesCSV(analysis.Messages))
+		messagesCSV, err := formatMessagesCSV(analysis.Messages)
+		if err != nil {
+			return "", err
+		}
+		sb.WriteString(messagesCSV)
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 // formatMessagesCSV formats individual messages as CSV
-func formatMessagesCSV(messages []models.MessageAnalysis) string {
+func formatMessagesCSV(messages []models.MessageAnalysis) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
 
@@ -74,7 +85,9 @@ func formatMessagesCSV(messages []models.MessageAnalysis) string {
 		"cache_read_cost",
 		"total_cost",
 	}
-	w.Write(header)
+	if err := w.Write(header); err != nil {
+		return "", fmt.Errorf("writing messages CSV header: %w", err)
+	}
 
 	// Write message rows
 	for _, msg := range messages {
@@ -92,15 +105,20 @@ func formatMessagesCSV(messages []models.MessageAnalysis) string {
 			fmt.Sprintf("%.6f", msg.Cost.CacheReadCost),
 			fmt.Sprintf("%.6f", msg.Cost.TotalCost),
 		}
-		w.Write(row)
+		if err := w.Write(row); err != nil {
+			return "", fmt.Errorf("writing message row: %w", err)
+		}
 	}
 
 	w.Flush()
-	return sb.String()
+	if err := w.Error(); err != nil {
+		return "", fmt.Errorf("flushing messages CSV: %w", err)
+	}
+	return sb.String(), nil
 }
 
 // FormatSessionListCSV formats a list of sessions as CSV
-func FormatSessionListCSV(entries []models.SessionEntry) string {
+func FormatSessionListCSV(entries []models.SessionEntry) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
 
@@ -112,7 +130,9 @@ func FormatSessionListCSV(entries []models.SessionEntry) string {
 		"created",
 		"modified",
 	}
-	w.Write(header)
+	if err := w.Write(header); err != nil {
+		return "", fmt.Errorf("writing session list CSV header: %w", err)
+	}
 
 	// Write session rows
 	for _, entry := range entries {
@@ -123,9 +143,14 @@ func FormatSessionListCSV(entries []models.SessionEntry) string {
 			entry.Created.Format("2006-01-02T15:04:05Z07:00"),
 			entry.Modified.Format("2006-01-02T15:04:05Z07:00"),
 		}
-		w.Write(row)
+		if err := w.Write(row); err != nil {
+			return "", fmt.Errorf("writing session entry row: %w", err)
+		}
 	}
 
 	w.Flush()
-	return sb.String()
+	if err := w.Error(); err != nil {
+		return "", fmt.Errorf("flushing session list CSV: %w", err)
+	}
+	return sb.String(), nil
 }

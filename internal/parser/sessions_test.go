@@ -380,3 +380,293 @@ func TestCountMessagesInFileNotFound(t *testing.T) {
 		t.Errorf("expected 0 for nonexistent file, got %d", count)
 	}
 }
+
+// === ParseSessionsIndex Tests ===
+
+func TestParseSessionsIndex(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "index-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	indexPath := filepath.Join(tmpDir, "sessions-index.json")
+	content := `{
+		"entries": [
+			{
+				"sessionId": "session-abc123",
+				"fullPath": "/path/to/session-abc123.jsonl",
+				"messageCount": 15,
+				"created": "2024-01-10T10:00:00Z",
+				"modified": "2024-01-10T12:00:00Z"
+			},
+			{
+				"sessionId": "session-def456",
+				"fullPath": "/path/to/session-def456.jsonl",
+				"messageCount": 8,
+				"created": "2024-01-11T10:00:00Z",
+				"modified": "2024-01-11T14:00:00Z"
+			}
+		]
+	}`
+
+	if err := os.WriteFile(indexPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	index, err := ParseSessionsIndex(indexPath)
+	if err != nil {
+		t.Fatalf("ParseSessionsIndex returned error: %v", err)
+	}
+
+	if index == nil {
+		t.Fatal("ParseSessionsIndex returned nil index")
+	}
+
+	if len(index.Entries) != 2 {
+		t.Errorf("expected 2 entries, got %d", len(index.Entries))
+	}
+
+	// Verify first entry
+	if index.Entries[0].SessionID != "session-abc123" {
+		t.Errorf("first entry SessionID: got %q, want %q", index.Entries[0].SessionID, "session-abc123")
+	}
+	if index.Entries[0].MessageCount != 15 {
+		t.Errorf("first entry MessageCount: got %d, want %d", index.Entries[0].MessageCount, 15)
+	}
+}
+
+func TestParseSessionsIndex_FileNotFound(t *testing.T) {
+	_, err := ParseSessionsIndex("/nonexistent/path/sessions-index.json")
+	if err == nil {
+		t.Error("expected error for nonexistent file, got nil")
+	}
+}
+
+func TestParseSessionsIndex_InvalidJSON(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "index-invalid-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	indexPath := filepath.Join(tmpDir, "sessions-index.json")
+	// Write invalid JSON
+	if err := os.WriteFile(indexPath, []byte("{ invalid json }"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ParseSessionsIndex(indexPath)
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestParseSessionsIndex_EmptyFile(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "index-empty-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	indexPath := filepath.Join(tmpDir, "sessions-index.json")
+	// Write empty JSON object
+	if err := os.WriteFile(indexPath, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	index, err := ParseSessionsIndex(indexPath)
+	if err != nil {
+		t.Fatalf("ParseSessionsIndex returned error for empty object: %v", err)
+	}
+
+	if len(index.Entries) != 0 {
+		t.Errorf("expected 0 entries for empty index, got %d", len(index.Entries))
+	}
+}
+
+// === ExtractAgentID Tests ===
+
+func TestExtractAgentID(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "standard agent path",
+			input:    "/path/to/project/session-123/subagents/agent-abc456.jsonl",
+			expected: "abc456",
+		},
+		{
+			name:     "just filename",
+			input:    "agent-xyz789.jsonl",
+			expected: "xyz789",
+		},
+		{
+			name:     "uuid-style agent id",
+			input:    "/path/agent-550e8400-e29b-41d4-a716-446655440000.jsonl",
+			expected: "550e8400-e29b-41d4-a716-446655440000",
+		},
+		{
+			name:     "short agent id",
+			input:    "agent-1.jsonl",
+			expected: "1",
+		},
+		{
+			name:     "not an agent file - returns base",
+			input:    "/path/to/regular-file.jsonl",
+			expected: "regular-file.jsonl",
+		},
+		{
+			name:     "agent prefix but wrong suffix",
+			input:    "agent-test.txt",
+			expected: "agent-test.txt",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ExtractAgentID(tc.input)
+			if result != tc.expected {
+				t.Errorf("ExtractAgentID(%q) = %q, want %q", tc.input, result, tc.expected)
+			}
+		})
+	}
+}
+
+// === DiscoverAgentSessions Tests ===
+
+func TestDiscoverAgentSessions(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agents-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	sessionID := "session-main"
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+
+	// Create the subagents directory structure
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create agent files
+	agentFiles := []string{
+		"agent-001.jsonl",
+		"agent-002.jsonl",
+		"agent-abc.jsonl",
+	}
+	for _, f := range agentFiles {
+		if err := os.WriteFile(filepath.Join(subagentsDir, f), []byte("{}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Create a non-agent file (should be ignored)
+	if err := os.WriteFile(filepath.Join(subagentsDir, "notes.txt"), []byte("notes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a file that doesn't match agent-* pattern (should be ignored)
+	if err := os.WriteFile(filepath.Join(subagentsDir, "other-file.jsonl"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err := DiscoverAgentSessions(tmpDir, sessionID)
+	if err != nil {
+		t.Fatalf("DiscoverAgentSessions returned error: %v", err)
+	}
+
+	if len(paths) != 3 {
+		t.Errorf("expected 3 agent paths, got %d", len(paths))
+	}
+
+	// Verify the paths contain the expected files
+	foundAgents := make(map[string]bool)
+	for _, p := range paths {
+		base := filepath.Base(p)
+		foundAgents[base] = true
+	}
+
+	for _, expected := range agentFiles {
+		if !foundAgents[expected] {
+			t.Errorf("expected to find agent file %s", expected)
+		}
+	}
+
+	// Verify non-agent files were not included
+	if foundAgents["notes.txt"] {
+		t.Error("notes.txt should not be included in agent paths")
+	}
+	if foundAgents["other-file.jsonl"] {
+		t.Error("other-file.jsonl should not be included in agent paths")
+	}
+}
+
+func TestDiscoverAgentSessions_NoSubagentsDir(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "no-agents-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Session directory exists but no subagents folder
+	sessionID := "session-no-agents"
+	if err := os.MkdirAll(filepath.Join(tmpDir, sessionID), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err := DiscoverAgentSessions(tmpDir, sessionID)
+	if err != nil {
+		t.Fatalf("DiscoverAgentSessions should not error for missing subagents dir: %v", err)
+	}
+
+	if paths != nil && len(paths) != 0 {
+		t.Errorf("expected nil or empty paths for missing subagents dir, got %v", paths)
+	}
+}
+
+func TestDiscoverAgentSessions_EmptySubagentsDir(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "empty-agents-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	sessionID := "session-empty"
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+
+	// Create empty subagents directory
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err := DiscoverAgentSessions(tmpDir, sessionID)
+	if err != nil {
+		t.Fatalf("DiscoverAgentSessions returned error: %v", err)
+	}
+
+	if len(paths) != 0 {
+		t.Errorf("expected 0 paths for empty subagents dir, got %d", len(paths))
+	}
+}
+
+func TestDiscoverAgentSessions_SessionDirNotExist(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "nonexistent-session-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Session directory doesn't exist at all
+	paths, err := DiscoverAgentSessions(tmpDir, "nonexistent-session")
+	if err != nil {
+		t.Fatalf("DiscoverAgentSessions should not error for nonexistent session: %v", err)
+	}
+
+	if paths != nil && len(paths) != 0 {
+		t.Errorf("expected nil or empty paths for nonexistent session, got %v", paths)
+	}
+}

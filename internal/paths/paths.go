@@ -52,14 +52,49 @@ func PathToProjectDir(path string) string {
 	return path
 }
 
-// GetProjectDirForPath returns the full path to the Claude project directory for a given path
+// CanonicalizePath resolves symlinks and converts relative paths to absolute.
+// This ensures consistent project directory naming regardless of how the path is accessed.
+func CanonicalizePath(path string) (string, error) {
+	// Convert relative to absolute first
+	if !filepath.IsAbs(path) {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return "", err
+		}
+		path = absPath
+	}
+
+	// Resolve symlinks to get the real path
+	// This ensures /symlink/to/project and /real/path/to/project map to the same directory
+	realPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		// If the path doesn't exist yet, EvalSymlinks fails
+		// In that case, just return the absolute path
+		if os.IsNotExist(err) {
+			return path, nil
+		}
+		return "", err
+	}
+
+	return realPath, nil
+}
+
+// GetProjectDirForPath returns the full path to the Claude project directory for a given path.
+// It canonicalizes the path first (resolving symlinks and converting relative to absolute)
+// to ensure consistent project directory naming.
 func GetProjectDirForPath(path string) (string, error) {
 	projectsDir, err := GetProjectsDir()
 	if err != nil {
 		return "", err
 	}
 
-	projectDir := PathToProjectDir(path)
+	// Canonicalize the path to handle symlinks and relative paths
+	canonicalPath, err := CanonicalizePath(path)
+	if err != nil {
+		return "", err
+	}
+
+	projectDir := PathToProjectDir(canonicalPath)
 	return filepath.Join(projectsDir, projectDir), nil
 }
 

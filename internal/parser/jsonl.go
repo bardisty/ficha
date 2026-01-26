@@ -73,9 +73,9 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 	result := &ParseResult{}
 	scanner := bufio.NewScanner(r)
 
-	// Increase buffer size for large lines
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024) // 1MB max line size
+	// Increase buffer size for large lines (constants defined in sessions.go)
+	buf := make([]byte, 0, scannerInitialBufSize)
+	scanner.Buffer(buf, scannerMaxBufSize)
 
 	lineNum := 0
 	for scanner.Scan() {

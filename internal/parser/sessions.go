@@ -11,6 +11,17 @@ import (
 	"github.com/bardisty/ccusage/internal/models"
 )
 
+const (
+	// scannerInitialBufSize is the initial buffer size for the scanner (64KB).
+	// This is large enough for most JSONL lines while being memory-efficient.
+	scannerInitialBufSize = 64 * 1024
+
+	// scannerMaxBufSize is the maximum buffer size for the scanner (1MB).
+	// Claude Code session files can have very long lines due to base64-encoded
+	// images and large tool outputs. 1MB handles most cases.
+	scannerMaxBufSize = 1024 * 1024
+)
+
 // ParseSessionsIndex parses a sessions-index.json file
 func ParseSessionsIndex(path string) (*models.SessionsIndex, error) {
 	data, err := os.ReadFile(path)
@@ -116,8 +127,13 @@ func DiscoverSessionsFromDisk(projectDir string) ([]models.SessionEntry, error) 
 		// Count messages by reading first pass of file
 		msgCount := countMessagesInFile(fullPath)
 
-		// Discover agent sub-sessions
-		agentPaths, _ := DiscoverAgentSessions(projectDir, sessionID)
+		// Discover agent sub-sessions (ignore errors - missing subagents dir is common)
+		agentPaths, err := DiscoverAgentSessions(projectDir, sessionID)
+		if err != nil {
+			// Log warning but continue - agent discovery failure shouldn't block session discovery
+			// Note: NotExist errors are already handled inside DiscoverAgentSessions
+			_ = err // Error intentionally ignored - subagent discovery is non-critical
+		}
 
 		sessions = append(sessions, models.SessionEntry{
 			SessionID:    sessionID,
@@ -223,8 +239,8 @@ func countMessagesInFile(path string) int {
 
 	count := 0
 	scanner := bufio.NewScanner(file)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
+	buf := make([]byte, 0, scannerInitialBufSize)
+	scanner.Buffer(buf, scannerMaxBufSize)
 
 	for scanner.Scan() {
 		line := scanner.Bytes()

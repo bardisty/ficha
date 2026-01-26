@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bardisty/ccusage/internal/analyzer"
@@ -38,7 +40,10 @@ type Model struct {
 
 	spinner spinner.Model
 	watcher *fsnotify.Watcher
-	done    chan struct{} // Channel to signal watcher goroutine to stop
+	done    chan struct{}  // Channel to signal watcher goroutine to stop
+	closing *atomic.Bool   // Atomic flag for shutdown coordination
+	closeOnce sync.Once    // Ensure shutdown happens exactly once
+	watching *atomic.Bool  // Tracks if a watcher goroutine is active
 
 	width  int
 	height int
@@ -58,6 +63,8 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool) Model {
 	s.Spinner = spinner.Dot
 	s.Style = spinnerStyle
 
+	closing := &atomic.Bool{}
+	watching := &atomic.Bool{}
 	return Model{
 		sessionPath: sessionPath,
 		sessionID:   sessionID,
@@ -66,6 +73,8 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool) Model {
 		loading:     true,
 		spinner:     s,
 		done:        make(chan struct{}),
+		closing:     closing,
+		watching:    watching,
 		changedAt:   make(map[string]time.Time),
 		deltaTokens: make(map[string]int),
 	}
@@ -94,15 +103,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
-			// Signal the watcher goroutine to stop
-			if m.done != nil {
-				close(m.done)
-				m.done = nil // Prevent double close
-			}
-			if m.watcher != nil {
-				m.watcher.Close()
-				m.watcher = nil
-			}
+			// Signal shutdown using atomic flag and sync.Once
+			m.closeOnce.Do(func() {
+				m.closing.Store(true)
+				if m.done != nil {
+					close(m.done)
+				}
+				if m.watcher != nil {
+					m.watcher.Close()
+				}
+			})
 			return m, tea.Quit
 		case "r":
 			m.loading = true
@@ -252,12 +262,23 @@ func (m *Model) detectChanges(old, new *models.SessionAnalysis) {
 
 // recentlyChanged checks if a field was recently changed (within highlight duration)
 // This is used to determine whether to show delta values, regardless of color mode
-func (m Model) recentlyChanged(field string) bool {
+func (m *Model) recentlyChanged(field string) bool {
 	changedTime, exists := m.changedAt[field]
 	if !exists {
 		return false
 	}
-	return time.Since(changedTime) < highlightDuration
+
+	elapsed := time.Since(changedTime)
+
+	// Cleanup stale entry if it's past the highlight window
+	// This prevents unbounded map growth when updates are infrequent
+	if elapsed > highlightDuration*2 {
+		delete(m.changedAt, field)
+		delete(m.deltaTokens, field)
+		return false
+	}
+
+	return elapsed < highlightDuration
 }
 
 // isHighlighted checks if a field should be highlighted with color (recently changed AND color enabled)
@@ -742,30 +763,51 @@ func (m Model) watchFile() tea.Msg {
 }
 
 // waitForFileChange returns a command that waits for file changes or shutdown
+// Uses a loop instead of recursion to avoid unbounded goroutine spawning
 func (m Model) waitForFileChange() tea.Cmd {
 	return func() tea.Msg {
+		// Check shutdown flag before starting
+		if m.closing != nil && m.closing.Load() {
+			return nil
+		}
 		if m.watcher == nil || m.done == nil {
 			return nil
 		}
 
-		select {
-		case <-m.done:
-			// Shutdown signal received
+		// Ensure only one watcher goroutine runs at a time
+		// If another is already watching, exit early
+		if m.watching != nil && !m.watching.CompareAndSwap(false, true) {
 			return nil
-		case event, ok := <-m.watcher.Events:
-			if !ok {
+		}
+		// Mark as not watching when this goroutine exits
+		defer func() {
+			if m.watching != nil {
+				m.watching.Store(false)
+			}
+		}()
+
+		// Loop within this goroutine to avoid recursive goroutine creation
+		for {
+			select {
+			case <-m.done:
+				// Shutdown signal received
 				return nil
+			case event, ok := <-m.watcher.Events:
+				if !ok {
+					return nil
+				}
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					return fileChangedMsg{}
+				}
+				// For other events (chmod, rename, etc.), continue looping
+				// instead of spawning a new goroutine
+				continue
+			case err, ok := <-m.watcher.Errors:
+				if !ok {
+					return nil
+				}
+				return errorMsg(err)
 			}
-			if event.Op&fsnotify.Write == fsnotify.Write {
-				return fileChangedMsg{}
-			}
-			// For other events, keep waiting
-			return m.waitForFileChange()()
-		case err, ok := <-m.watcher.Errors:
-			if !ok {
-				return nil
-			}
-			return errorMsg(err)
 		}
 	}
 }
