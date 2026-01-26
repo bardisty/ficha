@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bah/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/models"
 )
 
 func TestGetLatestSession(t *testing.T) {

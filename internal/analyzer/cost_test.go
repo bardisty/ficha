@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/bah/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/models"
 )
 
 func almostEqual(a, b, tolerance float64) bool {
@@ -30,8 +30,8 @@ func TestCalculateCost(t *testing.T) {
 		{
 			name: "with cache read",
 			usage: models.TokenUsage{
-				InputTokens:         500_000,
-				OutputTokens:        100_000,
+				InputTokens:          500_000,
+				OutputTokens:         100_000,
 				CacheReadInputTokens: 500_000,
 			},
 			modelID:       "claude-sonnet-4-5",
@@ -84,7 +84,7 @@ func TestCalculateCost(t *testing.T) {
 func TestCalculateCostCacheSavings(t *testing.T) {
 	// Cache read tokens should show 90% savings compared to full input price
 	usage := models.TokenUsage{
-		InputTokens:         0,
+		InputTokens:          0,
 		CacheReadInputTokens: 1_000_000, // 1M tokens cached
 	}
 

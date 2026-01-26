@@ -63,7 +63,7 @@ cmd/root.go → cmd/{show,list,summary,watch}.go
 Sessions are stored in `~/.claude/projects/{encoded-path}/`:
 - `sessions-index.json`: Session metadata index
 - `{session-id}.jsonl`: Message history files
-- Agent sub-sessions are discovered via `parentSessionId` field
+- Agent sub-sessions in `{session-id}/subagents/agent-*.jsonl`
 
 ### Cost Calculation
 

@@ -6,12 +6,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bah/ccusage/internal/analyzer"
-	"github.com/bah/ccusage/internal/formatter"
-	"github.com/bah/ccusage/internal/models"
-	"github.com/bah/ccusage/internal/parser"
-	"github.com/bah/ccusage/internal/paths"
-	"github.com/bah/ccusage/internal/tui"
+	"github.com/bardisty/ccusage/internal/analyzer"
+	"github.com/bardisty/ccusage/internal/formatter"
+	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/parser"
+	"github.com/bardisty/ccusage/internal/paths"
+	"github.com/bardisty/ccusage/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )

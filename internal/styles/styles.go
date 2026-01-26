@@ -110,3 +110,48 @@ var (
 // Dim style for extra decimal precision in costs
 var DimStyle = lipgloss.NewStyle().
 	Foreground(SecondaryColor)
+
+// Model-specific colors (by tier)
+var (
+	OpusColor   = lipgloss.Color("99")  // Purple - premium tier
+	SonnetColor = lipgloss.Color("75")  // Blue - mid tier
+	HaikuColor  = lipgloss.Color("43")  // Cyan/Teal - lightweight tier
+)
+
+// Token type colors
+var (
+	OutputTokenColor     = lipgloss.Color("75")  // Light blue
+	CacheWriteTokenColor = lipgloss.Color("214") // Warm orange - cost investment
+	CacheReadTokenColor  = lipgloss.Color("43")  // Cyan - efficiency/savings
+)
+
+// Cost magnitude colors (for relative cost shading)
+var (
+	CostHighColor   = lipgloss.Color("255") // Bright white - high proportion
+	CostMediumColor = lipgloss.Color("250") // Normal white - medium proportion
+	CostLowColor    = lipgloss.Color("240") // Dimmed - low proportion
+)
+
+// Context usage level colors
+var (
+	ContextLowColor      = SuccessColor          // Green - 0-50%
+	ContextMediumColor   = WarningColor          // Yellow - 50-75%
+	ContextHighColor     = lipgloss.Color("214") // Orange - 75-90%
+	ContextCriticalColor = ErrorColor            // Red - 90%+
+	ContextFreeColor     = lipgloss.Color("252") // Bright gray - clearly visible free space
+	ContextBufferColor   = lipgloss.Color("236") // Dark gray - reserved buffer (distinct from free)
+)
+
+// GetContextUsageColor returns the appropriate color based on context usage percentage
+func GetContextUsageColor(usagePct float64) lipgloss.Color {
+	switch {
+	case usagePct >= 90:
+		return ContextCriticalColor
+	case usagePct >= 75:
+		return ContextHighColor
+	case usagePct >= 50:
+		return ContextMediumColor
+	default:
+		return ContextLowColor
+	}
+}

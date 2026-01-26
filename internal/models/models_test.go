@@ -176,3 +176,52 @@ func TestDurationMethod(t *testing.T) {
 		t.Errorf("Duration() returned incorrect value")
 	}
 }
+
+func TestContextWindowSize(t *testing.T) {
+	tests := []struct {
+		name     string
+		usage    TokenUsage
+		expected int
+	}{
+		{
+			name:     "all zero",
+			usage:    TokenUsage{},
+			expected: 0,
+		},
+		{
+			name: "input only",
+			usage: TokenUsage{
+				InputTokens: 100,
+			},
+			expected: 100,
+		},
+		{
+			name: "all token types",
+			usage: TokenUsage{
+				InputTokens:              18,
+				CacheCreationInputTokens: 21900,
+				CacheReadInputTokens:     20700,
+			},
+			expected: 42618,
+		},
+		{
+			name: "typical session message",
+			usage: TokenUsage{
+				InputTokens:              500,
+				OutputTokens:             1000, // Output tokens are NOT included
+				CacheCreationInputTokens: 5000,
+				CacheReadInputTokens:     30000,
+			},
+			expected: 35500,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.usage.ContextWindowSize()
+			if result != tt.expected {
+				t.Errorf("ContextWindowSize(): got %d, want %d", result, tt.expected)
+			}
+		})
+	}
+}

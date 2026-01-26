@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bah/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/models"
 )
 
 // FormatSessionCSV formats a session analysis as CSV

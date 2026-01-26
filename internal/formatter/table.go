@@ -5,9 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bah/ccusage/internal/models"
-	"github.com/bah/ccusage/internal/pricing"
-	"github.com/bah/ccusage/internal/styles"
+	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/pricing"
+	"github.com/bardisty/ccusage/internal/styles"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Local aliases for frequently used styles
@@ -184,24 +185,90 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 func formatTokenBreakdown(analysis *models.SessionAnalysis, noColor bool) string {
 	var sb strings.Builder
 
-	title := "Token Breakdown"
+	title := "Token Breakdown (Cumulative)"
 	if !noColor {
 		title = headerStyle.Render(title)
 	}
 	sb.WriteString(title + "\n")
 
 	usage := analysis.TotalUsage
-	sb.WriteString(fmt.Sprintf("  Input tokens:       %12s\n", formatNumber(usage.InputTokens)))
-	sb.WriteString(fmt.Sprintf("  Output tokens:      %12s\n", formatNumber(usage.OutputTokens)))
-	sb.WriteString(fmt.Sprintf("  Cache write tokens: %12s\n", formatNumber(usage.CacheCreationInputTokens)))
-	sb.WriteString(fmt.Sprintf("  Cache read tokens:  %12s\n", formatNumber(usage.CacheReadInputTokens)))
+	msgCount := analysis.MessageCount
+
+	// Format each row with per-message average (dimmed in color mode)
+	formatAvgStyled := func(total, count int) string {
+		avg := formatAvg(total, count)
+		if !noColor && avg != "" {
+			return styles.DimStyle.Render(avg)
+		}
+		return avg
+	}
+
+	sb.WriteString(fmt.Sprintf("  Input tokens:       %12s  %s\n",
+		formatNumber(usage.InputTokens), formatAvgStyled(usage.InputTokens, msgCount)))
+	sb.WriteString(fmt.Sprintf("  Output tokens:      %12s  %s\n",
+		formatNumber(usage.OutputTokens), formatAvgStyled(usage.OutputTokens, msgCount)))
+	sb.WriteString(fmt.Sprintf("  Cache write tokens: %12s  %s\n",
+		formatNumber(usage.CacheCreationInputTokens), formatAvgStyled(usage.CacheCreationInputTokens, msgCount)))
+	sb.WriteString(fmt.Sprintf("  Cache read tokens:  %12s  %s\n",
+		formatNumber(usage.CacheReadInputTokens), formatAvgStyled(usage.CacheReadInputTokens, msgCount)))
 
 	if usage.CacheCreation != nil {
 		sb.WriteString(fmt.Sprintf("    - 5m TTL:         %12s\n", formatNumber(usage.CacheCreation.Ephemeral5mInputTokens)))
 		sb.WriteString(fmt.Sprintf("    - 1h TTL:         %12s\n", formatNumber(usage.CacheCreation.Ephemeral1hInputTokens)))
 	}
 
+	// Context window: last message's total input tokens (matches /context)
+	contextSize := analysis.LastMessageUsage.ContextWindowSize()
+	if contextSize > 0 {
+		modelPricing := pricing.GetModelPricing(analysis.LastMessageModel)
+		maxContext := modelPricing.MaxContextTokens
+		contextPct := pricing.GetContextPercentage(modelPricing, contextSize)
+		freeSpace := pricing.GetFreeSpace(modelPricing, contextSize)
+		buffer := pricing.GetAutocompactBuffer(modelPricing)
+		freePct := float64(freeSpace) / float64(maxContext) * 100
+
+		// Get usage color based on context percentage
+		usageColor := styles.GetContextUsageColor(contextPct)
+
+		// Context window header with dynamic color
+		contextVal := formatNumber(contextSize)
+		if !noColor {
+			coloredMeta := lipgloss.NewStyle().Foreground(usageColor).Render(
+				fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(maxContext)))
+			sb.WriteString(fmt.Sprintf("\n  Context Window:     %12s  %s\n",
+				contextVal, coloredMeta))
+		} else {
+			sb.WriteString(fmt.Sprintf("\n  Context Window:     %12s  (%.0f%% of %s)\n",
+				contextVal, contextPct, formatNumber(maxContext)))
+		}
+
+		// Progress bar
+		sb.WriteString(fmt.Sprintf("    %s\n", formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, noColor)))
+
+		// Single line with Free space and Buffer (text colors hint at bar sections but stay readable)
+		freeVal := formatNumber(freeSpace)
+		bufferVal := formatNumber(buffer)
+		if !noColor {
+			// Moderate colors: Free slightly brighter, Buffer slightly dimmer (both readable)
+			freeStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(fmt.Sprintf("Free: %s (%.1f%%)", freeVal, freePct))
+			bufferStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(fmt.Sprintf("Buffer: %s (reserved)", bufferVal))
+			sepStyled := styles.DimStyle.Render("│")
+			sb.WriteString(fmt.Sprintf("    %s  %s  %s\n", freeStyled, sepStyled, bufferStyled))
+		} else {
+			sb.WriteString(fmt.Sprintf("    Free: %s (%.1f%%)  │  Buffer: %s (reserved)\n", freeVal, freePct, bufferVal))
+		}
+	}
+
 	return sb.String()
+}
+
+// formatAvg formats a per-message average
+func formatAvg(total int, msgCount int) string {
+	if msgCount == 0 {
+		return ""
+	}
+	avg := total / msgCount
+	return fmt.Sprintf("(avg: %s/msg)", formatNumber(avg))
 }
 
 // formatCostByModel formats cost breakdown by model
@@ -335,4 +402,59 @@ func truncateID(id string) string {
 		return id
 	}
 	return id[:37] + "..."
+}
+
+// formatContextProgressBar creates a visual progress bar showing context usage
+// Bar segments: used (█), free (░), buffer (▒)
+// Total width: 50 characters
+func formatContextProgressBar(contextSize, freeSpace, buffer, maxContext int, noColor bool) string {
+	const barWidth = 50
+
+	if maxContext == 0 {
+		return strings.Repeat("░", barWidth)
+	}
+
+	// Calculate proportions
+	usedRatio := float64(contextSize) / float64(maxContext)
+	freeRatio := float64(freeSpace) / float64(maxContext)
+
+	// Convert to bar segments
+	usedChars := int(usedRatio * float64(barWidth))
+	freeChars := int(freeRatio * float64(barWidth))
+	bufferChars := barWidth - usedChars - freeChars
+
+	// Ensure we don't go negative due to rounding
+	if bufferChars < 0 {
+		bufferChars = 0
+	}
+	// Adjust for rounding to hit exactly barWidth
+	total := usedChars + freeChars + bufferChars
+	if total < barWidth {
+		freeChars += barWidth - total
+	} else if total > barWidth {
+		if freeChars > 0 {
+			freeChars -= total - barWidth
+		} else if usedChars > 0 {
+			usedChars -= total - barWidth
+		}
+	}
+
+	usedStr := strings.Repeat("█", usedChars)
+	freeStr := strings.Repeat("░", freeChars)
+	bufferStr := strings.Repeat("▒", bufferChars)
+
+	if noColor {
+		return "[" + usedStr + freeStr + bufferStr + "]"
+	}
+
+	// Get usage color based on percentage - only the used portion is colored
+	usagePct := usedRatio * 100
+	usageColor := styles.GetContextUsageColor(usagePct)
+
+	// Free space is neutral light gray for contrast, buffer is darker gray
+	usedStyled := lipgloss.NewStyle().Foreground(usageColor).Render(usedStr)
+	freeStyled := lipgloss.NewStyle().Foreground(styles.ContextFreeColor).Render(freeStr)
+	bufferStyled := lipgloss.NewStyle().Foreground(styles.ContextBufferColor).Render(bufferStr)
+
+	return "[" + usedStyled + freeStyled + bufferStyled + "]"
 }

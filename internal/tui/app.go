@@ -2,14 +2,17 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/bah/ccusage/internal/analyzer"
-	"github.com/bah/ccusage/internal/models"
-	"github.com/bah/ccusage/internal/pricing"
+	"github.com/bardisty/ccusage/internal/analyzer"
+	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/pricing"
+	"github.com/bardisty/ccusage/internal/styles"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -43,10 +46,10 @@ type Model struct {
 
 // Messages
 type (
-	analysisMsg   *models.SessionAnalysis
-	errorMsg      error
+	analysisMsg    *models.SessionAnalysis
+	errorMsg       error
 	fileChangedMsg struct{}
-	tickMsg       time.Time
+	tickMsg        time.Time
 )
 
 // NewModel creates a new TUI model
@@ -214,6 +217,13 @@ func (m *Model) detectChanges(old, new *models.SessionAnalysis) {
 		}
 	}
 
+	// Compare context window values
+	oldContextSize := old.LastMessageUsage.ContextWindowSize()
+	newContextSize := new.LastMessageUsage.ContextWindowSize()
+	if oldContextSize != newContextSize {
+		m.changedAt["context_window"] = now
+	}
+
 	// Compare agent breakdown
 	if old.ParentCost.TotalCost != new.ParentCost.TotalCost {
 		m.changedAt["parent_cost"] = now
@@ -378,8 +388,8 @@ func (m Model) renderAnalysis() string {
 	// Footer with message count highlight and delta
 	sb.WriteString("\n")
 	var footerLine string
-	changed := m.recentlyChanged("messages")     // Use for delta display (works in noColor mode)
-	highlighted := m.isHighlighted("messages")   // Use for styling (false in noColor mode)
+	changed := m.recentlyChanged("messages")   // Use for delta display (works in noColor mode)
+	highlighted := m.isHighlighted("messages") // Use for styling (false in noColor mode)
 	if changed {
 		// Show delta when recently changed
 		var msgStr string
@@ -490,37 +500,128 @@ func (m Model) renderAnalysisPlain() string {
 func (m Model) renderTokenBreakdown() string {
 	var sb strings.Builder
 
-	title := "Token Breakdown"
+	title := "Token Breakdown (Cumulative)"
 	if !m.noColor {
 		title = headerStyle.Render(title)
 	}
 	sb.WriteString(title + "\n")
 
 	u := m.analysis.TotalUsage
+	msgCount := m.analysis.MessageCount
 
-	// Helper to format a token line with optional highlight and delta
-	formatLine := func(label, field string, value int) string {
-		changed := m.recentlyChanged(field) // Use for delta display (works in noColor mode)
-		highlighted := m.isHighlighted(field) // Use for styling (false in noColor mode)
-		delta := m.deltaTokens[field]
-
-		if changed {
-			valStr := formatNumberWithDelta(value, delta, true)
-			if highlighted {
-				return fmt.Sprintf("  %-20s %s\n", label, highlightStyle.Render(valStr))
-			}
-			// noColor mode: show delta but without highlight styling
-			return fmt.Sprintf("  %-20s %s\n", label, valStr)
-		}
-		return fmt.Sprintf("  %-20s %12s\n", label, formatNumber(value))
+	// Token type colors for labels
+	type tokenRow struct {
+		label string
+		field string
+		value int
+		color lipgloss.Color
 	}
 
-	sb.WriteString(formatLine("Input tokens:", "input_tokens", u.InputTokens))
-	sb.WriteString(formatLine("Output tokens:", "output_tokens", u.OutputTokens))
-	sb.WriteString(formatLine("Cache write tokens:", "cache_write_tokens", u.CacheCreationInputTokens))
-	sb.WriteString(formatLine("Cache read tokens:", "cache_read_tokens", u.CacheReadInputTokens))
+	rows := []tokenRow{
+		{"Input tokens:", "input_tokens", u.InputTokens, lipgloss.Color("")},                // Default (no special color)
+		{"Output tokens:", "output_tokens", u.OutputTokens, styles.OutputTokenColor},        // Light blue
+		{"Cache write tokens:", "cache_write_tokens", u.CacheCreationInputTokens, styles.CacheWriteTokenColor}, // Orange
+		{"Cache read tokens:", "cache_read_tokens", u.CacheReadInputTokens, styles.CacheReadTokenColor},        // Cyan
+	}
+
+	for _, row := range rows {
+		changed := m.recentlyChanged(row.field)   // Use for delta display (works in noColor mode)
+		highlighted := m.isHighlighted(row.field) // Use for styling (false in noColor mode)
+		delta := m.deltaTokens[row.field]
+
+		// Format the label with optional color
+		var labelStr string
+		if !m.noColor && row.color != "" {
+			labelStyle := lipgloss.NewStyle().Foreground(row.color)
+			labelStr = labelStyle.Render(fmt.Sprintf("%-20s", row.label))
+		} else {
+			labelStr = fmt.Sprintf("%-20s", row.label)
+		}
+
+		// Per-message average (dimmed in color mode)
+		avgStr := formatAvg(row.value, msgCount)
+		if !m.noColor && avgStr != "" {
+			avgStr = dimStyle.Render(avgStr)
+		}
+
+		if changed {
+			valStr := formatNumberWithDelta(row.value, delta, true)
+			if highlighted {
+				sb.WriteString(fmt.Sprintf("  %s %s  %s\n", labelStr, highlightStyle.Render(valStr), avgStr))
+			} else {
+				// noColor mode: show delta but without highlight styling
+				sb.WriteString(fmt.Sprintf("  %s %s  %s\n", labelStr, valStr, avgStr))
+			}
+		} else {
+			sb.WriteString(fmt.Sprintf("  %s %12s  %s\n", labelStr, formatNumber(row.value), avgStr))
+		}
+	}
+
+	// Context window: last message's total input tokens (matches /context)
+	contextSize := m.analysis.LastMessageUsage.ContextWindowSize()
+	if contextSize > 0 {
+		modelPricing := pricing.GetModelPricing(m.analysis.LastMessageModel)
+		maxContext := modelPricing.MaxContextTokens
+		contextPct := pricing.GetContextPercentage(modelPricing, contextSize)
+		freeSpace := pricing.GetFreeSpace(modelPricing, contextSize)
+		buffer := pricing.GetAutocompactBuffer(modelPricing)
+		freePct := float64(freeSpace) / float64(maxContext) * 100
+
+		highlighted := m.isHighlighted("context_window")
+
+		// Get usage color based on context percentage
+		usageColor := styles.GetContextUsageColor(contextPct)
+
+		// Format context window line with dynamic color
+		contextVal := formatNumber(contextSize)
+		contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(maxContext))
+		if highlighted {
+			sb.WriteString(fmt.Sprintf("\n  Context Window:    %s  %s\n",
+				highlightStyle.Render(fmt.Sprintf("%12s", contextVal)),
+				dimStyle.Render(contextMeta)))
+		} else if !m.noColor {
+			// Apply usage-level color to the percentage
+			coloredMeta := lipgloss.NewStyle().Foreground(usageColor).Render(
+				fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(maxContext)))
+			sb.WriteString(fmt.Sprintf("\n  Context Window:    %12s  %s\n",
+				contextVal, coloredMeta))
+		} else {
+			sb.WriteString(fmt.Sprintf("\n  Context Window:    %12s  %s\n",
+				contextVal, contextMeta))
+		}
+
+		// Progress bar
+		sb.WriteString(fmt.Sprintf("    %s\n", formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, m.noColor)))
+
+		// Single line with Free space and Buffer (text colors hint at bar sections but stay readable)
+		freeVal := formatNumber(freeSpace)
+		bufferVal := formatNumber(buffer)
+		if !m.noColor {
+			// Free text highlights yellow when context changes, otherwise slightly brighter
+			var freeStyled string
+			if highlighted {
+				freeStyled = highlightStyle.Render(fmt.Sprintf("Free: %s (%.1f%%)", freeVal, freePct))
+			} else {
+				freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(fmt.Sprintf("Free: %s (%.1f%%)", freeVal, freePct))
+			}
+			bufferStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(fmt.Sprintf("Buffer: %s (reserved)", bufferVal))
+			sepStyled := dimStyle.Render("│")
+			sb.WriteString(fmt.Sprintf("    %s  %s  %s\n", freeStyled, sepStyled, bufferStyled))
+		} else {
+			sb.WriteString(fmt.Sprintf("    Free: %s (%.1f%%)  │  Buffer: %s (reserved)\n", freeVal, freePct, bufferVal))
+		}
+	}
 
 	return sb.String()
+}
+
+// formatAvg formats a per-message average
+func formatAvg(total int, msgCount int) string {
+	if msgCount == 0 {
+		return ""
+	}
+	avg := total / msgCount
+	return fmt.Sprintf("(avg: %s/msg)", formatNumber(avg))
 }
 
 func (m Model) renderCostByModel() string {
@@ -532,11 +633,38 @@ func (m Model) renderCostByModel() string {
 	}
 	sb.WriteString(title + "\n")
 
-	for modelID, cost := range m.analysis.CostByModel {
-		modelName := pricing.GetModelDisplayName(modelID)
-		highlighted := m.isHighlighted("model_" + modelID)
-		costStr := formatCostStyled(cost.TotalCost, 14, highlighted, m.noColor)
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", modelName+":", costStr))
+	// Extract and sort by cost (highest first)
+	type modelCost struct {
+		id   string
+		cost float64
+	}
+	models := make([]modelCost, 0, len(m.analysis.CostByModel))
+	for id, breakdown := range m.analysis.CostByModel {
+		models = append(models, modelCost{id, breakdown.TotalCost})
+	}
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].cost > models[j].cost
+	})
+
+	totalCost := m.analysis.TotalCost.TotalCost
+	for _, mc := range models {
+		cost := m.analysis.CostByModel[mc.id]
+		modelName := pricing.GetModelDisplayName(mc.id)
+		highlighted := m.isHighlighted("model_" + mc.id)
+
+		// Apply model color to the label
+		var labelStr string
+		if !m.noColor {
+			modelColor := getModelColor(mc.id)
+			labelStyle := lipgloss.NewStyle().Foreground(modelColor)
+			labelStr = labelStyle.Render(fmt.Sprintf("%-20s", modelName+":"))
+		} else {
+			labelStr = fmt.Sprintf("%-20s", modelName+":")
+		}
+
+		// Apply cost magnitude shading
+		costStr := formatCostStyledWithMagnitude(cost.TotalCost, 14, highlighted, m.noColor, totalCost)
+		sb.WriteString(fmt.Sprintf("  %s %s\n", labelStr, costStr))
 	}
 
 	return sb.String()
@@ -552,22 +680,24 @@ func (m Model) renderAgentBreakdown() string {
 	}
 	sb.WriteString(title + "\n")
 
-	// Show parent session cost with highlight
+	totalCost := a.TotalCost.TotalCost
+
+	// Show parent session cost with highlight and magnitude shading
 	parentHighlighted := m.isHighlighted("parent_cost")
-	parentCostStr := formatCostStyled(a.ParentCost.TotalCost, 14, parentHighlighted, m.noColor)
+	parentCostStr := formatCostStyledWithMagnitude(a.ParentCost.TotalCost, 14, parentHighlighted, m.noColor, totalCost)
 	sb.WriteString(fmt.Sprintf("  %-20s %s\n", "Parent session:", parentCostStr))
 
-	// Show each agent with highlight
+	// Show each agent with highlight and magnitude shading
 	for _, agent := range a.Agents {
 		label := fmt.Sprintf("Agent %s:", agent.AgentID)
 		agentHighlighted := m.isHighlighted("agent_" + agent.AgentID)
-		costStr := formatCostStyled(agent.TotalCost.TotalCost, 14, agentHighlighted, m.noColor)
+		costStr := formatCostStyledWithMagnitude(agent.TotalCost.TotalCost, 14, agentHighlighted, m.noColor, totalCost)
 		sb.WriteString(fmt.Sprintf("  %-20s %s  (%d msgs)\n", label, costStr, agent.MessageCount))
 	}
 
-	// Show agents subtotal with highlight
+	// Show agents subtotal with highlight and magnitude shading
 	subtotalHighlighted := m.isHighlighted("agents_subtotal")
-	subtotalStr := formatCostStyled(a.AgentsCost.TotalCost, 14, subtotalHighlighted, m.noColor)
+	subtotalStr := formatCostStyledWithMagnitude(a.AgentsCost.TotalCost, 14, subtotalHighlighted, m.noColor, totalCost)
 	sb.WriteString(fmt.Sprintf("  %-20s %s\n", "Agents subtotal:", subtotalStr))
 
 	return sb.String()
@@ -684,6 +814,46 @@ func formatCostStyled(cost float64, width int, highlighted bool, noColor bool) s
 	return padding + main + dimStyle.Render(extra)
 }
 
+// formatCostStyledWithMagnitude returns a cost string with magnitude-based coloring
+// Higher costs relative to total are brighter, lower costs are dimmer
+func formatCostStyledWithMagnitude(cost float64, width int, highlighted bool, noColor bool, total float64) string {
+	// Format to 6 decimal places: "$123.456789"
+	full := fmt.Sprintf("$%.6f", cost)
+	plainLen := len(full)
+
+	// Calculate padding needed
+	padding := ""
+	if width > plainLen {
+		padding = strings.Repeat(" ", width-plainLen)
+	}
+
+	if noColor {
+		return padding + full
+	}
+
+	// Split into main ($X.XX) and extra (XXXX) parts
+	dotIdx := strings.Index(full, ".")
+	if dotIdx == -1 || len(full) <= dotIdx+3 {
+		if highlighted {
+			return padding + highlightStyle.Render(full)
+		}
+		magnitudeColor := getCostMagnitudeColor(cost, total)
+		return padding + lipgloss.NewStyle().Foreground(magnitudeColor).Render(full)
+	}
+
+	main := full[:dotIdx+3]  // "$123.45"
+	extra := full[dotIdx+3:] // "6789"
+
+	if highlighted {
+		return padding + highlightStyle.Render(main+extra)
+	}
+
+	// Apply magnitude coloring to main part, dim the extra
+	magnitudeColor := getCostMagnitudeColor(cost, total)
+	mainStyled := lipgloss.NewStyle().Foreground(magnitudeColor).Render(main)
+	return padding + mainStyled + dimStyle.Render(extra)
+}
+
 func formatNumber(n int) string {
 	if n >= 1000000 {
 		return fmt.Sprintf("%.2fM", float64(n)/1000000)
@@ -727,4 +897,90 @@ func truncateID(id string) string {
 		return id
 	}
 	return id[:37] + "..."
+}
+
+// getModelColor returns the appropriate color for a model based on its tier
+func getModelColor(modelID string) lipgloss.Color {
+	modelLower := strings.ToLower(modelID)
+	switch {
+	case strings.Contains(modelLower, "opus"):
+		return styles.OpusColor
+	case strings.Contains(modelLower, "sonnet"):
+		return styles.SonnetColor
+	case strings.Contains(modelLower, "haiku"):
+		return styles.HaikuColor
+	default:
+		return styles.SecondaryColor
+	}
+}
+
+// getCostMagnitudeColor returns a color based on the cost's proportion of total
+func getCostMagnitudeColor(cost, total float64) lipgloss.Color {
+	if total == 0 {
+		return styles.CostMediumColor
+	}
+	proportion := cost / total
+	switch {
+	case proportion > 0.5:
+		return styles.CostHighColor
+	case proportion >= 0.1:
+		return styles.CostMediumColor
+	default:
+		return styles.CostLowColor
+	}
+}
+
+// formatContextProgressBar creates a visual progress bar showing context usage
+// Bar segments: used (█), free (░), buffer (▒)
+// Total width: 50 characters
+func formatContextProgressBar(contextSize, freeSpace, buffer, maxContext int, noColor bool) string {
+	const barWidth = 50
+
+	if maxContext == 0 {
+		return strings.Repeat("░", barWidth)
+	}
+
+	// Calculate proportions
+	usedRatio := float64(contextSize) / float64(maxContext)
+	freeRatio := float64(freeSpace) / float64(maxContext)
+
+	// Convert to bar segments
+	usedChars := int(usedRatio * float64(barWidth))
+	freeChars := int(freeRatio * float64(barWidth))
+	bufferChars := barWidth - usedChars - freeChars
+
+	// Ensure we don't go negative due to rounding
+	if bufferChars < 0 {
+		bufferChars = 0
+	}
+	// Adjust for rounding to hit exactly barWidth
+	total := usedChars + freeChars + bufferChars
+	if total < barWidth {
+		freeChars += barWidth - total
+	} else if total > barWidth {
+		if freeChars > 0 {
+			freeChars -= total - barWidth
+		} else if usedChars > 0 {
+			usedChars -= total - barWidth
+		}
+	}
+
+	usedStr := strings.Repeat("█", usedChars)
+	freeStr := strings.Repeat("░", freeChars)
+	bufferStr := strings.Repeat("▒", bufferChars)
+
+	if noColor {
+		return "[" + usedStr + freeStr + bufferStr + "]"
+	}
+
+	// Get usage color based on percentage - only the used portion is colored
+	usagePct := usedRatio * 100
+	usageColor := styles.GetContextUsageColor(usagePct)
+
+	// Free space is neutral light gray for contrast, buffer is darker gray
+	usedStyled := lipgloss.NewStyle().Foreground(usageColor).Render(usedStr)
+	freeStyled := lipgloss.NewStyle().Foreground(styles.ContextFreeColor).Render(freeStr)
+	bufferStyled := lipgloss.NewStyle().Foreground(styles.ContextBufferColor).Render(bufferStr)
+
+	return "[" + usedStyled + freeStyled + bufferStyled + "]"
 }

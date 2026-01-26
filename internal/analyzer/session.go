@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/bah/ccusage/internal/models"
-	"github.com/bah/ccusage/internal/parser"
+	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/parser"
 )
 
 // AnalyzeSession analyzes a session JSONL file and returns the complete analysis
@@ -188,6 +188,11 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 	if includeMessages {
 		analysis.Messages = messageAnalyses
 	}
+
+	// Capture last message usage and model for context window calculation
+	lastMsg := messageAnalyses[len(messageAnalyses)-1]
+	analysis.LastMessageUsage = lastMsg.Usage
+	analysis.LastMessageModel = lastMsg.Model
 
 	return analysis
 }

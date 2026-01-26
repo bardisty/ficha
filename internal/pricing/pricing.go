@@ -4,8 +4,9 @@ import "strings"
 
 // ModelPricing contains pricing information for a model (per million tokens)
 type ModelPricing struct {
-	InputRate  float64 // Cost per million input tokens
-	OutputRate float64 // Cost per million output tokens
+	InputRate        float64 // Cost per million input tokens
+	OutputRate       float64 // Cost per million output tokens
+	MaxContextTokens int     // Maximum context window size in tokens
 }
 
 // Cache multipliers (relative to input rate)
@@ -15,69 +16,87 @@ const (
 	CacheReadMultiplier    = 0.1  // Cache read
 )
 
+// Context window constants
+const (
+	AutocompactBufferRatio = 0.225 // 22.5% of max context reserved for autocompact
+)
+
 // Model pricing constants (per million tokens)
 var modelPricing = map[string]ModelPricing{
 	// Opus 4.5
 	"claude-opus-4-5": {
-		InputRate:  5.00,
-		OutputRate: 25.00,
+		InputRate:        5.00,
+		OutputRate:       25.00,
+		MaxContextTokens: 200000,
 	},
 	// Opus 4.1
 	"claude-opus-4-1": {
-		InputRate:  15.00,
-		OutputRate: 75.00,
+		InputRate:        15.00,
+		OutputRate:       75.00,
+		MaxContextTokens: 200000,
 	},
 	// Opus 4
 	"claude-opus-4": {
-		InputRate:  15.00,
-		OutputRate: 75.00,
+		InputRate:        15.00,
+		OutputRate:       75.00,
+		MaxContextTokens: 200000,
 	},
 	// Sonnet 4.5
 	"claude-sonnet-4-5": {
-		InputRate:  3.00,
-		OutputRate: 15.00,
+		InputRate:        3.00,
+		OutputRate:       15.00,
+		MaxContextTokens: 200000,
 	},
 	// Sonnet 4
 	"claude-sonnet-4": {
-		InputRate:  3.00,
-		OutputRate: 15.00,
+		InputRate:        3.00,
+		OutputRate:       15.00,
+		MaxContextTokens: 200000,
 	},
 	// Haiku 4.5
 	"claude-haiku-4-5": {
-		InputRate:  1.00,
-		OutputRate: 5.00,
+		InputRate:        1.00,
+		OutputRate:       5.00,
+		MaxContextTokens: 200000,
 	},
 	// Legacy/fallback models
 	"claude-sonnet-3-7": {
-		InputRate:  3.00,
-		OutputRate: 15.00,
+		InputRate:        3.00,
+		OutputRate:       15.00,
+		MaxContextTokens: 200000,
 	},
 	"claude-3-5-sonnet": {
-		InputRate:  3.00,
-		OutputRate: 15.00,
+		InputRate:        3.00,
+		OutputRate:       15.00,
+		MaxContextTokens: 200000,
 	},
 	"claude-3-5-haiku": {
-		InputRate:  0.80,
-		OutputRate: 4.00,
+		InputRate:        0.80,
+		OutputRate:       4.00,
+		MaxContextTokens: 200000,
 	},
 	"claude-3-opus": {
-		InputRate:  15.00,
-		OutputRate: 75.00,
+		InputRate:        15.00,
+		OutputRate:       75.00,
+		MaxContextTokens: 200000,
 	},
 	"claude-3-sonnet": {
-		InputRate:  3.00,
-		OutputRate: 15.00,
+		InputRate:        3.00,
+		OutputRate:       15.00,
+		MaxContextTokens: 200000,
 	},
 	"claude-3-haiku": {
-		InputRate:  0.25,
-		OutputRate: 1.25,
+		InputRate:        0.25,
+		OutputRate:       1.25,
+		MaxContextTokens: 200000,
 	},
 }
 
 // Default pricing for unknown models (use Sonnet pricing as safe default)
 var defaultPricing = ModelPricing{
-	InputRate:  3.00,
-	OutputRate: 15.00,
+	InputRate:        3.00,
+	OutputRate:       15.00,
+	MaxContextTokens: 200000,
 }
 
 // GetModelPricing returns the pricing for a model ID
@@ -165,4 +184,28 @@ func GetCacheWrite1hRate(pricing ModelPricing) float64 {
 // GetCacheReadRate returns the cache read rate
 func GetCacheReadRate(pricing ModelPricing) float64 {
 	return pricing.InputRate * CacheReadMultiplier
+}
+
+// GetAutocompactBuffer returns the autocompact buffer size in tokens for a model
+func GetAutocompactBuffer(pricing ModelPricing) int {
+	return int(float64(pricing.MaxContextTokens) * AutocompactBufferRatio)
+}
+
+// GetFreeSpace returns the free space in tokens given current context usage
+// Free space = max context - current usage - autocompact buffer
+func GetFreeSpace(pricing ModelPricing, currentUsage int) int {
+	autocompact := GetAutocompactBuffer(pricing)
+	free := pricing.MaxContextTokens - currentUsage - autocompact
+	if free < 0 {
+		return 0
+	}
+	return free
+}
+
+// GetContextPercentage returns the percentage of context used (0-100)
+func GetContextPercentage(pricing ModelPricing, currentUsage int) float64 {
+	if pricing.MaxContextTokens == 0 {
+		return 0
+	}
+	return float64(currentUsage) / float64(pricing.MaxContextTokens) * 100
 }

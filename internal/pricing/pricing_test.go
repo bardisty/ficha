@@ -133,3 +133,42 @@ func TestNormalizeModelID(t *testing.T) {
 		})
 	}
 }
+
+func TestContextWindowFunctions(t *testing.T) {
+	pricing := ModelPricing{
+		InputRate:        5.00,
+		OutputRate:       25.00,
+		MaxContextTokens: 200000,
+	}
+
+	// Test autocompact buffer (22.5% of 200k = 45k)
+	autocompact := GetAutocompactBuffer(pricing)
+	if autocompact != 45000 {
+		t.Errorf("GetAutocompactBuffer: got %d, want 45000", autocompact)
+	}
+
+	// Test context percentage
+	contextPct := GetContextPercentage(pricing, 100000) // 50% usage
+	if contextPct < 49.9 || contextPct > 50.1 {
+		t.Errorf("GetContextPercentage: got %f, want 50.0", contextPct)
+	}
+
+	// Test free space (200k - 100k usage - 45k buffer = 55k)
+	freeSpace := GetFreeSpace(pricing, 100000)
+	if freeSpace != 55000 {
+		t.Errorf("GetFreeSpace: got %d, want 55000", freeSpace)
+	}
+
+	// Test free space when usage exceeds available (should return 0, not negative)
+	freeSpaceExceeded := GetFreeSpace(pricing, 180000) // 180k usage, only 155k available
+	if freeSpaceExceeded != 0 {
+		t.Errorf("GetFreeSpace (exceeded): got %d, want 0", freeSpaceExceeded)
+	}
+
+	// Test context percentage with zero max context
+	zeroPricing := ModelPricing{MaxContextTokens: 0}
+	zeroPct := GetContextPercentage(zeroPricing, 100000)
+	if zeroPct != 0 {
+		t.Errorf("GetContextPercentage (zero max): got %f, want 0", zeroPct)
+	}
+}

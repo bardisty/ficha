@@ -3,7 +3,7 @@ package formatter
 import (
 	"encoding/json"
 
-	"github.com/bah/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/models"
 )
 
 // FormatSessionJSON formats a session analysis as JSON

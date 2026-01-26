@@ -104,6 +104,9 @@ type SessionAnalysis struct {
 	TotalCost     CostBreakdown            `json:"total_cost"`
 	CostByModel   map[string]CostBreakdown `json:"cost_by_model"`
 	Messages      []MessageAnalysis        `json:"messages,omitempty"`
+	// Last message usage for context window calculation (matches /context output)
+	LastMessageUsage TokenUsage `json:"last_message_usage"`
+	LastMessageModel string     `json:"last_message_model"` // Model used for last message (for context limit lookup)
 	// Agent-related fields
 	Agents     []AgentAnalysis `json:"agents,omitempty"`
 	ParentCost CostBreakdown   `json:"parent_cost"`  // Cost excluding agents
@@ -140,6 +143,13 @@ type JSONLMessage struct {
 type AssistantMessage struct {
 	Model string     `json:"model"`
 	Usage TokenUsage `json:"usage"`
+}
+
+// ContextWindowSize returns the total input tokens for a single API call,
+// matching what Claude Code's /context command displays.
+// This is the sum of all input token types: regular, cache write, and cache read.
+func (t TokenUsage) ContextWindowSize() int {
+	return t.InputTokens + t.CacheCreationInputTokens + t.CacheReadInputTokens
 }
 
 // Add aggregates token usage from another TokenUsage

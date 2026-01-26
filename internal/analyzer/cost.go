@@ -1,8 +1,8 @@
 package analyzer
 
 import (
-	"github.com/bah/ccusage/internal/models"
-	"github.com/bah/ccusage/internal/pricing"
+	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/pricing"
 )
 
 // CalculateCost calculates the cost breakdown for a token usage with a specific model

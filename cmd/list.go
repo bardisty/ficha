@@ -5,10 +5,10 @@ import (
 	"os"
 	"sort"
 
-	"github.com/bah/ccusage/internal/formatter"
-	"github.com/bah/ccusage/internal/models"
-	"github.com/bah/ccusage/internal/parser"
-	"github.com/bah/ccusage/internal/paths"
+	"github.com/bardisty/ccusage/internal/formatter"
+	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/parser"
+	"github.com/bardisty/ccusage/internal/paths"
 	"github.com/spf13/cobra"
 )
 

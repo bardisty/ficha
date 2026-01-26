@@ -7,14 +7,14 @@ import (
 	"io"
 	"os"
 
-	"github.com/bah/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/models"
 )
 
 // ParseResult contains the parsed messages and any parse warnings
 type ParseResult struct {
 	Messages     []models.JSONLMessage
-	SkippedLines int      // Number of lines that failed to parse
-	SkippedAt    []int    // Line numbers of skipped lines (1-indexed)
+	SkippedLines int   // Number of lines that failed to parse
+	SkippedAt    []int // Line numbers of skipped lines (1-indexed)
 }
 
 // Warning returns a warning message if any lines were skipped, empty string otherwise

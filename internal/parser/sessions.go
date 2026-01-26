@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bah/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/models"
 )
 
 // ParseSessionsIndex parses a sessions-index.json file
