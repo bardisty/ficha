@@ -112,13 +112,15 @@ type SessionAnalysis struct {
 	LastMessageUsage TokenUsage `json:"last_message_usage"`
 	LastMessageModel string     `json:"last_message_model"` // Model used for last message (for context limit lookup)
 	// Agent-related fields
-	Agents        []AgentAnalysis `json:"agents,omitempty"`
-	ParentCost    CostBreakdown   `json:"parent_cost"`     // Cost excluding agents
-	AgentsCost    CostBreakdown   `json:"agents_cost"`     // Sum of agent costs
-	HasAgents     bool            `json:"has_agents"`
-	AgentCount    int             `json:"agent_count"`
-	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agents that failed to parse
-	SkippedSessions int `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)
+	Agents             []AgentAnalysis `json:"agents,omitempty"`
+	ParentCost         CostBreakdown   `json:"parent_cost"`          // Cost excluding agents
+	AgentsCost         CostBreakdown   `json:"agents_cost"`          // Sum of agent costs
+	HasAgents          bool            `json:"has_agents"`
+	AgentCount         int             `json:"agent_count"`
+	ParentMessageCount int             `json:"parent_message_count"` // Messages from parent session only
+	AgentMessageCount  int             `json:"agent_message_count"`  // Messages from all agents
+	SkippedAgents      int             `json:"skipped_agents,omitempty"`   // Agents that failed to parse
+	SkippedSessions    int             `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)
 }
 
 // SessionEntry represents an entry in sessions-index.json
@@ -129,8 +131,9 @@ type SessionEntry struct {
 	Created      time.Time `json:"created"`
 	Modified     time.Time `json:"modified"`
 	// Agent-related fields
-	AgentPaths []string `json:"agent_paths,omitempty"`
-	AgentCount int      `json:"agent_count"`
+	AgentPaths        []string `json:"agent_paths,omitempty"`
+	AgentCount        int      `json:"agent_count"`
+	AgentMessageCount int      `json:"agent_message_count"` // Messages from agents (for list display)
 }
 
 // SessionsIndex represents the sessions-index.json file

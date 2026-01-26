@@ -104,8 +104,13 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 
 	// Footer
 	sb.WriteString("\n")
-	sb.WriteString(footerStyle.Render(fmt.Sprintf("Messages: %d │ Duration: %s",
-		analysis.MessageCount,
+	msgStr := fmt.Sprintf("%d", analysis.MessageCount)
+	if analysis.AgentMessageCount > 0 {
+		msgStr = fmt.Sprintf("%d (%d parent, %d agents)",
+			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
+	}
+	sb.WriteString(footerStyle.Render(fmt.Sprintf("Messages: %s │ Duration: %s",
+		msgStr,
 		formatDuration(analysis.Duration.Duration()))))
 
 	// Token breakdown (always shown)
@@ -165,8 +170,13 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 
 	sb.WriteString("+---------------------------+----------------+\n")
 
-	sb.WriteString(fmt.Sprintf("\nMessages: %d | Duration: %s",
-		analysis.MessageCount,
+	msgStr := fmt.Sprintf("%d", analysis.MessageCount)
+	if analysis.AgentMessageCount > 0 {
+		msgStr = fmt.Sprintf("%d (%d parent, %d agents)",
+			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
+	}
+	sb.WriteString(fmt.Sprintf("\nMessages: %s | Duration: %s",
+		msgStr,
 		formatDuration(analysis.Duration.Duration())))
 
 	// Token breakdown (always shown)
@@ -330,24 +340,36 @@ func FormatSessionListTable(entries []models.SessionEntry, noColor bool) string 
 	var sb strings.Builder
 
 	if noColor {
-		sb.WriteString(fmt.Sprintf("%-40s  %8s  %6s  %s\n", "Session ID", "Messages", "Agents", "Modified"))
-		sb.WriteString(strings.Repeat("-", 85) + "\n")
+		sb.WriteString(fmt.Sprintf("%-40s  %8s  %13s  %s\n", "Session ID", "Messages", "Agents (msgs)", "Modified"))
+		sb.WriteString(strings.Repeat("-", 93) + "\n")
 	} else {
-		sb.WriteString(headerStyle.Render(fmt.Sprintf("%-40s  %8s  %6s  %s", "Session ID", "Messages", "Agents", "Modified")) + "\n")
-		sb.WriteString(borderStyle.Render(strings.Repeat("─", 85)) + "\n")
+		sb.WriteString(headerStyle.Render(fmt.Sprintf("%-40s  %8s  %13s  %s", "Session ID", "Messages", "Agents (msgs)", "Modified")) + "\n")
+		sb.WriteString(borderStyle.Render(strings.Repeat("─", 93)) + "\n")
 	}
 
 	for _, entry := range entries {
 		modified := entry.Modified.Format("2006-01-02 15:04")
 		agentStr := "-"
 		if entry.AgentCount > 0 {
-			agentStr = fmt.Sprintf("%d", entry.AgentCount)
+			agentStr = fmt.Sprintf("%d (%d)", entry.AgentCount, entry.AgentMessageCount)
 		}
-		sb.WriteString(fmt.Sprintf("%-40s  %8d  %6s  %s\n",
+		sb.WriteString(fmt.Sprintf("%-40s  %8d  %13s  %s\n",
 			truncateID(entry.SessionID),
 			entry.MessageCount,
 			agentStr,
 			modified))
+	}
+
+	// Footer with session count
+	sessionWord := "sessions"
+	if len(entries) == 1 {
+		sessionWord = "session"
+	}
+	footer := fmt.Sprintf("\n%d %s", len(entries), sessionWord)
+	if noColor {
+		sb.WriteString(footer)
+	} else {
+		sb.WriteString(styles.DimStyle.Render(footer))
 	}
 
 	return sb.String()

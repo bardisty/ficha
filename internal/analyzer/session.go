@@ -27,8 +27,9 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 	// Build the session analysis (parent session only)
 	analysis := buildSessionAnalysis(sessionID, sessionPath, messageAnalyses, includeMessages)
 
-	// Store parent cost before adding agent costs
+	// Store parent cost and message count before adding agent data
 	analysis.ParentCost = analysis.TotalCost
+	analysis.ParentMessageCount = analysis.MessageCount
 
 	// Discover and analyze agent sub-sessions
 	projectDir := filepath.Dir(sessionPath)
@@ -48,11 +49,12 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 
 			analysis.Agents = append(analysis.Agents, *agentAnalysis)
 
-			// Roll up agent costs
+			// Roll up agent costs and messages
 			analysis.AgentsCost.Add(agentAnalysis.TotalCost)
 			analysis.TotalCost.Add(agentAnalysis.TotalCost)
 			analysis.TotalUsage.Add(agentAnalysis.TotalUsage)
 			analysis.MessageCount += agentAnalysis.MessageCount
+			analysis.AgentMessageCount += agentAnalysis.MessageCount
 
 			// Merge agent cost by model
 			for model, cost := range agentAnalysis.CostByModel {
@@ -226,6 +228,8 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 		aggregate.SkippedAgents += sessionAnalysis.SkippedAgents
 
 		aggregate.MessageCount += sessionAnalysis.MessageCount
+		aggregate.ParentMessageCount += sessionAnalysis.ParentMessageCount
+		aggregate.AgentMessageCount += sessionAnalysis.AgentMessageCount
 		aggregate.TotalUsage.Add(sessionAnalysis.TotalUsage)
 		aggregate.TotalCost.Add(sessionAnalysis.TotalCost)
 
@@ -239,12 +243,14 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 			}
 		}
 
-		// Update time range
-		if !firstTimeSet || sessionAnalysis.StartTime.Before(firstTime) {
-			firstTime = sessionAnalysis.StartTime
-			firstTimeSet = true
+		// Update time range - skip sessions with zero times (no assistant messages)
+		if !sessionAnalysis.StartTime.IsZero() {
+			if !firstTimeSet || sessionAnalysis.StartTime.Before(firstTime) {
+				firstTime = sessionAnalysis.StartTime
+				firstTimeSet = true
+			}
 		}
-		if sessionAnalysis.EndTime.After(lastTime) {
+		if !sessionAnalysis.EndTime.IsZero() && sessionAnalysis.EndTime.After(lastTime) {
 			lastTime = sessionAnalysis.EndTime
 		}
 	}

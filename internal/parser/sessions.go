@@ -125,7 +125,7 @@ func DiscoverSessionsFromDisk(projectDir string) ([]models.SessionEntry, error) 
 		}
 
 		// Count messages by reading first pass of file
-		msgCount := countMessagesInFile(fullPath)
+		parentMsgCount := countMessagesInFile(fullPath)
 
 		// Discover agent sub-sessions (ignore errors - missing subagents dir is common)
 		agentPaths, err := DiscoverAgentSessions(projectDir, sessionID)
@@ -135,14 +135,21 @@ func DiscoverSessionsFromDisk(projectDir string) ([]models.SessionEntry, error) 
 			_ = err // Error intentionally ignored - subagent discovery is non-critical
 		}
 
+		// Count agent messages separately for display breakdown
+		agentMsgCount := 0
+		for _, agentPath := range agentPaths {
+			agentMsgCount += countMessagesInFile(agentPath)
+		}
+
 		sessions = append(sessions, models.SessionEntry{
-			SessionID:    sessionID,
-			FullPath:     fullPath,
-			MessageCount: msgCount,
-			Created:      info.ModTime(), // Best approximation
-			Modified:     info.ModTime(),
-			AgentPaths:   agentPaths,
-			AgentCount:   len(agentPaths),
+			SessionID:         sessionID,
+			FullPath:          fullPath,
+			MessageCount:      parentMsgCount + agentMsgCount, // Total for consistency
+			Created:           info.ModTime(),                 // Best approximation
+			Modified:          info.ModTime(),
+			AgentPaths:        agentPaths,
+			AgentCount:        len(agentPaths),
+			AgentMessageCount: agentMsgCount,
 		})
 	}
 
@@ -175,6 +182,9 @@ func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.Sess
 			// Prefer index metadata but preserve agent info from disk
 			indexed.AgentPaths = disk.AgentPaths
 			indexed.AgentCount = disk.AgentCount
+			indexed.AgentMessageCount = disk.AgentMessageCount
+			// Use disk message count which includes agent messages for consistency
+			indexed.MessageCount = disk.MessageCount
 			merged = append(merged, indexed)
 			delete(indexMap, disk.SessionID)
 		} else {
