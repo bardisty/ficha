@@ -111,6 +111,14 @@ var (
 var DimStyle = lipgloss.NewStyle().
 	Foreground(SecondaryColor)
 
+// Breakdown view styles
+var (
+	// BreakdownNewRowStyle highlights newly added rows in the breakdown view
+	BreakdownNewRowStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(HighlightColor)
+)
+
 // Model-specific colors (by tier)
 var (
 	OpusColor   = lipgloss.Color("99")  // Purple - premium tier

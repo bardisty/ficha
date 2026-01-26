@@ -834,13 +834,13 @@ func (m Model) renderInsights() string {
 			costStr := formatCostStyled(highest.Cost, 10, highlighted, m.noColor)
 			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render("⚠ " + warningStr)
 			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
-				"Highest:",
+				"Peak:",
 				costStr,
 				highest.Timestamp.Format("15:04:05"),
 				warningStyled))
 		} else {
 			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  ! %s\n",
-				"Highest:",
+				"Peak:",
 				formatCost(highest.Cost),
 				highest.Timestamp.Format("15:04:05"),
 				warningStr))

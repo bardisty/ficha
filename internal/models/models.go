@@ -222,6 +222,7 @@ func (t TrendDirection) Symbol() string {
 
 // MessageSnapshot captures key data about a single message for insights
 type MessageSnapshot struct {
+	Index             int       `json:"index"` // 1-based message index
 	Timestamp         time.Time `json:"timestamp"`
 	Cost              float64   `json:"cost"`
 	MainCostComponent string    `json:"main_cost_component"` // "cache_write", "cache_read", "output", "input"
@@ -263,4 +264,15 @@ func (i *MessageInsights) TrendDescription() string {
 	default:
 		return "stable"
 	}
+}
+
+// BreakdownMessage represents a single message in the breakdown view
+// combining parent and agent messages with sequential indexing
+type BreakdownMessage struct {
+	Index     int           // 1-based sequential index across all messages
+	AgentID   string        // Empty for parent session, "1", "2", etc. for agents
+	Timestamp time.Time     // Message timestamp
+	Model     string        // Model used for this message
+	Usage     TokenUsage    // Token usage for this message
+	Cost      CostBreakdown // Calculated cost for this message
 }

@@ -15,12 +15,12 @@ func CalculateInsights(messages []models.MessageAnalysis) *models.MessageInsight
 		MessageCount: len(messages),
 	}
 
-	// First and last messages
+	// First and last messages (1-based indices)
 	first := messages[0]
-	insights.FirstMessage = createSnapshot(first)
+	insights.FirstMessage = createSnapshot(first, 1)
 
 	last := messages[len(messages)-1]
-	insights.LastMessage = createSnapshot(last)
+	insights.LastMessage = createSnapshot(last, len(messages))
 
 	// Calculate total and average cost
 	var totalCost float64
@@ -39,7 +39,7 @@ func CalculateInsights(messages []models.MessageAnalysis) *models.MessageInsight
 
 	// Highest cost message - only include if >1.5x average
 	if highestCost > insights.AverageCost*1.5 {
-		insights.HighestCost = createSnapshot(messages[highestIdx])
+		insights.HighestCost = createSnapshot(messages[highestIdx], highestIdx+1) // 1-based index
 	}
 
 	// Calculate trend for sessions with 5+ messages
@@ -80,9 +80,10 @@ func CalculateInsights(messages []models.MessageAnalysis) *models.MessageInsight
 }
 
 // createSnapshot creates a MessageSnapshot from a MessageAnalysis
-func createSnapshot(msg models.MessageAnalysis) *models.MessageSnapshot {
+func createSnapshot(msg models.MessageAnalysis, index int) *models.MessageSnapshot {
 	component, value := GetMainCostComponent(msg.Cost)
 	return &models.MessageSnapshot{
+		Index:             index,
 		Timestamp:         msg.Timestamp,
 		Cost:              msg.Cost.TotalCost,
 		MainCostComponent: component,
