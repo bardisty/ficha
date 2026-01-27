@@ -45,7 +45,7 @@ type BreakdownModel struct {
 	watcher   *fsnotify.Watcher
 	done      chan struct{}
 	closing   *atomic.Bool
-	closeOnce sync.Once
+	closeOnce *sync.Once
 	watching  *atomic.Bool
 
 	// Auto-follow mode for tracking new sessions
@@ -79,6 +79,7 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 
 	closing := &atomic.Bool{}
 	watching := &atomic.Bool{}
+	closeOnce := &sync.Once{}
 
 	return BreakdownModel{
 		sessionPath:   sessionPath,
@@ -89,6 +90,7 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 		spinner:       s,
 		done:          make(chan struct{}),
 		closing:       closing,
+		closeOnce:     closeOnce,
 		watching:      watching,
 		newMsgIndices: make(map[int]time.Time),
 		projectDir:    projectDir,

@@ -45,7 +45,7 @@ type Model struct {
 	watcher   *fsnotify.Watcher
 	done      chan struct{} // Channel to signal watcher goroutine to stop
 	closing   *atomic.Bool  // Atomic flag for shutdown coordination
-	closeOnce sync.Once     // Ensure shutdown happens exactly once
+	closeOnce *sync.Once    // Ensure shutdown happens exactly once
 	watching  *atomic.Bool  // Tracks if a watcher goroutine is active
 
 	// Auto-follow mode for tracking new sessions
@@ -79,6 +79,7 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 
 	closing := &atomic.Bool{}
 	watching := &atomic.Bool{}
+	closeOnce := &sync.Once{}
 	return Model{
 		sessionPath: sessionPath,
 		sessionID:   sessionID,
@@ -88,6 +89,7 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 		spinner:     s,
 		done:        make(chan struct{}),
 		closing:     closing,
+		closeOnce:   closeOnce,
 		watching:    watching,
 		changedAt:   make(map[string]time.Time),
 		deltaTokens: make(map[string]int),
