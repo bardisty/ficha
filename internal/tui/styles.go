@@ -27,4 +27,10 @@ var (
 
 	// Dim style for extra decimal precision
 	dimStyle = styles.DimStyle
+
+	// Section header style for bracketed section headers
+	sectionHeaderStyle = styles.SectionHeaderStyle
+
+	// Panel border style for header panel
+	panelBorderStyle = styles.PanelBorderStyle
 )

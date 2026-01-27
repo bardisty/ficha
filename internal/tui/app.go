@@ -391,47 +391,11 @@ func (m Model) isHighlighted(field string) bool {
 func (m Model) View() string {
 	var sb strings.Builder
 
-	// Status line: Session info + LIVE indicator + timestamp on same line
-	// Format: "Session: 7de42d4f (prev: 8f026711)    ● LIVE  Updated: 19:04:02"
-	sessionDisplay := truncateID(m.sessionID)
-	if m.prevSessionID != "" {
-		sessionDisplay = fmt.Sprintf("%s (prev: %s)", truncateID(m.sessionID), truncateID(m.prevSessionID))
-	}
+	// Standard panel width
+	const panelWidth = 76
 
-	// Build the status line parts
-	var statusParts []string
-
-	// Session info (de-emphasized)
-	sessionInfo := fmt.Sprintf("Session: %s", sessionDisplay)
-	if !m.noColor {
-		sessionInfo = titleStyle.Render(sessionInfo)
-	}
-	statusParts = append(statusParts, sessionInfo)
-
-	// LIVE indicator (green dot)
-	liveIndicator := "● LIVE"
-	if !m.noColor {
-		liveIndicator = liveIndicatorStyle.Render(liveIndicator)
-	}
-	statusParts = append(statusParts, liveIndicator)
-
-	// Status (loading/error/timestamp)
-	var statusStr string
-	if m.loading {
-		if m.noColor {
-			statusStr = "Loading..."
-		} else {
-			statusStr = m.spinner.View() + " Loading..."
-		}
-	} else if m.err != nil {
-		statusStr = fmt.Sprintf("Error: %v", m.err)
-	} else {
-		statusStr = fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05"))
-	}
-	statusParts = append(statusParts, statusStr)
-
-	// Join with spacing
-	sb.WriteString(strings.Join(statusParts, "  "))
+	// Header panel with session info, LIVE indicator, and status
+	sb.WriteString(m.renderHeaderPanel(panelWidth))
 
 	// Show switch notification on next line if applicable
 	showSwitchNotify := !m.switchNotifyAt.IsZero() && time.Since(m.switchNotifyAt) < switchNotifyDuration
@@ -454,13 +418,28 @@ func (m Model) View() string {
 		sb.WriteString("\n")
 	}
 
-	// Separator and help
+	// Double-line footer separator
 	sb.WriteString("\n")
-	separator := strings.Repeat("─", 60)
+	footerSep := strings.Repeat(styles.BoxHorizontal, panelWidth)
 	if !m.noColor {
-		separator = dimStyle.Render(separator)
+		footerSep = panelBorderStyle.Render(footerSep)
 	}
-	sb.WriteString(separator + "\n")
+	sb.WriteString(footerSep + "\n")
+
+	// Footer stats (between separators) - only show if we have data
+	if m.analysis != nil && !m.isEmptySession() {
+		sb.WriteString(m.renderFooter())
+		sb.WriteString("\n")
+	}
+
+	// Single-line help separator
+	helpSep := strings.Repeat(styles.LineHorizontal, panelWidth)
+	if !m.noColor {
+		helpSep = dimStyle.Render(helpSep)
+	}
+	sb.WriteString(helpSep + "\n")
+
+	// Help text
 	sb.WriteString(helpStyle.Render("q: quit  •  r: refresh"))
 
 	return sb.String()
@@ -478,12 +457,13 @@ func (m Model) renderAnalysis() string {
 
 	var sb strings.Builder
 	a := m.analysis
+	const sectionWidth = 76
 
-	// Hero total cost (centered, prominent)
+	// Hero total cost as section header
 	sb.WriteString("\n")
 	totalHighlighted := m.isHighlighted("total")
-	sb.WriteString(m.renderHeroCost(a.TotalCost.TotalCost, totalHighlighted))
-	sb.WriteString("\n")
+	sb.WriteString(m.renderHeroCost(a.TotalCost.TotalCost, totalHighlighted, sectionWidth))
+	sb.WriteString("\n\n")
 
 	// Unified cost+token rows
 	// Input tokens
@@ -541,25 +521,29 @@ func (m Model) renderAnalysis() string {
 	sb.WriteString("\n")
 	sb.WriteString(m.renderContextSection())
 
-	// Cost by model
+	// Section: COST BY MODEL
 	sb.WriteString("\n")
-	sb.WriteString(m.renderCostByModel())
+	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, m.noColor))
+	sb.WriteString("\n\n")
+	sb.WriteString(m.renderCostByModelContent())
 
 	// Agent breakdown (shown when agents exist)
 	if a.HasAgents {
 		sb.WriteString("\n")
-		sb.WriteString(m.renderAgentBreakdown())
+		sb.WriteString(renderSectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
+		sb.WriteString("\n\n")
+		sb.WriteString(m.renderAgentBreakdownContent())
 	}
 
 	// Message insights (shown when insights are available)
 	if a.Insights != nil {
 		sb.WriteString("\n")
-		sb.WriteString(m.renderInsights())
+		sb.WriteString(renderSectionHeader("MESSAGE INSIGHTS", sectionWidth, m.noColor))
+		sb.WriteString("\n\n")
+		sb.WriteString(m.renderInsightsContent())
 	}
 
-	// Footer with message count and duration
-	sb.WriteString("\n")
-	sb.WriteString(m.renderFooter())
+	// Note: Footer is rendered separately in View() after the separators
 
 	return sb.String()
 }
@@ -572,11 +556,12 @@ func (m Model) renderAnalysisPlain() string {
 
 	var sb strings.Builder
 	a := m.analysis
+	const sectionWidth = 76
 
-	// Hero total cost (centered)
+	// Hero total cost as section header
 	sb.WriteString("\n")
-	sb.WriteString(m.renderHeroCost(a.TotalCost.TotalCost, false))
-	sb.WriteString("\n")
+	sb.WriteString(m.renderHeroCost(a.TotalCost.TotalCost, false, sectionWidth))
+	sb.WriteString("\n\n")
 
 	// Unified cost+token rows
 	sb.WriteString(m.renderUnifiedCostRow(
@@ -626,25 +611,29 @@ func (m Model) renderAnalysisPlain() string {
 	sb.WriteString("\n")
 	sb.WriteString(m.renderContextSection())
 
-	// Cost by model
+	// Section: COST BY MODEL
 	sb.WriteString("\n")
-	sb.WriteString(m.renderCostByModel())
+	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, m.noColor))
+	sb.WriteString("\n\n")
+	sb.WriteString(m.renderCostByModelContent())
 
 	// Agent breakdown (shown when agents exist)
 	if a.HasAgents {
 		sb.WriteString("\n")
-		sb.WriteString(m.renderAgentBreakdown())
+		sb.WriteString(renderSectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
+		sb.WriteString("\n\n")
+		sb.WriteString(m.renderAgentBreakdownContent())
 	}
 
 	// Message insights (shown when insights are available)
 	if a.Insights != nil {
 		sb.WriteString("\n")
-		sb.WriteString(m.renderInsights())
+		sb.WriteString(renderSectionHeader("MESSAGE INSIGHTS", sectionWidth, m.noColor))
+		sb.WriteString("\n\n")
+		sb.WriteString(m.renderInsightsContent())
 	}
 
-	// Footer
-	sb.WriteString("\n")
-	sb.WriteString(m.renderFooter())
+	// Note: Footer is rendered separately in View() after the separators
 
 	return sb.String()
 }
@@ -737,12 +726,18 @@ func (m Model) renderFooter() string {
 
 func (m Model) renderCostByModel() string {
 	var sb strings.Builder
+	const sectionWidth = 76
 
-	title := "Cost by Model"
-	if !m.noColor {
-		title = headerStyle.Render(title)
-	}
-	sb.WriteString("  " + title + "\n")
+	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, m.noColor))
+	sb.WriteString("\n\n")
+	sb.WriteString(m.renderCostByModelContent())
+
+	return sb.String()
+}
+
+// renderCostByModelContent renders just the cost by model content (no header)
+func (m Model) renderCostByModelContent() string {
+	var sb strings.Builder
 
 	// Extract and sort by cost (highest first)
 	type modelCost struct {
@@ -763,14 +758,14 @@ func (m Model) renderCostByModel() string {
 		modelName := pricing.GetModelDisplayName(mc.id)
 		highlighted := m.isHighlighted("model_" + mc.id)
 
-		// Apply model color to the label
+		// Apply model color to the label (reduced padding from 18 to 12)
 		var labelStr string
 		if !m.noColor {
 			modelColor := getModelColor(mc.id)
 			labelStyle := lipgloss.NewStyle().Foreground(modelColor)
-			labelStr = labelStyle.Render(fmt.Sprintf("%-18s", modelName))
+			labelStr = labelStyle.Render(fmt.Sprintf("%-12s", modelName))
 		} else {
-			labelStr = fmt.Sprintf("%-18s", modelName)
+			labelStr = fmt.Sprintf("%-12s", modelName)
 		}
 
 		// Apply cost magnitude shading
@@ -783,13 +778,19 @@ func (m Model) renderCostByModel() string {
 
 func (m Model) renderAgentBreakdown() string {
 	var sb strings.Builder
-	a := m.analysis
+	const sectionWidth = 76
 
-	title := fmt.Sprintf("Agent Sub-Sessions (%d)", a.AgentCount)
-	if !m.noColor {
-		title = headerStyle.Render(title)
-	}
-	sb.WriteString("  " + title + "\n")
+	sb.WriteString(renderSectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
+	sb.WriteString("\n\n")
+	sb.WriteString(m.renderAgentBreakdownContent())
+
+	return sb.String()
+}
+
+// renderAgentBreakdownContent renders just the agent breakdown content (no header)
+func (m Model) renderAgentBreakdownContent() string {
+	var sb strings.Builder
+	a := m.analysis
 
 	totalCost := a.TotalCost.TotalCost
 
@@ -844,13 +845,19 @@ func (m Model) renderAgentBreakdown() string {
 
 func (m Model) renderInsights() string {
 	var sb strings.Builder
-	insights := m.analysis.Insights
+	const sectionWidth = 76
 
-	title := "Message Insights"
-	if !m.noColor {
-		title = headerStyle.Render(title)
-	}
-	sb.WriteString("  " + title + "\n")
+	sb.WriteString(renderSectionHeader("MESSAGE INSIGHTS", sectionWidth, m.noColor))
+	sb.WriteString("\n\n")
+	sb.WriteString(m.renderInsightsContent())
+
+	return sb.String()
+}
+
+// renderInsightsContent renders just the insights content (no header)
+func (m Model) renderInsightsContent() string {
+	var sb strings.Builder
+	insights := m.analysis.Insights
 
 	// First message
 	if insights.FirstMessage != nil {
@@ -859,16 +866,19 @@ func (m Model) renderInsights() string {
 		highlighted := m.isHighlighted("insights_first")
 
 		if !m.noColor {
+			labelStr := dimStyle.Render(fmt.Sprintf("%-8s", "First"))
 			costStr := formatCostStyled(first.Cost, 10, highlighted, m.noColor)
-			componentStr := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, formatCost(first.MainCostValue)))
-			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s\n",
-				"First:",
+			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", first.Timestamp.Format("15:04:05")))
+			componentCostStr := formatCostStyledDim(first.MainCostValue)
+			componentStr := dimStyle.Render(componentLabel+":") + " " + componentCostStr
+			sb.WriteString(fmt.Sprintf("    %s %s  %s  %s\n",
+				labelStr,
 				costStr,
-				first.Timestamp.Format("15:04:05"),
+				timestampStr,
 				componentStr))
 		} else {
 			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s: %s\n",
-				"First:",
+				"First",
 				formatCost(first.Cost),
 				first.Timestamp.Format("15:04:05"),
 				componentLabel,
@@ -883,16 +893,19 @@ func (m Model) renderInsights() string {
 		highlighted := m.isHighlighted("insights_last")
 
 		if !m.noColor {
+			labelStr := dimStyle.Render(fmt.Sprintf("%-8s", "Last"))
 			costStr := formatCostStyled(last.Cost, 10, highlighted, m.noColor)
-			componentStr := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, formatCost(last.MainCostValue)))
-			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s\n",
-				"Last:",
+			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", last.Timestamp.Format("15:04:05")))
+			componentCostStr := formatCostStyledDim(last.MainCostValue)
+			componentStr := dimStyle.Render(componentLabel+":") + " " + componentCostStr
+			sb.WriteString(fmt.Sprintf("    %s %s  %s  %s\n",
+				labelStr,
 				costStr,
-				last.Timestamp.Format("15:04:05"),
+				timestampStr,
 				componentStr))
 		} else {
 			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s: %s\n",
-				"Last:",
+				"Last",
 				formatCost(last.Cost),
 				last.Timestamp.Format("15:04:05"),
 				componentLabel,
@@ -908,16 +921,18 @@ func (m Model) renderInsights() string {
 		highlighted := m.isHighlighted("insights_highest")
 
 		if !m.noColor {
+			labelStr := dimStyle.Render(fmt.Sprintf("%-8s", "Peak"))
 			costStr := formatCostStyled(highest.Cost, 10, highlighted, m.noColor)
+			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", highest.Timestamp.Format("15:04:05")))
 			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render("⚠ " + warningStr)
-			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s\n",
-				"Peak:",
+			sb.WriteString(fmt.Sprintf("    %s %s  %s  %s\n",
+				labelStr,
 				costStr,
-				highest.Timestamp.Format("15:04:05"),
+				timestampStr,
 				warningStyled))
 		} else {
 			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  ! %s\n",
-				"Peak:",
+				"Peak",
 				formatCost(highest.Cost),
 				highest.Timestamp.Format("15:04:05"),
 				warningStr))
@@ -934,15 +949,19 @@ func (m Model) renderInsights() string {
 		lateStr := fmt.Sprintf("$%.2f/msg", insights.LateAvgCost)
 
 		if !m.noColor {
-			// Color the trend symbol based on direction
-			var symbolStyled string
+			labelStr := dimStyle.Render(fmt.Sprintf("%-8s", "Trend"))
+			// Color the trend symbol and description based on direction
+			var symbolStyled, descStyled string
 			switch insights.CostTrend {
 			case models.TrendIncreasing:
 				symbolStyled = lipgloss.NewStyle().Foreground(styles.WarningColor).Render(trendSymbol)
+				descStyled = lipgloss.NewStyle().Foreground(styles.WarningColor).Render(trendDesc)
 			case models.TrendDecreasing:
 				symbolStyled = lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(trendSymbol)
+				descStyled = lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(trendDesc)
 			default:
 				symbolStyled = dimStyle.Render(trendSymbol)
+				descStyled = dimStyle.Render(trendDesc)
 			}
 			var trendLine string
 			if highlighted {
@@ -950,14 +969,14 @@ func (m Model) renderInsights() string {
 			} else {
 				trendLine = fmt.Sprintf("%s → %s", earlyStr, lateStr)
 			}
-			sb.WriteString(fmt.Sprintf("    %-8s %s  %s %s\n",
-				"Trend:",
+			sb.WriteString(fmt.Sprintf("    %s %s  %s %s\n",
+				labelStr,
 				trendLine,
 				symbolStyled,
-				trendDesc))
+				descStyled))
 		} else {
 			sb.WriteString(fmt.Sprintf("    %-8s %s -> %s  %s %s\n",
-				"Trend:",
+				"Trend",
 				earlyStr,
 				lateStr,
 				trendSymbol,
@@ -1118,6 +1137,148 @@ func (m Model) waitForNewSession() tea.Cmd {
 	}
 }
 
+// Panel and section rendering helpers
+
+// renderHeaderPanel renders the mainframe-style header panel with session info
+// Format:
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Session: xxx (prev: yyy)  │  ● LIVE  │  Updated: HH:MM:SS              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+func (m Model) renderHeaderPanel(width int) string {
+	var sb strings.Builder
+
+	// Minimum width for content
+	if width < 40 {
+		width = 72
+	}
+
+	// Inner width (accounting for box borders and padding)
+	innerWidth := width - 4 // 2 for borders, 2 for padding
+
+	// Build content parts
+	sessionDisplay := truncateID(m.sessionID)
+	if m.prevSessionID != "" {
+		sessionDisplay = fmt.Sprintf("%s (prev: %s)", truncateID(m.sessionID), truncateID(m.prevSessionID))
+	}
+
+	sessionPart := fmt.Sprintf("Session: %s", sessionDisplay)
+	livePart := "● LIVE"
+	var statusPart string
+	if m.loading {
+		statusPart = "Loading..."
+	} else if m.err != nil {
+		statusPart = "Error"
+	} else {
+		statusPart = fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05"))
+	}
+
+	// Calculate separator positions
+	sep := styles.BoxVerticalSep
+	content := fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart)
+	contentLen := len(sessionPart) + 2 + 1 + 2 + len(livePart) + 2 + 1 + 2 + len(statusPart)
+	padding := innerWidth - contentLen
+	if padding < 0 {
+		padding = 0
+	}
+
+	if m.noColor {
+		// Top border
+		sb.WriteString(styles.BoxTopLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxTopRight)
+		sb.WriteString("\n")
+
+		// Content line
+		sb.WriteString(styles.BoxVertical)
+		sb.WriteString("  ")
+		sb.WriteString(content)
+		sb.WriteString(strings.Repeat(" ", padding))
+		sb.WriteString("  ")
+		sb.WriteString(styles.BoxVertical)
+		sb.WriteString("\n")
+
+		// Bottom border
+		sb.WriteString(styles.BoxBottomLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxBottomRight)
+	} else {
+		// Build styled content
+		sessionStyled := fmt.Sprintf("%s %s",
+			sectionHeaderStyle.Render("Session:"),
+			sessionDisplay)
+		liveStyled := liveIndicatorStyle.Render(livePart)
+		var statusStyled string
+		if m.loading {
+			statusStyled = m.spinner.View() + " Loading..."
+		} else if m.err != nil {
+			statusStyled = lipgloss.NewStyle().Foreground(styles.ErrorColor).Render("Error")
+		} else {
+			statusStyled = fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05"))
+		}
+
+		sepStyled := panelBorderStyle.Render(sep)
+
+		// Top border
+		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
+		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
+		sb.WriteString(panelBorderStyle.Render(styles.BoxTopRight))
+		sb.WriteString("\n")
+
+		// Content line
+		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
+		sb.WriteString("  ")
+		sb.WriteString(sessionStyled)
+		sb.WriteString("  ")
+		sb.WriteString(sepStyled)
+		sb.WriteString("  ")
+		sb.WriteString(liveStyled)
+		sb.WriteString("  ")
+		sb.WriteString(sepStyled)
+		sb.WriteString("  ")
+		sb.WriteString(statusStyled)
+		sb.WriteString(strings.Repeat(" ", padding))
+		sb.WriteString("  ")
+		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
+		sb.WriteString("\n")
+
+		// Bottom border
+		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomLeft))
+		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
+		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomRight))
+	}
+
+	return sb.String()
+}
+
+// renderSectionHeader renders a bracketed section header
+// Format: ─────────────────────────────[ SECTION NAME ]─────────────────────────────
+func renderSectionHeader(name string, width int, noColor bool) string {
+	if width < 20 {
+		width = 72
+	}
+
+	bracketedName := "[ " + name + " ]"
+	nameLen := len(bracketedName)
+	sideLen := (width - nameLen) / 2
+	if sideLen < 0 {
+		sideLen = 0
+	}
+	rightLen := width - sideLen - nameLen
+	if rightLen < 0 {
+		rightLen = 0
+	}
+
+	leftLine := strings.Repeat(styles.LineHorizontal, sideLen)
+	rightLine := strings.Repeat(styles.LineHorizontal, rightLen)
+
+	if noColor {
+		return leftLine + bracketedName + rightLine
+	}
+
+	// Section name in cyan, lines in dim
+	return dimStyle.Render(leftLine) + "[ " + sectionHeaderStyle.Render(name) + " ]" + dimStyle.Render(rightLine)
+}
+
 // Helper functions
 
 func formatCost(cost float64) string {
@@ -1160,6 +1321,12 @@ func formatCostStyled(cost float64, width int, highlighted bool, noColor bool) s
 		return padding + highlightStyle.Render(main+extra)
 	}
 	return padding + main + dimStyle.Render(extra)
+}
+
+// formatCostStyledDim returns a cost string entirely in dim style
+// Used for secondary cost displays like component breakdowns in insights
+func formatCostStyledDim(cost float64) string {
+	return dimStyle.Render(fmt.Sprintf("$%.6f", cost))
 }
 
 // formatCostStyledGreen returns a cost string in green (for savings) with proper padding
@@ -1309,9 +1476,9 @@ func getCostMagnitudeColor(cost, total float64) lipgloss.Color {
 
 // formatContextProgressBar creates a visual progress bar showing context usage
 // Bar segments: used (█), free (░), buffer (▒)
-// Total width: 50 characters
+// Total width: 40 characters (fits within 76-char panel with labels)
 func formatContextProgressBar(contextSize, freeSpace, buffer, maxContext int, noColor bool) string {
-	const barWidth = 50
+	const barWidth = 40
 
 	if maxContext == 0 {
 		return strings.Repeat("░", barWidth)
@@ -1362,46 +1529,45 @@ func formatContextProgressBar(contextSize, freeSpace, buffer, maxContext int, no
 	return "[" + usedStyled + freeStyled + bufferStyled + "]"
 }
 
-// renderHeroCost renders the prominent centered total cost with underline
-func (m Model) renderHeroCost(cost float64, highlighted bool) string {
-	var sb strings.Builder
-
+// renderHeroCost renders the total cost integrated into a section header
+// Format: ─────────────────────[ $12.665834 TOTAL ]─────────────────────
+func (m Model) renderHeroCost(cost float64, highlighted bool, width int) string {
 	// Format the cost with 6 decimal places
-	costStr := fmt.Sprintf("$%.6f", cost)
-
-	// Create the underline (same width as cost string)
-	underline := strings.Repeat("─", len(costStr))
-
-	// Center padding (assuming ~60 char width for content area)
-	const contentWidth = 60
-	costPadding := (contentWidth - len(costStr)) / 2
-	labelPadding := (contentWidth - len("total cost")) / 2
-
-	if costPadding < 0 {
-		costPadding = 0
+	costFull := fmt.Sprintf("$%.6f", cost)
+	costStr := costFull + " TOTAL"
+	bracketedCost := "[ " + costStr + " ]"
+	costLen := len(bracketedCost)
+	sideLen := (width - costLen) / 2
+	if sideLen < 0 {
+		sideLen = 0
 	}
-	if labelPadding < 0 {
-		labelPadding = 0
+	rightLen := width - sideLen - costLen
+	if rightLen < 0 {
+		rightLen = 0
 	}
 
-	pad := strings.Repeat(" ", costPadding)
-	labelPad := strings.Repeat(" ", labelPadding)
+	leftLine := strings.Repeat(styles.LineHorizontal, sideLen)
+	rightLine := strings.Repeat(styles.LineHorizontal, rightLen)
 
 	if m.noColor {
-		sb.WriteString(pad + costStr + "\n")
-		sb.WriteString(pad + underline + "\n")
-		sb.WriteString(labelPad + "total cost\n")
-	} else {
-		if highlighted {
-			sb.WriteString(pad + highlightStyle.Render(costStr) + "\n")
-		} else {
-			sb.WriteString(pad + heroCostStyle.Render(costStr) + "\n")
-		}
-		sb.WriteString(pad + dimStyle.Render(underline) + "\n")
-		sb.WriteString(labelPad + dimStyle.Render("total cost") + "\n")
+		return leftLine + bracketedCost + rightLine
 	}
 
-	return sb.String()
+	// Cost with dimmed trailing decimals (like other cost displays)
+	// Split into main ($X.XX) and extra (XXXX) parts
+	var costStyled string
+	dotIdx := strings.Index(costFull, ".")
+	if highlighted {
+		costStyled = highlightStyle.Render(costStr)
+	} else if dotIdx != -1 && len(costFull) > dotIdx+3 {
+		mainPart := costFull[:dotIdx+3]  // "$12.66"
+		extraPart := costFull[dotIdx+3:] // "5834"
+		costStyled = heroCostStyle.Render(mainPart) + dimStyle.Render(extraPart) + heroCostStyle.Render(" TOTAL")
+	} else {
+		costStyled = heroCostStyle.Render(costStr)
+	}
+
+	return dimStyle.Render(leftLine) + "[ " + costStyled + " ]" + dimStyle.Render(rightLine)
 }
 
 // renderUnifiedCostRow renders a single row with cost and token info combined
@@ -1451,16 +1617,16 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int, cost
 // renderEmptyState renders a clean empty state for new sessions
 func (m Model) renderEmptyState() string {
 	var sb strings.Builder
+	const sectionWidth = 76
 
 	// Hero cost (even $0.00 to establish visual anchor)
 	sb.WriteString("\n")
-	sb.WriteString(m.renderHeroCost(0, false))
-	sb.WriteString("\n")
+	sb.WriteString(m.renderHeroCost(0, false, sectionWidth))
+	sb.WriteString("\n\n")
 
-	// Simple awaiting message
+	// Simple awaiting message centered
 	msg := "Awaiting first message..."
-	const contentWidth = 60
-	padding := (contentWidth - len(msg)) / 2
+	padding := (sectionWidth - len(msg)) / 2
 	if padding < 0 {
 		padding = 0
 	}

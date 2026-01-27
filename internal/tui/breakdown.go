@@ -166,10 +166,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		// Header: Session(1) + LIVE/Updated(1) + blank(1) + insights(1) + blank(1) + table header(1) + separator(1)
-		// Always use 7 to avoid layout shift when insights load after initial render
-		headerHeight := 7
-		footerHeight := 2 // Footer stats, help
+		// Header: panel(3 lines) + blank/notify(1) + insights(1) + blank(1) + table header(1) + separator(1)
+		// Always use 8 to avoid layout shift when insights load after initial render
+		headerHeight := 8
+		footerHeight := 4 // Double-line separator(1) + stats(1) + single-line(1) + help(1)
 
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight)
@@ -322,54 +322,30 @@ func (m *BreakdownModel) isNewMessage(index int) bool {
 // View renders the breakdown TUI
 func (m BreakdownModel) View() string {
 	var sb strings.Builder
+	const panelWidth = 76
 
-	// Session ID with optional previous session (truncated for display)
-	sessionDisplay := truncateID(m.sessionID)
-	if m.prevSessionID != "" {
-		sessionDisplay = fmt.Sprintf("%s (prev: %s)", truncateID(m.sessionID), truncateID(m.prevSessionID))
-	}
-
-	if !m.noColor {
-		labelStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.AccentColor)
-		idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-		sb.WriteString(labelStyle.Render("Session:"))
-		sb.WriteString(" ")
-		sb.WriteString(idStyle.Render(sessionDisplay))
-	} else {
-		sb.WriteString("Session: ")
-		sb.WriteString(sessionDisplay)
-	}
-	sb.WriteString("\n")
-
-	// Live indicator
-	sb.WriteString(liveIndicatorStyle.Render(" LIVE "))
-	sb.WriteString(" ")
+	// Header panel
+	sb.WriteString(m.renderHeaderPanel(panelWidth))
 
 	// Show switch notification after session switch
 	showSwitchNotify := !m.switchNotifyAt.IsZero() && time.Since(m.switchNotifyAt) < switchNotifyDuration
 	if showSwitchNotify {
+		sb.WriteString("\n")
 		if m.noColor {
-			sb.WriteString("[Switched to new session] ")
+			sb.WriteString("[Switched to new session]")
 		} else {
-			sb.WriteString(lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session "))
+			sb.WriteString(lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session"))
 		}
 	}
 
-	if m.loading {
-		sb.WriteString(m.spinner.View())
-		sb.WriteString(" Loading...")
-	} else if m.err != nil {
-		sb.WriteString(fmt.Sprintf("Error: %v", m.err))
-	} else {
-		sb.WriteString(fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05")))
-	}
-	sb.WriteString("\n\n")
+	sb.WriteString("\n")
 
 	// Compact insights line
 	if m.insights != nil && len(m.messages) > 0 {
 		sb.WriteString(m.renderCompactInsights())
-		sb.WriteString("\n\n")
+		sb.WriteString("\n")
 	}
+	sb.WriteString("\n")
 
 	// Table header
 	sb.WriteString(m.renderTableHeader())
@@ -384,6 +360,13 @@ func (m BreakdownModel) View() string {
 		sb.WriteString(m.viewport.View())
 	}
 	sb.WriteString("\n")
+
+	// Double-line footer separator
+	footerSep := strings.Repeat(styles.BoxHorizontal, panelWidth)
+	if !m.noColor {
+		footerSep = panelBorderStyle.Render(footerSep)
+	}
+	sb.WriteString(footerSep + "\n")
 
 	// Footer with colored cost
 	scrollMode := "AUTO"
@@ -412,12 +395,125 @@ func (m BreakdownModel) View() string {
 	}
 	sb.WriteString("\n")
 
+	// Single-line separator before help
+	helpSep := strings.Repeat(styles.LineHorizontal, panelWidth)
+	if !m.noColor {
+		helpSep = dimStyle.Render(helpSep)
+	}
+	sb.WriteString(helpSep + "\n")
+
 	// Help - use lighter gray
 	if !m.noColor {
 		helpText := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("q: quit • g/G: top/bottom • ↑↓: scroll")
 		sb.WriteString(helpText)
 	} else {
 		sb.WriteString("q: quit • g/G: top/bottom • ↑↓: scroll")
+	}
+
+	return sb.String()
+}
+
+// renderHeaderPanel renders the mainframe-style header panel with session info
+func (m BreakdownModel) renderHeaderPanel(width int) string {
+	var sb strings.Builder
+
+	// Minimum width for content
+	if width < 40 {
+		width = 76
+	}
+
+	// Inner width (accounting for box borders and padding)
+	innerWidth := width - 4 // 2 for borders, 2 for padding
+
+	// Build content parts
+	sessionDisplay := truncateID(m.sessionID)
+	if m.prevSessionID != "" {
+		sessionDisplay = fmt.Sprintf("%s (prev: %s)", truncateID(m.sessionID), truncateID(m.prevSessionID))
+	}
+
+	sessionPart := fmt.Sprintf("Session: %s", sessionDisplay)
+	livePart := "● LIVE"
+	var statusPart string
+	if m.loading {
+		statusPart = "Loading..."
+	} else if m.err != nil {
+		statusPart = "Error"
+	} else {
+		statusPart = fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05"))
+	}
+
+	// Calculate separator positions
+	sep := styles.BoxVerticalSep
+	contentLen := len(sessionPart) + 2 + 1 + 2 + len(livePart) + 2 + 1 + 2 + len(statusPart)
+	padding := innerWidth - contentLen
+	if padding < 0 {
+		padding = 0
+	}
+
+	if m.noColor {
+		// Top border
+		sb.WriteString(styles.BoxTopLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxTopRight)
+		sb.WriteString("\n")
+
+		// Content line
+		sb.WriteString(styles.BoxVertical)
+		sb.WriteString("  ")
+		sb.WriteString(fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart))
+		sb.WriteString(strings.Repeat(" ", padding))
+		sb.WriteString("  ")
+		sb.WriteString(styles.BoxVertical)
+		sb.WriteString("\n")
+
+		// Bottom border
+		sb.WriteString(styles.BoxBottomLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxBottomRight)
+	} else {
+		// Build styled content
+		sessionStyled := fmt.Sprintf("%s %s",
+			sectionHeaderStyle.Render("Session:"),
+			sessionDisplay)
+		liveStyled := liveIndicatorStyle.Render(livePart)
+		var statusStyled string
+		if m.loading {
+			statusStyled = m.spinner.View() + " Loading..."
+		} else if m.err != nil {
+			statusStyled = lipgloss.NewStyle().Foreground(styles.ErrorColor).Render("Error")
+		} else {
+			statusStyled = fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05"))
+		}
+
+		sepStyled := panelBorderStyle.Render(sep)
+
+		// Top border
+		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
+		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
+		sb.WriteString(panelBorderStyle.Render(styles.BoxTopRight))
+		sb.WriteString("\n")
+
+		// Content line
+		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
+		sb.WriteString("  ")
+		sb.WriteString(sessionStyled)
+		sb.WriteString("  ")
+		sb.WriteString(sepStyled)
+		sb.WriteString("  ")
+		sb.WriteString(liveStyled)
+		sb.WriteString("  ")
+		sb.WriteString(sepStyled)
+		sb.WriteString("  ")
+		sb.WriteString(statusStyled)
+		sb.WriteString(strings.Repeat(" ", padding))
+		sb.WriteString("  ")
+		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
+		sb.WriteString("\n")
+
+		// Bottom border
+		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomLeft))
+		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
+		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomRight))
 	}
 
 	return sb.String()
@@ -482,9 +578,9 @@ func (m BreakdownModel) renderTableHeader() string {
 	return header
 }
 
-// renderTableSeparator renders the separator line
+// renderTableSeparator renders the separator line using Unicode box-drawing characters
 func (m BreakdownModel) renderTableSeparator() string {
-	sep := strings.Repeat("-", 72)
+	sep := strings.Repeat(styles.LineHorizontal, 76)
 	if !m.noColor {
 		return tableBorderStyle.Render(sep)
 	}

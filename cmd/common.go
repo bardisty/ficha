@@ -57,8 +57,8 @@ func loadProjectSessionsWithDir() ([]models.SessionEntry, string, error) {
 		return nil, "", ErrNoSessions
 	}
 
-	// Warn about orphans
-	if orphanCount > 0 {
+	// Warn about orphans (only in verbose mode - this is common and usually not actionable)
+	if orphanCount > 0 && verbose {
 		fmt.Fprintf(os.Stderr, "Note: Found %d session(s) not in sessions-index.json\n", orphanCount)
 	}
 

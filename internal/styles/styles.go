@@ -7,6 +7,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Box-drawing characters for mainframe aesthetic
+const (
+	BoxTopLeft     = "╔"
+	BoxTopRight    = "╗"
+	BoxBottomLeft  = "╚"
+	BoxBottomRight = "╝"
+	BoxHorizontal  = "═"
+	BoxVertical    = "║"
+	BoxVerticalSep = "│"
+	LineHorizontal = "─"
+)
+
 // Shared color palette
 var (
 	PrimaryColor   = lipgloss.Color("99")  // Purple
@@ -31,6 +43,14 @@ var (
 	HeroCostStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(SuccessColor)
+
+	// SectionHeaderStyle for bracketed section headers (IBM 3279 convention: cyan for static text)
+	SectionHeaderStyle = lipgloss.NewStyle().
+				Foreground(InfoColor)
+
+	// PanelBorderStyle for header panel box-drawing characters
+	PanelBorderStyle = lipgloss.NewStyle().
+				Foreground(SecondaryColor)
 )
 
 // Table styles for borders and cells

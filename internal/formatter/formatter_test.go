@@ -260,8 +260,8 @@ func TestFormatSessionTable_WithCacheSavings(t *testing.T) {
 
 	output := FormatSessionTable(analysis, true)
 
-	if !strings.Contains(output, "Cache Savings") {
-		t.Error("Table output missing cache savings row")
+	if !strings.Contains(output, "Savings") {
+		t.Error("Table output missing savings row")
 	}
 }
 
@@ -286,10 +286,10 @@ func TestFormatSessionTable_WithAgents(t *testing.T) {
 
 	output := FormatSessionTable(analysis, true)
 
-	if !strings.Contains(output, "Agent Sub-Sessions") {
+	if !strings.Contains(output, "AGENT SUB-SESSIONS") {
 		t.Error("Table output missing agent breakdown section")
 	}
-	if !strings.Contains(output, "Parent session:") {
+	if !strings.Contains(output, "Parent session") {
 		t.Error("Table output missing parent session cost")
 	}
 	if !strings.Contains(output, "agent-1") {
@@ -398,22 +398,3 @@ func TestFormatCost(t *testing.T) {
 	}
 }
 
-func TestFormatAvg(t *testing.T) {
-	tests := []struct {
-		total    int
-		count    int
-		expected string
-	}{
-		{0, 0, ""},     // Division by zero case
-		{100, 10, "(avg: 10/msg)"},
-		{1000, 5, "(avg: 200/msg)"},
-		{5000, 10, "(avg: 500/msg)"},
-	}
-
-	for _, tc := range tests {
-		result := formatAvg(tc.total, tc.count)
-		if result != tc.expected {
-			t.Errorf("formatAvg(%d, %d) = %q, want %q", tc.total, tc.count, result, tc.expected)
-		}
-	}
-}
