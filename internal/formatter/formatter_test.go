@@ -397,4 +397,3 @@ func TestFormatCost(t *testing.T) {
 		}
 	}
 }
-

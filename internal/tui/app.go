@@ -41,12 +41,12 @@ type Model struct {
 	deltaTokens map[string]int // Delta values for token counts
 	deltaCount  int            // Delta for message count
 
-	spinner spinner.Model
-	watcher *fsnotify.Watcher
-	done    chan struct{}  // Channel to signal watcher goroutine to stop
-	closing *atomic.Bool   // Atomic flag for shutdown coordination
-	closeOnce sync.Once    // Ensure shutdown happens exactly once
-	watching *atomic.Bool  // Tracks if a watcher goroutine is active
+	spinner   spinner.Model
+	watcher   *fsnotify.Watcher
+	done      chan struct{} // Channel to signal watcher goroutine to stop
+	closing   *atomic.Bool  // Atomic flag for shutdown coordination
+	closeOnce sync.Once     // Ensure shutdown happens exactly once
+	watching  *atomic.Bool  // Tracks if a watcher goroutine is active
 
 	// Auto-follow mode for tracking new sessions
 	projectDir     string          // Project directory to watch for new sessions
@@ -61,10 +61,10 @@ type Model struct {
 
 // Messages
 type (
-	analysisMsg    *models.SessionAnalysis
-	errorMsg       error
-	fileChangedMsg struct{}
-	tickMsg        time.Time
+	analysisMsg        *models.SessionAnalysis
+	errorMsg           error
+	fileChangedMsg     struct{}
+	tickMsg            time.Time
 	sessionSwitchedMsg struct {
 		newSessionPath string
 		newSessionID   string
@@ -724,17 +724,6 @@ func (m Model) renderFooter() string {
 	return footerLine
 }
 
-func (m Model) renderCostByModel() string {
-	var sb strings.Builder
-	const sectionWidth = 76
-
-	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, m.noColor))
-	sb.WriteString("\n\n")
-	sb.WriteString(m.renderCostByModelContent())
-
-	return sb.String()
-}
-
 // renderCostByModelContent renders just the cost by model content (no header)
 func (m Model) renderCostByModelContent() string {
 	var sb strings.Builder
@@ -772,17 +761,6 @@ func (m Model) renderCostByModelContent() string {
 		costStr := formatCostStyledWithMagnitude(cost.TotalCost, 12, highlighted, m.noColor, totalCost)
 		sb.WriteString(fmt.Sprintf("    %s %s\n", labelStr, costStr))
 	}
-
-	return sb.String()
-}
-
-func (m Model) renderAgentBreakdown() string {
-	var sb strings.Builder
-	const sectionWidth = 76
-
-	sb.WriteString(renderSectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
-	sb.WriteString("\n\n")
-	sb.WriteString(m.renderAgentBreakdownContent())
 
 	return sb.String()
 }
@@ -839,17 +817,6 @@ func (m Model) renderAgentBreakdownContent() string {
 	} else {
 		sb.WriteString(fmt.Sprintf("    %-18s %s\n", "Agents subtotal", subtotalStr))
 	}
-
-	return sb.String()
-}
-
-func (m Model) renderInsights() string {
-	var sb strings.Builder
-	const sectionWidth = 76
-
-	sb.WriteString(renderSectionHeader("MESSAGE INSIGHTS", sectionWidth, m.noColor))
-	sb.WriteString("\n\n")
-	sb.WriteString(m.renderInsightsContent())
 
 	return sb.String()
 }
@@ -1013,13 +980,6 @@ func (m Model) loadAnalysis() tea.Msg {
 		return errorMsg(err)
 	}
 	return analysisMsg(analysis)
-}
-
-// loadAnalysisCmd returns a command that loads the analysis
-func (m Model) loadAnalysisCmd() tea.Cmd {
-	return func() tea.Msg {
-		return m.loadAnalysis()
-	}
 }
 
 // watcherStartedMsg is sent when the watcher is successfully created

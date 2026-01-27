@@ -97,28 +97,28 @@ type AgentAnalysis struct {
 
 // SessionAnalysis represents the complete analysis of a session
 type SessionAnalysis struct {
-	SessionID     string                   `json:"session_id"`
-	ProjectPath   string                   `json:"project_path"`
-	StartTime     time.Time                `json:"start_time"`
-	EndTime       time.Time                `json:"end_time"`
-	Duration      Duration                 `json:"duration"`
-	MessageCount  int                      `json:"message_count"`
-	TotalUsage    TokenUsage               `json:"total_usage"`
-	TotalCost     CostBreakdown            `json:"total_cost"`
-	CostByModel   map[string]CostBreakdown `json:"cost_by_model"`
-	Messages      []MessageAnalysis        `json:"messages,omitempty"`
-	Insights      *MessageInsights         `json:"insights,omitempty"` // Cost insights (populated when messages available)
+	SessionID    string                   `json:"session_id"`
+	ProjectPath  string                   `json:"project_path"`
+	StartTime    time.Time                `json:"start_time"`
+	EndTime      time.Time                `json:"end_time"`
+	Duration     Duration                 `json:"duration"`
+	MessageCount int                      `json:"message_count"`
+	TotalUsage   TokenUsage               `json:"total_usage"`
+	TotalCost    CostBreakdown            `json:"total_cost"`
+	CostByModel  map[string]CostBreakdown `json:"cost_by_model"`
+	Messages     []MessageAnalysis        `json:"messages,omitempty"`
+	Insights     *MessageInsights         `json:"insights,omitempty"` // Cost insights (populated when messages available)
 	// Last message usage for context window calculation (matches /context output)
 	LastMessageUsage TokenUsage `json:"last_message_usage"`
 	LastMessageModel string     `json:"last_message_model"` // Model used for last message (for context limit lookup)
 	// Agent-related fields
 	Agents             []AgentAnalysis `json:"agents,omitempty"`
-	ParentCost         CostBreakdown   `json:"parent_cost"`          // Cost excluding agents
-	AgentsCost         CostBreakdown   `json:"agents_cost"`          // Sum of agent costs
+	ParentCost         CostBreakdown   `json:"parent_cost"` // Cost excluding agents
+	AgentsCost         CostBreakdown   `json:"agents_cost"` // Sum of agent costs
 	HasAgents          bool            `json:"has_agents"`
 	AgentCount         int             `json:"agent_count"`
-	ParentMessageCount int             `json:"parent_message_count"` // Messages from parent session only
-	AgentMessageCount  int             `json:"agent_message_count"`  // Messages from all agents
+	ParentMessageCount int             `json:"parent_message_count"`       // Messages from parent session only
+	AgentMessageCount  int             `json:"agent_message_count"`        // Messages from all agents
 	SkippedAgents      int             `json:"skipped_agents,omitempty"`   // Agents that failed to parse
 	SkippedSessions    int             `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)
 }
@@ -143,9 +143,9 @@ type SessionsIndex struct {
 
 // JSONLMessage represents a message in the JSONL session file
 type JSONLMessage struct {
-	Type      string          `json:"type"`
+	Type      string            `json:"type"`
 	Message   *AssistantMessage `json:"message,omitempty"`
-	Timestamp time.Time       `json:"timestamp"`
+	Timestamp time.Time         `json:"timestamp"`
 }
 
 // AssistantMessage represents the message field for assistant type messages

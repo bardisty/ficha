@@ -155,8 +155,8 @@ func TestBreakdownModel_RenderRow(t *testing.T) {
 		Timestamp: time.Date(2024, 1, 15, 14, 30, 45, 0, time.UTC),
 		Model:     "claude-sonnet-4",
 		Usage: models.TokenUsage{
-			InputTokens:         1234,
-			OutputTokens:        56,
+			InputTokens:          1234,
+			OutputTokens:         56,
 			CacheReadInputTokens: 89300,
 		},
 		Cost: models.CostBreakdown{

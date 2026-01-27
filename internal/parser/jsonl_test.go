@@ -14,8 +14,8 @@ func TestParseJSONL(t *testing.T) {
 		expectedModels []string
 	}{
 		{
-			name: "single assistant message",
-			input: `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":50}}}`,
+			name:           "single assistant message",
+			input:          `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":50}}}`,
 			expectedCount:  1,
 			expectedModels: []string{"claude-opus-4-5"},
 		},

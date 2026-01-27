@@ -13,15 +13,8 @@ import (
 
 // Local aliases for frequently used styles
 var (
-	headerStyle        = styles.HeaderStyle
-	labelStyle         = styles.LabelStyle
-	valueStyle         = styles.ValueStyle
-	totalLabelStyle    = styles.TotalLabelStyle
-	totalValueStyle    = styles.TotalValueStyle
 	savingsLabelStyle  = styles.SavingsLabelStyle
 	savingsValueStyle  = styles.SavingsValueStyle
-	borderStyle        = styles.BorderStyle
-	sessionIDStyle     = styles.SessionIDStyle
 	footerStyle        = styles.FooterStyle
 	heroCostStyle      = styles.HeroCostStyle
 	sectionHeaderStyle = styles.SectionHeaderStyle
@@ -888,7 +881,6 @@ func truncateID(id string) string {
 	}
 	return id[:37] + "..."
 }
-
 
 // formatCostComponentLabel returns a human-readable label for a cost component
 func formatCostComponentLabel(component string) string {

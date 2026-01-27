@@ -1,0 +1,30 @@
+run:
+  timeout: 5m
+
+linters:
+  disable-all: true
+  enable:
+    # Essential - catch real bugs
+    - errcheck
+    - staticcheck
+    - unused
+
+    # Style - enforce consistency
+    - gofmt
+    - goimports
+
+    # Good practices
+    - ineffassign
+    - typecheck
+
+linters-settings:
+  staticcheck:
+    checks: ["all"]
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck

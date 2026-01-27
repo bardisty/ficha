@@ -98,8 +98,8 @@ var (
 var (
 	// LiveIndicatorStyle uses green dot for active/healthy status (not red which implies error)
 	LiveIndicatorStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(SuccessColor)
+		Bold(true).
+		Foreground(SuccessColor)
 )
 
 // Help and spinner styles
@@ -140,15 +140,15 @@ var DimStyle = lipgloss.NewStyle().
 var (
 	// BreakdownNewRowStyle highlights newly added rows in the breakdown view
 	BreakdownNewRowStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(HighlightColor)
+		Bold(true).
+		Foreground(HighlightColor)
 )
 
 // Model-specific colors (by tier)
 var (
-	OpusColor   = lipgloss.Color("99")  // Purple - premium tier
-	SonnetColor = lipgloss.Color("75")  // Blue - mid tier
-	HaikuColor  = lipgloss.Color("43")  // Cyan/Teal - lightweight tier
+	OpusColor   = lipgloss.Color("99") // Purple - premium tier
+	SonnetColor = lipgloss.Color("75") // Blue - mid tier
+	HaikuColor  = lipgloss.Color("43") // Cyan/Teal - lightweight tier
 )
 
 // Token type colors

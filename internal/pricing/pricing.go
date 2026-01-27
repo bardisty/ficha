@@ -150,18 +150,18 @@ func GetModelDisplayName(modelID string) string {
 	normalized := normalizeModelID(modelID)
 
 	displayNames := map[string]string{
-		"claude-opus-4-5":    "Opus 4.5",
-		"claude-opus-4-1":    "Opus 4.1",
-		"claude-opus-4":      "Opus 4",
-		"claude-sonnet-4-5":  "Sonnet 4.5",
-		"claude-sonnet-4":    "Sonnet 4",
-		"claude-sonnet-3-7":  "Sonnet 3.7",
-		"claude-haiku-4-5":   "Haiku 4.5",
-		"claude-3-5-sonnet":  "Sonnet 3.5",
-		"claude-3-5-haiku":   "Haiku 3.5",
-		"claude-3-opus":      "Opus 3",
-		"claude-3-sonnet":    "Sonnet 3",
-		"claude-3-haiku":     "Haiku 3",
+		"claude-opus-4-5":   "Opus 4.5",
+		"claude-opus-4-1":   "Opus 4.1",
+		"claude-opus-4":     "Opus 4",
+		"claude-sonnet-4-5": "Sonnet 4.5",
+		"claude-sonnet-4":   "Sonnet 4",
+		"claude-sonnet-3-7": "Sonnet 3.7",
+		"claude-haiku-4-5":  "Haiku 4.5",
+		"claude-3-5-sonnet": "Sonnet 3.5",
+		"claude-3-5-haiku":  "Haiku 3.5",
+		"claude-3-opus":     "Opus 3",
+		"claude-3-sonnet":   "Sonnet 3",
+		"claude-3-haiku":    "Haiku 3",
 	}
 
 	if name, ok := displayNames[normalized]; ok {

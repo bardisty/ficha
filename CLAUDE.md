@@ -26,6 +26,9 @@ make test           # Run all tests
 make test-coverage  # Run tests with coverage report
 make install        # Install to $GOPATH/bin
 make run ARGS="..."  # Run with arguments (e.g., make run ARGS="list")
+make lint           # Run golangci-lint
+make fmt            # Format all Go files
+make check          # Run fmt, lint, and test
 ```
 
 Run a single test:

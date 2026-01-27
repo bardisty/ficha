@@ -1,4 +1,4 @@
-.PHONY: build build-linux build-windows build-all clean test install
+.PHONY: build build-linux build-windows build-all clean test install lint fmt vet check
 
 # Binary name
 BINARY=ccusage
@@ -76,6 +76,21 @@ tidy:
 run:
 	$(GOCMD) run . $(ARGS)
 
+# Run golangci-lint
+lint:
+	golangci-lint run ./...
+
+# Format all Go files
+fmt:
+	gofmt -w .
+
+# Run go vet (informational - has known issues)
+vet:
+	$(GOCMD) vet ./...
+
+# Run all checks
+check: fmt lint test
+
 # Help
 help:
 	@echo "Available targets:"
@@ -93,3 +108,7 @@ help:
 	@echo "  deps            - Download dependencies"
 	@echo "  tidy            - Tidy dependencies"
 	@echo "  run             - Run the application"
+	@echo "  lint            - Run golangci-lint"
+	@echo "  fmt             - Format all Go files"
+	@echo "  vet             - Run go vet"
+	@echo "  check           - Run fmt, lint, and test"

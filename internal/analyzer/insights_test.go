@@ -263,10 +263,10 @@ func TestCalculateInsights_ZeroCosts(t *testing.T) {
 
 func TestGetMainCostComponent(t *testing.T) {
 	tests := []struct {
-		name             string
-		cost             models.CostBreakdown
-		expectedName     string
-		expectedValue    float64
+		name          string
+		cost          models.CostBreakdown
+		expectedName  string
+		expectedValue float64
 	}{
 		{
 			name: "input highest",
@@ -318,8 +318,8 @@ func TestGetMainCostComponent(t *testing.T) {
 			expectedValue: 0.50,
 		},
 		{
-			name: "all zero",
-			cost: models.CostBreakdown{},
+			name:          "all zero",
+			cost:          models.CostBreakdown{},
 			expectedName:  "input",
 			expectedValue: 0,
 		},
