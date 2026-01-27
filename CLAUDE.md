@@ -55,7 +55,7 @@ cmd/root.go → cmd/{show,list,summary,watch,breakdown}.go
 - **internal/parser/**: Reads Claude session files - `sessions.go` discovers sessions, `jsonl.go` parses message files
 - **internal/pricing/**: Model pricing tables with cache rate multipliers (5min TTL: 1.25x, 1hr TTL: 2.0x, read: 0.1x)
 - **internal/models/**: Data structures (`SessionAnalysis`, `CostBreakdown`, `TokenUsage`)
-- **internal/tui/**: Bubbletea terminal UI for `watch` (live monitoring) and `breakdown` (per-message view)
+- **internal/tui/**: Bubbletea terminal UI for `watch` (live monitoring) and `breakdown` (per-message view). `session_watcher.go` uses fsnotify to auto-follow new sessions
 - **internal/styles/**: Shared color palette and styling helpers (model tier colors, cost gradients, token type colors)
 - **internal/paths/**: Resolves Claude project directories from working paths
 
