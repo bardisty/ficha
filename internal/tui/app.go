@@ -934,7 +934,8 @@ func (m Model) renderInsightsContent() string {
 			}
 			var trendLine string
 			if highlighted {
-				trendLine = highlightStyle.Render(fmt.Sprintf("%s → %s", earlyStr, lateStr))
+				// Highlight only the cost values, not the arrow
+				trendLine = fmt.Sprintf("%s → %s", highlightStyle.Render(earlyStr), highlightStyle.Render(lateStr))
 			} else {
 				trendLine = fmt.Sprintf("%s → %s", earlyStr, lateStr)
 			}
@@ -1520,7 +1521,14 @@ func (m Model) renderHeroCost(cost float64, highlighted bool, width int) string 
 	var costStyled string
 	dotIdx := strings.Index(costFull, ".")
 	if highlighted {
-		costStyled = highlightStyle.Render(costStr)
+		// Highlight only the cost value, not " TOTAL"
+		if dotIdx != -1 && len(costFull) > dotIdx+3 {
+			mainPart := costFull[:dotIdx+3]
+			extraPart := costFull[dotIdx+3:]
+			costStyled = highlightStyle.Render(mainPart+extraPart) + heroCostStyle.Render(" TOTAL")
+		} else {
+			costStyled = highlightStyle.Render(costFull) + heroCostStyle.Render(" TOTAL")
+		}
 	} else if dotIdx != -1 && len(costFull) > dotIdx+3 {
 		mainPart := costFull[:dotIdx+3]  // "$12.66"
 		extraPart := costFull[dotIdx+3:] // "5834"
