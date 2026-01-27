@@ -77,3 +77,37 @@ Costs are computed in `analyzer/cost.go` using token counts from message usage d
 - Cache writes at 1.25x (5min) or 2.0x (1hr) input rate
 - Cache reads at 0.1x input rate
 - Cache savings calculated as (cache_read_tokens × input_rate × 0.9)
+
+## Multi-Model Agent Pattern
+
+For complex analysis tasks where uncertainty or ambiguity exists, use a multi-model approach:
+
+**When to use:**
+- Architectural decisions with multiple valid approaches
+- Complex codebase analysis where interpretation matters
+- Tasks where disagreement between models reveals genuine uncertainty
+
+**When NOT to use:**
+- Routine exploration or simple file searches
+- Straightforward analysis with clear answers
+- Tasks where the extra token cost isn't justified
+
+**Pattern:**
+1. Spawn 3 agents in parallel with identical prompts: Haiku, Sonnet, and Opus
+2. Have a 4th Opus agent (synthesizer) review all outputs and report:
+   - **Overlap**: Points where multiple models agree (higher confidence)
+   - **Contradictions**: Areas of disagreement (reveals uncertainty)
+   - **Best insights**: Select the strongest analysis from each
+
+## Working Style Reminder
+
+This section reinforces the critical working style expectations:
+
+- **Challenge ideas before implementing** - Ask if it's actually needed
+- **Point out edge cases, bugs, architectural issues** - Be a second set of eyes
+- **Suggest simpler alternatives** - Complexity must be justified
+- **Only proceed if the idea genuinely improves the project**
+
+Before implementing, consider at least one alternative approach. Don't commit to the first solution that comes to mind - the obvious answer isn't always the best one. After completing work, review it critically: check for edge cases, unnecessary complexity, and whether the solution actually addresses the root problem.
+
+Honest disagreement is more valuable than false validation.
