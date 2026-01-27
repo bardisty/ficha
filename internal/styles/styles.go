@@ -18,16 +18,19 @@ var (
 	ErrorColor     = lipgloss.Color("196") // Red
 )
 
-// Header styles for titles and table headers
+// Header styles for titles and section headers
 var (
+	// HeaderStyle uses bold white for clean, minimal section headers
 	HeaderStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(PrimaryColor)
+			Bold(true)
 
-	TitleStyle = lipgloss.NewStyle().
+	// TitleStyle for session metadata (de-emphasized compared to financial data)
+	TitleStyle = lipgloss.NewStyle()
+
+	// HeroCostStyle for the prominent centered total cost display
+	HeroCostStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(AccentColor).
-			MarginBottom(1)
+			Foreground(SuccessColor)
 )
 
 // Table styles for borders and cells
@@ -73,11 +76,10 @@ var (
 
 // Live mode styles
 var (
+	// LiveIndicatorStyle uses green dot for active/healthy status (not red which implies error)
 	LiveIndicatorStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(ErrorColor).
-				Background(lipgloss.Color("52")). // Dark red bg
-				Padding(0, 1)
+				Foreground(SuccessColor)
 )
 
 // Help and spinner styles
@@ -90,10 +92,8 @@ var (
 			Foreground(PrimaryColor)
 )
 
-// Session ID style
-var SessionIDStyle = lipgloss.NewStyle().
-	Bold(true).
-	Foreground(AccentColor)
+// Session ID style (de-emphasized - metadata shouldn't compete with financial data)
+var SessionIDStyle = lipgloss.NewStyle()
 
 // Highlight style for recently changed values
 var (

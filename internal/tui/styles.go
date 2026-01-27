@@ -6,6 +6,7 @@ import "github.com/bardisty/ccusage/internal/styles"
 var (
 	titleStyle         = styles.TitleStyle
 	headerStyle        = styles.HeaderStyle
+	heroCostStyle      = styles.HeroCostStyle
 	tableBorderStyle   = styles.BorderStyle
 	labelStyle         = styles.LabelStyle
 	valueStyle         = styles.ValueStyle

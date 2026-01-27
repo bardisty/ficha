@@ -391,46 +391,77 @@ func (m Model) isHighlighted(field string) bool {
 func (m Model) View() string {
 	var sb strings.Builder
 
-	// Title with optional previous session ID
+	// Status line: Session info + LIVE indicator + timestamp on same line
+	// Format: "Session: 7de42d4f (prev: 8f026711)    ● LIVE  Updated: 19:04:02"
 	sessionDisplay := truncateID(m.sessionID)
 	if m.prevSessionID != "" {
 		sessionDisplay = fmt.Sprintf("%s (prev: %s)", truncateID(m.sessionID), truncateID(m.prevSessionID))
 	}
-	sb.WriteString(titleStyle.Render(fmt.Sprintf("Session: %s", sessionDisplay)))
-	sb.WriteString("\n")
 
-	// Live indicator
-	sb.WriteString(liveIndicatorStyle.Render(" LIVE "))
-	sb.WriteString(" ")
+	// Build the status line parts
+	var statusParts []string
 
-	// Show switch notification after session switch
+	// Session info (de-emphasized)
+	sessionInfo := fmt.Sprintf("Session: %s", sessionDisplay)
+	if !m.noColor {
+		sessionInfo = titleStyle.Render(sessionInfo)
+	}
+	statusParts = append(statusParts, sessionInfo)
+
+	// LIVE indicator (green dot)
+	liveIndicator := "● LIVE"
+	if !m.noColor {
+		liveIndicator = liveIndicatorStyle.Render(liveIndicator)
+	}
+	statusParts = append(statusParts, liveIndicator)
+
+	// Status (loading/error/timestamp)
+	var statusStr string
+	if m.loading {
+		if m.noColor {
+			statusStr = "Loading..."
+		} else {
+			statusStr = m.spinner.View() + " Loading..."
+		}
+	} else if m.err != nil {
+		statusStr = fmt.Sprintf("Error: %v", m.err)
+	} else {
+		statusStr = fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05"))
+	}
+	statusParts = append(statusParts, statusStr)
+
+	// Join with spacing
+	sb.WriteString(strings.Join(statusParts, "  "))
+
+	// Show switch notification on next line if applicable
 	showSwitchNotify := !m.switchNotifyAt.IsZero() && time.Since(m.switchNotifyAt) < switchNotifyDuration
 	if showSwitchNotify {
+		sb.WriteString("\n")
 		if m.noColor {
-			sb.WriteString("[Switched to new session] ")
+			sb.WriteString("[Switched to new session]")
 		} else {
-			sb.WriteString(lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session "))
+			sb.WriteString(lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session"))
 		}
 	}
 
-	if m.loading {
-		sb.WriteString(m.spinner.View())
-		sb.WriteString(" Loading...")
-	} else if m.err != nil {
-		sb.WriteString(fmt.Sprintf("Error: %v", m.err))
-	} else {
-		sb.WriteString(fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05")))
-	}
-	sb.WriteString("\n\n")
+	sb.WriteString("\n")
 
 	// Analysis content
 	if m.analysis != nil {
 		sb.WriteString(m.renderAnalysis())
+	} else if m.loading {
+		// Show spinner during initial load
+		sb.WriteString("\n")
 	}
 
-	// Help
+	// Separator and help
 	sb.WriteString("\n")
-	sb.WriteString(helpStyle.Render("q: quit • r: refresh"))
+	separator := strings.Repeat("─", 60)
+	if !m.noColor {
+		separator = dimStyle.Render(separator)
+	}
+	sb.WriteString(separator + "\n")
+	sb.WriteString(helpStyle.Render("q: quit  •  r: refresh"))
 
 	return sb.String()
 }
@@ -440,100 +471,249 @@ func (m Model) renderAnalysis() string {
 		return m.renderAnalysisPlain()
 	}
 
+	// Handle empty session state
+	if m.isEmptySession() {
+		return m.renderEmptyState()
+	}
+
 	var sb strings.Builder
 	a := m.analysis
 
-	// Table (14-char value column for 6 decimal costs like "$123.456789")
-	sb.WriteString(tableBorderStyle.Render("┌───────────────────────────┬────────────────┐") + "\n")
-	sb.WriteString(tableBorderStyle.Render("│") +
-		headerStyle.Render(fmt.Sprintf(" %-25s ", "Category")) +
-		tableBorderStyle.Render("│") +
-		headerStyle.Render(fmt.Sprintf(" %14s ", "Amount")) +
-		tableBorderStyle.Render("│") + "\n")
-	sb.WriteString(tableBorderStyle.Render("├───────────────────────────┼────────────────┤") + "\n")
-
-	// Cost rows with field tracking for highlights and colors
-	type costRow struct {
-		label string
-		value float64
-		field string          // field name for highlight tracking
-		color lipgloss.Color  // label color for consistency with token breakdown
-	}
-
-	rows := []costRow{
-		{"Input tokens", a.TotalCost.InputCost, "input_cost", lipgloss.Color("")},
-		{"Output tokens", a.TotalCost.OutputCost, "output_cost", styles.OutputTokenColor},
-	}
-
-	if a.TotalCost.CacheWrite5mCost > 0 {
-		rows = append(rows, costRow{"Cache write (5m TTL)", a.TotalCost.CacheWrite5mCost, "cache_write_5m", styles.CacheWriteTokenColor})
-	}
-
-	if a.TotalCost.CacheWrite1hCost > 0 {
-		rows = append(rows, costRow{"Cache write (1h TTL)", a.TotalCost.CacheWrite1hCost, "cache_write_1h", styles.CacheWriteTokenColor})
-	}
-
-	if a.TotalCost.CacheReadCost > 0 {
-		rows = append(rows, costRow{"Cache read", a.TotalCost.CacheReadCost, "cache_read", styles.CacheReadTokenColor})
-	}
-
-	for _, row := range rows {
-		highlighted := m.isHighlighted(row.field)
-		// Apply color to label if specified
-		var labelStr string
-		if row.color != "" {
-			labelStyle := lipgloss.NewStyle().Foreground(row.color)
-			labelStr = labelStyle.Render(fmt.Sprintf(" %-25s ", row.label))
-		} else {
-			labelStr = fmt.Sprintf(" %-25s ", row.label)
-		}
-		sb.WriteString(tableBorderStyle.Render("│") +
-			labelStr +
-			tableBorderStyle.Render("│") +
-			" " + formatCostStyled(row.value, 14, highlighted, m.noColor) + " " +
-			tableBorderStyle.Render("│") + "\n")
-	}
-
-	// Total row
-	sb.WriteString(tableBorderStyle.Render("├───────────────────────────┼────────────────┤") + "\n")
+	// Hero total cost (centered, prominent)
+	sb.WriteString("\n")
 	totalHighlighted := m.isHighlighted("total")
-	var totalCostStr string
-	if totalHighlighted {
-		totalCostStr = " " + formatCostStyled(a.TotalCost.TotalCost, 14, true, m.noColor) + " "
-	} else {
-		totalCostStr = totalValueStyle.Render(" " + formatCostStyled(a.TotalCost.TotalCost, 14, false, m.noColor) + " ")
-	}
-	sb.WriteString(tableBorderStyle.Render("│") +
-		totalLabelStyle.Render(fmt.Sprintf(" %-25s ", "TOTAL")) +
-		tableBorderStyle.Render("│") +
-		totalCostStr +
-		tableBorderStyle.Render("│") + "\n")
+	sb.WriteString(m.renderHeroCost(a.TotalCost.TotalCost, totalHighlighted))
+	sb.WriteString("\n")
 
-	// Savings row with highlight
+	// Unified cost+token rows
+	// Input tokens
+	sb.WriteString(m.renderUnifiedCostRow(
+		"Input", a.TotalCost.InputCost, a.TotalUsage.InputTokens,
+		"input_cost", "input_tokens", lipgloss.Color(""), ""))
+
+	// Output tokens
+	sb.WriteString(m.renderUnifiedCostRow(
+		"Output", a.TotalCost.OutputCost, a.TotalUsage.OutputTokens,
+		"output_cost", "output_tokens", styles.OutputTokenColor, ""))
+
+	// Cache write rows - tokens aren't split by TTL, so show them on whichever row has cost
+	// If both TTLs have cost, tokens go on the 5m row (first one shown)
+	cacheWriteTokens := a.TotalUsage.CacheCreationInputTokens
+	has5mCost := a.TotalCost.CacheWrite5mCost > 0
+	has1hCost := a.TotalCost.CacheWrite1hCost > 0
+
+	if has5mCost {
+		// 5m row gets tokens whenever it has cost
+		sb.WriteString(m.renderUnifiedCostRow(
+			"Cache write", a.TotalCost.CacheWrite5mCost, cacheWriteTokens,
+			"cache_write_5m", "cache_write_tokens", styles.CacheWriteTokenColor, "5m TTL"))
+	}
+
+	if has1hCost {
+		// 1h row gets tokens only if 5m row doesn't exist
+		tokens := 0
+		if !has5mCost {
+			tokens = cacheWriteTokens
+		}
+		sb.WriteString(m.renderUnifiedCostRow(
+			"Cache write", a.TotalCost.CacheWrite1hCost, tokens,
+			"cache_write_1h", "cache_write_tokens", styles.CacheWriteTokenColor, "1h TTL"))
+	}
+
+	// Cache read - only show if present
+	if a.TotalCost.CacheReadCost > 0 || a.TotalUsage.CacheReadInputTokens > 0 {
+		sb.WriteString(m.renderUnifiedCostRow(
+			"Cache read", a.TotalCost.CacheReadCost, a.TotalUsage.CacheReadInputTokens,
+			"cache_read", "cache_read_tokens", styles.CacheReadTokenColor, ""))
+	}
+
+	// Savings row (no separator - the rows above sum to hero TOTAL, not savings)
 	if a.TotalCost.CacheSavings > 0 {
 		savingsHighlighted := m.isHighlighted("savings")
-		var savingsCostStr string
-		if savingsHighlighted {
-			savingsCostStr = " " + formatCostStyled(a.TotalCost.CacheSavings, 14, true, m.noColor) + " "
-		} else {
-			savingsCostStr = savingsValueStyle.Render(" " + formatCostStyled(a.TotalCost.CacheSavings, 14, false, m.noColor) + " ")
-		}
-		sb.WriteString(tableBorderStyle.Render("│") +
-			savingsLabelStyle.Render(fmt.Sprintf(" %-25s ", "Cache Savings")) +
-			tableBorderStyle.Render("│") +
-			savingsCostStr +
-			tableBorderStyle.Render("│") + "\n")
+		savingsStr := formatCostStyledGreen(a.TotalCost.CacheSavings, 11, savingsHighlighted, m.noColor)
+		sb.WriteString(fmt.Sprintf("  %s %s  %s\n",
+			savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
+			savingsStr,
+			dimStyle.Render("(from cache reads)")))
 	}
 
-	sb.WriteString(tableBorderStyle.Render("└───────────────────────────┴────────────────┘") + "\n")
-
-	// Footer with message count highlight and delta
+	// Context window section
 	sb.WriteString("\n")
+	sb.WriteString(m.renderContextSection())
+
+	// Cost by model
+	sb.WriteString("\n")
+	sb.WriteString(m.renderCostByModel())
+
+	// Agent breakdown (shown when agents exist)
+	if a.HasAgents {
+		sb.WriteString("\n")
+		sb.WriteString(m.renderAgentBreakdown())
+	}
+
+	// Message insights (shown when insights are available)
+	if a.Insights != nil {
+		sb.WriteString("\n")
+		sb.WriteString(m.renderInsights())
+	}
+
+	// Footer with message count and duration
+	sb.WriteString("\n")
+	sb.WriteString(m.renderFooter())
+
+	return sb.String()
+}
+
+func (m Model) renderAnalysisPlain() string {
+	// Handle empty session state
+	if m.isEmptySession() {
+		return m.renderEmptyState()
+	}
+
+	var sb strings.Builder
+	a := m.analysis
+
+	// Hero total cost (centered)
+	sb.WriteString("\n")
+	sb.WriteString(m.renderHeroCost(a.TotalCost.TotalCost, false))
+	sb.WriteString("\n")
+
+	// Unified cost+token rows
+	sb.WriteString(m.renderUnifiedCostRow(
+		"Input", a.TotalCost.InputCost, a.TotalUsage.InputTokens,
+		"input_cost", "input_tokens", lipgloss.Color(""), ""))
+
+	// Output tokens
+	sb.WriteString(m.renderUnifiedCostRow(
+		"Output", a.TotalCost.OutputCost, a.TotalUsage.OutputTokens,
+		"output_cost", "output_tokens", lipgloss.Color(""), ""))
+
+	// Cache write rows - tokens aren't split by TTL, so show them on whichever row has cost
+	cacheWriteTokens := a.TotalUsage.CacheCreationInputTokens
+	has5mCost := a.TotalCost.CacheWrite5mCost > 0
+	has1hCost := a.TotalCost.CacheWrite1hCost > 0
+
+	if has5mCost {
+		sb.WriteString(m.renderUnifiedCostRow(
+			"Cache write", a.TotalCost.CacheWrite5mCost, cacheWriteTokens,
+			"cache_write_5m", "cache_write_tokens", lipgloss.Color(""), "5m TTL"))
+	}
+
+	if has1hCost {
+		tokens := 0
+		if !has5mCost {
+			tokens = cacheWriteTokens
+		}
+		sb.WriteString(m.renderUnifiedCostRow(
+			"Cache write", a.TotalCost.CacheWrite1hCost, tokens,
+			"cache_write_1h", "cache_write_tokens", lipgloss.Color(""), "1h TTL"))
+	}
+
+	// Cache read
+	if a.TotalCost.CacheReadCost > 0 || a.TotalUsage.CacheReadInputTokens > 0 {
+		sb.WriteString(m.renderUnifiedCostRow(
+			"Cache read", a.TotalCost.CacheReadCost, a.TotalUsage.CacheReadInputTokens,
+			"cache_read", "cache_read_tokens", lipgloss.Color(""), ""))
+	}
+
+	// Savings row (no separator - rows above sum to hero TOTAL, not savings)
+	if a.TotalCost.CacheSavings > 0 {
+		sb.WriteString(fmt.Sprintf("  %-14s %s  (from cache reads)\n",
+			"Savings", formatCost(a.TotalCost.CacheSavings)))
+	}
+
+	// Context window section
+	sb.WriteString("\n")
+	sb.WriteString(m.renderContextSection())
+
+	// Cost by model
+	sb.WriteString("\n")
+	sb.WriteString(m.renderCostByModel())
+
+	// Agent breakdown (shown when agents exist)
+	if a.HasAgents {
+		sb.WriteString("\n")
+		sb.WriteString(m.renderAgentBreakdown())
+	}
+
+	// Message insights (shown when insights are available)
+	if a.Insights != nil {
+		sb.WriteString("\n")
+		sb.WriteString(m.renderInsights())
+	}
+
+	// Footer
+	sb.WriteString("\n")
+	sb.WriteString(m.renderFooter())
+
+	return sb.String()
+}
+
+// renderContextSection renders the context window progress bar and stats
+func (m Model) renderContextSection() string {
+	var sb strings.Builder
+
+	contextSize := m.analysis.LastMessageUsage.ContextWindowSize()
+	if contextSize == 0 {
+		return ""
+	}
+
+	modelPricing := pricing.GetModelPricing(m.analysis.LastMessageModel)
+	maxContext := modelPricing.MaxContextTokens
+	contextPct := pricing.GetContextPercentage(modelPricing, contextSize)
+	freeSpace := pricing.GetFreeSpace(modelPricing, contextSize)
+	buffer := pricing.GetAutocompactBuffer(modelPricing)
+	freePct := float64(freeSpace) / float64(maxContext) * 100
+
+	highlighted := m.isHighlighted("context_window")
+	usageColor := styles.GetContextUsageColor(contextPct)
+
+	// Context label with value
+	contextVal := formatNumber(contextSize)
+	contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(maxContext))
+
+	if m.noColor {
+		sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n", formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, true), contextVal, contextMeta))
+		sb.WriteString(fmt.Sprintf("           Free: %s (%.1f%%)  │  Buffer: %s\n", formatNumber(freeSpace), freePct, formatNumber(buffer)))
+	} else {
+		// Progress bar with context info
+		if highlighted {
+			sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n",
+				formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, false),
+				highlightStyle.Render(contextVal),
+				dimStyle.Render(contextMeta)))
+		} else {
+			coloredMeta := lipgloss.NewStyle().Foreground(usageColor).Render(contextMeta)
+			sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n",
+				formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, false),
+				contextVal, coloredMeta))
+		}
+
+		// Free space and buffer info
+		freeVal := formatNumber(freeSpace)
+		bufferVal := formatNumber(buffer)
+		freeValWithPct := fmt.Sprintf("%s (%.1f%%)", freeVal, freePct)
+		var freeStyled string
+		if highlighted {
+			freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render("Free: ") + highlightStyle.Render(freeValWithPct)
+		} else {
+			freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(fmt.Sprintf("Free: %s", freeValWithPct))
+		}
+		bufferStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(fmt.Sprintf("Buffer: %s", bufferVal))
+		sb.WriteString(fmt.Sprintf("           %s  %s  %s\n", freeStyled, dimStyle.Render("│"), bufferStyled))
+	}
+
+	return sb.String()
+}
+
+// renderFooter renders the message count and duration footer
+func (m Model) renderFooter() string {
+	a := m.analysis
+	changed := m.recentlyChanged("messages")
+	highlighted := m.isHighlighted("messages")
+
 	var footerLine string
-	changed := m.recentlyChanged("messages")   // Use for delta display (works in noColor mode)
-	highlighted := m.isHighlighted("messages") // Use for styling (false in noColor mode)
 	if changed {
-		// Show delta when recently changed - only highlight the value, not the label
 		var valStr string
 		if m.deltaCount > 0 {
 			valStr = fmt.Sprintf("%d (+%d)", a.MessageCount, m.deltaCount)
@@ -544,239 +724,15 @@ func (m Model) renderAnalysis() string {
 		}
 		if highlighted {
 			footerLine = footerStyle.Render("Messages: ") + highlightStyle.Render(valStr) +
-				footerStyle.Render(fmt.Sprintf(" │ Duration: %s", formatDuration(a.Duration.Duration())))
+				footerStyle.Render(fmt.Sprintf("  │  Duration: %s", formatDuration(a.Duration.Duration())))
 		} else {
-			// noColor mode: show delta but without highlight styling
-			footerLine = fmt.Sprintf("Messages: %s │ Duration: %s", valStr, formatDuration(a.Duration.Duration()))
+			footerLine = fmt.Sprintf("Messages: %s  │  Duration: %s", valStr, formatDuration(a.Duration.Duration()))
 		}
 	} else {
-		footerLine = footerStyle.Render(fmt.Sprintf("Messages: %d │ Duration: %s",
+		footerLine = footerStyle.Render(fmt.Sprintf("Messages: %d  │  Duration: %s",
 			a.MessageCount, formatDuration(a.Duration.Duration())))
 	}
-	sb.WriteString(footerLine)
-
-	// Token breakdown (always shown)
-	sb.WriteString("\n\n")
-	sb.WriteString(m.renderTokenBreakdown())
-
-	// Cost by model (always shown)
-	sb.WriteString("\n\n")
-	sb.WriteString(m.renderCostByModel())
-
-	// Agent breakdown (shown when agents exist)
-	if a.HasAgents {
-		sb.WriteString("\n\n")
-		sb.WriteString(m.renderAgentBreakdown())
-	}
-
-	// Message insights (shown when insights are available)
-	if a.Insights != nil {
-		sb.WriteString("\n\n")
-		sb.WriteString(m.renderInsights())
-	}
-
-	return sb.String()
-}
-
-func (m Model) renderAnalysisPlain() string {
-	var sb strings.Builder
-	a := m.analysis
-
-	sb.WriteString("+---------------------------+----------------+\n")
-	sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Category", "Amount"))
-	sb.WriteString("+---------------------------+----------------+\n")
-
-	if a.TotalCost.InputCost > 0 {
-		sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Input tokens", formatCost(a.TotalCost.InputCost)))
-	}
-	if a.TotalCost.OutputCost > 0 {
-		sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Output tokens", formatCost(a.TotalCost.OutputCost)))
-	}
-	if a.TotalCost.CacheWrite5mCost > 0 {
-		sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Cache write (5m TTL)", formatCost(a.TotalCost.CacheWrite5mCost)))
-	}
-	if a.TotalCost.CacheWrite1hCost > 0 {
-		sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Cache write (1h TTL)", formatCost(a.TotalCost.CacheWrite1hCost)))
-	}
-	if a.TotalCost.CacheReadCost > 0 {
-		sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Cache read", formatCost(a.TotalCost.CacheReadCost)))
-	}
-
-	sb.WriteString("+---------------------------+----------------+\n")
-	sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "TOTAL", formatCost(a.TotalCost.TotalCost)))
-
-	if a.TotalCost.CacheSavings > 0 {
-		sb.WriteString(fmt.Sprintf("| %-25s | %14s |\n", "Cache Savings", formatCost(a.TotalCost.CacheSavings)))
-	}
-
-	sb.WriteString("+---------------------------+----------------+\n")
-
-	// Show message count with delta if recently changed
-	if m.recentlyChanged("messages") && m.deltaCount != 0 {
-		var deltaStr string
-		if m.deltaCount > 0 {
-			deltaStr = fmt.Sprintf(" (+%d)", m.deltaCount)
-		} else {
-			deltaStr = fmt.Sprintf(" (%d)", m.deltaCount)
-		}
-		sb.WriteString(fmt.Sprintf("\nMessages: %d%s | Duration: %s",
-			a.MessageCount, deltaStr,
-			formatDuration(a.Duration.Duration())))
-	} else {
-		sb.WriteString(fmt.Sprintf("\nMessages: %d | Duration: %s",
-			a.MessageCount,
-			formatDuration(a.Duration.Duration())))
-	}
-
-	// Token breakdown (always shown)
-	sb.WriteString("\n\n")
-	sb.WriteString(m.renderTokenBreakdown())
-
-	// Cost by model (always shown)
-	sb.WriteString("\n\n")
-	sb.WriteString(m.renderCostByModel())
-
-	// Agent breakdown (shown when agents exist)
-	if a.HasAgents {
-		sb.WriteString("\n\n")
-		sb.WriteString(m.renderAgentBreakdown())
-	}
-
-	// Message insights (shown when insights are available)
-	if a.Insights != nil {
-		sb.WriteString("\n\n")
-		sb.WriteString(m.renderInsights())
-	}
-
-	return sb.String()
-}
-
-func (m Model) renderTokenBreakdown() string {
-	var sb strings.Builder
-
-	title := "Token Breakdown (Cumulative)"
-	if !m.noColor {
-		title = headerStyle.Render(title)
-	}
-	sb.WriteString(title + "\n")
-
-	u := m.analysis.TotalUsage
-	msgCount := m.analysis.MessageCount
-
-	// Token type colors for labels
-	type tokenRow struct {
-		label string
-		field string
-		value int
-		color lipgloss.Color
-	}
-
-	rows := []tokenRow{
-		{"Input tokens:", "input_tokens", u.InputTokens, lipgloss.Color("")},                // Default (no special color)
-		{"Output tokens:", "output_tokens", u.OutputTokens, styles.OutputTokenColor},        // Light blue
-		{"Cache write tokens:", "cache_write_tokens", u.CacheCreationInputTokens, styles.CacheWriteTokenColor}, // Orange
-		{"Cache read tokens:", "cache_read_tokens", u.CacheReadInputTokens, styles.CacheReadTokenColor},        // Cyan
-	}
-
-	for _, row := range rows {
-		changed := m.recentlyChanged(row.field)   // Use for delta display (works in noColor mode)
-		highlighted := m.isHighlighted(row.field) // Use for styling (false in noColor mode)
-		delta := m.deltaTokens[row.field]
-
-		// Format the label with optional color
-		var labelStr string
-		if !m.noColor && row.color != "" {
-			labelStyle := lipgloss.NewStyle().Foreground(row.color)
-			labelStr = labelStyle.Render(fmt.Sprintf("%-20s", row.label))
-		} else {
-			labelStr = fmt.Sprintf("%-20s", row.label)
-		}
-
-		// Per-message average (dimmed in color mode)
-		avgStr := formatAvg(row.value, msgCount)
-		if !m.noColor && avgStr != "" {
-			avgStr = dimStyle.Render(avgStr)
-		}
-
-		if changed {
-			valStr := formatNumberWithDelta(row.value, delta, true)
-			if highlighted {
-				sb.WriteString(fmt.Sprintf("  %s %s  %s\n", labelStr, highlightStyle.Render(valStr), avgStr))
-			} else {
-				// noColor mode: show delta but without highlight styling
-				sb.WriteString(fmt.Sprintf("  %s %s  %s\n", labelStr, valStr, avgStr))
-			}
-		} else {
-			sb.WriteString(fmt.Sprintf("  %s %12s  %s\n", labelStr, formatNumber(row.value), avgStr))
-		}
-	}
-
-	// Context window: last message's total input tokens (matches /context)
-	contextSize := m.analysis.LastMessageUsage.ContextWindowSize()
-	if contextSize > 0 {
-		modelPricing := pricing.GetModelPricing(m.analysis.LastMessageModel)
-		maxContext := modelPricing.MaxContextTokens
-		contextPct := pricing.GetContextPercentage(modelPricing, contextSize)
-		freeSpace := pricing.GetFreeSpace(modelPricing, contextSize)
-		buffer := pricing.GetAutocompactBuffer(modelPricing)
-		freePct := float64(freeSpace) / float64(maxContext) * 100
-
-		highlighted := m.isHighlighted("context_window")
-
-		// Get usage color based on context percentage
-		usageColor := styles.GetContextUsageColor(contextPct)
-
-		// Format context window line with dynamic color
-		contextVal := formatNumber(contextSize)
-		contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(maxContext))
-		if highlighted {
-			sb.WriteString(fmt.Sprintf("\n    Context: %s %s\n",
-				highlightStyle.Render(contextVal),
-				dimStyle.Render(contextMeta)))
-		} else if !m.noColor {
-			// Apply usage-level color to the percentage
-			coloredMeta := lipgloss.NewStyle().Foreground(usageColor).Render(
-				fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(maxContext)))
-			sb.WriteString(fmt.Sprintf("\n    Context: %s %s\n",
-				contextVal, coloredMeta))
-		} else {
-			sb.WriteString(fmt.Sprintf("\n    Context: %s %s\n",
-				contextVal, contextMeta))
-		}
-
-		// Progress bar
-		sb.WriteString(fmt.Sprintf("    %s\n", formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, m.noColor)))
-
-		// Single line with Free space and Buffer (text colors hint at bar sections but stay readable)
-		freeVal := formatNumber(freeSpace)
-		bufferVal := formatNumber(buffer)
-		if !m.noColor {
-			// Free value highlights yellow when context changes, label stays normal
-			var freeStyled string
-			freeValWithPct := fmt.Sprintf("%s (%.1f%%)", freeVal, freePct)
-			if highlighted {
-				freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render("Free: ") + highlightStyle.Render(freeValWithPct)
-			} else {
-				freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(fmt.Sprintf("Free: %s", freeValWithPct))
-			}
-			bufferStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(fmt.Sprintf("Buffer: %s (reserved)", bufferVal))
-			sepStyled := dimStyle.Render("│")
-			sb.WriteString(fmt.Sprintf("    %s  %s  %s\n", freeStyled, sepStyled, bufferStyled))
-		} else {
-			sb.WriteString(fmt.Sprintf("    Free: %s (%.1f%%)  │  Buffer: %s (reserved)\n", freeVal, freePct, bufferVal))
-		}
-	}
-
-	return sb.String()
-}
-
-// formatAvg formats a per-message average
-func formatAvg(total int, msgCount int) string {
-	if msgCount == 0 {
-		return ""
-	}
-	avg := total / msgCount
-	return fmt.Sprintf("(avg: %s/msg)", formatNumber(avg))
+	return footerLine
 }
 
 func (m Model) renderCostByModel() string {
@@ -786,7 +742,7 @@ func (m Model) renderCostByModel() string {
 	if !m.noColor {
 		title = headerStyle.Render(title)
 	}
-	sb.WriteString(title + "\n")
+	sb.WriteString("  " + title + "\n")
 
 	// Extract and sort by cost (highest first)
 	type modelCost struct {
@@ -812,14 +768,14 @@ func (m Model) renderCostByModel() string {
 		if !m.noColor {
 			modelColor := getModelColor(mc.id)
 			labelStyle := lipgloss.NewStyle().Foreground(modelColor)
-			labelStr = labelStyle.Render(fmt.Sprintf("%-20s", modelName+":"))
+			labelStr = labelStyle.Render(fmt.Sprintf("%-18s", modelName))
 		} else {
-			labelStr = fmt.Sprintf("%-20s", modelName+":")
+			labelStr = fmt.Sprintf("%-18s", modelName)
 		}
 
 		// Apply cost magnitude shading
-		costStr := formatCostStyledWithMagnitude(cost.TotalCost, 14, highlighted, m.noColor, totalCost)
-		sb.WriteString(fmt.Sprintf("  %s %s\n", labelStr, costStr))
+		costStr := formatCostStyledWithMagnitude(cost.TotalCost, 12, highlighted, m.noColor, totalCost)
+		sb.WriteString(fmt.Sprintf("    %s %s\n", labelStr, costStr))
 	}
 
 	return sb.String()
@@ -833,24 +789,24 @@ func (m Model) renderAgentBreakdown() string {
 	if !m.noColor {
 		title = headerStyle.Render(title)
 	}
-	sb.WriteString(title + "\n")
+	sb.WriteString("  " + title + "\n")
 
 	totalCost := a.TotalCost.TotalCost
 
 	// Show parent session cost with highlight and magnitude shading
 	parentHighlighted := m.isHighlighted("parent_cost")
-	parentCostStr := formatCostStyledWithMagnitude(a.ParentCost.TotalCost, 14, parentHighlighted, m.noColor, totalCost)
+	parentCostStr := formatCostStyledWithMagnitude(a.ParentCost.TotalCost, 12, parentHighlighted, m.noColor, totalCost)
 	if !m.noColor {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", dimStyle.Render("Parent session:"), parentCostStr))
+		sb.WriteString(fmt.Sprintf("    %-18s %s\n", dimStyle.Render("Parent session"), parentCostStr))
 	} else {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", "Parent session:", parentCostStr))
+		sb.WriteString(fmt.Sprintf("    %-18s %s\n", "Parent session", parentCostStr))
 	}
 
 	// Show each agent with sequential numbering matching breakdown view [A1], [A2], etc.
 	for i, agent := range a.Agents {
 		agentNum := fmt.Sprintf("%d", i+1)
 		agentHighlighted := m.isHighlighted("agent_" + agent.AgentID)
-		costStr := formatCostStyledWithMagnitude(agent.TotalCost.TotalCost, 14, agentHighlighted, m.noColor, totalCost)
+		costStr := formatCostStyledWithMagnitude(agent.TotalCost.TotalCost, 12, agentHighlighted, m.noColor, totalCost)
 
 		if !m.noColor {
 			// Color the [An] marker to match breakdown view
@@ -863,19 +819,24 @@ func (m Model) renderAgentBreakdown() string {
 				shortID = shortID[:7]
 			}
 			idRef := dimStyle.Render(fmt.Sprintf("(%s)", shortID))
-			sb.WriteString(fmt.Sprintf("  %s %s  %s  %s\n", marker, idRef, costStr, dimStyle.Render(fmt.Sprintf("%d msgs", agent.MessageCount))))
+			msgInfo := dimStyle.Render(fmt.Sprintf("%d msgs", agent.MessageCount))
+			sb.WriteString(fmt.Sprintf("    %s %s  %s   %s\n", marker, idRef, costStr, msgInfo))
 		} else {
-			sb.WriteString(fmt.Sprintf("  [A%s] (%s)       %s  %d msgs\n", agentNum, agent.AgentID[:7], costStr, agent.MessageCount))
+			shortID := agent.AgentID
+			if len(shortID) > 7 {
+				shortID = shortID[:7]
+			}
+			sb.WriteString(fmt.Sprintf("    [A%s] (%s)     %s   %d msgs\n", agentNum, shortID, costStr, agent.MessageCount))
 		}
 	}
 
 	// Show agents subtotal with highlight and magnitude shading
 	subtotalHighlighted := m.isHighlighted("agents_subtotal")
-	subtotalStr := formatCostStyledWithMagnitude(a.AgentsCost.TotalCost, 14, subtotalHighlighted, m.noColor, totalCost)
+	subtotalStr := formatCostStyledWithMagnitude(a.AgentsCost.TotalCost, 12, subtotalHighlighted, m.noColor, totalCost)
 	if !m.noColor {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", dimStyle.Render("Agents subtotal:"), subtotalStr))
+		sb.WriteString(fmt.Sprintf("    %-18s %s\n", dimStyle.Render("Agents subtotal"), subtotalStr))
 	} else {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", "Agents subtotal:", subtotalStr))
+		sb.WriteString(fmt.Sprintf("    %-18s %s\n", "Agents subtotal", subtotalStr))
 	}
 
 	return sb.String()
@@ -889,7 +850,7 @@ func (m Model) renderInsights() string {
 	if !m.noColor {
 		title = headerStyle.Render(title)
 	}
-	sb.WriteString(title + "\n")
+	sb.WriteString("  " + title + "\n")
 
 	// First message
 	if insights.FirstMessage != nil {
@@ -900,13 +861,13 @@ func (m Model) renderInsights() string {
 		if !m.noColor {
 			costStr := formatCostStyled(first.Cost, 10, highlighted, m.noColor)
 			componentStr := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, formatCost(first.MainCostValue)))
-			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
+			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s\n",
 				"First:",
 				costStr,
 				first.Timestamp.Format("15:04:05"),
 				componentStr))
 		} else {
-			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
+			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s: %s\n",
 				"First:",
 				formatCost(first.Cost),
 				first.Timestamp.Format("15:04:05"),
@@ -924,13 +885,13 @@ func (m Model) renderInsights() string {
 		if !m.noColor {
 			costStr := formatCostStyled(last.Cost, 10, highlighted, m.noColor)
 			componentStr := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, formatCost(last.MainCostValue)))
-			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
+			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s\n",
 				"Last:",
 				costStr,
 				last.Timestamp.Format("15:04:05"),
 				componentStr))
 		} else {
-			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
+			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s: %s\n",
 				"Last:",
 				formatCost(last.Cost),
 				last.Timestamp.Format("15:04:05"),
@@ -949,13 +910,13 @@ func (m Model) renderInsights() string {
 		if !m.noColor {
 			costStr := formatCostStyled(highest.Cost, 10, highlighted, m.noColor)
 			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render("⚠ " + warningStr)
-			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
+			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s\n",
 				"Peak:",
 				costStr,
 				highest.Timestamp.Format("15:04:05"),
 				warningStyled))
 		} else {
-			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  ! %s\n",
+			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  ! %s\n",
 				"Peak:",
 				formatCost(highest.Cost),
 				highest.Timestamp.Format("15:04:05"),
@@ -989,13 +950,13 @@ func (m Model) renderInsights() string {
 			} else {
 				trendLine = fmt.Sprintf("%s → %s", earlyStr, lateStr)
 			}
-			sb.WriteString(fmt.Sprintf("  %-10s %s  %s %s\n",
+			sb.WriteString(fmt.Sprintf("    %-8s %s  %s %s\n",
 				"Trend:",
 				trendLine,
 				symbolStyled,
 				trendDesc))
 		} else {
-			sb.WriteString(fmt.Sprintf("  %-10s %s -> %s  %s %s\n",
+			sb.WriteString(fmt.Sprintf("    %-8s %s -> %s  %s %s\n",
 				"Trend:",
 				earlyStr,
 				lateStr,
@@ -1201,6 +1162,35 @@ func formatCostStyled(cost float64, width int, highlighted bool, noColor bool) s
 	return padding + main + dimStyle.Render(extra)
 }
 
+// formatCostStyledGreen returns a cost string in green (for savings) with proper padding
+func formatCostStyledGreen(cost float64, width int, highlighted bool, noColor bool) string {
+	full := fmt.Sprintf("$%.6f", cost)
+	plainLen := len(full)
+
+	padding := ""
+	if width > plainLen {
+		padding = strings.Repeat(" ", width-plainLen)
+	}
+
+	if noColor {
+		return padding + full
+	}
+
+	if highlighted {
+		return padding + highlightStyle.Render(full)
+	}
+
+	// Apply green color (savings style) with dimmed extra decimals
+	dotIdx := strings.Index(full, ".")
+	if dotIdx == -1 || len(full) <= dotIdx+3 {
+		return padding + savingsValueStyle.Render(full)
+	}
+
+	main := full[:dotIdx+3]
+	extra := full[dotIdx+3:]
+	return padding + savingsValueStyle.Render(main) + dimStyle.Render(extra)
+}
+
 // formatCostStyledWithMagnitude returns a cost string with magnitude-based coloring
 // Higher costs relative to total are brighter, lower costs are dimmer
 func formatCostStyledWithMagnitude(cost float64, width int, highlighted bool, noColor bool, total float64) string {
@@ -1370,4 +1360,126 @@ func formatContextProgressBar(contextSize, freeSpace, buffer, maxContext int, no
 	bufferStyled := lipgloss.NewStyle().Foreground(styles.ContextBufferColor).Render(bufferStr)
 
 	return "[" + usedStyled + freeStyled + bufferStyled + "]"
+}
+
+// renderHeroCost renders the prominent centered total cost with underline
+func (m Model) renderHeroCost(cost float64, highlighted bool) string {
+	var sb strings.Builder
+
+	// Format the cost with 6 decimal places
+	costStr := fmt.Sprintf("$%.6f", cost)
+
+	// Create the underline (same width as cost string)
+	underline := strings.Repeat("─", len(costStr))
+
+	// Center padding (assuming ~60 char width for content area)
+	const contentWidth = 60
+	costPadding := (contentWidth - len(costStr)) / 2
+	labelPadding := (contentWidth - len("total cost")) / 2
+
+	if costPadding < 0 {
+		costPadding = 0
+	}
+	if labelPadding < 0 {
+		labelPadding = 0
+	}
+
+	pad := strings.Repeat(" ", costPadding)
+	labelPad := strings.Repeat(" ", labelPadding)
+
+	if m.noColor {
+		sb.WriteString(pad + costStr + "\n")
+		sb.WriteString(pad + underline + "\n")
+		sb.WriteString(labelPad + "total cost\n")
+	} else {
+		if highlighted {
+			sb.WriteString(pad + highlightStyle.Render(costStr) + "\n")
+		} else {
+			sb.WriteString(pad + heroCostStyle.Render(costStr) + "\n")
+		}
+		sb.WriteString(pad + dimStyle.Render(underline) + "\n")
+		sb.WriteString(labelPad + dimStyle.Render("total cost") + "\n")
+	}
+
+	return sb.String()
+}
+
+// renderUnifiedCostRow renders a single row with cost and token info combined
+// Format: "  Label          $0.371042     53.9K tokens"
+func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int, costField, tokenField string, labelColor lipgloss.Color, extra string) string {
+	costHighlighted := m.isHighlighted(costField)
+	tokenChanged := m.recentlyChanged(tokenField)
+	tokenHighlighted := m.isHighlighted(tokenField)
+	delta := m.deltaTokens[tokenField]
+
+	// Format label with optional color
+	var labelStr string
+	if !m.noColor && labelColor != "" {
+		labelStyle := lipgloss.NewStyle().Foreground(labelColor)
+		labelStr = labelStyle.Render(fmt.Sprintf("%-14s", label))
+	} else {
+		labelStr = fmt.Sprintf("%-14s", label)
+	}
+
+	// Format cost (10 chars for "$123.456789")
+	costStr := formatCostStyled(cost, 11, costHighlighted, m.noColor)
+
+	// Format tokens
+	var tokenStr string
+	if tokenChanged {
+		tokenStr = formatNumberWithDelta(tokens, delta, true)
+		if tokenHighlighted {
+			tokenStr = highlightStyle.Render(tokenStr)
+		}
+	} else {
+		tokenStr = fmt.Sprintf("%12s", formatNumber(tokens))
+	}
+
+	// Add extra info (like TTL)
+	extraStr := ""
+	if extra != "" {
+		if !m.noColor {
+			extraStr = "  " + dimStyle.Render(extra)
+		} else {
+			extraStr = "  " + extra
+		}
+	}
+
+	return fmt.Sprintf("  %s %s  %s tokens%s\n", labelStr, costStr, tokenStr, extraStr)
+}
+
+// renderEmptyState renders a clean empty state for new sessions
+func (m Model) renderEmptyState() string {
+	var sb strings.Builder
+
+	// Hero cost (even $0.00 to establish visual anchor)
+	sb.WriteString("\n")
+	sb.WriteString(m.renderHeroCost(0, false))
+	sb.WriteString("\n")
+
+	// Simple awaiting message
+	msg := "Awaiting first message..."
+	const contentWidth = 60
+	padding := (contentWidth - len(msg)) / 2
+	if padding < 0 {
+		padding = 0
+	}
+	pad := strings.Repeat(" ", padding)
+
+	if m.noColor {
+		sb.WriteString(pad + msg + "\n")
+	} else {
+		sb.WriteString(pad + dimStyle.Render(msg) + "\n")
+	}
+
+	return sb.String()
+}
+
+// isEmptySession checks if this is an empty/new session with no real data
+func (m Model) isEmptySession() bool {
+	if m.analysis == nil {
+		return true
+	}
+	// Session is empty if total cost is 0 and no messages
+	return m.analysis.TotalCost.TotalCost == 0 && m.analysis.MessageCount == 0
 }
