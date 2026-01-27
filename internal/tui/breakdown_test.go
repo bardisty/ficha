@@ -164,7 +164,7 @@ func TestBreakdownModel_RenderRow(t *testing.T) {
 		},
 	}
 
-	row := m.renderRow(msg, false)
+	row := m.renderRow(msg, false, 0.0, true) // prevCost=0, isFirst=true
 
 	// Check that the row contains expected values
 	if !containsSubstring(row, "42") {
@@ -176,11 +176,15 @@ func TestBreakdownModel_RenderRow(t *testing.T) {
 	if !containsSubstring(row, "Sonnet 4") {
 		t.Error("row should contain model name 'Sonnet 4'")
 	}
-	if !containsSubstring(row, "$0.0512") {
-		t.Error("row should contain cost")
+	if !containsSubstring(row, "$0.051200") {
+		t.Error("row should contain cost with 6 decimal places")
 	}
 	if !containsSubstring(row, "1.2K") {
 		t.Error("row should contain input tokens")
+	}
+	// Check trend indicator (first message, should be stable ·)
+	if !containsSubstring(row, "·") {
+		t.Error("row should contain stable trend indicator · for first message")
 	}
 }
 
@@ -201,7 +205,7 @@ func TestBreakdownModel_RenderRow_WithAgent(t *testing.T) {
 		},
 	}
 
-	row := m.renderRow(msg, false)
+	row := m.renderRow(msg, false, 0.05, false) // prevCost=0.05, isFirst=false
 
 	// Check agent marker is present
 	if !containsSubstring(row, "[A1]") {
@@ -210,6 +214,86 @@ func TestBreakdownModel_RenderRow_WithAgent(t *testing.T) {
 	// Check model name is present (agent using Haiku)
 	if !containsSubstring(row, "Haiku 4.5") {
 		t.Error("row should contain model name 'Haiku 4.5'")
+	}
+}
+
+func TestGetRowTrendIndicator(t *testing.T) {
+	tests := []struct {
+		name          string
+		currentCost   float64
+		previousCost  float64
+		isFirst       bool
+		wantSymbol    string
+		wantDirection models.TrendDirection
+	}{
+		{
+			name:          "first message",
+			currentCost:   0.05,
+			previousCost:  0.0,
+			isFirst:       true,
+			wantSymbol:    "·",
+			wantDirection: models.TrendStable,
+		},
+		{
+			name:          "stable cost (within 10%)",
+			currentCost:   0.055,
+			previousCost:  0.05,
+			isFirst:       false,
+			wantSymbol:    "·",
+			wantDirection: models.TrendStable,
+		},
+		{
+			name:          "increasing cost (>10%)",
+			currentCost:   0.06,
+			previousCost:  0.05,
+			isFirst:       false,
+			wantSymbol:    "↑",
+			wantDirection: models.TrendIncreasing,
+		},
+		{
+			name:          "decreasing cost (>10%)",
+			currentCost:   0.04,
+			previousCost:  0.05,
+			isFirst:       false,
+			wantSymbol:    "↓",
+			wantDirection: models.TrendDecreasing,
+		},
+		{
+			name:          "exactly 10% increase (not significant)",
+			currentCost:   0.055,
+			previousCost:  0.05,
+			isFirst:       false,
+			wantSymbol:    "·",
+			wantDirection: models.TrendStable,
+		},
+		{
+			name:          "just over 10% increase",
+			currentCost:   0.0551,
+			previousCost:  0.05,
+			isFirst:       false,
+			wantSymbol:    "↑",
+			wantDirection: models.TrendIncreasing,
+		},
+		{
+			name:          "previous cost zero",
+			currentCost:   0.05,
+			previousCost:  0.0,
+			isFirst:       false,
+			wantSymbol:    "·",
+			wantDirection: models.TrendStable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSymbol, gotDirection := getRowTrendIndicator(tt.currentCost, tt.previousCost, tt.isFirst)
+			if gotSymbol != tt.wantSymbol {
+				t.Errorf("getRowTrendIndicator() symbol = %q, want %q", gotSymbol, tt.wantSymbol)
+			}
+			if gotDirection != tt.wantDirection {
+				t.Errorf("getRowTrendIndicator() direction = %v, want %v", gotDirection, tt.wantDirection)
+			}
+		})
 	}
 }
 

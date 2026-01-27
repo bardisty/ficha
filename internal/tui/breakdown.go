@@ -312,25 +312,24 @@ func (m BreakdownModel) View() string {
 		scrollMode = "MANUAL"
 	}
 	if !m.noColor {
-		// Build footer with highlighted cost
+		// Build footer with highlighted cost (6 decimals, trailing dimmed)
 		msgPart := fmt.Sprintf("Messages: %d", len(m.messages))
-		costPart := formatCompactCost(m.totalCost)
+		costStyled := formatCostWithDimDecimals(m.totalCost, styles.SuccessColor, 0)
 		scrollPart := fmt.Sprintf("Scroll: %s", scrollMode)
 
-		// Use lighter gray (250) for text, green for cost
+		// Use lighter gray (250) for text
 		lightGray := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
-		costStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor).Bold(true)
 		sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 		sb.WriteString(lightGray.Render(msgPart))
 		sb.WriteString(sepStyle.Render(" │ "))
 		sb.WriteString(lightGray.Render("Total: "))
-		sb.WriteString(costStyle.Render(costPart))
+		sb.WriteString(costStyled)
 		sb.WriteString(sepStyle.Render(" │ "))
 		sb.WriteString(lightGray.Render(scrollPart))
 	} else {
-		sb.WriteString(fmt.Sprintf("Messages: %d │ Total: %s │ Scroll: %s",
-			len(m.messages), formatCompactCost(m.totalCost), scrollMode))
+		sb.WriteString(fmt.Sprintf("Messages: %d │ Total: $%.6f │ Scroll: %s",
+			len(m.messages), m.totalCost, scrollMode))
 	}
 	sb.WriteString("\n")
 
@@ -394,8 +393,10 @@ func (m BreakdownModel) renderCompactInsights() string {
 
 // renderTableHeader renders the table header row
 func (m BreakdownModel) renderTableHeader() string {
-	header := fmt.Sprintf("%-5s  %-8s  %-10s  %-10s  %6s  %5s  %6s  %6s",
-		"#", "TIME", "MODEL", "COST", "IN", "OUT", "C_WR", "C_RD")
+	// Width: cost(10) + space(1) + trend(1) = 12 for COST column
+	// " COST" shifts header 1 char right to align with $ in values (assumes <$10 per message)
+	header := fmt.Sprintf("%-5s  %-8s  %-10s  %-12s  %6s  %5s  %6s  %6s",
+		"#", "TIME", "MODEL", " COST", "IN", "OUT", "C_WR", "C_RD")
 	if !m.noColor {
 		return headerStyle.Render(header)
 	}
@@ -404,7 +405,7 @@ func (m BreakdownModel) renderTableHeader() string {
 
 // renderTableSeparator renders the separator line
 func (m BreakdownModel) renderTableSeparator() string {
-	sep := strings.Repeat("-", 70)
+	sep := strings.Repeat("-", 72)
 	if !m.noColor {
 		return tableBorderStyle.Render(sep)
 	}
@@ -414,9 +415,12 @@ func (m BreakdownModel) renderTableSeparator() string {
 // renderTableContent renders all message rows for the viewport
 func (m BreakdownModel) renderTableContent() string {
 	var sb strings.Builder
+	var prevCost float64
 
 	for i, msg := range m.messages {
-		sb.WriteString(m.renderRow(msg, m.isNewMessage(msg.Index)))
+		isFirst := i == 0
+		sb.WriteString(m.renderRow(msg, m.isNewMessage(msg.Index), prevCost, isFirst))
+		prevCost = msg.Cost.TotalCost
 		if i < len(m.messages)-1 {
 			sb.WriteString("\n")
 		}
@@ -426,17 +430,21 @@ func (m BreakdownModel) renderTableContent() string {
 }
 
 // renderRow renders a single message row
-func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool) string {
+func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevCost float64, isFirst bool) string {
 	// Format column values
 	indexStr := fmt.Sprintf("%-5d", msg.Index)
 	timeStr := fmt.Sprintf("%-8s", msg.Timestamp.Format("15:04:05"))
 	modelName := pricing.GetModelDisplayName(msg.Model)
 	modelStr := fmt.Sprintf("%-10s", modelName)
-	costStr := fmt.Sprintf("%-10s", formatCompactCost(msg.Cost.TotalCost))
+	// Cost: 6 decimal places, 10 char width (e.g., "$0.093528" = 9 chars)
+	costStr := fmt.Sprintf("%-10s", fmt.Sprintf("$%.6f", msg.Cost.TotalCost))
 	inStr := fmt.Sprintf("%6s", formatCompactNumber(msg.Usage.InputTokens))
 	outStr := fmt.Sprintf("%5s", formatCompactNumber(msg.Usage.OutputTokens))
 	cacheWriteStr := fmt.Sprintf("%6s", formatCompactNumber(msg.Usage.CacheCreationInputTokens))
 	cacheReadStr := fmt.Sprintf("%6s", formatCompactNumber(msg.Usage.CacheReadInputTokens))
+
+	// Get trend indicator
+	trendSymbol, trendDirection := getRowTrendIndicator(msg.Cost.TotalCost, prevCost, isFirst)
 
 	// Agent marker at the end
 	agentMarker := ""
@@ -445,27 +453,41 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool) strin
 	}
 
 	if m.noColor {
-		return fmt.Sprintf("%s  %s  %s  %s  %s  %s  %s  %s  %s",
-			indexStr, timeStr, modelStr, costStr, inStr, outStr, cacheWriteStr, cacheReadStr, agentMarker)
+		return fmt.Sprintf("%s  %s  %s  %s %s  %s  %s  %s  %s  %s",
+			indexStr, timeStr, modelStr, costStr, trendSymbol, inStr, outStr, cacheWriteStr, cacheReadStr, agentMarker)
 	}
 
 	// Apply per-column styling
 	dimStyle := lipgloss.NewStyle().Foreground(styles.SecondaryColor)
 	modelStyle := lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName))
 	costColor := styles.GetCostGradientColor(msg.Cost.TotalCost, m.minCost, m.maxCost)
-	costStyle := lipgloss.NewStyle().Foreground(costColor)
 	outStyle := lipgloss.NewStyle().Foreground(styles.OutputTokenColor)
 	cacheWriteStyle := lipgloss.NewStyle().Foreground(styles.CacheWriteTokenColor)
 	cacheReadStyle := lipgloss.NewStyle().Foreground(styles.CacheReadTokenColor)
 
+	// Color the trend indicator based on direction
+	var trendStyled string
+	switch trendDirection {
+	case models.TrendIncreasing:
+		trendStyled = lipgloss.NewStyle().Foreground(styles.WarningColor).Render(trendSymbol)
+	case models.TrendDecreasing:
+		trendStyled = lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(trendSymbol)
+	default:
+		trendStyled = dimStyle.Render(trendSymbol)
+	}
+
+	// Format cost with dimmed trailing decimals (main $X.XX colored, XXXX dimmed)
+	costStyled := formatCostWithDimDecimals(msg.Cost.TotalCost, costColor, 10)
+
 	// For new messages, override with highlight style
 	if isNew {
 		highlightStyle := styles.HighlightStyle
-		return fmt.Sprintf("%s  %s  %s  %s  %s  %s  %s  %s  %s",
+		return fmt.Sprintf("%s  %s  %s  %s %s  %s  %s  %s  %s  %s",
 			highlightStyle.Render(indexStr),
 			highlightStyle.Render(timeStr),
 			highlightStyle.Render(modelStr),
 			highlightStyle.Render(costStr),
+			highlightStyle.Render(trendSymbol),
 			highlightStyle.Render(inStr),
 			highlightStyle.Render(outStr),
 			highlightStyle.Render(cacheWriteStr),
@@ -480,11 +502,12 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool) strin
 		agentRendered = agentStyle.Render(agentMarker)
 	}
 
-	return fmt.Sprintf("%s  %s  %s  %s  %s  %s  %s  %s  %s",
+	return fmt.Sprintf("%s  %s  %s  %s %s  %s  %s  %s  %s  %s",
 		dimStyle.Render(indexStr),
 		dimStyle.Render(timeStr),
 		modelStyle.Render(modelStr),
-		costStyle.Render(costStr),
+		costStyled,
+		trendStyled,
 		inStr, // Input stays white/default
 		outStyle.Render(outStr),
 		cacheWriteStyle.Render(cacheWriteStr),
@@ -602,6 +625,30 @@ func (m BreakdownModel) waitForFileChangeBreakdown() tea.Cmd {
 	}
 }
 
+// Per-message change symbols (distinct from session trend ▲/▼/═)
+const (
+	changeUp     = "↑"
+	changeDown   = "↓"
+	changeStable = "·"
+)
+
+// getRowTrendIndicator returns the change indicator for a message based on cost change
+// from previous message. Uses 10% threshold for significance.
+func getRowTrendIndicator(currentCost, previousCost float64, isFirst bool) (symbol string, direction models.TrendDirection) {
+	if isFirst || previousCost == 0 {
+		return changeStable, models.TrendStable
+	}
+
+	change := (currentCost - previousCost) / previousCost
+
+	if change > 0.10 {
+		return changeUp, models.TrendIncreasing
+	} else if change < -0.10 {
+		return changeDown, models.TrendDecreasing
+	}
+	return changeStable, models.TrendStable
+}
+
 // Compact formatting helpers
 
 // formatCompactCost formats a cost value compactly (e.g., "$0.0512")
@@ -613,6 +660,33 @@ func formatCompactCost(cost float64) string {
 		return fmt.Sprintf("$%.3f", cost)
 	}
 	return fmt.Sprintf("$%.4f", cost)
+}
+
+// formatCostWithDimDecimals formats cost to 6 decimal places with trailing decimals dimmed.
+// The main part ($X.XX) uses the provided color, extra decimals (XXXX) are dimmed gray.
+func formatCostWithDimDecimals(cost float64, color lipgloss.Color, width int) string {
+	full := fmt.Sprintf("$%.6f", cost)
+	plainLen := len(full)
+
+	// Calculate padding needed
+	padding := ""
+	if width > plainLen {
+		padding = strings.Repeat(" ", width-plainLen)
+	}
+
+	// Split into main ($X.XX) and extra (XXXX) parts
+	dotIdx := strings.Index(full, ".")
+	if dotIdx == -1 || len(full) <= dotIdx+3 {
+		return padding + lipgloss.NewStyle().Foreground(color).Render(full)
+	}
+
+	main := full[:dotIdx+3]  // "$0.09"
+	extra := full[dotIdx+3:] // "3528"
+
+	mainStyle := lipgloss.NewStyle().Foreground(color)
+	dimStyle := lipgloss.NewStyle().Foreground(styles.SecondaryColor)
+
+	return padding + mainStyle.Render(main) + dimStyle.Render(extra)
 }
 
 // formatCompactNumber formats a number compactly (e.g., "89.3K")
