@@ -21,13 +21,15 @@ cost visibility during Claude Code sessions.
 
 Features:
   - Live updates as new messages arrive
+  - Auto-follows latest session (switches when new session starts)
   - Auto-scroll to latest messages (can scroll up manually)
   - Agent sub-session messages shown inline with [A1], [A2] markers
   - New rows highlighted briefly when they appear
 
 Examples:
-  ccusage breakdown              Show breakdown for latest session
-  ccusage breakdown abc123       Show breakdown for specific session`,
+  ccusage breakdown              Show breakdown and auto-follow latest session
+  ccusage breakdown --no-follow  Show breakdown for latest, don't auto-follow
+  ccusage breakdown abc123       Show breakdown for specific session (pinned)`,
 	Args: cobra.MaximumNArgs(1),
 	Run:  runBreakdown,
 }
@@ -37,7 +39,7 @@ func init() {
 }
 
 func runBreakdown(cmd *cobra.Command, args []string) {
-	sessions, err := loadProjectSessions()
+	sessions, projectDir, err := loadProjectSessionsWithDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -45,7 +47,8 @@ func runBreakdown(cmd *cobra.Command, args []string) {
 
 	// Find the session to show
 	var session *models.SessionEntry
-	if len(args) > 0 {
+	explicitSessionID := len(args) > 0 // User provided a specific session ID
+	if explicitSessionID {
 		// Find by ID (partial match)
 		sessionID := args[0]
 		var err error
@@ -66,8 +69,13 @@ func runBreakdown(cmd *cobra.Command, args []string) {
 		session = &sessions[0]
 	}
 
+	// Auto-follow is enabled by default unless:
+	// - User specified a session ID explicitly (pinned to that session)
+	// - User passed --no-follow flag
+	followMode := !explicitSessionID && !noFollow
+
 	// Run the breakdown TUI
-	model := tui.NewBreakdownModel(session.FullPath, session.SessionID, noColor)
+	model := tui.NewBreakdownModel(session.FullPath, session.SessionID, noColor, projectDir, followMode)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

@@ -14,6 +14,7 @@ var (
 	verbose     bool
 	noColor     bool
 	live        bool
+	noFollow    bool
 )
 
 // validFormats contains the allowed output format values
@@ -65,6 +66,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show debug information")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVarP(&live, "live", "l", false, "Enable live mode (auto-updates)")
+	rootCmd.PersistentFlags().BoolVar(&noFollow, "no-follow", false, "Disable auto-follow in live mode (pin to current session)")
 
 	// Add subcommands
 	rootCmd.AddCommand(showCmd)

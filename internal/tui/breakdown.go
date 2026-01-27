@@ -48,6 +48,13 @@ type BreakdownModel struct {
 	closeOnce sync.Once
 	watching  *atomic.Bool
 
+	// Auto-follow mode for tracking new sessions
+	projectDir     string          // Project directory to watch for new sessions
+	followMode     bool            // Whether to auto-follow new sessions
+	prevSessionID  string          // Previous session ID (shown after switch)
+	sessionWatcher *SessionWatcher // Watches for new session files
+	switchNotifyAt time.Time       // When session switch notification started
+
 	width  int
 	height int
 }
@@ -65,7 +72,7 @@ type (
 )
 
 // NewBreakdownModel creates a new breakdown TUI model
-func NewBreakdownModel(sessionPath, sessionID string, noColor bool) BreakdownModel {
+func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir string, followMode bool) BreakdownModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = spinnerStyle
@@ -84,17 +91,26 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool) BreakdownMod
 		closing:       closing,
 		watching:      watching,
 		newMsgIndices: make(map[int]time.Time),
+		projectDir:    projectDir,
+		followMode:    followMode,
 	}
 }
 
 // Init initializes the breakdown TUI
 func (m BreakdownModel) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		m.spinner.Tick,
 		m.loadBreakdown,
 		func() tea.Msg { return m.watchFile() },
 		tickCmd(),
-	)
+	}
+
+	// Start session watcher if follow mode is enabled
+	if m.followMode && m.projectDir != "" {
+		cmds = append(cmds, m.startSessionWatcher())
+	}
+
+	return tea.Batch(cmds...)
 }
 
 // Update handles messages
@@ -112,6 +128,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if m.watcher != nil {
 					m.watcher.Close()
+				}
+				if m.sessionWatcher != nil {
+					m.sessionWatcher.Stop()
 				}
 			})
 			return m, tea.Quit
@@ -204,9 +223,54 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.watcher = msg.watcher
 		return m, m.waitForFileChangeBreakdown()
 
+	case sessionWatcherStartedMsg:
+		// Store the session watcher and start waiting for new sessions
+		m.sessionWatcher = msg.watcher
+		return m, m.waitForNewSession()
+
+	case sessionWatcherRestartMsg:
+		// Session was changed externally, restart waiting
+		return m, m.waitForNewSession()
+
 	case fileChangedMsg:
 		m.loading = true
 		return m, tea.Batch(m.loadBreakdownCmd(), m.waitForFileChangeBreakdown())
+
+	case sessionSwitchedMsg:
+		// Store previous session ID and switch to new session
+		m.prevSessionID = m.sessionID
+		m.sessionID = msg.newSessionID
+		m.sessionPath = msg.newSessionPath
+		m.switchNotifyAt = time.Now()
+
+		// Reset state for clean switch
+		m.messages = nil
+		m.insights = nil
+		m.totalCost = 0
+		m.minCost = 0
+		m.maxCost = 0
+		m.loading = true
+		m.newMsgIndices = make(map[int]time.Time)
+
+		// Stop old file watcher, will be restarted by watchFile
+		if m.watcher != nil {
+			m.watcher.Close()
+			m.watcher = nil
+		}
+
+		// Update session watcher's current session
+		if m.sessionWatcher != nil {
+			m.sessionWatcher.SetCurrentSession(m.sessionID)
+		}
+
+		// Reload data, restart file watcher, and restart session watcher
+		// We must explicitly restart waitForNewSession because the goroutine that
+		// detected this switch has already exited after returning sessionSwitchedMsg
+		cmds := []tea.Cmd{m.loadBreakdownCmd(), func() tea.Msg { return m.watchFile() }}
+		if m.sessionWatcher != nil {
+			cmds = append(cmds, m.waitForNewSession())
+		}
+		return m, tea.Batch(cmds...)
 
 	case tickMsg:
 		// Clean up expired highlights
@@ -259,22 +323,37 @@ func (m *BreakdownModel) isNewMessage(index int) bool {
 func (m BreakdownModel) View() string {
 	var sb strings.Builder
 
-	// Session ID (full, for matching with watch view)
+	// Session ID with optional previous session (truncated for display)
+	sessionDisplay := truncateID(m.sessionID)
+	if m.prevSessionID != "" {
+		sessionDisplay = fmt.Sprintf("%s (prev: %s)", truncateID(m.sessionID), truncateID(m.prevSessionID))
+	}
+
 	if !m.noColor {
 		labelStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.AccentColor)
 		idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 		sb.WriteString(labelStyle.Render("Session:"))
 		sb.WriteString(" ")
-		sb.WriteString(idStyle.Render(m.sessionID))
+		sb.WriteString(idStyle.Render(sessionDisplay))
 	} else {
 		sb.WriteString("Session: ")
-		sb.WriteString(m.sessionID)
+		sb.WriteString(sessionDisplay)
 	}
 	sb.WriteString("\n")
 
 	// Live indicator
 	sb.WriteString(liveIndicatorStyle.Render(" LIVE "))
 	sb.WriteString(" ")
+
+	// Show switch notification after session switch
+	showSwitchNotify := !m.switchNotifyAt.IsZero() && time.Since(m.switchNotifyAt) < switchNotifyDuration
+	if showSwitchNotify {
+		if m.noColor {
+			sb.WriteString("[Switched to new session] ")
+		} else {
+			sb.WriteString(lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session "))
+		}
+	}
 
 	if m.loading {
 		sb.WriteString(m.spinner.View())
@@ -641,9 +720,9 @@ func getRowTrendIndicator(currentCost, previousCost float64, isFirst bool) (symb
 
 	change := (currentCost - previousCost) / previousCost
 
-	if change > 0.10 {
+	if change > 0.05 {
 		return changeUp, models.TrendIncreasing
-	} else if change < -0.10 {
+	} else if change < -0.05 {
 		return changeDown, models.TrendDecreasing
 	}
 	return changeStable, models.TrendStable
@@ -698,4 +777,40 @@ func formatCompactNumber(n int) string {
 		return fmt.Sprintf("%.1fK", float64(n)/1000)
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// startSessionWatcher creates and starts the session watcher for auto-follow mode
+func (m BreakdownModel) startSessionWatcher() tea.Cmd {
+	return func() tea.Msg {
+		watcher := NewSessionWatcher(m.projectDir, m.sessionID)
+
+		if err := watcher.Start(); err != nil {
+			return breakdownErrorMsg(err)
+		}
+
+		return sessionWatcherStartedMsg{watcher: watcher}
+	}
+}
+
+// waitForNewSession returns a command that blocks until a new session is created
+func (m BreakdownModel) waitForNewSession() tea.Cmd {
+	return func() tea.Msg {
+		if m.sessionWatcher == nil {
+			return nil
+		}
+
+		path, id := m.sessionWatcher.WaitForNewSession()
+		if path == "" {
+			return nil // Shutdown or error
+		}
+		if path == sessionRestartedPath {
+			// Session was updated externally, just restart waiting
+			return sessionWatcherRestartMsg{}
+		}
+
+		return sessionSwitchedMsg{
+			newSessionPath: path,
+			newSessionID:   id,
+		}
+	}
 }

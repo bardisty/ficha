@@ -59,7 +59,7 @@ func TestFormatCompactNumber(t *testing.T) {
 }
 
 func TestBreakdownModel_DetectNewMessages(t *testing.T) {
-	m := NewBreakdownModel("/test/path", "test-session", false)
+	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
 
 	// Initial load with 3 messages
 	initialMessages := []models.BreakdownMessage{
@@ -96,7 +96,7 @@ func TestBreakdownModel_DetectNewMessages(t *testing.T) {
 }
 
 func TestBreakdownModel_IsNewMessage(t *testing.T) {
-	m := NewBreakdownModel("/test/path", "test-session", false)
+	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
 
 	// Mark a message as new
 	m.newMsgIndices[5] = time.Now()
@@ -113,7 +113,7 @@ func TestBreakdownModel_IsNewMessage(t *testing.T) {
 }
 
 func TestBreakdownModel_IsNewMessage_NoColor(t *testing.T) {
-	m := NewBreakdownModel("/test/path", "test-session", true) // noColor = true
+	m := NewBreakdownModel("/test/path", "test-session", true, "", false) // noColor = true
 
 	// Mark a message as new
 	m.newMsgIndices[5] = time.Now()
@@ -125,7 +125,7 @@ func TestBreakdownModel_IsNewMessage_NoColor(t *testing.T) {
 }
 
 func TestBreakdownModel_CleanupExpiredHighlights(t *testing.T) {
-	m := NewBreakdownModel("/test/path", "test-session", false)
+	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
 
 	// Add an expired highlight (older than highlightDuration)
 	m.newMsgIndices[1] = time.Now().Add(-3 * time.Second) // highlightDuration is 2s
@@ -147,7 +147,7 @@ func TestBreakdownModel_CleanupExpiredHighlights(t *testing.T) {
 }
 
 func TestBreakdownModel_RenderRow(t *testing.T) {
-	m := NewBreakdownModel("/test/path", "test-session", true) // noColor for predictable output
+	m := NewBreakdownModel("/test/path", "test-session", true, "", false) // noColor for predictable output
 
 	msg := models.BreakdownMessage{
 		Index:     42,
@@ -189,7 +189,7 @@ func TestBreakdownModel_RenderRow(t *testing.T) {
 }
 
 func TestBreakdownModel_RenderRow_WithAgent(t *testing.T) {
-	m := NewBreakdownModel("/test/path", "test-session", true) // noColor
+	m := NewBreakdownModel("/test/path", "test-session", true, "", false) // noColor
 
 	msg := models.BreakdownMessage{
 		Index:     10,

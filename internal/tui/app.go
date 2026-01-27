@@ -21,6 +21,9 @@ import (
 // Highlight duration for changed values
 const highlightDuration = 2 * time.Second
 
+// Duration to show "Switched to new session" notification
+const switchNotifyDuration = 5 * time.Second
+
 // Model is the Bubbletea model for the TUI
 type Model struct {
 	sessionPath string
@@ -45,6 +48,13 @@ type Model struct {
 	closeOnce sync.Once    // Ensure shutdown happens exactly once
 	watching *atomic.Bool  // Tracks if a watcher goroutine is active
 
+	// Auto-follow mode for tracking new sessions
+	projectDir     string          // Project directory to watch for new sessions
+	followMode     bool            // Whether to auto-follow new sessions
+	prevSessionID  string          // Previous session ID (shown after switch)
+	sessionWatcher *SessionWatcher // Watches for new session files
+	switchNotifyAt time.Time       // When session switch notification started
+
 	width  int
 	height int
 }
@@ -55,10 +65,14 @@ type (
 	errorMsg       error
 	fileChangedMsg struct{}
 	tickMsg        time.Time
+	sessionSwitchedMsg struct {
+		newSessionPath string
+		newSessionID   string
+	}
 )
 
 // NewModel creates a new TUI model
-func NewModel(sessionPath, sessionID string, verbose, noColor bool) Model {
+func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir string, followMode bool) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = spinnerStyle
@@ -77,17 +91,26 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool) Model {
 		watching:    watching,
 		changedAt:   make(map[string]time.Time),
 		deltaTokens: make(map[string]int),
+		projectDir:  projectDir,
+		followMode:  followMode,
 	}
 }
 
 // Init initializes the TUI
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		m.spinner.Tick,
 		m.loadAnalysis,
 		func() tea.Msg { return m.watchFile() },
 		tickCmd(),
-	)
+	}
+
+	// Start session watcher if follow mode is enabled
+	if m.followMode && m.projectDir != "" {
+		cmds = append(cmds, m.startSessionWatcher())
+	}
+
+	return tea.Batch(cmds...)
 }
 
 // tickCmd returns a command that sends a tick every 100ms for animation
@@ -111,6 +134,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if m.watcher != nil {
 					m.watcher.Close()
+				}
+				if m.sessionWatcher != nil {
+					m.sessionWatcher.Stop()
 				}
 			})
 			return m, tea.Quit
@@ -148,10 +174,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.watcher = msg.watcher
 		return m, m.waitForFileChange()
 
+	case sessionWatcherStartedMsg:
+		// Store the session watcher and start waiting for new sessions
+		m.sessionWatcher = msg.watcher
+		return m, m.waitForNewSession()
+
+	case sessionWatcherRestartMsg:
+		// Session was changed externally, restart waiting
+		return m, m.waitForNewSession()
+
 	case fileChangedMsg:
 		m.loading = true
 		// After handling the change, continue waiting for more changes
 		return m, tea.Batch(m.loadAnalysis, m.waitForFileChange())
+
+	case sessionSwitchedMsg:
+		// Store previous session ID and switch to new session
+		m.prevSessionID = m.sessionID
+		m.sessionID = msg.newSessionID
+		m.sessionPath = msg.newSessionPath
+		m.switchNotifyAt = time.Now()
+
+		// Reset analysis state for clean switch
+		m.analysis = nil
+		m.loading = true
+		m.changedAt = make(map[string]time.Time)
+		m.deltaTokens = make(map[string]int)
+		m.deltaCount = 0
+
+		// Stop old file watcher, will be restarted by watchFile
+		if m.watcher != nil {
+			m.watcher.Close()
+			m.watcher = nil
+		}
+
+		// Update session watcher's current session
+		if m.sessionWatcher != nil {
+			m.sessionWatcher.SetCurrentSession(m.sessionID)
+		}
+
+		// Reload analysis, restart file watcher, and restart session watcher
+		// We must explicitly restart waitForNewSession because the goroutine that
+		// detected this switch has already exited after returning sessionSwitchedMsg
+		cmds := []tea.Cmd{m.loadAnalysis, func() tea.Msg { return m.watchFile() }}
+		if m.sessionWatcher != nil {
+			cmds = append(cmds, m.waitForNewSession())
+		}
+		return m, tea.Batch(cmds...)
 
 	case tickMsg:
 		// Continue the animation tick for highlight fade
@@ -322,13 +391,27 @@ func (m Model) isHighlighted(field string) bool {
 func (m Model) View() string {
 	var sb strings.Builder
 
-	// Title
-	sb.WriteString(titleStyle.Render(fmt.Sprintf("Session: %s", truncateID(m.sessionID))))
+	// Title with optional previous session ID
+	sessionDisplay := truncateID(m.sessionID)
+	if m.prevSessionID != "" {
+		sessionDisplay = fmt.Sprintf("%s (prev: %s)", truncateID(m.sessionID), truncateID(m.prevSessionID))
+	}
+	sb.WriteString(titleStyle.Render(fmt.Sprintf("Session: %s", sessionDisplay)))
 	sb.WriteString("\n")
 
 	// Live indicator
 	sb.WriteString(liveIndicatorStyle.Render(" LIVE "))
 	sb.WriteString(" ")
+
+	// Show switch notification after session switch
+	showSwitchNotify := !m.switchNotifyAt.IsZero() && time.Since(m.switchNotifyAt) < switchNotifyDuration
+	if showSwitchNotify {
+		if m.noColor {
+			sb.WriteString("[Switched to new session] ")
+		} else {
+			sb.WriteString(lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session "))
+		}
+	}
 
 	if m.loading {
 		sb.WriteString(m.spinner.View())
@@ -450,21 +533,21 @@ func (m Model) renderAnalysis() string {
 	changed := m.recentlyChanged("messages")   // Use for delta display (works in noColor mode)
 	highlighted := m.isHighlighted("messages") // Use for styling (false in noColor mode)
 	if changed {
-		// Show delta when recently changed
-		var msgStr string
+		// Show delta when recently changed - only highlight the value, not the label
+		var valStr string
 		if m.deltaCount > 0 {
-			msgStr = fmt.Sprintf("Messages: %d (+%d)", a.MessageCount, m.deltaCount)
+			valStr = fmt.Sprintf("%d (+%d)", a.MessageCount, m.deltaCount)
 		} else if m.deltaCount < 0 {
-			msgStr = fmt.Sprintf("Messages: %d (%d)", a.MessageCount, m.deltaCount)
+			valStr = fmt.Sprintf("%d (%d)", a.MessageCount, m.deltaCount)
 		} else {
-			msgStr = fmt.Sprintf("Messages: %d", a.MessageCount)
+			valStr = fmt.Sprintf("%d", a.MessageCount)
 		}
 		if highlighted {
-			footerLine = highlightStyle.Render(msgStr) +
+			footerLine = footerStyle.Render("Messages: ") + highlightStyle.Render(valStr) +
 				footerStyle.Render(fmt.Sprintf(" │ Duration: %s", formatDuration(a.Duration.Duration())))
 		} else {
 			// noColor mode: show delta but without highlight styling
-			footerLine = msgStr + fmt.Sprintf(" │ Duration: %s", formatDuration(a.Duration.Duration()))
+			footerLine = fmt.Sprintf("Messages: %s │ Duration: %s", valStr, formatDuration(a.Duration.Duration()))
 		}
 	} else {
 		footerLine = footerStyle.Render(fmt.Sprintf("Messages: %d │ Duration: %s",
@@ -668,12 +751,13 @@ func (m Model) renderTokenBreakdown() string {
 		freeVal := formatNumber(freeSpace)
 		bufferVal := formatNumber(buffer)
 		if !m.noColor {
-			// Free text highlights yellow when context changes, otherwise slightly brighter
+			// Free value highlights yellow when context changes, label stays normal
 			var freeStyled string
+			freeValWithPct := fmt.Sprintf("%s (%.1f%%)", freeVal, freePct)
 			if highlighted {
-				freeStyled = highlightStyle.Render(fmt.Sprintf("Free: %s (%.1f%%)", freeVal, freePct))
+				freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render("Free: ") + highlightStyle.Render(freeValWithPct)
 			} else {
-				freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(fmt.Sprintf("Free: %s (%.1f%%)", freeVal, freePct))
+				freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(fmt.Sprintf("Free: %s", freeValWithPct))
 			}
 			bufferStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(fmt.Sprintf("Buffer: %s (reserved)", bufferVal))
 			sepStyled := dimStyle.Render("│")
@@ -1029,6 +1113,50 @@ func (m Model) waitForFileChange() tea.Cmd {
 	}
 }
 
+// sessionWatcherStartedMsg is sent when the session watcher is ready
+type sessionWatcherStartedMsg struct {
+	watcher *SessionWatcher
+}
+
+// startSessionWatcher creates and starts the session watcher for auto-follow mode
+func (m Model) startSessionWatcher() tea.Cmd {
+	return func() tea.Msg {
+		watcher := NewSessionWatcher(m.projectDir, m.sessionID)
+
+		if err := watcher.Start(); err != nil {
+			return errorMsg(err)
+		}
+
+		return sessionWatcherStartedMsg{watcher: watcher}
+	}
+}
+
+// sessionWatcherRestartMsg signals that the watcher should restart waiting
+type sessionWatcherRestartMsg struct{}
+
+// waitForNewSession returns a command that blocks until a new session is created
+func (m Model) waitForNewSession() tea.Cmd {
+	return func() tea.Msg {
+		if m.sessionWatcher == nil {
+			return nil
+		}
+
+		path, id := m.sessionWatcher.WaitForNewSession()
+		if path == "" {
+			return nil // Shutdown or error
+		}
+		if path == sessionRestartedPath {
+			// Session was updated externally, just restart waiting
+			return sessionWatcherRestartMsg{}
+		}
+
+		return sessionSwitchedMsg{
+			newSessionPath: path,
+			newSessionID:   id,
+		}
+	}
+}
+
 // Helper functions
 
 func formatCost(cost float64) string {
@@ -1152,10 +1280,10 @@ func formatDuration(d time.Duration) string {
 }
 
 func truncateID(id string) string {
-	if len(id) <= 40 {
+	if len(id) <= 8 {
 		return id
 	}
-	return id[:37] + "..."
+	return id[:8]
 }
 
 // getModelColor returns the appropriate color for a model based on its tier

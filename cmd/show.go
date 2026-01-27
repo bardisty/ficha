@@ -31,7 +31,7 @@ Examples:
 }
 
 func runShow(cmd *cobra.Command, args []string) {
-	sessions, err := loadProjectSessions()
+	sessions, projectDir, err := loadProjectSessionsWithDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -39,7 +39,8 @@ func runShow(cmd *cobra.Command, args []string) {
 
 	// Find the session to show
 	var session *models.SessionEntry
-	if len(args) > 0 {
+	explicitSessionID := len(args) > 0 // User provided a specific session ID
+	if explicitSessionID {
 		// Find by ID (partial match)
 		sessionID := args[0]
 		var err error
@@ -62,7 +63,11 @@ func runShow(cmd *cobra.Command, args []string) {
 
 	// Live mode
 	if live {
-		runLiveMode(session)
+		// Auto-follow is enabled by default unless:
+		// - User specified a session ID explicitly (pinned to that session)
+		// - User passed --no-follow flag
+		followMode := !explicitSessionID && !noFollow
+		runLiveMode(session, projectDir, followMode)
 		return
 	}
 
@@ -89,8 +94,8 @@ func runShow(cmd *cobra.Command, args []string) {
 	fmt.Println(output)
 }
 
-func runLiveMode(session *models.SessionEntry) {
-	model := tui.NewModel(session.FullPath, session.SessionID, verbose, noColor)
+func runLiveMode(session *models.SessionEntry, projectDir string, followMode bool) {
+	model := tui.NewModel(session.FullPath, session.SessionID, verbose, noColor, projectDir, followMode)
 	p := tea.NewProgram(model)
 
 	if _, err := p.Run(); err != nil {

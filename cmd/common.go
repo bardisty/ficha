@@ -17,22 +17,29 @@ var ErrNoSessions = errors.New("no sessions found")
 // It handles project path resolution, disk scanning, index loading, and source merging.
 // Returns the merged sessions list or an error.
 func loadProjectSessions() ([]models.SessionEntry, error) {
+	sessions, _, err := loadProjectSessionsWithDir()
+	return sessions, err
+}
+
+// loadProjectSessionsWithDir loads all sessions and returns the project directory path.
+// Used by live-view commands that need to watch the project directory for new sessions.
+func loadProjectSessionsWithDir() ([]models.SessionEntry, string, error) {
 	// Get project path
 	projPath, err := getProjectPath()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// Get Claude project directory
 	projectDir, err := paths.GetProjectDirForPath(projPath)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// Scan disk for session files
 	diskSessions, err := parser.DiscoverSessionsFromDisk(projectDir)
 	if err != nil {
-		return nil, fmt.Errorf("scanning sessions in %s: %w", projectDir, err)
+		return nil, "", fmt.Errorf("scanning sessions in %s: %w", projectDir, err)
 	}
 
 	// Try to load index (may fail or be incomplete)
@@ -47,7 +54,7 @@ func loadProjectSessions() ([]models.SessionEntry, error) {
 	sessions, orphanCount := parser.MergeSessionSources(index, diskSessions)
 
 	if len(sessions) == 0 {
-		return nil, ErrNoSessions
+		return nil, "", ErrNoSessions
 	}
 
 	// Warn about orphans
@@ -55,5 +62,5 @@ func loadProjectSessions() ([]models.SessionEntry, error) {
 		fmt.Fprintf(os.Stderr, "Note: Found %d session(s) not in sessions-index.json\n", orphanCount)
 	}
 
-	return sessions, nil
+	return sessions, projectDir, nil
 }

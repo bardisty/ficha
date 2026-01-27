@@ -185,6 +185,9 @@ func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.Sess
 			indexed.AgentMessageCount = disk.AgentMessageCount
 			// Use disk message count which includes agent messages for consistency
 			indexed.MessageCount = disk.MessageCount
+			// Use disk's Modified time (actual file mtime) instead of index's
+			// The index may be stale, but the file mtime is always accurate
+			indexed.Modified = disk.Modified
 			merged = append(merged, indexed)
 			delete(indexMap, disk.SessionID)
 		} else {
