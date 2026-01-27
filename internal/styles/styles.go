@@ -145,27 +145,25 @@ var (
 	CostLowColor    = lipgloss.Color("245") // Dimmed - low proportion
 )
 
-// Context usage level colors
+// Context usage level colors (thresholds based on ~75-78% compaction trigger)
 var (
-	ContextLowColor      = SuccessColor          // Green - 0-50%
-	ContextMediumColor   = WarningColor          // Yellow - 50-75%
-	ContextHighColor     = lipgloss.Color("214") // Orange - 75-90%
-	ContextCriticalColor = ErrorColor            // Red - 90%+
+	ContextLowColor      = SuccessColor          // Green - 0-65%
+	ContextHighColor     = lipgloss.Color("214") // Orange - 65-75% (approaching compaction)
+	ContextCriticalColor = ErrorColor            // Red - 75%+ (compaction territory)
 	ContextFreeColor     = lipgloss.Color("252") // Bright gray - clearly visible free space
 	ContextBufferColor   = lipgloss.Color("236") // Dark gray - reserved buffer (distinct from free)
 )
 
-// GetContextUsageColor returns the appropriate color based on context usage percentage
+// GetContextUsageColor returns the appropriate color based on context usage percentage.
+// Thresholds aligned with Claude Code's ~75-78% auto-compaction trigger.
 func GetContextUsageColor(usagePct float64) lipgloss.Color {
 	switch {
-	case usagePct >= 90:
-		return ContextCriticalColor
 	case usagePct >= 75:
-		return ContextHighColor
-	case usagePct >= 50:
-		return ContextMediumColor
+		return ContextCriticalColor // Red - compaction territory
+	case usagePct >= 65:
+		return ContextHighColor // Orange - approaching compaction
 	default:
-		return ContextLowColor
+		return ContextLowColor // Green - comfortable
 	}
 }
 

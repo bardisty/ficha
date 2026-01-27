@@ -730,17 +730,17 @@ func (m Model) renderTokenBreakdown() string {
 		contextVal := formatNumber(contextSize)
 		contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(maxContext))
 		if highlighted {
-			sb.WriteString(fmt.Sprintf("\n  Context Window:    %s  %s\n",
-				highlightStyle.Render(fmt.Sprintf("%12s", contextVal)),
+			sb.WriteString(fmt.Sprintf("\n    Context: %s %s\n",
+				highlightStyle.Render(contextVal),
 				dimStyle.Render(contextMeta)))
 		} else if !m.noColor {
 			// Apply usage-level color to the percentage
 			coloredMeta := lipgloss.NewStyle().Foreground(usageColor).Render(
 				fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(maxContext)))
-			sb.WriteString(fmt.Sprintf("\n  Context Window:    %12s  %s\n",
+			sb.WriteString(fmt.Sprintf("\n    Context: %s %s\n",
 				contextVal, coloredMeta))
 		} else {
-			sb.WriteString(fmt.Sprintf("\n  Context Window:    %12s  %s\n",
+			sb.WriteString(fmt.Sprintf("\n    Context: %s %s\n",
 				contextVal, contextMeta))
 		}
 

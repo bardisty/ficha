@@ -256,10 +256,10 @@ func formatTokenBreakdown(analysis *models.SessionAnalysis, noColor bool) string
 		if !noColor {
 			coloredMeta := lipgloss.NewStyle().Foreground(usageColor).Render(
 				fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(maxContext)))
-			sb.WriteString(fmt.Sprintf("\n  Context Window:     %12s  %s\n",
+			sb.WriteString(fmt.Sprintf("\n    Context: %s %s\n",
 				contextVal, coloredMeta))
 		} else {
-			sb.WriteString(fmt.Sprintf("\n  Context Window:     %12s  (%.0f%% of %s)\n",
+			sb.WriteString(fmt.Sprintf("\n    Context: %s (%.0f%% of %s)\n",
 				contextVal, contextPct, formatNumber(maxContext)))
 		}
 
