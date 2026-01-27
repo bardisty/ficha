@@ -334,9 +334,9 @@ func (m BreakdownModel) View() string {
 	if showSwitchNotify {
 		sb.WriteString("\n")
 		if m.noColor {
-			sb.WriteString("[Switched to new session]")
+			sb.WriteString("  [Switched to new session]")
 		} else {
-			sb.WriteString(lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session"))
+			sb.WriteString("  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session"))
 		}
 	}
 
@@ -368,7 +368,7 @@ func (m BreakdownModel) View() string {
 	if !m.noColor {
 		footerSep = panelBorderStyle.Render(footerSep)
 	}
-	sb.WriteString(footerSep + "\n")
+	sb.WriteString("  " + footerSep + "\n")
 
 	// Footer with colored cost
 	scrollMode := "AUTO"
@@ -385,6 +385,7 @@ func (m BreakdownModel) View() string {
 		lightGray := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 		sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
+		sb.WriteString("  ")
 		sb.WriteString(lightGray.Render(msgPart))
 		sb.WriteString(sepStyle.Render(" │ "))
 		sb.WriteString(lightGray.Render("Total: "))
@@ -392,7 +393,7 @@ func (m BreakdownModel) View() string {
 		sb.WriteString(sepStyle.Render(" │ "))
 		sb.WriteString(lightGray.Render(scrollPart))
 	} else {
-		sb.WriteString(fmt.Sprintf("Messages: %d │ Total: $%.6f │ Scroll: %s",
+		sb.WriteString(fmt.Sprintf("  Messages: %d │ Total: $%.6f │ Scroll: %s",
 			len(m.messages), m.totalCost, scrollMode))
 	}
 	sb.WriteString("\n")
@@ -402,14 +403,14 @@ func (m BreakdownModel) View() string {
 	if !m.noColor {
 		helpSep = dimStyle.Render(helpSep)
 	}
-	sb.WriteString(helpSep + "\n")
+	sb.WriteString("  " + helpSep + "\n")
 
 	// Help - use lighter gray
 	if !m.noColor {
 		helpText := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("q: quit • g/G: top/bottom • ↑↓: scroll")
-		sb.WriteString(helpText)
+		sb.WriteString("  " + helpText)
 	} else {
-		sb.WriteString("q: quit • g/G: top/bottom • ↑↓: scroll")
+		sb.WriteString("  q: quit • g/G: top/bottom • ↑↓: scroll")
 	}
 
 	return sb.String()
@@ -454,12 +455,14 @@ func (m BreakdownModel) renderHeaderPanel(width int) string {
 
 	if m.noColor {
 		// Top border
+		sb.WriteString("  ")
 		sb.WriteString(styles.BoxTopLeft)
 		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
 		sb.WriteString(styles.BoxTopRight)
 		sb.WriteString("\n")
 
 		// Content line
+		sb.WriteString("  ")
 		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("  ")
 		sb.WriteString(fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart))
@@ -469,6 +472,7 @@ func (m BreakdownModel) renderHeaderPanel(width int) string {
 		sb.WriteString("\n")
 
 		// Bottom border
+		sb.WriteString("  ")
 		sb.WriteString(styles.BoxBottomLeft)
 		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
 		sb.WriteString(styles.BoxBottomRight)
@@ -490,12 +494,14 @@ func (m BreakdownModel) renderHeaderPanel(width int) string {
 		sepStyled := panelBorderStyle.Render(sep)
 
 		// Top border
+		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
 		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
 		sb.WriteString(panelBorderStyle.Render(styles.BoxTopRight))
 		sb.WriteString("\n")
 
 		// Content line
+		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
 		sb.WriteString("  ")
 		sb.WriteString(sessionStyled)
@@ -513,6 +519,7 @@ func (m BreakdownModel) renderHeaderPanel(width int) string {
 		sb.WriteString("\n")
 
 		// Bottom border
+		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomLeft))
 		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
 		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomRight))
@@ -565,14 +572,14 @@ func (m BreakdownModel) renderCompactInsights() string {
 		}
 	}
 
-	return strings.Join(parts, " │ ")
+	return "  " + strings.Join(parts, " │ ")
 }
 
 // renderTableHeader renders the table header row
 func (m BreakdownModel) renderTableHeader() string {
 	// Width: cost(10) + space(1) + trend(1) = 12 for COST column
 	// " COST" shifts header 1 char right to align with $ in values (assumes <$10 per message)
-	header := fmt.Sprintf("%-5s  %-8s  %-10s  %-12s  %6s  %5s  %6s  %6s",
+	header := fmt.Sprintf("  %-5s  %-8s  %-10s  %-12s  %6s  %5s  %6s  %6s",
 		"#", "TIME", "MODEL", " COST", "IN", "OUT", "C_WR", "C_RD")
 	if !m.noColor {
 		return headerStyle.Render(header)
@@ -582,7 +589,7 @@ func (m BreakdownModel) renderTableHeader() string {
 
 // renderTableSeparator renders the separator line using Unicode box-drawing characters
 func (m BreakdownModel) renderTableSeparator() string {
-	sep := strings.Repeat(styles.LineHorizontal, 76)
+	sep := "  " + strings.Repeat(styles.LineHorizontal, 76)
 	if !m.noColor {
 		return tableBorderStyle.Render(sep)
 	}
@@ -630,7 +637,7 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevC
 	}
 
 	if m.noColor {
-		return fmt.Sprintf("%s  %s  %s  %s %s  %s  %s  %s  %s  %s",
+		return fmt.Sprintf("  %s  %s  %s  %s %s  %s  %s  %s  %s  %s",
 			indexStr, timeStr, modelStr, costStr, trendSymbol, inStr, outStr, cacheWriteStr, cacheReadStr, agentMarker)
 	}
 
@@ -659,7 +666,7 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevC
 	// For new messages, override with highlight style
 	if isNew {
 		highlightStyle := styles.HighlightStyle
-		return fmt.Sprintf("%s  %s  %s  %s %s  %s  %s  %s  %s  %s",
+		return fmt.Sprintf("  %s  %s  %s  %s %s  %s  %s  %s  %s  %s",
 			highlightStyle.Render(indexStr),
 			highlightStyle.Render(timeStr),
 			highlightStyle.Render(modelStr),
@@ -679,7 +686,7 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevC
 		agentRendered = agentStyle.Render(agentMarker)
 	}
 
-	return fmt.Sprintf("%s  %s  %s  %s %s  %s  %s  %s  %s  %s",
+	return fmt.Sprintf("  %s  %s  %s  %s %s  %s  %s  %s  %s  %s",
 		dimStyle.Render(indexStr),
 		dimStyle.Render(timeStr),
 		modelStyle.Render(modelStr),
