@@ -1583,31 +1583,6 @@ func formatCostStyled(cost float64, width int, noColor bool) string {
 	return padding + main + styles.DimStyle.Render(extra)
 }
 
-// formatCostStyledWithColor returns a cost string with custom color for main part and dimmed extra precision
-func formatCostStyledWithColor(cost float64, width int, color lipgloss.Color) string {
-	// Format to 6 decimal places: "$123.456789"
-	full := fmt.Sprintf("$%.6f", cost)
-	plainLen := len(full)
-
-	// Calculate padding needed
-	padding := ""
-	if width > plainLen {
-		padding = strings.Repeat(" ", width-plainLen)
-	}
-
-	// Split into main ($X.XX) and extra (XXXX) parts
-	dotIdx := strings.Index(full, ".")
-	if dotIdx == -1 || len(full) <= dotIdx+3 {
-		return padding + lipgloss.NewStyle().Foreground(color).Render(full)
-	}
-
-	main := full[:dotIdx+3]  // "$123.45"
-	extra := full[dotIdx+3:] // "6789"
-
-	mainStyled := lipgloss.NewStyle().Foreground(color).Render(main)
-	return padding + mainStyled + styles.DimStyle.Render(extra)
-}
-
 func formatNumber(n int64) string {
 	if n >= 1000000 {
 		return fmt.Sprintf("%.2fM", float64(n)/1000000)

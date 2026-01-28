@@ -1541,46 +1541,6 @@ func formatCostStyledBoldGreen(cost float64, width int, highlighted bool, noColo
 	return padding + styles.TotalValueStyle.Render(main) + dimStyle.Render(extra)
 }
 
-// formatCostStyledWithMagnitude returns a cost string with magnitude-based coloring
-// Higher costs relative to total are brighter, lower costs are dimmer
-func formatCostStyledWithMagnitude(cost float64, width int, highlighted bool, noColor bool, total float64) string {
-	// Format to 6 decimal places: "$123.456789"
-	full := fmt.Sprintf("$%.6f", cost)
-	plainLen := len(full)
-
-	// Calculate padding needed
-	padding := ""
-	if width > plainLen {
-		padding = strings.Repeat(" ", width-plainLen)
-	}
-
-	if noColor {
-		return padding + full
-	}
-
-	// Split into main ($X.XX) and extra (XXXX) parts
-	dotIdx := strings.Index(full, ".")
-	if dotIdx == -1 || len(full) <= dotIdx+3 {
-		if highlighted {
-			return padding + highlightStyle.Render(full)
-		}
-		magnitudeColor := getCostMagnitudeColor(cost, total)
-		return padding + lipgloss.NewStyle().Foreground(magnitudeColor).Render(full)
-	}
-
-	main := full[:dotIdx+3]  // "$123.45"
-	extra := full[dotIdx+3:] // "6789"
-
-	if highlighted {
-		return padding + highlightStyle.Render(main+extra)
-	}
-
-	// Apply magnitude coloring to main part, dim the extra
-	magnitudeColor := getCostMagnitudeColor(cost, total)
-	mainStyled := lipgloss.NewStyle().Foreground(magnitudeColor).Render(main)
-	return padding + mainStyled + dimStyle.Render(extra)
-}
-
 func formatNumber(n int64) string {
 	if n >= 1000000 {
 		return fmt.Sprintf("%.2fM", float64(n)/1000000)
@@ -1638,22 +1598,6 @@ func getModelColor(modelID string) lipgloss.Color {
 		return styles.HaikuColor
 	default:
 		return styles.SecondaryColor
-	}
-}
-
-// getCostMagnitudeColor returns a color based on the cost's proportion of total
-func getCostMagnitudeColor(cost, total float64) lipgloss.Color {
-	if total == 0 {
-		return styles.CostMediumColor
-	}
-	proportion := cost / total
-	switch {
-	case proportion > 0.5:
-		return styles.CostHighColor
-	case proportion >= 0.1:
-		return styles.CostMediumColor
-	default:
-		return styles.CostLowColor
 	}
 }
 
