@@ -11,7 +11,6 @@ var (
 	savingsValueStyle  = styles.SavingsValueStyle
 	footerStyle        = styles.FooterStyle // No margin, just color
 	liveIndicatorStyle = styles.LiveIndicatorStyle
-	helpStyle          = styles.HelpStyle
 	spinnerStyle       = styles.SpinnerStyle
 
 	// Highlight styles for changed values

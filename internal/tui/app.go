@@ -13,6 +13,7 @@ import (
 	"github.com/bardisty/ccusage/internal/pricing"
 	"github.com/bardisty/ccusage/internal/styles"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
@@ -40,6 +41,11 @@ type Model struct {
 	changedAt   map[string]time.Time
 	deltaTokens map[string]int64 // Delta values for token counts
 	deltaCount  int              // Delta for message count
+
+	// Viewport for scrolling
+	viewport   viewport.Model
+	autoScroll bool
+	ready      bool // viewport initialized
 
 	spinner   spinner.Model
 	watcher   *fsnotify.Watcher
@@ -86,6 +92,7 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 		verbose:     verbose,
 		noColor:     noColor,
 		loading:     true,
+		autoScroll:  true,
 		spinner:     s,
 		done:        make(chan struct{}),
 		closing:     closing,
@@ -145,11 +152,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			m.loading = true
 			return m, m.loadAnalysis
+
+		case "up", "k":
+			m.autoScroll = false
+			m.viewport.LineUp(1)
+
+		case "down", "j":
+			m.viewport.LineDown(1)
+			if m.viewport.AtBottom() {
+				m.autoScroll = true
+			}
+
+		case "pgup":
+			m.autoScroll = false
+			m.viewport.HalfViewUp()
+
+		case "pgdown":
+			m.viewport.HalfViewDown()
+			if m.viewport.AtBottom() {
+				m.autoScroll = true
+			}
+
+		case "g", "home":
+			m.autoScroll = false
+			m.viewport.GotoTop()
+
+		case "G", "end":
+			m.viewport.GotoBottom()
+			m.autoScroll = true
 		}
 
 	case tea.WindowSizeMsg:
+		// Header: panel(3 lines) + blank/notify(1) = 4 lines fixed
+		// Footer: separator(1) + stats(1) + separator(1) + help(1) = 4 lines fixed
+		headerHeight := 4
+		footerHeight := 4
+
+		if !m.ready {
+			m.viewport = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight)
+			m.viewport.YPosition = headerHeight
+			m.ready = true
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - headerHeight - footerHeight
+		}
 		m.width = msg.Width
 		m.height = msg.Height
+
+		// Re-render content with new dimensions
+		if m.analysis != nil {
+			m.viewport.SetContent(m.renderAnalysis())
+			if m.autoScroll {
+				m.viewport.GotoBottom()
+			}
+		}
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -166,6 +222,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.err = nil
+
+		// Update viewport content
+		if m.ready {
+			m.viewport.SetContent(m.renderAnalysis())
+			if m.autoScroll {
+				m.viewport.GotoBottom()
+			}
+		}
 
 	case errorMsg:
 		m.err = msg
@@ -406,11 +470,9 @@ func (m Model) isHighlighted(field string) bool {
 // View renders the TUI
 func (m Model) View() string {
 	var sb strings.Builder
-
-	// Standard panel width
 	const panelWidth = 76
 
-	// Header panel with session info, LIVE indicator, and status
+	// FIXED HEADER (4 lines)
 	sb.WriteString(m.renderHeaderPanel(panelWidth))
 
 	// Show switch notification on next line if applicable
@@ -418,33 +480,32 @@ func (m Model) View() string {
 	if showSwitchNotify {
 		sb.WriteString("\n")
 		if m.noColor {
-			sb.WriteString("[Switched to new session]")
+			sb.WriteString("  [Switched to new session]")
 		} else {
-			sb.WriteString(lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session"))
+			sb.WriteString("  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session"))
 		}
 	}
-
 	sb.WriteString("\n")
 
-	// Analysis content
-	if m.analysis != nil {
-		sb.WriteString(m.renderAnalysis())
+	// SCROLLABLE CONTENT (viewport)
+	if m.ready {
+		sb.WriteString(m.viewport.View())
 	} else if m.loading {
-		// Show spinner during initial load
 		sb.WriteString("\n")
 	}
-
-	// Double-line footer separator
 	sb.WriteString("\n")
+
+	// FIXED FOOTER (4 lines) - with 2-space padding
 	footerSep := strings.Repeat(styles.BoxHorizontal, panelWidth)
 	if !m.noColor {
 		footerSep = panelBorderStyle.Render(footerSep)
 	}
-	sb.WriteString(footerSep + "\n")
+	sb.WriteString("  " + footerSep + "\n")
 
-	// Footer stats (between separators) - only show if we have data
+	// Footer stats - only show if we have data
 	if m.analysis != nil && !m.isEmptySession() {
-		sb.WriteString(m.renderFooter())
+		sb.WriteString("  " + m.renderFooter() + "\n")
+	} else {
 		sb.WriteString("\n")
 	}
 
@@ -453,10 +514,15 @@ func (m Model) View() string {
 	if !m.noColor {
 		helpSep = dimStyle.Render(helpSep)
 	}
-	sb.WriteString(helpSep + "\n")
+	sb.WriteString("  " + helpSep + "\n")
 
-	// Help text
-	sb.WriteString(helpStyle.Render("q: quit  •  r: refresh"))
+	// Help text - expanded keybinds to match breakdown
+	if !m.noColor {
+		helpText := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("q: quit • r: refresh • g/G: top/bottom • ↑↓: scroll")
+		sb.WriteString("  " + helpText)
+	} else {
+		sb.WriteString("  q: quit • r: refresh • g/G: top/bottom • ↑↓: scroll")
+	}
 
 	return sb.String()
 }
@@ -478,7 +544,7 @@ func (m Model) renderAnalysis() string {
 	// Hero total cost as section header
 	sb.WriteString("\n")
 	totalHighlighted := m.isHighlighted("total")
-	sb.WriteString(m.renderHeroCost(a.TotalCost.TotalCost, totalHighlighted, sectionWidth))
+	sb.WriteString("  " + m.renderHeroCost(a.TotalCost.TotalCost, totalHighlighted, sectionWidth))
 	sb.WriteString("\n\n")
 
 	// Unified cost+token rows
@@ -527,7 +593,7 @@ func (m Model) renderAnalysis() string {
 	if a.TotalCost.CacheSavings > 0 {
 		savingsHighlighted := m.isHighlighted("savings")
 		savingsStr := formatCostStyledGreen(a.TotalCost.CacheSavings, 11, savingsHighlighted, m.noColor)
-		sb.WriteString(fmt.Sprintf("  %s %s  %s\n",
+		sb.WriteString(fmt.Sprintf("    %s %s  %s\n",
 			savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
 			savingsStr,
 			dimStyle.Render("(from cache reads)")))
@@ -539,14 +605,14 @@ func (m Model) renderAnalysis() string {
 
 	// Section: COST BY MODEL
 	sb.WriteString("\n")
-	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, m.noColor))
+	sb.WriteString("  " + renderSectionHeader("COST BY MODEL", sectionWidth, m.noColor))
 	sb.WriteString("\n\n")
 	sb.WriteString(m.renderCostByModelContent())
 
 	// Agent breakdown (shown when agents exist)
 	if a.HasAgents {
 		sb.WriteString("\n")
-		sb.WriteString(renderSectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
+		sb.WriteString("  " + renderSectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
 		sb.WriteString(m.renderAgentBreakdownContent())
 	}
@@ -554,7 +620,7 @@ func (m Model) renderAnalysis() string {
 	// Message insights (shown when insights are available)
 	if a.Insights != nil {
 		sb.WriteString("\n")
-		sb.WriteString(renderSectionHeader("MESSAGE INSIGHTS", sectionWidth, m.noColor))
+		sb.WriteString("  " + renderSectionHeader("MESSAGE INSIGHTS", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
 		sb.WriteString(m.renderInsightsContent())
 	}
@@ -576,7 +642,7 @@ func (m Model) renderAnalysisPlain() string {
 
 	// Hero total cost as section header
 	sb.WriteString("\n")
-	sb.WriteString(m.renderHeroCost(a.TotalCost.TotalCost, false, sectionWidth))
+	sb.WriteString("  " + m.renderHeroCost(a.TotalCost.TotalCost, false, sectionWidth))
 	sb.WriteString("\n\n")
 
 	// Unified cost+token rows
@@ -619,7 +685,7 @@ func (m Model) renderAnalysisPlain() string {
 
 	// Savings row (no separator - rows above sum to hero TOTAL, not savings)
 	if a.TotalCost.CacheSavings > 0 {
-		sb.WriteString(fmt.Sprintf("  %-14s %s  (from cache reads)\n",
+		sb.WriteString(fmt.Sprintf("    %-14s %s  (from cache reads)\n",
 			"Savings", formatCost(a.TotalCost.CacheSavings)))
 	}
 
@@ -629,14 +695,14 @@ func (m Model) renderAnalysisPlain() string {
 
 	// Section: COST BY MODEL
 	sb.WriteString("\n")
-	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, m.noColor))
+	sb.WriteString("  " + renderSectionHeader("COST BY MODEL", sectionWidth, m.noColor))
 	sb.WriteString("\n\n")
 	sb.WriteString(m.renderCostByModelContent())
 
 	// Agent breakdown (shown when agents exist)
 	if a.HasAgents {
 		sb.WriteString("\n")
-		sb.WriteString(renderSectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
+		sb.WriteString("  " + renderSectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
 		sb.WriteString(m.renderAgentBreakdownContent())
 	}
@@ -644,7 +710,7 @@ func (m Model) renderAnalysisPlain() string {
 	// Message insights (shown when insights are available)
 	if a.Insights != nil {
 		sb.WriteString("\n")
-		sb.WriteString(renderSectionHeader("MESSAGE INSIGHTS", sectionWidth, m.noColor))
+		sb.WriteString("  " + renderSectionHeader("MESSAGE INSIGHTS", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
 		sb.WriteString(m.renderInsightsContent())
 	}
@@ -678,18 +744,18 @@ func (m Model) renderContextSection() string {
 	contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(int64(maxContext)))
 
 	if m.noColor {
-		sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n", formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, true), contextVal, contextMeta))
-		sb.WriteString(fmt.Sprintf("           Free: %s (%.1f%%)  │  Buffer: %s\n", formatNumber(freeSpace), freePct, formatNumber(buffer)))
+		sb.WriteString(fmt.Sprintf("    Context  %s  %s %s\n", formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, true), contextVal, contextMeta))
+		sb.WriteString(fmt.Sprintf("             Free: %s (%.1f%%)  │  Buffer: %s\n", formatNumber(freeSpace), freePct, formatNumber(buffer)))
 	} else {
 		// Progress bar with context info
 		if highlighted {
-			sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n",
+			sb.WriteString(fmt.Sprintf("    Context  %s  %s %s\n",
 				formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, false),
 				highlightStyle.Render(contextVal),
 				dimStyle.Render(contextMeta)))
 		} else {
 			coloredMeta := lipgloss.NewStyle().Foreground(usageColor).Render(contextMeta)
-			sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n",
+			sb.WriteString(fmt.Sprintf("    Context  %s  %s %s\n",
 				formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, false),
 				contextVal, coloredMeta))
 		}
@@ -705,7 +771,7 @@ func (m Model) renderContextSection() string {
 			freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(fmt.Sprintf("Free: %s", freeValWithPct))
 		}
 		bufferStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(fmt.Sprintf("Buffer: %s", bufferVal))
-		sb.WriteString(fmt.Sprintf("           %s  %s  %s\n", freeStyled, dimStyle.Render("│"), bufferStyled))
+		sb.WriteString(fmt.Sprintf("             %s  %s  %s\n", freeStyled, dimStyle.Render("│"), bufferStyled))
 	}
 
 	return sb.String()
@@ -1160,12 +1226,14 @@ func (m Model) renderHeaderPanel(width int) string {
 
 	if m.noColor {
 		// Top border
+		sb.WriteString("  ")
 		sb.WriteString(styles.BoxTopLeft)
 		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
 		sb.WriteString(styles.BoxTopRight)
 		sb.WriteString("\n")
 
 		// Content line
+		sb.WriteString("  ")
 		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("  ")
 		sb.WriteString(content)
@@ -1175,6 +1243,7 @@ func (m Model) renderHeaderPanel(width int) string {
 		sb.WriteString("\n")
 
 		// Bottom border
+		sb.WriteString("  ")
 		sb.WriteString(styles.BoxBottomLeft)
 		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
 		sb.WriteString(styles.BoxBottomRight)
@@ -1196,12 +1265,14 @@ func (m Model) renderHeaderPanel(width int) string {
 		sepStyled := panelBorderStyle.Render(sep)
 
 		// Top border
+		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
 		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
 		sb.WriteString(panelBorderStyle.Render(styles.BoxTopRight))
 		sb.WriteString("\n")
 
 		// Content line
+		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
 		sb.WriteString("  ")
 		sb.WriteString(sessionStyled)
@@ -1219,6 +1290,7 @@ func (m Model) renderHeaderPanel(width int) string {
 		sb.WriteString("\n")
 
 		// Bottom border
+		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomLeft))
 		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
 		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomRight))
@@ -1453,9 +1525,9 @@ func getCostMagnitudeColor(cost, total float64) lipgloss.Color {
 
 // formatContextProgressBar creates a visual progress bar showing context usage
 // Bar segments: used (█), free (░), buffer (▒)
-// Total width: 40 characters (fits within 76-char panel with labels)
+// Total width: 38 characters (fits within 76-char panel with 4-space indent)
 func formatContextProgressBar(contextSize, freeSpace, buffer int64, maxContext int, noColor bool) string {
-	const barWidth = 40
+	const barWidth = 38
 
 	if maxContext == 0 {
 		return strings.Repeat("░", barWidth)
@@ -1595,7 +1667,7 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 		}
 	}
 
-	return fmt.Sprintf("  %s %s  %s tokens%s\n", labelStr, costStr, tokenStr, extraStr)
+	return fmt.Sprintf("    %s %s  %s tokens%s\n", labelStr, costStr, tokenStr, extraStr)
 }
 
 // renderEmptyState renders a clean empty state for new sessions

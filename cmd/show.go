@@ -73,7 +73,7 @@ func runShow(cmd *cobra.Command, args []string) {
 
 func runLiveMode(session *models.SessionEntry, projectDir string, followMode bool) {
 	model := tui.NewModel(session.FullPath, session.SessionID, verbose, noColor, projectDir, followMode)
-	p := tea.NewProgram(model)
+	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
