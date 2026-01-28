@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/NimbleMarkets/ntcharts/sparkline"
 	"github.com/bardisty/ccusage/internal/analyzer"
 	"github.com/bardisty/ccusage/internal/models"
 	"github.com/bardisty/ccusage/internal/pricing"
@@ -24,6 +25,12 @@ const highlightDuration = 2 * time.Second
 
 // Duration to show "Switched to new session" notification
 const switchNotifyDuration = 5 * time.Second
+
+// Chart display constants
+const (
+	chartHeight = 6  // Height of the sparkline chart in characters
+	chartWidth  = 60 // Default width of the chart (adjusted on resize)
+)
 
 // Model is the Bubbletea model for the TUI
 type Model struct {
@@ -61,6 +68,11 @@ type Model struct {
 	sessionWatcher *SessionWatcher // Watches for new session files
 	switchNotifyAt time.Time       // When session switch notification started
 
+	// Cost trend chart
+	costChart        sparkline.Model // Sparkline chart for cost trend
+	costHistory      []float64       // Rolling window of per-message costs
+	lastMessageCount int             // Track message count to detect new messages
+
 	width  int
 	height int
 }
@@ -83,6 +95,11 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 	s.Spinner = spinner.Dot
 	s.Style = spinnerStyle
 
+	// Initialize cost trend chart with default dimensions
+	// Will be resized when we receive the first WindowSizeMsg
+	chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
+	chart := sparkline.New(chartWidth, chartHeight, sparkline.WithStyle(chartStyle))
+
 	closing := &atomic.Bool{}
 	watching := &atomic.Bool{}
 	closeOnce := &sync.Once{}
@@ -102,6 +119,8 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 		deltaTokens: make(map[string]int64),
 		projectDir:  projectDir,
 		followMode:  followMode,
+		costChart:   chart,
+		costHistory: make([]float64, 0),
 	}
 }
 
@@ -199,6 +218,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
+		// Resize cost chart to match new width
+		newChartWidth := m.getChartWidth()
+		m.costChart.Resize(newChartWidth, chartHeight)
+
 		// Re-render content with new dimensions
 		if m.analysis != nil {
 			m.viewport.SetContent(m.renderAnalysis())
@@ -222,6 +245,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.err = nil
+
+		// Update cost chart with new message costs
+		m.updateCostChart()
 
 		// Update viewport content
 		if m.ready {
@@ -272,6 +298,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.changedAt = make(map[string]time.Time)
 		m.deltaTokens = make(map[string]int64)
 		m.deltaCount = 0
+
+		// Reset cost chart for new session
+		m.costHistory = make([]float64, 0)
+		m.lastMessageCount = 0
+		chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
+		m.costChart = sparkline.New(m.getChartWidth(), chartHeight, sparkline.WithStyle(chartStyle))
 
 		// Stop old file watcher, will be restarted by watchFile
 		if m.watcher != nil {
@@ -612,6 +644,14 @@ func (m Model) renderAnalysis() string {
 	sb.WriteString("\n")
 	sb.WriteString(m.renderContextSection())
 
+	// Cost trend chart (only show if we have 2+ data points)
+	if len(m.costHistory) >= 2 {
+		sb.WriteString("\n")
+		sb.WriteString("  " + renderSectionHeader("COST TREND", sectionWidth, m.noColor))
+		sb.WriteString("\n\n")
+		sb.WriteString(m.renderCostChart())
+	}
+
 	// Section: COST BY MODEL
 	sb.WriteString("\n")
 	sb.WriteString("  " + renderSectionHeader("COST BY MODEL", sectionWidth, m.noColor))
@@ -701,6 +741,14 @@ func (m Model) renderAnalysisPlain() string {
 	// Context window section
 	sb.WriteString("\n")
 	sb.WriteString(m.renderContextSection())
+
+	// Cost trend chart (only show if we have 2+ data points)
+	if len(m.costHistory) >= 2 {
+		sb.WriteString("\n")
+		sb.WriteString("  " + renderSectionHeader("COST TREND", sectionWidth, m.noColor))
+		sb.WriteString("\n\n")
+		sb.WriteString(m.renderCostChart())
+	}
 
 	// Section: COST BY MODEL
 	sb.WriteString("\n")
@@ -1067,7 +1115,10 @@ func formatCostComponentLabel(component string) string {
 // Commands
 
 func (m Model) loadAnalysis() tea.Msg {
-	analysis, err := analyzer.AnalyzeSession(m.sessionPath, m.sessionID, m.verbose)
+	// Always include messages for the cost trend chart
+	// The verbose flag controls additional output details, but we need messages
+	// for the live chart regardless
+	analysis, err := analyzer.AnalyzeSession(m.sessionPath, m.sessionID, true)
 	if err != nil {
 		return errorMsg(err)
 	}
@@ -1721,4 +1772,84 @@ func (m Model) isEmptySession() bool {
 	}
 	// Session is empty if total cost is 0 and no messages
 	return m.analysis.TotalCost.TotalCost == 0 && m.analysis.MessageCount == 0
+}
+
+// getChartWidth returns the appropriate chart width based on terminal width
+func (m Model) getChartWidth() int {
+	// Chart fits within the 76-char panel with 4-char indent on each side
+	// Leave room for y-axis labels (if we add them later)
+	maxWidth := 68
+	if m.width > 0 && m.width-8 < maxWidth {
+		return m.width - 8
+	}
+	return maxWidth
+}
+
+// updateCostChart updates the sparkline chart with cost data from analysis
+func (m *Model) updateCostChart() {
+	if m.analysis == nil || m.analysis.Messages == nil {
+		return
+	}
+
+	// Check if we have new messages
+	currentMessageCount := len(m.analysis.Messages)
+	if currentMessageCount <= m.lastMessageCount {
+		return // No new messages
+	}
+
+	// Extract costs from new messages and add to chart
+	for i := m.lastMessageCount; i < currentMessageCount; i++ {
+		cost := m.analysis.Messages[i].Cost.TotalCost
+		m.costHistory = append(m.costHistory, cost)
+		m.costChart.Push(cost)
+	}
+
+	// Redraw the chart with updated data
+	if !m.noColor {
+		m.costChart.DrawBraille()
+	} else {
+		m.costChart.Draw()
+	}
+
+	m.lastMessageCount = currentMessageCount
+}
+
+// renderCostChart renders the cost trend sparkline with labels
+func (m Model) renderCostChart() string {
+	var sb strings.Builder
+
+	// Find min and max for display
+	var minCost, maxCost float64
+	if len(m.costHistory) > 0 {
+		minCost = m.costHistory[0]
+		maxCost = m.costHistory[0]
+		for _, cost := range m.costHistory {
+			if cost < minCost {
+				minCost = cost
+			}
+			if cost > maxCost {
+				maxCost = cost
+			}
+		}
+	}
+
+	// Render the chart with proper indentation
+	chartLines := strings.Split(m.costChart.View(), "\n")
+	for _, line := range chartLines {
+		if line != "" {
+			sb.WriteString("    " + line + "\n")
+		}
+	}
+
+	// Add scale labels below the chart
+	if !m.noColor {
+		scaleInfo := fmt.Sprintf("min: $%.4f  max: $%.4f  (%d msgs)",
+			minCost, maxCost, len(m.costHistory))
+		sb.WriteString("    " + dimStyle.Render(scaleInfo) + "\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("    min: $%.4f  max: $%.4f  (%d msgs)\n",
+			minCost, maxCost, len(m.costHistory)))
+	}
+
+	return sb.String()
 }
