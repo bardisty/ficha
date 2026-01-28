@@ -9,6 +9,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var showDetails bool
+
 var summaryCmd = &cobra.Command{
 	Use:   "summary",
 	Short: "Show aggregate stats across all sessions",
@@ -18,12 +20,17 @@ This calculates the total cost and token usage across all sessions.
 
 Examples:
   ccusage summary                 Show aggregate stats
+  ccusage summary --details       Show per-session cost breakdown
   ccusage summary -f json         Output as JSON`,
 	Run: runSummary,
 }
 
+func init() {
+	summaryCmd.Flags().BoolVarP(&showDetails, "details", "d", false, "Show per-session cost breakdown")
+}
+
 func runSummary(cmd *cobra.Command, args []string) {
-	sessions, err := loadProjectSessions()
+	sessions, projectDir, err := loadProjectSessionsWithDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -63,7 +70,11 @@ func runSummary(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 	default:
-		output = formatter.FormatSessionTable(analysis, noColor)
+		if showDetails {
+			output = formatter.FormatSummaryTableWithDetails(analysis, sessions, projectDir, noColor)
+		} else {
+			output = formatter.FormatSessionTable(analysis, noColor)
+		}
 	}
 
 	fmt.Println(output)

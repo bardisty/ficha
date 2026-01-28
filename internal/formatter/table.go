@@ -2,9 +2,12 @@ package formatter
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/NimbleMarkets/ntcharts/sparkline"
+	"github.com/bardisty/ccusage/internal/analyzer"
 	"github.com/bardisty/ccusage/internal/models"
 	"github.com/bardisty/ccusage/internal/pricing"
 	"github.com/bardisty/ccusage/internal/styles"
@@ -20,6 +23,7 @@ var (
 	sectionHeaderStyle = styles.SectionHeaderStyle
 	panelBorderStyle   = styles.PanelBorderStyle
 	dimStyle           = styles.DimStyle
+	headerStyle        = styles.HeaderStyle
 )
 
 // FormatSessionTable formats a session analysis as a styled table
@@ -256,6 +260,451 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 	sb.WriteString(strings.Repeat("-", sectionWidth))
 
 	return sb.String()
+}
+
+// FormatSummaryTableWithDetails formats the summary table with session breakdown
+func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, sessions []models.SessionEntry, projectDir string, noColor bool) string {
+	if noColor {
+		return formatSummaryTableWithDetailsPlain(analysis, sessions, projectDir)
+	}
+
+	var sb strings.Builder
+	const sectionWidth = 76
+
+	// Header panel
+	sb.WriteString(renderHeaderPanel(analysis, sectionWidth, noColor))
+	sb.WriteString("\n\n")
+
+	// Hero total cost as section header
+	sb.WriteString(renderHeroCost(analysis.TotalCost.TotalCost, sectionWidth, noColor))
+	sb.WriteString("\n\n")
+
+	// Unified cost+token rows (same as FormatSessionTable)
+	sb.WriteString(renderUnifiedCostRow("Input", analysis.TotalCost.InputCost, analysis.TotalUsage.InputTokens, lipgloss.Color(""), "", noColor))
+	sb.WriteString(renderUnifiedCostRow("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, styles.OutputTokenColor, "", noColor))
+
+	// Cache write rows
+	cacheWriteTokens := analysis.TotalUsage.CacheCreationInputTokens
+	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
+	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
+
+	if has5mCost {
+		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite5mCost, cacheWriteTokens, styles.CacheWriteTokenColor, "5m TTL", noColor))
+	}
+
+	if has1hCost {
+		var tokens int64
+		if !has5mCost {
+			tokens = cacheWriteTokens
+		}
+		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite1hCost, tokens, styles.CacheWriteTokenColor, "1h TTL", noColor))
+	}
+
+	// Cache read
+	if analysis.TotalCost.CacheReadCost > 0 || analysis.TotalUsage.CacheReadInputTokens > 0 {
+		sb.WriteString(renderUnifiedCostRow("Cache read", analysis.TotalCost.CacheReadCost, analysis.TotalUsage.CacheReadInputTokens, styles.CacheReadTokenColor, "", noColor))
+	}
+
+	// Savings row
+	if analysis.TotalCost.CacheSavings > 0 {
+		savingsStr := formatCostStyledGreen(analysis.TotalCost.CacheSavings, 11, noColor)
+		sb.WriteString(fmt.Sprintf("  %s %s  %s\n",
+			savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
+			savingsStr,
+			dimStyle.Render("(from cache reads)")))
+	}
+
+	// Cost by model section
+	sb.WriteString("\n")
+	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, noColor))
+	sb.WriteString("\n\n")
+	sb.WriteString(formatCostByModelContent(analysis, noColor))
+
+	// Get session breakdown data (needed for both chart and table)
+	breakdownResult := renderSessionBreakdown(sessions, noColor)
+
+	// Session breakdown section (includes chart and table)
+	sb.WriteString("\n")
+	sb.WriteString(renderSectionHeader("SESSION BREAKDOWN", sectionWidth, noColor))
+	sb.WriteString("\n\n")
+
+	// Cost chart at top of section (only show if we have 2+ data points)
+	if len(breakdownResult.costs) > 1 {
+		sb.WriteString(renderCostChart(breakdownResult.costs, breakdownResult.dates, sectionWidth, noColor))
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(breakdownResult.table)
+
+	// Footer with double-line separator
+	sb.WriteString("\n")
+	sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, sectionWidth)))
+	sb.WriteString("\n")
+
+	// Footer stats
+	msgStr := fmt.Sprintf("%d", analysis.MessageCount)
+	if analysis.AgentMessageCount > 0 {
+		msgStr = fmt.Sprintf("%d (%d parent, %d agents)",
+			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
+	}
+
+	var sessionCount int
+	_, _ = fmt.Sscanf(analysis.SessionID, "Summary (%d sessions)", &sessionCount)
+
+	footerText := fmt.Sprintf("Messages: %s  │  Sessions: %d", msgStr, sessionCount)
+	sb.WriteString(footerStyle.Render(footerText))
+	sb.WriteString("\n")
+
+	// Single-line separator
+	sb.WriteString(dimStyle.Render(strings.Repeat(styles.LineHorizontal, sectionWidth)))
+	sb.WriteString("\n")
+
+	// Project path
+	sb.WriteString(dimStyle.Render(fmt.Sprintf("Project: %s", projectDir)))
+
+	return sb.String()
+}
+
+// formatSummaryTableWithDetailsPlain formats the summary with details in plain text
+func formatSummaryTableWithDetailsPlain(analysis *models.SessionAnalysis, sessions []models.SessionEntry, projectDir string) string {
+	var sb strings.Builder
+	const sectionWidth = 76
+
+	// Header panel
+	sb.WriteString(renderHeaderPanel(analysis, sectionWidth, true))
+	sb.WriteString("\n\n")
+
+	// Hero total cost as section header
+	sb.WriteString(renderHeroCost(analysis.TotalCost.TotalCost, sectionWidth, true))
+	sb.WriteString("\n\n")
+
+	// Unified cost+token rows
+	sb.WriteString(renderUnifiedCostRowPlain("Input", analysis.TotalCost.InputCost, analysis.TotalUsage.InputTokens, ""))
+	sb.WriteString(renderUnifiedCostRowPlain("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, ""))
+
+	// Cache write rows
+	cacheWriteTokens := analysis.TotalUsage.CacheCreationInputTokens
+	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
+	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
+
+	if has5mCost {
+		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite5mCost, cacheWriteTokens, "5m TTL"))
+	}
+
+	if has1hCost {
+		var tokens int64
+		if !has5mCost {
+			tokens = cacheWriteTokens
+		}
+		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite1hCost, tokens, "1h TTL"))
+	}
+
+	if analysis.TotalCost.CacheReadCost > 0 || analysis.TotalUsage.CacheReadInputTokens > 0 {
+		sb.WriteString(renderUnifiedCostRowPlain("Cache read", analysis.TotalCost.CacheReadCost, analysis.TotalUsage.CacheReadInputTokens, ""))
+	}
+
+	// Savings row
+	if analysis.TotalCost.CacheSavings > 0 {
+		sb.WriteString(fmt.Sprintf("  %-14s %11s  (from cache reads)\n",
+			"Savings", formatCost(analysis.TotalCost.CacheSavings)))
+	}
+
+	// Cost by model section
+	sb.WriteString("\n")
+	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, true))
+	sb.WriteString("\n\n")
+	sb.WriteString(formatCostByModelContent(analysis, true))
+
+	// Get session breakdown data (needed for both chart and table)
+	breakdownResult := renderSessionBreakdown(sessions, true)
+
+	// Session breakdown section (includes chart and table)
+	sb.WriteString("\n")
+	sb.WriteString(renderSectionHeader("SESSION BREAKDOWN", sectionWidth, true))
+	sb.WriteString("\n\n")
+
+	// Cost chart at top of section (only show if we have 2+ data points)
+	if len(breakdownResult.costs) > 1 {
+		sb.WriteString(renderCostChart(breakdownResult.costs, breakdownResult.dates, sectionWidth, true))
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(breakdownResult.table)
+
+	// Footer with double-line separator
+	sb.WriteString("\n")
+	sb.WriteString(strings.Repeat("=", sectionWidth))
+	sb.WriteString("\n")
+
+	// Footer stats
+	msgStr := fmt.Sprintf("%d", analysis.MessageCount)
+	if analysis.AgentMessageCount > 0 {
+		msgStr = fmt.Sprintf("%d (%d parent, %d agents)",
+			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
+	}
+
+	var sessionCount int
+	_, _ = fmt.Sscanf(analysis.SessionID, "Summary (%d sessions)", &sessionCount)
+
+	footerText := fmt.Sprintf("Messages: %s  |  Sessions: %d", msgStr, sessionCount)
+	sb.WriteString(footerText)
+	sb.WriteString("\n")
+	sb.WriteString(strings.Repeat("-", sectionWidth))
+	sb.WriteString("\n")
+
+	// Project path
+	sb.WriteString(fmt.Sprintf("Project: %s", projectDir))
+
+	return sb.String()
+}
+
+// sessionBreakdownResult contains the rendered breakdown table plus data for the chart
+type sessionBreakdownResult struct {
+	table string
+	costs []float64
+	dates []time.Time
+}
+
+// renderSessionBreakdown renders the session breakdown table with cumulative column
+func renderSessionBreakdown(sessions []models.SessionEntry, noColor bool) sessionBreakdownResult {
+	var sb strings.Builder
+
+	// Sort by modified time
+	sorted := make([]models.SessionEntry, len(sessions))
+	copy(sorted, sessions)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Modified.Before(sorted[j].Modified)
+	})
+
+	// Analyze each session and collect costs
+	type sessionWithCost struct {
+		entry models.SessionEntry
+		cost  float64
+		err   bool
+	}
+
+	sessionCosts := make([]sessionWithCost, 0, len(sorted))
+	var costs []float64
+	var dates []time.Time
+	var totalCost float64
+
+	for _, s := range sorted {
+		analysis, err := analyzer.AnalyzeSession(s.FullPath, s.SessionID, false)
+		if err != nil {
+			sessionCosts = append(sessionCosts, sessionWithCost{entry: s, cost: 0, err: true})
+			continue
+		}
+		cost := analysis.TotalCost.TotalCost
+		sessionCosts = append(sessionCosts, sessionWithCost{entry: s, cost: cost, err: false})
+		costs = append(costs, cost)
+		dates = append(dates, s.Modified)
+		totalCost += cost
+	}
+
+	// Calculate min/max for gradient
+	var minCost, maxCost float64
+	if len(costs) > 0 {
+		minCost = costs[0]
+		maxCost = costs[0]
+		for _, c := range costs[1:] {
+			if c < minCost {
+				minCost = c
+			}
+			if c > maxCost {
+				maxCost = c
+			}
+		}
+	}
+
+	// Table column widths: #(4) + space(1) + SessionID(20) + space(2) + Modified(14) + space(2) + Cost(11) + space(2) + Cumulative(14) = 70 content chars
+	// Total width 72 chars (with 2-space indent) matches chart width (4-space indent + 68 chart)
+	const contentWidth = 70
+
+	// Render header row (bold white, all caps - matches breakdown command style)
+	headerRow := fmt.Sprintf("  %4s %-20s  %-14s  %11s  %14s", "#", "SESSION ID", "MODIFIED", "COST", "CUMULATIVE")
+	if noColor {
+		sb.WriteString(headerRow + "\n")
+		sb.WriteString("  " + strings.Repeat("-", contentWidth) + "\n")
+	} else {
+		sb.WriteString(headerStyle.Render(headerRow) + "\n")
+		sb.WriteString("  " + dimStyle.Render(strings.Repeat(styles.LineHorizontal, contentWidth)) + "\n")
+	}
+
+	// Render session rows
+	skipped := 0
+	var cumulativeSum float64
+	for i, sc := range sessionCosts {
+		num := i + 1
+
+		// Truncate session ID (show first 17 chars + ...)
+		shortID := sc.entry.SessionID
+		if len(shortID) > 17 {
+			shortID = shortID[:17] + "..."
+		}
+
+		// Format modified date with time (mainframe style: DD MMM HH:MM with uppercase month)
+		modifiedStr := strings.ToUpper(sc.entry.Modified.Format("02 Jan 15:04"))
+
+		if sc.err {
+			skipped++
+			if noColor {
+				sb.WriteString(fmt.Sprintf("  %4d %-20s  %-14s  %11s  %14s\n", num, shortID, modifiedStr, "(error)", "-"))
+			} else {
+				sb.WriteString(fmt.Sprintf("  %s %s  %s  %11s  %14s\n",
+					dimStyle.Render(fmt.Sprintf("%4d", num)),
+					dimStyle.Render(fmt.Sprintf("%-20s", shortID)),
+					dimStyle.Render(fmt.Sprintf("%-14s", modifiedStr)),
+					dimStyle.Render("(error)"),
+					dimStyle.Render("-")))
+			}
+			continue
+		}
+
+		cumulativeSum += sc.cost
+
+		if noColor {
+			costStr := fmt.Sprintf("$%.6f", sc.cost)
+			cumStr := fmt.Sprintf("$%.6f", cumulativeSum)
+			sb.WriteString(fmt.Sprintf("  %4d %-20s  %-14s  %11s  %14s\n", num, shortID, modifiedStr, costStr, cumStr))
+		} else {
+			// Apply cost gradient color with 6 decimal precision (last 4 dimmed)
+			costColor := styles.GetCostGradientColor(sc.cost, minCost, maxCost)
+			costStyled := formatCostStyledWithColor(sc.cost, 11, costColor)
+			cumStyled := formatCostStyledGreen(cumulativeSum, 14, false)
+
+			sb.WriteString(fmt.Sprintf("  %s %s  %s  %s  %s\n",
+				dimStyle.Render(fmt.Sprintf("%4d", num)),
+				dimStyle.Render(fmt.Sprintf("%-20s", shortID)),
+				dimStyle.Render(fmt.Sprintf("%-14s", modifiedStr)),
+				costStyled,
+				cumStyled))
+		}
+	}
+
+	// Footer separator and sum
+	validSessions := len(sorted) - skipped
+	sumLabel := fmt.Sprintf("Sum (%d sessions):", validSessions)
+
+	if noColor {
+		sumCostStr := fmt.Sprintf("$%.6f", totalCost)
+		sb.WriteString("  " + strings.Repeat("-", contentWidth) + "\n")
+		sb.WriteString(fmt.Sprintf("  %-45s  %14s\n", sumLabel, sumCostStr))
+	} else {
+		sb.WriteString("  " + dimStyle.Render(strings.Repeat(styles.LineHorizontal, contentWidth)) + "\n")
+		sb.WriteString(fmt.Sprintf("  %-45s  %s\n", sumLabel, formatCostStyledGreen(totalCost, 14, false)))
+	}
+
+	return sessionBreakdownResult{
+		table: sb.String(),
+		costs: costs,
+		dates: dates,
+	}
+}
+
+// Chart display constants for summary sparkline
+const (
+	summaryChartHeight = 6 // 6 rows = 24 braille levels (matching watch command)
+)
+
+// renderCostChart renders a sparkline chart showing session costs over time
+// Uses ntcharts braille rendering for high-resolution visualization (24 vertical levels)
+func renderCostChart(costs []float64, dates []time.Time, width int, noColor bool) string {
+	if len(costs) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	// Find min/max for labels
+	var minCost, maxCost float64
+	minCost = costs[0]
+	maxCost = costs[0]
+	for _, c := range costs {
+		if c < minCost {
+			minCost = c
+		}
+		if c > maxCost {
+			maxCost = c
+		}
+	}
+
+	// Calculate chart width (leave room for indent and some padding)
+	indent := "    " // 4-space indent to match section content
+	chartWidth := width - 8
+	if chartWidth < 20 {
+		chartWidth = 20
+	}
+	if chartWidth > 68 {
+		chartWidth = 68 // Cap at reasonable width
+	}
+
+	// Create sparkline chart with appropriate styling
+	var chart sparkline.Model
+	if !noColor {
+		chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
+		chart = sparkline.New(chartWidth, summaryChartHeight, sparkline.WithStyle(chartStyle))
+	} else {
+		chart = sparkline.New(chartWidth, summaryChartHeight)
+	}
+
+	// Push all cost data
+	chart.PushAll(costs)
+
+	// Render with appropriate mode
+	if !noColor {
+		chart.DrawBraille()
+	} else {
+		chart.Draw()
+	}
+
+	// Render the chart with proper indentation
+	chartLines := strings.Split(chart.View(), "\n")
+	for _, line := range chartLines {
+		if line != "" {
+			sb.WriteString(indent + line + "\n")
+		}
+	}
+
+	// Add scale labels below the chart
+	scaleInfo := fmt.Sprintf("min: %s  max: %s  (%d sessions)",
+		formatChartCost(minCost), formatChartCost(maxCost), len(costs))
+	if noColor {
+		sb.WriteString(indent + scaleInfo + "\n")
+	} else {
+		sb.WriteString(indent + dimStyle.Render(scaleInfo) + "\n")
+	}
+
+	// Add date labels
+	if len(dates) >= 2 {
+		startDate := dates[0].Format("02 JAN")
+		endDate := dates[len(dates)-1].Format("02 JAN")
+
+		// Position dates at start and end of chart area
+		padding := chartWidth - len(startDate) - len(endDate)
+		if padding < 1 {
+			padding = 1
+		}
+		dateLine := fmt.Sprintf("%s%s%s", startDate, strings.Repeat(" ", padding), endDate)
+		if noColor {
+			sb.WriteString(indent + dateLine + "\n")
+		} else {
+			sb.WriteString(indent + dimStyle.Render(dateLine) + "\n")
+		}
+	}
+
+	return sb.String()
+}
+
+// formatChartCost formats a cost value compactly for chart Y-axis labels
+func formatChartCost(cost float64) string {
+	if cost >= 100 {
+		return fmt.Sprintf("$%.0f", cost)
+	} else if cost >= 10 {
+		return fmt.Sprintf("$%.1f", cost)
+	} else if cost >= 1 {
+		return fmt.Sprintf("$%.2f", cost)
+	}
+	return fmt.Sprintf("$%.3f", cost)
 }
 
 // Rendering helpers (matching TUI style)
@@ -853,6 +1302,31 @@ func formatCostStyled(cost float64, width int, noColor bool) string {
 	extra := full[dotIdx+3:] // "6789"
 
 	return padding + main + styles.DimStyle.Render(extra)
+}
+
+// formatCostStyledWithColor returns a cost string with custom color for main part and dimmed extra precision
+func formatCostStyledWithColor(cost float64, width int, color lipgloss.Color) string {
+	// Format to 6 decimal places: "$123.456789"
+	full := fmt.Sprintf("$%.6f", cost)
+	plainLen := len(full)
+
+	// Calculate padding needed
+	padding := ""
+	if width > plainLen {
+		padding = strings.Repeat(" ", width-plainLen)
+	}
+
+	// Split into main ($X.XX) and extra (XXXX) parts
+	dotIdx := strings.Index(full, ".")
+	if dotIdx == -1 || len(full) <= dotIdx+3 {
+		return padding + lipgloss.NewStyle().Foreground(color).Render(full)
+	}
+
+	main := full[:dotIdx+3]  // "$123.45"
+	extra := full[dotIdx+3:] // "6789"
+
+	mainStyled := lipgloss.NewStyle().Foreground(color).Render(main)
+	return padding + mainStyled + styles.DimStyle.Render(extra)
 }
 
 func formatNumber(n int64) string {
