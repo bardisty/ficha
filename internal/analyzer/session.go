@@ -31,6 +31,11 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 	// Store parent cost and message count before adding agent data
 	analysis.ParentCost = analysis.TotalCost
 	analysis.ParentMessageCount = analysis.MessageCount
+	// Copy CostByModel before agents are merged in
+	analysis.ParentCostByModel = make(map[string]models.CostBreakdown)
+	for model, cost := range analysis.CostByModel {
+		analysis.ParentCostByModel[model] = cost
+	}
 
 	// Discover and analyze agent sub-sessions
 	projectDir := filepath.Dir(sessionPath)

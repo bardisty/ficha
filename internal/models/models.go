@@ -110,9 +110,10 @@ type SessionAnalysis struct {
 	LastMessageUsage TokenUsage `json:"last_message_usage"`
 	LastMessageModel string     `json:"last_message_model"` // Model used for last message (for context limit lookup)
 	// Agent-related fields
-	Agents             []AgentAnalysis `json:"agents,omitempty"`
-	ParentCost         CostBreakdown   `json:"parent_cost"` // Cost excluding agents
-	AgentsCost         CostBreakdown   `json:"agents_cost"` // Sum of agent costs
+	Agents             []AgentAnalysis          `json:"agents,omitempty"`
+	ParentCost         CostBreakdown            `json:"parent_cost"`          // Cost excluding agents
+	ParentCostByModel  map[string]CostBreakdown `json:"parent_cost_by_model"` // Parent cost by model (excludes agents)
+	AgentsCost         CostBreakdown            `json:"agents_cost"`          // Sum of agent costs
 	HasAgents          bool            `json:"has_agents"`
 	AgentCount         int             `json:"agent_count"`
 	ParentMessageCount int             `json:"parent_message_count"`       // Messages from parent session only
