@@ -216,10 +216,15 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoBottom()
 			}
 		}
+		// Restart file watcher after data loads to avoid race condition
+		// where the old watcher's defer hasn't executed yet when we start a new one
+		return m, m.waitForFileChangeBreakdown()
 
 	case breakdownErrorMsg:
 		m.err = msg
 		m.loading = false
+		// Restart file watcher even after error to continue monitoring
+		return m, m.waitForFileChangeBreakdown()
 
 	case watcherStartedMsg:
 		m.watcher = msg.watcher
@@ -236,7 +241,8 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fileChangedMsg:
 		m.loading = true
-		return m, tea.Batch(m.loadBreakdownCmd(), m.waitForFileChangeBreakdown())
+		// Watcher restart moved to breakdownMsgsMsg handler to avoid race condition
+		return m, m.loadBreakdownCmd()
 
 	case sessionSwitchedMsg:
 		// Store previous session ID and switch to new session

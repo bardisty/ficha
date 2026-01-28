@@ -230,10 +230,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoBottom()
 			}
 		}
+		// Restart file watcher after analysis completes to avoid race condition
+		// where the old watcher's defer hasn't executed yet when we start a new one
+		return m, m.waitForFileChange()
 
 	case errorMsg:
 		m.err = msg
 		m.loading = false
+		// Restart file watcher even after error to continue monitoring
+		return m, m.waitForFileChange()
 
 	case watcherStartedMsg:
 		// Store the watcher and start listening for file changes
@@ -251,8 +256,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fileChangedMsg:
 		m.loading = true
-		// After handling the change, continue waiting for more changes
-		return m, tea.Batch(m.loadAnalysis, m.waitForFileChange())
+		// Watcher restart moved to analysisMsg handler to avoid race condition
+		return m, m.loadAnalysis
 
 	case sessionSwitchedMsg:
 		// Store previous session ID and switch to new session
