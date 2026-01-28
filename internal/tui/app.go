@@ -1551,12 +1551,20 @@ func formatContextProgressBar(contextSize, freeSpace, buffer int64, maxContext i
 	if total < barWidth {
 		freeChars += barWidth - total
 	} else if total > barWidth {
-		if freeChars > 0 {
-			freeChars -= total - barWidth
-		} else if usedChars > 0 {
-			usedChars -= total - barWidth
+		diff := total - barWidth
+		if freeChars >= diff {
+			freeChars -= diff
+		} else {
+			// Reduce freeChars to zero, then take remainder from usedChars
+			diff -= freeChars
+			freeChars = 0
+			usedChars -= diff
 		}
 	}
+
+	// Final safety: ensure non-negative for strings.Repeat
+	usedChars = max(0, usedChars)
+	freeChars = max(0, freeChars)
 
 	usedStr := strings.Repeat("█", usedChars)
 	freeStr := strings.Repeat("░", freeChars)
