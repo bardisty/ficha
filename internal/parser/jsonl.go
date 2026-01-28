@@ -10,11 +10,15 @@ import (
 	"github.com/bardisty/ccusage/internal/models"
 )
 
+// maxSkippedLineNumbers is the maximum number of skipped line numbers to track.
+// This prevents unbounded memory growth on extremely malformed files.
+const maxSkippedLineNumbers = 100
+
 // ParseResult contains the parsed messages and any parse warnings
 type ParseResult struct {
 	Messages     []models.JSONLMessage
 	SkippedLines int   // Number of lines that failed to parse
-	SkippedAt    []int // Line numbers of skipped lines (1-indexed)
+	SkippedAt    []int // Line numbers of skipped lines (1-indexed, capped at maxSkippedLineNumbers)
 }
 
 // Warning returns a warning message if any lines were skipped, empty string otherwise
@@ -89,7 +93,9 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 		if err := json.Unmarshal(line, &msg); err != nil {
 			// Track skipped lines instead of silently ignoring
 			result.SkippedLines++
-			result.SkippedAt = append(result.SkippedAt, lineNum)
+			if len(result.SkippedAt) < maxSkippedLineNumbers {
+				result.SkippedAt = append(result.SkippedAt, lineNum)
+			}
 			continue
 		}
 

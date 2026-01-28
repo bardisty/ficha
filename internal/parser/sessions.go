@@ -3,6 +3,7 @@ package parser
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,10 +21,23 @@ const (
 	// Claude Code session files can have very long lines due to base64-encoded
 	// images and large tool outputs. 10MB handles sessions with large images.
 	scannerMaxBufSize = 10 * 1024 * 1024
+
+	// maxIndexFileSize is the maximum allowed size for sessions-index.json (10MB).
+	// This prevents memory exhaustion from corrupted or malicious index files.
+	maxIndexFileSize = 10 * 1024 * 1024
 )
 
 // ParseSessionsIndex parses a sessions-index.json file
 func ParseSessionsIndex(path string) (*models.SessionsIndex, error) {
+	// Check file size before reading to prevent memory exhaustion
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > maxIndexFileSize {
+		return nil, fmt.Errorf("sessions-index.json too large (%d bytes, max %d)", info.Size(), maxIndexFileSize)
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

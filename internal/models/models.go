@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -34,8 +35,12 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 		}
 		*d = Duration(dur)
 		return nil
-	default:
+	case nil:
+		// Null value - treat as zero duration
+		*d = 0
 		return nil
+	default:
+		return fmt.Errorf("cannot unmarshal %T into Duration", value)
 	}
 }
 
@@ -114,12 +119,12 @@ type SessionAnalysis struct {
 	ParentCost         CostBreakdown            `json:"parent_cost"`          // Cost excluding agents
 	ParentCostByModel  map[string]CostBreakdown `json:"parent_cost_by_model"` // Parent cost by model (excludes agents)
 	AgentsCost         CostBreakdown            `json:"agents_cost"`          // Sum of agent costs
-	HasAgents          bool            `json:"has_agents"`
-	AgentCount         int             `json:"agent_count"`
-	ParentMessageCount int             `json:"parent_message_count"`       // Messages from parent session only
-	AgentMessageCount  int             `json:"agent_message_count"`        // Messages from all agents
-	SkippedAgents      int             `json:"skipped_agents,omitempty"`   // Agents that failed to parse
-	SkippedSessions    int             `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)
+	HasAgents          bool                     `json:"has_agents"`
+	AgentCount         int                      `json:"agent_count"`
+	ParentMessageCount int                      `json:"parent_message_count"`       // Messages from parent session only
+	AgentMessageCount  int                      `json:"agent_message_count"`        // Messages from all agents
+	SkippedAgents      int                      `json:"skipped_agents,omitempty"`   // Agents that failed to parse
+	SkippedSessions    int                      `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)
 }
 
 // SessionEntry represents an entry in sessions-index.json
