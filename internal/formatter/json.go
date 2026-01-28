@@ -41,26 +41,3 @@ func FormatSessionListJSON(entries []models.SessionEntry, pretty bool) (string, 
 
 	return string(data), nil
 }
-
-// SessionListWithCosts represents session entries with their costs
-type SessionListWithCosts struct {
-	Sessions []SessionWithCost `json:"sessions"`
-	Total    CostSummary       `json:"total"`
-}
-
-// SessionWithCost represents a session entry with its calculated cost
-type SessionWithCost struct {
-	SessionID    string  `json:"session_id"`
-	MessageCount int     `json:"message_count"`
-	Created      string  `json:"created"`
-	Modified     string  `json:"modified"`
-	TotalCost    float64 `json:"total_cost"`
-}
-
-// CostSummary represents a summary of costs
-type CostSummary struct {
-	TotalCost    float64 `json:"total_cost"`
-	CacheSavings float64 `json:"cache_savings"`
-	SessionCount int     `json:"session_count"`
-	MessageCount int     `json:"message_count"`
-}

@@ -38,8 +38,8 @@ type Model struct {
 
 	// Change tracking for highlight animation
 	changedAt   map[string]time.Time
-	deltaTokens map[string]int // Delta values for token counts
-	deltaCount  int            // Delta for message count
+	deltaTokens map[string]int64 // Delta values for token counts
+	deltaCount  int              // Delta for message count
 
 	spinner   spinner.Model
 	watcher   *fsnotify.Watcher
@@ -92,7 +92,7 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 		closeOnce:   closeOnce,
 		watching:    watching,
 		changedAt:   make(map[string]time.Time),
-		deltaTokens: make(map[string]int),
+		deltaTokens: make(map[string]int64),
 		projectDir:  projectDir,
 		followMode:  followMode,
 	}
@@ -201,7 +201,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.analysis = nil
 		m.loading = true
 		m.changedAt = make(map[string]time.Time)
-		m.deltaTokens = make(map[string]int)
+		m.deltaTokens = make(map[string]int64)
 		m.deltaCount = 0
 
 		// Stop old file watcher, will be restarted by watchFile
@@ -507,7 +507,7 @@ func (m Model) renderAnalysis() string {
 
 	if has1hCost {
 		// 1h row gets tokens only if 5m row doesn't exist
-		tokens := 0
+		var tokens int64
 		if !has5mCost {
 			tokens = cacheWriteTokens
 		}
@@ -601,7 +601,7 @@ func (m Model) renderAnalysisPlain() string {
 	}
 
 	if has1hCost {
-		tokens := 0
+		var tokens int64
 		if !has5mCost {
 			tokens = cacheWriteTokens
 		}
@@ -675,7 +675,7 @@ func (m Model) renderContextSection() string {
 
 	// Context label with value
 	contextVal := formatNumber(contextSize)
-	contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(maxContext))
+	contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(int64(maxContext)))
 
 	if m.noColor {
 		sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n", formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, true), contextVal, contextMeta))
@@ -1375,7 +1375,7 @@ func formatCostStyledWithMagnitude(cost float64, width int, highlighted bool, no
 	return padding + mainStyled + dimStyle.Render(extra)
 }
 
-func formatNumber(n int) string {
+func formatNumber(n int64) string {
 	if n >= 1000000 {
 		return fmt.Sprintf("%.2fM", float64(n)/1000000)
 	}
@@ -1386,7 +1386,7 @@ func formatNumber(n int) string {
 }
 
 // formatNumberWithDelta formats a number with optional delta during highlight
-func formatNumberWithDelta(n int, delta int, showDelta bool) string {
+func formatNumberWithDelta(n int64, delta int64, showDelta bool) string {
 	valStr := formatNumber(n)
 	if !showDelta || delta == 0 {
 		return fmt.Sprintf("%12s", valStr)
@@ -1454,7 +1454,7 @@ func getCostMagnitudeColor(cost, total float64) lipgloss.Color {
 // formatContextProgressBar creates a visual progress bar showing context usage
 // Bar segments: used (█), free (░), buffer (▒)
 // Total width: 40 characters (fits within 76-char panel with labels)
-func formatContextProgressBar(contextSize, freeSpace, buffer, maxContext int, noColor bool) string {
+func formatContextProgressBar(contextSize, freeSpace, buffer int64, maxContext int, noColor bool) string {
 	const barWidth = 40
 
 	if maxContext == 0 {
@@ -1556,7 +1556,7 @@ func (m Model) renderHeroCost(cost float64, highlighted bool, width int) string 
 
 // renderUnifiedCostRow renders a single row with cost and token info combined
 // Format: "  Label          $0.371042     53.9K tokens"
-func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int, costField, tokenField string, labelColor lipgloss.Color, extra string) string {
+func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, costField, tokenField string, labelColor lipgloss.Color, extra string) string {
 	costHighlighted := m.isHighlighted(costField)
 	tokenChanged := m.recentlyChanged(tokenField)
 	tokenHighlighted := m.isHighlighted(tokenField)

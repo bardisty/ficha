@@ -181,7 +181,7 @@ func TestContextWindowSize(t *testing.T) {
 	tests := []struct {
 		name     string
 		usage    TokenUsage
-		expected int
+		expected int64
 	}{
 		{
 			name:     "all zero",

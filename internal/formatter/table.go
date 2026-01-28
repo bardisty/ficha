@@ -59,7 +59,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	}
 
 	if has1hCost {
-		tokens := 0
+		var tokens int64
 		if !has5mCost {
 			tokens = cacheWriteTokens
 		}
@@ -177,7 +177,7 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 	}
 
 	if has1hCost {
-		tokens := 0
+		var tokens int64
 		if !has5mCost {
 			tokens = cacheWriteTokens
 		}
@@ -431,7 +431,7 @@ func renderHeroCost(cost float64, width int, noColor bool) string {
 
 // renderUnifiedCostRow renders a single row with cost and token info combined
 // Format: "  Label          $0.371042     53.9K tokens"
-func renderUnifiedCostRow(label string, cost float64, tokens int, labelColor lipgloss.Color, extra string, noColor bool) string {
+func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor lipgloss.Color, extra string, noColor bool) string {
 	// Format label with optional color
 	var labelStr string
 	if !noColor && labelColor != "" {
@@ -461,7 +461,7 @@ func renderUnifiedCostRow(label string, cost float64, tokens int, labelColor lip
 }
 
 // renderUnifiedCostRowPlain renders a cost row in plain text mode
-func renderUnifiedCostRowPlain(label string, cost float64, tokens int, extra string) string {
+func renderUnifiedCostRowPlain(label string, cost float64, tokens int64, extra string) string {
 	extraStr := ""
 	if extra != "" {
 		extraStr = "  " + extra
@@ -489,7 +489,7 @@ func renderContextSection(analysis *models.SessionAnalysis, noColor bool) string
 
 	// Context label with value
 	contextVal := formatNumber(contextSize)
-	contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(maxContext))
+	contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(int64(maxContext)))
 
 	if noColor {
 		sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n", formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, true), contextVal, contextMeta))
@@ -855,7 +855,7 @@ func formatCostStyled(cost float64, width int, noColor bool) string {
 	return padding + main + styles.DimStyle.Render(extra)
 }
 
-func formatNumber(n int) string {
+func formatNumber(n int64) string {
 	if n >= 1000000 {
 		return fmt.Sprintf("%.2fM", float64(n)/1000000)
 	}
@@ -903,7 +903,7 @@ func formatCostComponentLabel(component string) string {
 // formatContextProgressBar creates a visual progress bar showing context usage
 // Bar segments: used (█), free (░), buffer (▒)
 // Total width: 40 characters (matches TUI)
-func formatContextProgressBar(contextSize, freeSpace, buffer, maxContext int, noColor bool) string {
+func formatContextProgressBar(contextSize, freeSpace, buffer int64, maxContext int, noColor bool) string {
 	const barWidth = 40
 
 	if maxContext == 0 {

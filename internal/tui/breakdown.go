@@ -874,7 +874,7 @@ func formatCostWithDimDecimals(cost float64, color lipgloss.Color, width int) st
 }
 
 // formatCompactNumber formats a number compactly (e.g., "89.3K")
-func formatCompactNumber(n int) string {
+func formatCompactNumber(n int64) string {
 	if n >= 1000000 {
 		return fmt.Sprintf("%.1fM", float64(n)/1000000)
 	}

@@ -35,7 +35,7 @@ func TestFormatCompactCost(t *testing.T) {
 func TestFormatCompactNumber(t *testing.T) {
 	tests := []struct {
 		name     string
-		n        int
+		n        int64
 		expected string
 	}{
 		{"zero", 0, "0"},

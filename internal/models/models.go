@@ -45,22 +45,20 @@ func (d Duration) Duration() time.Duration {
 }
 
 // TokenUsage represents token usage from a single API call.
-// Note: Token counts use int which is 64-bit on modern systems but 32-bit on
-// older 32-bit systems. For typical usage this is sufficient, but aggregating
-// across many large sessions on 32-bit systems could theoretically overflow.
+// Token counts use int64 to ensure no overflow when aggregating across many sessions.
 type TokenUsage struct {
-	InputTokens              int `json:"input_tokens"`
-	OutputTokens             int `json:"output_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	InputTokens              int64 `json:"input_tokens"`
+	OutputTokens             int64 `json:"output_tokens"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 	// Detailed cache creation breakdown
 	CacheCreation *CacheCreation `json:"cache_creation,omitempty"`
 }
 
 // CacheCreation contains detailed cache write token breakdown
 type CacheCreation struct {
-	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
-	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
+	Ephemeral5mInputTokens int64 `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1hInputTokens int64 `json:"ephemeral_1h_input_tokens"`
 }
 
 // CostBreakdown represents the calculated costs for a token usage
@@ -157,7 +155,7 @@ type AssistantMessage struct {
 // ContextWindowSize returns the total input tokens for a single API call,
 // matching what Claude Code's /context command displays.
 // This is the sum of all input token types: regular, cache write, and cache read.
-func (t TokenUsage) ContextWindowSize() int {
+func (t TokenUsage) ContextWindowSize() int64 {
 	return t.InputTokens + t.CacheCreationInputTokens + t.CacheReadInputTokens
 }
 

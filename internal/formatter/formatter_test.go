@@ -323,7 +323,7 @@ func TestFormatSessionListTable(t *testing.T) {
 
 func TestFormatNumber(t *testing.T) {
 	tests := []struct {
-		input    int
+		input    int64
 		expected string
 	}{
 		{0, "0"},

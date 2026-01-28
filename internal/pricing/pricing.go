@@ -187,15 +187,15 @@ func GetCacheReadRate(pricing ModelPricing) float64 {
 }
 
 // GetAutocompactBuffer returns the autocompact buffer size in tokens for a model
-func GetAutocompactBuffer(pricing ModelPricing) int {
-	return int(float64(pricing.MaxContextTokens) * AutocompactBufferRatio)
+func GetAutocompactBuffer(pricing ModelPricing) int64 {
+	return int64(float64(pricing.MaxContextTokens) * AutocompactBufferRatio)
 }
 
 // GetFreeSpace returns the free space in tokens given current context usage
 // Free space = max context - current usage - autocompact buffer
-func GetFreeSpace(pricing ModelPricing, currentUsage int) int {
+func GetFreeSpace(pricing ModelPricing, currentUsage int64) int64 {
 	autocompact := GetAutocompactBuffer(pricing)
-	free := pricing.MaxContextTokens - currentUsage - autocompact
+	free := int64(pricing.MaxContextTokens) - currentUsage - autocompact
 	if free < 0 {
 		return 0
 	}
@@ -203,7 +203,7 @@ func GetFreeSpace(pricing ModelPricing, currentUsage int) int {
 }
 
 // GetContextPercentage returns the percentage of context used (0-100)
-func GetContextPercentage(pricing ModelPricing, currentUsage int) float64 {
+func GetContextPercentage(pricing ModelPricing, currentUsage int64) float64 {
 	if pricing.MaxContextTokens == 0 {
 		return 0
 	}

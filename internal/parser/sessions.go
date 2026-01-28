@@ -267,5 +267,8 @@ func countMessagesInFile(path string) int {
 			count++
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return 0 // Buffer overflow or I/O error - return 0 rather than partial count
+	}
 	return count
 }

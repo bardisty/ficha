@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"path/filepath"
 	"time"
 
@@ -209,6 +210,10 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 
 // AnalyzeMultipleSessions analyzes multiple sessions and returns aggregate stats
 func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnalysis, error) {
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("no sessions to analyze")
+	}
+
 	aggregate := &models.SessionAnalysis{
 		SessionID:   "aggregate",
 		CostByModel: make(map[string]models.CostBreakdown),
@@ -217,6 +222,7 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 	var firstTime, lastTime time.Time
 	firstTimeSet := false
 	skippedSessions := 0
+	successfulSessions := 0
 
 	for _, entry := range entries {
 		sessionAnalysis, err := AnalyzeSession(entry.FullPath, entry.SessionID, false)
@@ -224,6 +230,7 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 			skippedSessions++
 			continue // Skip sessions that can't be parsed
 		}
+		successfulSessions++
 		// Also aggregate skipped agents from individual sessions
 		aggregate.SkippedAgents += sessionAnalysis.SkippedAgents
 
@@ -262,6 +269,11 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 	}
 
 	aggregate.SkippedSessions = skippedSessions
+
+	// Return error if all sessions failed to parse
+	if successfulSessions == 0 {
+		return nil, fmt.Errorf("all %d sessions failed to parse", len(entries))
+	}
 
 	return aggregate, nil
 }
