@@ -54,7 +54,8 @@ cmd/root.go → cmd/{show,list,summary,watch,breakdown}.go
 ### Key Packages
 
 - **cmd/**: Cobra CLI commands. `root.go` defines global flags; `show.go` is the main command
-- **internal/analyzer/**: Core business logic - `cost.go` calculates costs from token usage, `session.go` orchestrates analysis, `breakdown.go` provides per-message analysis
+- **internal/analyzer/**: Core business logic - `cost.go` calculates costs from token usage, `session.go` orchestrates analysis, `breakdown.go` provides per-message analysis, `insights.go` computes cost trends and identifies high-cost messages
+- **internal/formatter/**: Output formatting - `table.go`, `json.go`, `csv.go` for table/JSON/CSV output
 - **internal/parser/**: Reads Claude session files - `sessions.go` discovers sessions, `jsonl.go` parses message files
 - **internal/pricing/**: Model pricing tables with cache rate multipliers (5min TTL: 1.25x, 1hr TTL: 2.0x, read: 0.1x)
 - **internal/models/**: Data structures (`SessionAnalysis`, `CostBreakdown`, `TokenUsage`)
@@ -90,7 +91,6 @@ For complex analysis tasks where uncertainty or ambiguity exists, use a multi-mo
 **When NOT to use:**
 - Routine exploration or simple file searches
 - Straightforward analysis with clear answers
-- Tasks where the extra token cost isn't justified
 
 **Pattern:**
 1. Spawn 3 agents in parallel with identical prompts: Haiku, Sonnet, and Opus
