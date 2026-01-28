@@ -296,6 +296,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// Clean up stale change tracking entries to prevent unbounded map growth
 		m.cleanupStaleChanges()
+		// Re-render to update highlight fading (only if there are active highlights)
+		if m.ready && m.analysis != nil && len(m.changedAt) > 0 {
+			m.viewport.SetContent(m.renderAnalysis())
+		}
 		// Continue the animation tick for highlight fade
 		return m, tickCmd()
 	}
