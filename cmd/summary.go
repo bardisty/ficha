@@ -10,6 +10,7 @@ import (
 )
 
 var showDetails bool
+var expandAgents bool
 
 var summaryCmd = &cobra.Command{
 	Use:   "summary",
@@ -19,14 +20,16 @@ var summaryCmd = &cobra.Command{
 This calculates the total cost and token usage across all sessions.
 
 Examples:
-  ccusage summary                 Show aggregate stats
-  ccusage summary --details       Show per-session cost breakdown
-  ccusage summary -f json         Output as JSON`,
+  ccusage summary                          Show aggregate stats
+  ccusage summary --details                Show per-session cost breakdown
+  ccusage summary --details --expand-agents Show agent sub-sessions in tree view
+  ccusage summary -f json                  Output as JSON`,
 	Run: runSummary,
 }
 
 func init() {
 	summaryCmd.Flags().BoolVarP(&showDetails, "details", "d", false, "Show per-session cost breakdown")
+	summaryCmd.Flags().BoolVar(&expandAgents, "expand-agents", false, "Show agent sub-sessions as indented tree rows (requires --details)")
 }
 
 func runSummary(cmd *cobra.Command, args []string) {
@@ -71,7 +74,7 @@ func runSummary(cmd *cobra.Command, args []string) {
 		}
 	default:
 		if showDetails {
-			output = formatter.FormatSummaryTableWithDetails(analysis, sessions, projectDir, noColor)
+			output = formatter.FormatSummaryTableWithDetails(analysis, sessions, projectDir, noColor, expandAgents)
 		} else {
 			output = formatter.FormatSessionTable(analysis, noColor)
 		}

@@ -880,7 +880,6 @@ func (m Model) renderCostByModelContent() string {
 		return models[i].cost > models[j].cost
 	})
 
-	totalCost := m.analysis.TotalCost.TotalCost
 	for _, mc := range models {
 		cost := m.analysis.CostByModel[mc.id]
 		modelName := pricing.GetModelDisplayName(mc.id)
@@ -896,65 +895,111 @@ func (m Model) renderCostByModelContent() string {
 			labelStr = fmt.Sprintf("%-12s", modelName)
 		}
 
-		// Apply cost magnitude shading
-		costStr := formatCostStyledWithMagnitude(cost.TotalCost, 12, highlighted, m.noColor, totalCost)
+		// Plain white costs - model tier colors already provide cost hierarchy
+		costStr := formatCostStyled(cost.TotalCost, 12, highlighted, m.noColor)
 		sb.WriteString(fmt.Sprintf("    %s %s\n", labelStr, costStr))
 	}
 
 	return sb.String()
 }
 
+// getPrimaryModel returns the dominant model for an agent (by highest cost)
+// Returns the display name (e.g., "Opus 4.5") or "-" if no model data
+func getPrimaryModel(costByModel map[string]models.CostBreakdown) string {
+	var maxModel string
+	var maxCost float64
+	for model, cost := range costByModel {
+		if cost.TotalCost > maxCost {
+			maxCost = cost.TotalCost
+			maxModel = model
+		}
+	}
+	if maxModel == "" {
+		return "-"
+	}
+	return pricing.GetModelDisplayName(maxModel)
+}
+
 // renderAgentBreakdownContent renders just the agent breakdown content (no header)
+// Layout: [AN] Model (ID) msgs cost
+// All rows align costs at column 47 (4 indent + 43 content)
+// Example:
+//
+//	Parent session                            $1.135371
+//	[A1] Opus 4.5    (a0b184d)     14 msgs    $1.358774
+//	Agents subtotal                           $5.112218
 func (m Model) renderAgentBreakdownContent() string {
 	var sb strings.Builder
 	a := m.analysis
 
-	totalCost := a.TotalCost.TotalCost
-
-	// Show parent session cost with highlight and magnitude shading
+	// Show parent session cost - right-aligned cost at column 47
+	// Format: 4(indent) + 40(label) + 3(spaces) + cost = 47 chars before cost
+	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
+	// Uses plain white (not magnitude gradient) - model tier colors provide cost hierarchy
 	parentHighlighted := m.isHighlighted("parent_cost")
-	parentCostStr := formatCostStyledWithMagnitude(a.ParentCost.TotalCost, 12, parentHighlighted, m.noColor, totalCost)
+	parentCostStr := formatCostStyled(a.ParentCost.TotalCost, 11, parentHighlighted, m.noColor)
 	if !m.noColor {
-		sb.WriteString(fmt.Sprintf("    %-18s %s\n", dimStyle.Render("Parent session"), parentCostStr))
+		paddedLabel := fmt.Sprintf("%-40s", "Parent session")
+		sb.WriteString(fmt.Sprintf("    %s   %s\n", dimStyle.Render(paddedLabel), parentCostStr))
 	} else {
-		sb.WriteString(fmt.Sprintf("    %-18s %s\n", "Parent session", parentCostStr))
+		sb.WriteString(fmt.Sprintf("    %-40s   %s\n", "Parent session", parentCostStr))
 	}
 
-	// Show each agent with sequential numbering matching breakdown view [A1], [A2], etc.
+	// Show each agent with [AN] Model (ID) msgs cost format
+	// Format: 4(indent) + 5(marker) + 1 + 11(model) + 1 + 10(id) + 1 + 8(msgs) + 6(spaces) + cost
+	//       = 4 + 37 + 6 = 47 chars before cost (aligned with parent)
+	// Uses plain white costs - model tier colors already provide cost hierarchy
 	for i, agent := range a.Agents {
 		agentNum := fmt.Sprintf("%d", i+1)
 		agentHighlighted := m.isHighlighted("agent_" + agent.AgentID)
-		costStr := formatCostStyledWithMagnitude(agent.TotalCost.TotalCost, 12, agentHighlighted, m.noColor, totalCost)
+		costStr := formatCostStyled(agent.TotalCost.TotalCost, 11, agentHighlighted, m.noColor)
+
+		shortID := agent.AgentID
+		if len(shortID) > 7 {
+			shortID = shortID[:7]
+		}
+
+		// Get primary model for this agent
+		modelName := getPrimaryModel(agent.CostByModel)
+
+		// Format message count with singular/plural
+		msgStr := fmt.Sprintf("%d msgs", agent.MessageCount)
+		if agent.MessageCount == 1 {
+			msgStr = "1 msg"
+		}
 
 		if !m.noColor {
-			// Color the [An] marker to match breakdown view
+			// Color the [An] marker (use %-5s to handle [A10] etc)
 			agentColor := styles.GetAgentColor(agentNum)
-			agentStyle := lipgloss.NewStyle().Foreground(agentColor)
-			marker := agentStyle.Render(fmt.Sprintf("[A%s]", agentNum))
-			// Show truncated raw ID in dim for reference
-			shortID := agent.AgentID
-			if len(shortID) > 7 {
-				shortID = shortID[:7]
-			}
-			idRef := dimStyle.Render(fmt.Sprintf("(%s)", shortID))
-			msgInfo := dimStyle.Render(fmt.Sprintf("%d msgs", agent.MessageCount))
-			sb.WriteString(fmt.Sprintf("    %s %s  %s   %s\n", marker, idRef, costStr, msgInfo))
+			markerStyled := lipgloss.NewStyle().Foreground(agentColor).Render(fmt.Sprintf("%-5s", fmt.Sprintf("[A%s]", agentNum)))
+
+			// Color model name by tier
+			modelColor := styles.GetModelColor(modelName)
+			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelName))
+
+			// Dim the ID and message count
+			idStyled := dimStyle.Render(fmt.Sprintf("%-10s", fmt.Sprintf("(%s)", shortID)))
+			msgStyled := dimStyle.Render(fmt.Sprintf("%8s", msgStr))
+
+			sb.WriteString(fmt.Sprintf("    %s %s %s %s      %s\n",
+				markerStyled, modelStyled, idStyled, msgStyled, costStr))
 		} else {
-			shortID := agent.AgentID
-			if len(shortID) > 7 {
-				shortID = shortID[:7]
-			}
-			sb.WriteString(fmt.Sprintf("    [A%s] (%s)     %s   %d msgs\n", agentNum, shortID, costStr, agent.MessageCount))
+			marker := fmt.Sprintf("[A%d]", i+1)
+			idStr := fmt.Sprintf("(%s)", shortID)
+			sb.WriteString(fmt.Sprintf("    %-5s %-11s %-10s %8s      %s\n",
+				marker, modelName, idStr, msgStr, costStr))
 		}
 	}
 
-	// Show agents subtotal with highlight and magnitude shading
+	// Show agents subtotal in bold green (matches TotalValueStyle for visual hierarchy)
+	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	subtotalHighlighted := m.isHighlighted("agents_subtotal")
-	subtotalStr := formatCostStyledWithMagnitude(a.AgentsCost.TotalCost, 12, subtotalHighlighted, m.noColor, totalCost)
+	subtotalStr := formatCostStyledBoldGreen(a.AgentsCost.TotalCost, 11, subtotalHighlighted, m.noColor)
 	if !m.noColor {
-		sb.WriteString(fmt.Sprintf("    %-18s %s\n", dimStyle.Render("Agents subtotal"), subtotalStr))
+		paddedSubtotal := fmt.Sprintf("%-40s", "Agents subtotal")
+		sb.WriteString(fmt.Sprintf("    %s   %s\n", dimStyle.Render(paddedSubtotal), subtotalStr))
 	} else {
-		sb.WriteString(fmt.Sprintf("    %-18s %s\n", "Agents subtotal", subtotalStr))
+		sb.WriteString(fmt.Sprintf("    %-40s   %s\n", "Agents subtotal", subtotalStr))
 	}
 
 	return sb.String()
@@ -1465,6 +1510,35 @@ func formatCostStyledGreen(cost float64, width int, highlighted bool, noColor bo
 	main := full[:dotIdx+3]
 	extra := full[dotIdx+3:]
 	return padding + savingsValueStyle.Render(main) + dimStyle.Render(extra)
+}
+
+// formatCostStyledBoldGreen returns a cost string in bold green (for totals/subtotals)
+func formatCostStyledBoldGreen(cost float64, width int, highlighted bool, noColor bool) string {
+	full := fmt.Sprintf("$%.6f", cost)
+	plainLen := len(full)
+
+	padding := ""
+	if width > plainLen {
+		padding = strings.Repeat(" ", width-plainLen)
+	}
+
+	if noColor {
+		return padding + full
+	}
+
+	if highlighted {
+		return padding + highlightStyle.Render(full)
+	}
+
+	// Apply bold green (TotalValueStyle) with dimmed extra decimals
+	dotIdx := strings.Index(full, ".")
+	if dotIdx == -1 || len(full) <= dotIdx+3 {
+		return padding + styles.TotalValueStyle.Render(full)
+	}
+
+	main := full[:dotIdx+3]
+	extra := full[dotIdx+3:]
+	return padding + styles.TotalValueStyle.Render(main) + dimStyle.Render(extra)
 }
 
 // formatCostStyledWithMagnitude returns a cost string with magnitude-based coloring
