@@ -134,6 +134,58 @@ func TestNormalizeModelID(t *testing.T) {
 	}
 }
 
+func TestIsKnownModel(t *testing.T) {
+	tests := []struct {
+		modelID  string
+		expected bool
+	}{
+		// All known models - exact matches
+		{"claude-opus-4-5", true},
+		{"claude-opus-4-1", true},
+		{"claude-opus-4", true},
+		{"claude-sonnet-4-5", true},
+		{"claude-sonnet-4", true},
+		{"claude-sonnet-3-7", true},
+		{"claude-haiku-4-5", true},
+		{"claude-3-5-sonnet", true},
+		{"claude-3-5-haiku", true},
+		{"claude-3-opus", true},
+		{"claude-3-sonnet", true},
+		{"claude-3-haiku", true},
+
+		// All known models - versioned variants
+		{"claude-opus-4-5-20251101", true},
+		{"claude-opus-4-1-20250414", true},
+		{"claude-opus-4-20250514", true},
+		{"claude-sonnet-4-5-20251022", true},
+		{"claude-sonnet-4-20250514", true},
+		{"claude-sonnet-3-7-20250219", true},
+		{"claude-haiku-4-5-20250101", true},
+		{"claude-3-5-sonnet-20241022", true},
+		{"claude-3-5-haiku-20241022", true},
+		{"claude-3-opus-20240229", true},
+		{"claude-3-sonnet-20240229", true},
+		{"claude-3-haiku-20240307", true},
+
+		// Unknown models - should return false
+		{"unknown-model", false},
+		{"gpt-4", false},
+		{"gemini-pro", false},
+		{"claude", false},
+		{"claude-2", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.modelID, func(t *testing.T) {
+			result := IsKnownModel(tt.modelID)
+			if result != tt.expected {
+				t.Errorf("IsKnownModel(%q): got %v, want %v", tt.modelID, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestContextWindowFunctions(t *testing.T) {
 	pricing := ModelPricing{
 		InputRate:        5.00,

@@ -3,9 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"sort"
 
-	"github.com/bardisty/ccusage/internal/models"
 	"github.com/bardisty/ccusage/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -39,34 +37,10 @@ func init() {
 }
 
 func runBreakdown(cmd *cobra.Command, args []string) {
-	sessions, projectDir, err := loadProjectSessionsWithDir()
+	session, projectDir, explicitSessionID, err := selectSession(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
-	}
-
-	// Find the session to show
-	var session *models.SessionEntry
-	explicitSessionID := len(args) > 0 // User provided a specific session ID
-	if explicitSessionID {
-		// Find by ID (partial match)
-		sessionID := args[0]
-		var err error
-		session, err = findSessionByPartialID(sessions, sessionID)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		if session == nil {
-			fmt.Fprintf(os.Stderr, "Error: session not found: %s\n", sessionID)
-			os.Exit(1)
-		}
-	} else {
-		// Get latest session (sort by modified time first)
-		sort.Slice(sessions, func(i, j int) bool {
-			return sessions[i].Modified.After(sessions[j].Modified)
-		})
-		session = &sessions[0]
 	}
 
 	// Auto-follow is enabled by default unless:

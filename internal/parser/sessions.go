@@ -16,10 +16,10 @@ const (
 	// This is large enough for most JSONL lines while being memory-efficient.
 	scannerInitialBufSize = 64 * 1024
 
-	// scannerMaxBufSize is the maximum buffer size for the scanner (1MB).
+	// scannerMaxBufSize is the maximum buffer size for the scanner (10MB).
 	// Claude Code session files can have very long lines due to base64-encoded
-	// images and large tool outputs. 1MB handles most cases.
-	scannerMaxBufSize = 1024 * 1024
+	// images and large tool outputs. 10MB handles sessions with large images.
+	scannerMaxBufSize = 10 * 1024 * 1024
 )
 
 // ParseSessionsIndex parses a sessions-index.json file

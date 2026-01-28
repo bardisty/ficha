@@ -40,14 +40,22 @@ func NewSessionWatcher(projectDir, currentSession string) *SessionWatcher {
 // SetCurrentSession updates the current session ID being watched
 // This also signals any waiting goroutine to restart with the new session
 func (sw *SessionWatcher) SetCurrentSession(sessionID string) {
+	// Don't modify channels during shutdown - prevents double-close panic
+	if sw.closing.Load() {
+		return
+	}
+
 	sw.sessionMu.Lock()
 	sw.currentSession = sessionID
 	sw.sessionMu.Unlock()
 
 	// Signal any waiting goroutine to restart
 	sw.restartMu.Lock()
-	close(sw.restartCh)
-	sw.restartCh = make(chan struct{})
+	// Re-check closing under lock to prevent race with Stop()
+	if !sw.closing.Load() {
+		close(sw.restartCh)
+		sw.restartCh = make(chan struct{})
+	}
 	sw.restartMu.Unlock()
 }
 
@@ -71,7 +79,10 @@ func (sw *SessionWatcher) Start() error {
 // Stop stops the session watcher
 func (sw *SessionWatcher) Stop() {
 	if sw.closing.CompareAndSwap(false, true) {
+		// Acquire restartMu to ensure no concurrent SetCurrentSession is modifying restartCh
+		sw.restartMu.Lock()
 		close(sw.done)
+		sw.restartMu.Unlock()
 		if sw.watcher != nil {
 			sw.watcher.Close()
 		}
@@ -88,11 +99,12 @@ const sessionRestartedPath = "\x00RESTART\x00"
 // - New session files being created (user started fresh session)
 // - Writes to existing session files that aren't the current one (user switched back)
 func (sw *SessionWatcher) WaitForNewSession() (string, string) {
-	if sw.watcher == nil {
+	// Check closing flag before starting to avoid unnecessary work
+	if sw.watcher == nil || sw.closing.Load() {
 		return "", ""
 	}
 
-	// Get current restart channel
+	// Get current restart channel under lock
 	sw.restartMu.Lock()
 	restartCh := sw.restartCh
 	sw.restartMu.Unlock()

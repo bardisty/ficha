@@ -225,6 +225,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tickMsg:
+		// Clean up stale change tracking entries to prevent unbounded map growth
+		m.cleanupStaleChanges()
 		// Continue the animation tick for highlight fade
 		return m, tickCmd()
 	}
@@ -356,6 +358,18 @@ func (m *Model) detectChanges(old, new *models.SessionAnalysis) {
 		if !found {
 			// New agent appeared
 			m.changedAt["agent_"+newAgent.AgentID] = now
+		}
+	}
+}
+
+// cleanupStaleChanges removes entries from changedAt/deltaTokens that are past their highlight window.
+// Called periodically from tickMsg to prevent unbounded map growth during idle sessions.
+// Note: Uses value receiver to match Update() signature; map mutations work because maps are reference types.
+func (m Model) cleanupStaleChanges() {
+	for field, changedTime := range m.changedAt {
+		if time.Since(changedTime) > highlightDuration*2 {
+			delete(m.changedAt, field)
+			delete(m.deltaTokens, field)
 		}
 	}
 }

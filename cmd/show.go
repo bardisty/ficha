@@ -3,8 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"sort"
-	"strings"
 
 	"github.com/bardisty/ccusage/internal/analyzer"
 	"github.com/bardisty/ccusage/internal/formatter"
@@ -31,34 +29,10 @@ Examples:
 }
 
 func runShow(cmd *cobra.Command, args []string) {
-	sessions, projectDir, err := loadProjectSessionsWithDir()
+	session, projectDir, explicitSessionID, err := selectSession(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
-	}
-
-	// Find the session to show
-	var session *models.SessionEntry
-	explicitSessionID := len(args) > 0 // User provided a specific session ID
-	if explicitSessionID {
-		// Find by ID (partial match)
-		sessionID := args[0]
-		var err error
-		session, err = findSessionByPartialID(sessions, sessionID)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		if session == nil {
-			fmt.Fprintf(os.Stderr, "Error: session not found: %s\n", sessionID)
-			os.Exit(1)
-		}
-	} else {
-		// Get latest session (sort by modified time first)
-		sort.Slice(sessions, func(i, j int) bool {
-			return sessions[i].Modified.After(sessions[j].Modified)
-		})
-		session = &sessions[0]
 	}
 
 	// Live mode
@@ -83,6 +57,9 @@ func runShow(cmd *cobra.Command, args []string) {
 	if analysis.SkippedAgents > 0 {
 		fmt.Fprintf(os.Stderr, "Warning: %d agent sub-session(s) could not be parsed\n", analysis.SkippedAgents)
 	}
+
+	// Warn about unknown models (using fallback pricing)
+	warnUnknownModels(analysis)
 
 	// Output in requested format
 	output, err := formatOutput(analysis, includeMessages)
@@ -113,43 +90,4 @@ func formatOutput(analysis *models.SessionAnalysis, includeMessages bool) (strin
 	default:
 		return formatter.FormatSessionTable(analysis, noColor), nil
 	}
-}
-
-// findSessionByPartialID finds a session by partial ID match
-// Returns the matching session, or an error if multiple sessions match
-func findSessionByPartialID(sessions []models.SessionEntry, partialID string) (*models.SessionEntry, error) {
-	if len(sessions) == 0 {
-		return nil, nil
-	}
-
-	// Try exact match first
-	for i := range sessions {
-		if sessions[i].SessionID == partialID {
-			return &sessions[i], nil
-		}
-	}
-
-	// Try prefix match - collect all matches
-	var matches []models.SessionEntry
-	for i := range sessions {
-		if len(sessions[i].SessionID) >= len(partialID) && sessions[i].SessionID[:len(partialID)] == partialID {
-			matches = append(matches, sessions[i])
-		}
-	}
-
-	if len(matches) == 0 {
-		return nil, nil
-	}
-
-	if len(matches) == 1 {
-		return &matches[0], nil
-	}
-
-	// Multiple matches - return error with list
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("ambiguous session ID %q matches %d sessions:\n", partialID, len(matches)))
-	for _, m := range matches {
-		sb.WriteString(fmt.Sprintf("  %s\n", m.SessionID))
-	}
-	return nil, fmt.Errorf("%s", sb.String())
 }

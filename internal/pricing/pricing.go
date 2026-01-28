@@ -209,3 +209,14 @@ func GetContextPercentage(pricing ModelPricing, currentUsage int) float64 {
 	}
 	return float64(currentUsage) / float64(pricing.MaxContextTokens) * 100
 }
+
+// IsKnownModel returns true if the model ID is recognized
+// (i.e., has explicit pricing rather than falling back to defaults)
+func IsKnownModel(modelID string) bool {
+	if _, ok := modelPricing[modelID]; ok {
+		return true
+	}
+	normalized := normalizeModelID(modelID)
+	_, ok := modelPricing[normalized]
+	return ok
+}
