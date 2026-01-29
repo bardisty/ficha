@@ -79,6 +79,26 @@ Costs are computed in `analyzer/cost.go` using token counts from message usage d
 - Cache reads at 0.1x input rate
 - Cache savings calculated as (cache_read_tokens × input_rate × 0.9)
 
+## Versioning
+
+This project uses semantic versioning. The version is stored in the `VERSION` file.
+
+**When creating commits**, Claude should:
+1. Read the current VERSION file
+2. Analyze the changes being committed
+3. Bump the version appropriately:
+   - **PATCH** (0.0.X): Bug fixes, documentation updates, refactoring with no behavior change
+   - **MINOR** (0.X.0): New features, new commands, new flags, enhancements (non-breaking)
+   - **MAJOR** (X.0.0): Breaking changes (requires explicit user confirmation first)
+4. Update the VERSION file as part of the same commit
+
+**Examples:**
+- Fix a parsing bug → bump 0.2.3 to 0.2.4 (patch)
+- Add new `watch` command → bump 0.2.3 to 0.3.0 (minor)
+- Change output format in breaking way → ask user, then bump to 1.0.0 (major)
+
+**Pre-1.0 note:** While version is 0.x.y, minor version bumps may include breaking changes without going to 1.0.
+
 ## Multi-Model Agent Pattern
 
 For complex analysis tasks where uncertainty or ambiguity exists, use a multi-model approach:

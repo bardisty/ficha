@@ -13,8 +13,11 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOMOD=$(GOCMD) mod
 
+# Version from VERSION file
+VERSION=$(shell cat VERSION 2>/dev/null || echo "dev")
+
 # Build flags
-LDFLAGS=-ldflags "-s -w"
+LDFLAGS=-ldflags "-s -w -X github.com/bardisty/ccusage/cmd.Version=$(VERSION)"
 
 # Default target
 all: build
