@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -20,10 +19,10 @@ type SessionWatcher struct {
 	sessionMu      sync.RWMutex // Protects currentSession
 	watcher        *fsnotify.Watcher
 	done           chan struct{}
-	closing        *atomic.Bool
 	// restartCh signals waiters to restart (used when session changes)
 	restartCh chan struct{}
 	restartMu sync.Mutex
+	stopOnce  sync.Once // Ensures Stop() logic runs exactly once
 }
 
 // NewSessionWatcher creates a new session watcher
@@ -32,7 +31,6 @@ func NewSessionWatcher(projectDir, currentSession string) *SessionWatcher {
 		projectDir:     filepath.Clean(projectDir),
 		currentSession: currentSession,
 		done:           make(chan struct{}),
-		closing:        &atomic.Bool{},
 		restartCh:      make(chan struct{}),
 	}
 }
@@ -40,23 +38,25 @@ func NewSessionWatcher(projectDir, currentSession string) *SessionWatcher {
 // SetCurrentSession updates the current session ID being watched
 // This also signals any waiting goroutine to restart with the new session
 func (sw *SessionWatcher) SetCurrentSession(sessionID string) {
-	// Don't modify channels during shutdown - prevents double-close panic
-	if sw.closing.Load() {
-		return
-	}
-
 	sw.sessionMu.Lock()
 	sw.currentSession = sessionID
 	sw.sessionMu.Unlock()
 
 	// Signal any waiting goroutine to restart
+	// The restartMu lock ensures this doesn't race with Stop()
 	sw.restartMu.Lock()
-	// Re-check closing under lock to prevent race with Stop()
-	if !sw.closing.Load() {
+	defer sw.restartMu.Unlock()
+
+	// Check if done channel is closed (indicates shutdown)
+	select {
+	case <-sw.done:
+		// Already stopped, don't touch restartCh
+		return
+	default:
+		// Safe to close and recreate restartCh
 		close(sw.restartCh)
 		sw.restartCh = make(chan struct{})
 	}
-	sw.restartMu.Unlock()
 }
 
 // Start begins watching the project directory for new session files
@@ -78,7 +78,7 @@ func (sw *SessionWatcher) Start() error {
 
 // Stop stops the session watcher
 func (sw *SessionWatcher) Stop() {
-	if sw.closing.CompareAndSwap(false, true) {
+	sw.stopOnce.Do(func() {
 		// Acquire restartMu to ensure no concurrent SetCurrentSession is modifying restartCh
 		sw.restartMu.Lock()
 		close(sw.done)
@@ -86,7 +86,7 @@ func (sw *SessionWatcher) Stop() {
 		if sw.watcher != nil {
 			sw.watcher.Close()
 		}
-	}
+	})
 }
 
 // sessionRestartedMsg is a sentinel value indicating the waiter should restart
@@ -99,8 +99,13 @@ const sessionRestartedPath = "\x00RESTART\x00"
 // - New session files being created (user started fresh session)
 // - Writes to existing session files that aren't the current one (user switched back)
 func (sw *SessionWatcher) WaitForNewSession() (string, string) {
-	// Check closing flag before starting to avoid unnecessary work
-	if sw.watcher == nil || sw.closing.Load() {
+	// Check done channel before starting to avoid unnecessary work
+	select {
+	case <-sw.done:
+		return "", ""
+	default:
+	}
+	if sw.watcher == nil {
 		return "", ""
 	}
 

@@ -376,8 +376,8 @@ func TestCountMessagesInFile(t *testing.T) {
 
 func TestCountMessagesInFileNotFound(t *testing.T) {
 	count := countMessagesInFile("/nonexistent/path/file.jsonl")
-	if count != 0 {
-		t.Errorf("expected 0 for nonexistent file, got %d", count)
+	if count != -1 {
+		t.Errorf("expected -1 for nonexistent file, got %d", count)
 	}
 }
 

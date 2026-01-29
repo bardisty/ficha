@@ -139,7 +139,11 @@ func DiscoverSessionsFromDisk(projectDir string) ([]models.SessionEntry, error) 
 		}
 
 		// Count messages by reading first pass of file
+		// Treat -1 (error) as 0 for display purposes
 		parentMsgCount := countMessagesInFile(fullPath)
+		if parentMsgCount < 0 {
+			parentMsgCount = 0
+		}
 
 		// Discover agent sub-sessions (ignore errors - missing subagents dir is common)
 		agentPaths, err := DiscoverAgentSessions(projectDir, sessionID)
@@ -150,9 +154,13 @@ func DiscoverSessionsFromDisk(projectDir string) ([]models.SessionEntry, error) 
 		}
 
 		// Count agent messages separately for display breakdown
+		// Treat -1 (error) as 0 for individual files
 		agentMsgCount := 0
 		for _, agentPath := range agentPaths {
-			agentMsgCount += countMessagesInFile(agentPath)
+			count := countMessagesInFile(agentPath)
+			if count > 0 {
+				agentMsgCount += count
+			}
 		}
 
 		sessions = append(sessions, models.SessionEntry{
@@ -257,10 +265,11 @@ func ExtractAgentID(agentPath string) string {
 }
 
 // countMessagesInFile counts assistant messages in a JSONL file
+// Returns -1 on error (file access, buffer overflow, I/O) to distinguish from empty files (0)
 func countMessagesInFile(path string) int {
 	file, err := os.Open(path)
 	if err != nil {
-		return 0
+		return -1
 	}
 	defer file.Close()
 
@@ -282,7 +291,7 @@ func countMessagesInFile(path string) int {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return 0 // Buffer overflow or I/O error - return 0 rather than partial count
+		return -1 // Buffer overflow or I/O error
 	}
 	return count
 }

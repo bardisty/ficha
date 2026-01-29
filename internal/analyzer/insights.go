@@ -4,6 +4,25 @@ import (
 	"github.com/bardisty/ccusage/internal/models"
 )
 
+// Insight calculation thresholds
+const (
+	// highCostMultiplier defines how many times above average a message cost
+	// must be to be flagged as notably high (e.g., 1.5 = 50% above average)
+	highCostMultiplier = 1.5
+
+	// trendChangeThreshold defines the minimum relative change (as a fraction)
+	// required to classify a trend as increasing or decreasing (0.2 = 20%)
+	trendChangeThreshold = 0.2
+
+	// minMessagesForTrend is the minimum number of messages required
+	// to calculate meaningful cost trends
+	minMessagesForTrend = 5
+
+	// trendSampleSize is the number of messages at each end used to calculate
+	// early and late average costs for trend detection
+	trendSampleSize = 3
+)
+
 // CalculateInsights computes insights from a slice of message analyses
 // Returns nil if there are no messages to analyze
 func CalculateInsights(messages []models.MessageAnalysis) *models.MessageInsights {
@@ -37,33 +56,33 @@ func CalculateInsights(messages []models.MessageAnalysis) *models.MessageInsight
 
 	insights.AverageCost = totalCost / float64(len(messages))
 
-	// Highest cost message - only include if >1.5x average
-	if highestCost > insights.AverageCost*1.5 {
+	// Highest cost message - only include if notably above average
+	if highestCost > insights.AverageCost*highCostMultiplier {
 		insights.HighestCost = createSnapshot(messages[highestIdx], highestIdx+1) // 1-based index
 	}
 
-	// Calculate trend for sessions with 5+ messages
-	if len(messages) >= 5 {
-		// Average of first 3 messages
+	// Calculate trend for sessions with enough messages
+	if len(messages) >= minMessagesForTrend {
+		// Average of first N messages
 		var earlySum float64
-		for i := 0; i < 3; i++ {
+		for i := 0; i < trendSampleSize; i++ {
 			earlySum += messages[i].Cost.TotalCost
 		}
-		insights.EarlyAvgCost = earlySum / 3
+		insights.EarlyAvgCost = earlySum / float64(trendSampleSize)
 
-		// Average of last 3 messages
+		// Average of last N messages
 		var lateSum float64
-		for i := len(messages) - 3; i < len(messages); i++ {
+		for i := len(messages) - trendSampleSize; i < len(messages); i++ {
 			lateSum += messages[i].Cost.TotalCost
 		}
-		insights.LateAvgCost = lateSum / 3
+		insights.LateAvgCost = lateSum / float64(trendSampleSize)
 
-		// Determine trend direction (20% threshold for stability)
+		// Determine trend direction based on threshold
 		if insights.EarlyAvgCost > 0 {
 			change := (insights.LateAvgCost - insights.EarlyAvgCost) / insights.EarlyAvgCost
-			if change > 0.2 {
+			if change > trendChangeThreshold {
 				insights.CostTrend = models.TrendIncreasing
-			} else if change < -0.2 {
+			} else if change < -trendChangeThreshold {
 				insights.CostTrend = models.TrendDecreasing
 			} else {
 				insights.CostTrend = models.TrendStable

@@ -427,7 +427,10 @@ func (m *Model) detectChanges(old, new *models.SessionAnalysis) {
 			}
 		} else {
 			// Compare individual insight fields
-			if old.Insights.LastMessage == nil || new.Insights.LastMessage.Cost != old.Insights.LastMessage.Cost {
+			// Handle nil LastMessage on either side to avoid nil pointer dereference
+			if (old.Insights.LastMessage == nil) != (new.Insights.LastMessage == nil) ||
+				(old.Insights.LastMessage != nil && new.Insights.LastMessage != nil &&
+					old.Insights.LastMessage.Cost != new.Insights.LastMessage.Cost) {
 				m.changedAt["insights_last"] = now
 			}
 			if (old.Insights.HighestCost == nil) != (new.Insights.HighestCost == nil) ||
@@ -1816,16 +1819,30 @@ func (m *Model) updateCostChart() {
 		return // No new messages
 	}
 
-	// Extract costs from new messages and add to chart
+	// Extract costs from new messages
 	for i := m.lastMessageCount; i < currentMessageCount; i++ {
 		cost := m.analysis.Messages[i].Cost.TotalCost
 		m.costHistory = append(m.costHistory, cost)
-		m.costChart.Push(cost)
 	}
 
 	// Cap history size to prevent unbounded growth
+	trimmed := false
 	if len(m.costHistory) > maxCostHistorySize {
 		m.costHistory = m.costHistory[len(m.costHistory)-maxCostHistorySize:]
+		trimmed = true
+	}
+
+	// If trimmed, rebuild chart from scratch; otherwise push incrementally
+	if trimmed {
+		// Recreate chart and repopulate with trimmed window
+		chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
+		m.costChart = sparkline.New(m.getChartWidth(), chartHeight, sparkline.WithStyle(chartStyle))
+		m.costChart.PushAll(m.costHistory)
+	} else {
+		// Push only new values for efficiency
+		for i := m.lastMessageCount; i < currentMessageCount; i++ {
+			m.costChart.Push(m.analysis.Messages[i].Cost.TotalCost)
+		}
 	}
 
 	// Redraw the chart with updated data
