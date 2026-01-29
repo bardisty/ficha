@@ -43,9 +43,9 @@ func testWindowsPaths(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"simple windows path", "C:\\Users\\user\\project", "C-Users-user-project"},
-		{"drive letter only", "C:\\", "C-"},
-		{"forward slashes on windows", "C:/Users/user/project", "C-Users-user-project"},
+		{"simple windows path", "C:\\Users\\user\\project", "C--Users-user-project"},
+		{"drive letter only", "C:\\", "C--"},
+		{"forward slashes on windows", "C:/Users/user/project", "C--Users-user-project"},
 	}
 
 	for _, tt := range tests {

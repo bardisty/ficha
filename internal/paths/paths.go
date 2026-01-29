@@ -35,10 +35,8 @@ func PathToProjectDir(path string) string {
 	if runtime.GOOS == "windows" {
 		// Convert C:\Users\foo to C/Users/foo style
 		path = strings.ReplaceAll(path, "\\", "/")
-		// Remove the colon from drive letter (C: -> C)
-		if len(path) >= 2 && path[1] == ':' {
-			path = path[:1] + path[2:]
-		}
+		// Replace colon with dash (C: -> C-)
+		path = strings.ReplaceAll(path, ":", "-")
 	}
 
 	// Replace path separators with dashes
