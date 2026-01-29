@@ -28,8 +28,9 @@ const switchNotifyDuration = 5 * time.Second
 
 // Chart display constants
 const (
-	chartHeight = 6  // Height of the sparkline chart in characters
-	chartWidth  = 60 // Default width of the chart (adjusted on resize)
+	chartHeight        = 6    // Height of the sparkline chart in characters
+	chartWidth         = 60   // Default width of the chart (adjusted on resize)
+	maxCostHistorySize = 1000 // Max entries in cost history to prevent unbounded growth
 )
 
 // Model is the Bubbletea model for the TUI
@@ -1820,6 +1821,11 @@ func (m *Model) updateCostChart() {
 		cost := m.analysis.Messages[i].Cost.TotalCost
 		m.costHistory = append(m.costHistory, cost)
 		m.costChart.Push(cost)
+	}
+
+	// Cap history size to prevent unbounded growth
+	if len(m.costHistory) > maxCostHistorySize {
+		m.costHistory = m.costHistory[len(m.costHistory)-maxCostHistorySize:]
 	}
 
 	// Redraw the chart with updated data

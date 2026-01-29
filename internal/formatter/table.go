@@ -1183,7 +1183,15 @@ func getPrimaryModel(costByModel map[string]models.CostBreakdown) string {
 func formatCostByModelContent(analysis *models.SessionAnalysis, noColor bool) string {
 	var sb strings.Builder
 
-	for modelID, cost := range analysis.CostByModel {
+	// Sort model IDs for deterministic output
+	modelIDs := make([]string, 0, len(analysis.CostByModel))
+	for modelID := range analysis.CostByModel {
+		modelIDs = append(modelIDs, modelID)
+	}
+	sort.Strings(modelIDs)
+
+	for _, modelID := range modelIDs {
+		cost := analysis.CostByModel[modelID]
 		modelName := pricing.GetModelDisplayName(modelID)
 		if noColor {
 			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelName, formatCost(cost.TotalCost)))
@@ -1662,6 +1670,11 @@ func formatContextProgressBar(contextSize, freeSpace, buffer int64, maxContext i
 			usedChars -= total - barWidth
 		}
 	}
+
+	// Guard against negative values from rounding adjustments
+	usedChars = max(0, usedChars)
+	freeChars = max(0, freeChars)
+	bufferChars = max(0, bufferChars)
 
 	usedStr := strings.Repeat("█", usedChars)
 	freeStr := strings.Repeat("░", freeChars)
