@@ -134,6 +134,7 @@ type SessionEntry struct {
 	MessageCount int       `json:"messageCount"`
 	Created      time.Time `json:"created"`
 	Modified     time.Time `json:"modified"`
+	ProjectPath  string    `json:"projectPath,omitempty"` // Original project path
 	// Agent-related fields
 	AgentPaths        []string `json:"agent_paths,omitempty"`
 	AgentCount        int      `json:"agent_count"`
@@ -142,7 +143,8 @@ type SessionEntry struct {
 
 // SessionsIndex represents the sessions-index.json file
 type SessionsIndex struct {
-	Entries []SessionEntry `json:"entries"`
+	Entries      []SessionEntry `json:"entries"`
+	OriginalPath string         `json:"originalPath,omitempty"` // Original project path (clean, not encoded)
 }
 
 // JSONLMessage represents a message in the JSONL session file
@@ -282,4 +284,38 @@ type BreakdownMessage struct {
 	Model     string        // Model used for this message
 	Usage     TokenUsage    // Token usage for this message
 	Cost      CostBreakdown // Calculated cost for this message
+}
+
+// ProjectInfo represents a discovered Claude Code project directory
+type ProjectInfo struct {
+	EncodedPath  string // "-home-bah-source-foo"
+	FullPath     string // ~/.claude/projects/-home-bah-source-foo
+	OriginalPath string // /home/bah/source/foo (decoded)
+	DisplayName  string // "foo" (basename)
+}
+
+// ProjectAnalysis represents the analysis of a single project
+type ProjectAnalysis struct {
+	ProjectInfo
+	TotalCost    CostBreakdown            `json:"total_cost"`
+	TotalUsage   TokenUsage               `json:"total_usage"`
+	CostByModel  map[string]CostBreakdown `json:"cost_by_model"`
+	SessionCount int                      `json:"session_count"`
+	MessageCount int                      `json:"message_count"`
+	LastActive   time.Time                `json:"last_active"`
+}
+
+// GlobalAnalysis represents aggregated stats across all projects
+type GlobalAnalysis struct {
+	Projects        []ProjectAnalysis        `json:"projects"` // sorted by cost desc
+	TotalCost       CostBreakdown            `json:"total_cost"`
+	TotalUsage      TokenUsage               `json:"total_usage"`
+	CostByModel     map[string]CostBreakdown `json:"cost_by_model"`
+	ProjectCount    int                      `json:"project_count"`
+	SessionCount    int                      `json:"session_count"`
+	MessageCount    int                      `json:"message_count"`
+	SkippedProjects int                      `json:"skipped_projects"`
+	FirstActive     time.Time                `json:"first_active"`
+	LastActive      time.Time                `json:"last_active"`
+	Duration        Duration                 `json:"duration"`
 }
