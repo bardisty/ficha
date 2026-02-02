@@ -42,6 +42,9 @@ func PathToProjectDir(path string) string {
 	// Replace path separators with dashes
 	path = strings.ReplaceAll(path, "/", "-")
 
+	// Replace underscores with dashes (Claude Code does this)
+	path = strings.ReplaceAll(path, "_", "-")
+
 	// Handle leading dash for absolute paths
 	if !strings.HasPrefix(path, "-") && filepath.IsAbs(path) {
 		path = "-" + path

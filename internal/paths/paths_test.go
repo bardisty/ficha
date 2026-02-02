@@ -25,6 +25,7 @@ func testUnixPaths(t *testing.T) {
 		{"nested path", "/home/user/code/my-project", "-home-user-code-my-project"},
 		{"trailing slash", "/home/user/project/", "-home-user-project"},
 		{"double slashes", "/home//user/project", "-home-user-project"},
+		{"path with underscores", "/home/user/my_project", "-home-user-my-project"},
 	}
 
 	for _, tt := range tests {
@@ -46,6 +47,7 @@ func testWindowsPaths(t *testing.T) {
 		{"simple windows path", "C:\\Users\\user\\project", "C--Users-user-project"},
 		{"drive letter only", "C:\\", "C--"},
 		{"forward slashes on windows", "C:/Users/user/project", "C--Users-user-project"},
+		{"path with underscores", "D:\\4_Workspace\\action-based-filing-system", "D--4-Workspace-action-based-filing-system"},
 	}
 
 	for _, tt := range tests {
