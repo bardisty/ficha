@@ -36,19 +36,15 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, topN int, 
 	sb.WriteString(renderUnifiedCostRow("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, styles.OutputTokenColor, "", noColor))
 
 	// Cache write rows
-	cacheWriteTokens := analysis.TotalUsage.CacheCreationInputTokens
+	cache5mTokens, cache1hTokens := getCacheTokensByTTL(analysis.TotalUsage)
 	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
 	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
 
 	if has5mCost {
-		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite5mCost, cacheWriteTokens, styles.CacheWriteTokenColor, "5m TTL", noColor))
+		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite5mCost, cache5mTokens, styles.CacheWriteTokenColor, "5m TTL", noColor))
 	}
 	if has1hCost {
-		var tokens int64
-		if !has5mCost {
-			tokens = cacheWriteTokens
-		}
-		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite1hCost, tokens, styles.CacheWriteTokenColor, "1h TTL", noColor))
+		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite1hCost, cache1hTokens, styles.CacheWriteTokenColor, "1h TTL", noColor))
 	}
 
 	// Cache read
@@ -118,19 +114,15 @@ func formatGlobalTablePlain(analysis *models.GlobalAnalysis, topN int, showDetai
 	sb.WriteString(renderUnifiedCostRowPlain("Input", analysis.TotalCost.InputCost, analysis.TotalUsage.InputTokens, ""))
 	sb.WriteString(renderUnifiedCostRowPlain("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, ""))
 
-	cacheWriteTokens := analysis.TotalUsage.CacheCreationInputTokens
+	cache5mTokens, cache1hTokens := getCacheTokensByTTL(analysis.TotalUsage)
 	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
 	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
 
 	if has5mCost {
-		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite5mCost, cacheWriteTokens, "5m TTL"))
+		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite5mCost, cache5mTokens, "5m TTL"))
 	}
 	if has1hCost {
-		var tokens int64
-		if !has5mCost {
-			tokens = cacheWriteTokens
-		}
-		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite1hCost, tokens, "1h TTL"))
+		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite1hCost, cache1hTokens, "1h TTL"))
 	}
 
 	if analysis.TotalCost.CacheReadCost > 0 || analysis.TotalUsage.CacheReadInputTokens > 0 {
