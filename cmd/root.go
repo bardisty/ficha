@@ -10,6 +10,7 @@ import (
 var (
 	// Global flags
 	projectPath string
+	projectDir  string // --project-dir: explicit Claude project directory name
 	format      string
 	verbose     bool
 	noColor     bool
@@ -62,6 +63,7 @@ func Execute() {
 func init() {
 	// Global flags
 	rootCmd.PersistentFlags().StringVarP(&projectPath, "project", "p", "", "Project directory (default: current directory)")
+	rootCmd.PersistentFlags().StringVar(&projectDir, "project-dir", "", "Claude project directory name (bypass auto-detection)")
 	rootCmd.PersistentFlags().StringVarP(&format, "format", "f", "table", "Output format: table, json, csv")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show debug information")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")

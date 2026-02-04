@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -27,26 +28,20 @@ func loadProjectSessions() ([]models.SessionEntry, error) {
 // loadProjectSessionsWithDir loads all sessions and returns the project directory path.
 // Used by live-view commands that need to watch the project directory for new sessions.
 func loadProjectSessionsWithDir() ([]models.SessionEntry, string, error) {
-	// Get project path
-	projPath, err := getProjectPath()
-	if err != nil {
-		return nil, "", err
-	}
-
-	// Get Claude project directory
-	projectDir, err := paths.GetProjectDirForPath(projPath)
+	// Resolve project directory
+	projDir, err := resolveProjectDirectory()
 	if err != nil {
 		return nil, "", err
 	}
 
 	// Scan disk for session files
-	diskSessions, err := parser.DiscoverSessionsFromDisk(projectDir)
+	diskSessions, err := parser.DiscoverSessionsFromDisk(projDir)
 	if err != nil {
-		return nil, "", fmt.Errorf("scanning sessions in %s: %w", projectDir, err)
+		return nil, "", fmt.Errorf("scanning sessions in %s: %w", projDir, err)
 	}
 
 	// Try to load index (may fail or be incomplete)
-	indexPath := paths.GetSessionsIndexPath(projectDir)
+	indexPath := paths.GetSessionsIndexPath(projDir)
 	index, indexErr := parser.ParseSessionsIndex(indexPath)
 	if indexErr != nil && !os.IsNotExist(indexErr) {
 		// Index exists but is malformed - warn but continue
@@ -65,7 +60,85 @@ func loadProjectSessionsWithDir() ([]models.SessionEntry, string, error) {
 		fmt.Fprintf(os.Stderr, "Note: Found %d session(s) not in sessions-index.json\n", orphanCount)
 	}
 
-	return sessions, projectDir, nil
+	return sessions, projDir, nil
+}
+
+// resolveProjectDirectory determines which Claude project directory to use.
+// Priority: --project-dir flag > --project/-p flag > current directory
+// Uses fallback matching when exact encoded path doesn't exist.
+func resolveProjectDirectory() (string, error) {
+	// If --project-dir is set, use it directly (bypass all auto-detection)
+	if projectDir != "" {
+		return paths.ResolveProjectDir(projectDir)
+	}
+
+	// Get the source path (from --project or cwd)
+	projPath, err := getProjectPath()
+	if err != nil {
+		return "", err
+	}
+
+	// Try exact match first (fast path)
+	exactDir, err := paths.GetProjectDirForPath(projPath)
+	if err != nil {
+		return "", err
+	}
+
+	if info, statErr := os.Stat(exactDir); statErr == nil && info.IsDir() {
+		return exactDir, nil
+	}
+
+	// Exact match failed - try fallback matching
+	allProjects, err := parser.DiscoverAllProjects()
+	if err != nil {
+		return "", fmt.Errorf("discovering projects: %w", err)
+	}
+
+	match, err := paths.FindProjectDir(projPath, allProjects)
+	if err != nil {
+		// Enhance error messages with helpful suggestions
+		if errors.Is(err, paths.ErrNoProjectFound) {
+			return "", formatNoProjectError(projPath, allProjects)
+		}
+		return "", err
+	}
+
+	// Print match info if matched by suffix
+	if match.MatchInfo != "" {
+		fmt.Fprintf(os.Stderr, "Note: %s\n", match.MatchInfo)
+	}
+
+	return match.ProjectDir, nil
+}
+
+// formatNoProjectError creates a helpful error message when no project is found
+func formatNoProjectError(projPath string, allProjects []models.ProjectInfo) error {
+	basename := strings.ToLower(filepath.Base(projPath))
+
+	// Find similar projects by partial basename match
+	var suggestions []string
+	for _, proj := range allProjects {
+		if proj.OriginalPath != "" {
+			projBasename := strings.ToLower(filepath.Base(proj.OriginalPath))
+			if strings.Contains(projBasename, basename) || strings.Contains(basename, projBasename) {
+				suggestions = append(suggestions, fmt.Sprintf("  %s (original: %s)", proj.EncodedPath, proj.OriginalPath))
+			}
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("no Claude sessions found for: %s", projPath))
+
+	if len(suggestions) > 0 {
+		sb.WriteString("\n\nSimilar projects:\n")
+		for _, s := range suggestions {
+			sb.WriteString(s)
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\nUse --project-dir to specify the exact directory")
+	}
+
+	return errors.New(sb.String())
 }
 
 // warnUnknownModels prints a warning if any models in the analysis have unknown pricing

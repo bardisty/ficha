@@ -1,11 +1,45 @@
 package paths
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
+	"regexp"
 	"strings"
+
+	"github.com/bardisty/ccusage/internal/models"
 )
+
+// nonAlphanumericRegex matches any character that isn't alphanumeric or dash
+var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9-]`)
+
+// ErrNoProjectFound indicates no matching project directory was found
+var ErrNoProjectFound = errors.New("no matching project directory found")
+
+// AmbiguousProjectError indicates multiple projects matched by basename
+type AmbiguousProjectError struct {
+	Basename string
+	Matches  []models.ProjectInfo
+}
+
+func (e *AmbiguousProjectError) Error() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("ambiguous project name %q matches %d directories:\n", e.Basename, len(e.Matches)))
+	for _, m := range e.Matches {
+		sb.WriteString(fmt.Sprintf("  %s (original: %s)\n", m.EncodedPath, m.OriginalPath))
+	}
+	sb.WriteString("\nUse --project-dir to specify the exact directory")
+	return sb.String()
+}
+
+// ProjectMatch contains the result of project directory matching
+type ProjectMatch struct {
+	ProjectDir  string // Full path to the matched project directory
+	EncodedPath string // Encoded directory name
+	MatchMethod string // "exact", "suffix", or "override"
+	MatchInfo   string // Human-readable match info for logging
+}
 
 // GetClaudeConfigDir returns the path to the Claude config directory
 func GetClaudeConfigDir() (string, error) {
@@ -28,29 +62,10 @@ func GetProjectsDir() (string, error) {
 // PathToProjectDir converts a filesystem path to the Claude project directory name
 // e.g., /home/user/project -> -home-user-project
 func PathToProjectDir(path string) string {
-	// Normalize the path
 	path = filepath.Clean(path)
-
-	// On Windows, replace backslashes with forward slashes first
-	if runtime.GOOS == "windows" {
-		// Convert C:\Users\foo to C/Users/foo style
-		path = strings.ReplaceAll(path, "\\", "/")
-		// Replace colon with dash (C: -> C-)
-		path = strings.ReplaceAll(path, ":", "-")
-	}
-
-	// Replace path separators with dashes
-	path = strings.ReplaceAll(path, "/", "-")
-
-	// Replace underscores with dashes (Claude Code does this)
-	path = strings.ReplaceAll(path, "_", "-")
-
-	// Handle leading dash for absolute paths
-	if !strings.HasPrefix(path, "-") && filepath.IsAbs(path) {
-		path = "-" + path
-	}
-
-	return path
+	// Replace all non-alphanumeric chars (except dash) with dashes
+	// Handles: / \ : _ (space) ( ) [ ] and any other special chars
+	return nonAlphanumericRegex.ReplaceAllString(path, "-")
 }
 
 // CanonicalizePath resolves symlinks and converts relative paths to absolute.
@@ -133,4 +148,99 @@ func ProjectDirExists(path string) (bool, error) {
 		return false, err
 	}
 	return info.IsDir(), nil
+}
+
+// FindProjectDir finds the Claude project directory for a given path.
+// It tries exact match first, then falls back to basename matching.
+// allProjects should be obtained from parser.DiscoverAllProjects().
+func FindProjectDir(path string, allProjects []models.ProjectInfo) (*ProjectMatch, error) {
+	projectsDir, err := GetProjectsDir()
+	if err != nil {
+		return nil, err
+	}
+
+	// Canonicalize the path
+	canonicalPath, err := CanonicalizePath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	encodedPath := PathToProjectDir(canonicalPath)
+	exactDir := filepath.Join(projectsDir, encodedPath)
+
+	// Try exact match first
+	if info, err := os.Stat(exactDir); err == nil && info.IsDir() {
+		return &ProjectMatch{
+			ProjectDir:  exactDir,
+			EncodedPath: encodedPath,
+			MatchMethod: "exact",
+			MatchInfo:   "",
+		}, nil
+	}
+
+	// Fall back to basename matching
+	basename := filepath.Base(canonicalPath)
+	var matches []models.ProjectInfo
+
+	for _, proj := range allProjects {
+		// Match by basename of originalPath
+		if proj.OriginalPath != "" {
+			projBasename := filepath.Base(proj.OriginalPath)
+			if projBasename == basename {
+				matches = append(matches, proj)
+			}
+		}
+	}
+
+	if len(matches) == 0 {
+		return nil, ErrNoProjectFound
+	}
+
+	if len(matches) > 1 {
+		return nil, &AmbiguousProjectError{
+			Basename: basename,
+			Matches:  matches,
+		}
+	}
+
+	// Single match - return it with info
+	match := matches[0]
+	return &ProjectMatch{
+		ProjectDir:  match.FullPath,
+		EncodedPath: match.EncodedPath,
+		MatchMethod: "suffix",
+		MatchInfo:   fmt.Sprintf("matched by name '%s' (original: %s)", basename, match.OriginalPath),
+	}, nil
+}
+
+// ResolveProjectDir resolves a --project-dir flag value to a full project directory path.
+// The value can be either an encoded directory name or a full path.
+func ResolveProjectDir(projectDirFlag string) (string, error) {
+	var fullPath string
+
+	if filepath.IsAbs(projectDirFlag) {
+		// Absolute path - use directly but validate it exists
+		fullPath = projectDirFlag
+	} else {
+		// Assume it's an encoded directory name
+		projectsDir, err := GetProjectsDir()
+		if err != nil {
+			return "", err
+		}
+		fullPath = filepath.Join(projectsDir, projectDirFlag)
+	}
+
+	// Verify it exists
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("project directory not found: %s", projectDirFlag)
+		}
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("not a directory: %s", fullPath)
+	}
+
+	return fullPath, nil
 }
