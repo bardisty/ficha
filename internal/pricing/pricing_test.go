@@ -11,6 +11,8 @@ func TestGetModelPricing(t *testing.T) {
 		expectedInput  float64
 		expectedOutput float64
 	}{
+		{"opus 4.6 exact", "claude-opus-4-6", 5.00, 25.00},
+		{"opus 4.6 versioned", "claude-opus-4-6-20260101", 5.00, 25.00},
 		{"opus 4.5 exact", "claude-opus-4-5", 5.00, 25.00},
 		{"opus 4.5 versioned", "claude-opus-4-5-20251101", 5.00, 25.00},
 		{"opus 4.1 exact", "claude-opus-4-1", 15.00, 75.00},
@@ -53,6 +55,8 @@ func TestGetModelDisplayName(t *testing.T) {
 		modelID      string
 		expectedName string
 	}{
+		{"claude-opus-4-6", "Opus 4.6"},
+		{"claude-opus-4-6-20260101", "Opus 4.6"},
 		{"claude-opus-4-5", "Opus 4.5"},
 		{"claude-opus-4-5-20251101", "Opus 4.5"},
 		{"claude-opus-4-1", "Opus 4.1"},
@@ -110,6 +114,8 @@ func TestNormalizeModelID(t *testing.T) {
 		input    string
 		expected string
 	}{
+		{"claude-opus-4-6-20260101", "claude-opus-4-6"},
+		{"claude-opus-4-6", "claude-opus-4-6"},
 		{"claude-opus-4-5-20251101", "claude-opus-4-5"},
 		{"claude-opus-4-5", "claude-opus-4-5"},
 		{"claude-opus-4-1-20250414", "claude-opus-4-1"},
@@ -140,6 +146,7 @@ func TestIsKnownModel(t *testing.T) {
 		expected bool
 	}{
 		// All known models - exact matches
+		{"claude-opus-4-6", true},
 		{"claude-opus-4-5", true},
 		{"claude-opus-4-1", true},
 		{"claude-opus-4", true},
@@ -154,6 +161,7 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-3-haiku", true},
 
 		// All known models - versioned variants
+		{"claude-opus-4-6-20260101", true},
 		{"claude-opus-4-5-20251101", true},
 		{"claude-opus-4-1-20250414", true},
 		{"claude-opus-4-20250514", true},
