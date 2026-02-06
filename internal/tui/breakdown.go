@@ -46,7 +46,7 @@ type BreakdownModel struct {
 	done      chan struct{}
 	closing   *atomic.Bool
 	closeOnce *sync.Once
-	watching  *atomic.Bool
+	wg        *sync.WaitGroup
 
 	// Auto-follow mode for tracking new sessions
 	projectDir     string          // Project directory to watch for new sessions
@@ -78,7 +78,6 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 	s.Style = spinnerStyle
 
 	closing := &atomic.Bool{}
-	watching := &atomic.Bool{}
 	closeOnce := &sync.Once{}
 
 	return BreakdownModel{
@@ -91,7 +90,7 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 		done:          make(chan struct{}),
 		closing:       closing,
 		closeOnce:     closeOnce,
-		watching:      watching,
+		wg:            &sync.WaitGroup{},
 		newMsgIndices: make(map[int]time.Time),
 		projectDir:    projectDir,
 		followMode:    followMode,
@@ -135,6 +134,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.sessionWatcher.Stop()
 				}
 			})
+			m.wg.Wait()
 			return m, tea.Quit
 
 		case "up", "k":
@@ -432,7 +432,7 @@ func (m BreakdownModel) renderHeaderPanel(width int) string {
 	}
 
 	// Inner width (accounting for box borders and padding)
-	innerWidth := width - 4 // 2 for borders, 2 for padding
+	innerWidth := width - 6 // 2 for borders, 2 for left padding, 2 for right padding
 
 	// Build content parts
 	sessionDisplay := truncateID(m.sessionID)
@@ -708,6 +708,9 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevC
 // Commands
 
 func (m BreakdownModel) loadBreakdown() tea.Msg {
+	if m.closing != nil && m.closing.Load() {
+		return nil
+	}
 	messages, err := analyzer.GetBreakdownMessages(m.sessionPath, m.sessionID)
 	if err != nil {
 		return breakdownErrorMsg(err)
@@ -774,7 +777,8 @@ func (m BreakdownModel) watchFile() tea.Msg {
 	return watcherStartedMsg{watcher: watcher}
 }
 
-// waitForFileChangeBreakdown returns a command that waits for file changes
+// waitForFileChangeBreakdown returns a command that waits for file changes.
+// Coalesces rapid write events with a 50ms debounce to avoid redundant reloads.
 func (m BreakdownModel) waitForFileChangeBreakdown() tea.Cmd {
 	return func() tea.Msg {
 		if m.closing != nil && m.closing.Load() {
@@ -784,14 +788,8 @@ func (m BreakdownModel) waitForFileChangeBreakdown() tea.Cmd {
 			return nil
 		}
 
-		if m.watching != nil && !m.watching.CompareAndSwap(false, true) {
-			return nil
-		}
-		defer func() {
-			if m.watching != nil {
-				m.watching.Store(false)
-			}
-		}()
+		m.wg.Add(1)
+		defer m.wg.Done()
 
 		for {
 			select {
@@ -802,6 +800,34 @@ func (m BreakdownModel) waitForFileChangeBreakdown() tea.Cmd {
 					return nil
 				}
 				if event.Op&fsnotify.Write == fsnotify.Write {
+					timer := time.NewTimer(watchDebounce)
+					defer timer.Stop()
+				drain:
+					for {
+						select {
+						case <-m.done:
+							return nil
+						case <-timer.C:
+							break drain
+						case ev, ok := <-m.watcher.Events:
+							if !ok {
+								return nil
+							}
+							if ev.Op&fsnotify.Write == fsnotify.Write {
+								if !timer.Stop() {
+									select {
+									case <-timer.C:
+									default:
+									}
+								}
+								timer.Reset(watchDebounce)
+							}
+						case _, ok := <-m.watcher.Errors:
+							if !ok {
+								return nil
+							}
+						}
+					}
 					return fileChangedMsg{}
 				}
 				continue
@@ -823,7 +849,7 @@ const (
 )
 
 // getRowTrendIndicator returns the change indicator for a message based on cost change
-// from previous message. Uses 10% threshold for significance.
+// from previous message. Uses 5% threshold for significance.
 func getRowTrendIndicator(currentCost, previousCost float64, isFirst bool) (symbol string, direction models.TrendDirection) {
 	if isFirst || previousCost == 0 {
 		return changeStable, models.TrendStable
@@ -882,7 +908,7 @@ func formatCostWithDimDecimals(cost float64, color lipgloss.Color, width int) st
 // formatCompactNumber formats a number compactly (e.g., "89.3K")
 func formatCompactNumber(n int64) string {
 	if n >= 1000000 {
-		return fmt.Sprintf("%.1fM", float64(n)/1000000)
+		return fmt.Sprintf("%.2fM", float64(n)/1000000)
 	}
 	if n >= 1000 {
 		return fmt.Sprintf("%.1fK", float64(n)/1000)
@@ -909,6 +935,9 @@ func (m BreakdownModel) waitForNewSession() tea.Cmd {
 		if m.sessionWatcher == nil {
 			return nil
 		}
+
+		m.wg.Add(1)
+		defer m.wg.Done()
 
 		path, id := m.sessionWatcher.WaitForNewSession()
 		if path == "" {

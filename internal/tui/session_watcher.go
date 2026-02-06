@@ -22,7 +22,7 @@ type SessionWatcher struct {
 	// restartCh signals waiters to restart (used when session changes)
 	restartCh chan struct{}
 	restartMu sync.Mutex
-	stopOnce  sync.Once // Ensures Stop() logic runs exactly once
+	closeOnce sync.Once // Ensures Stop() logic runs exactly once
 }
 
 // NewSessionWatcher creates a new session watcher
@@ -78,7 +78,7 @@ func (sw *SessionWatcher) Start() error {
 
 // Stop stops the session watcher
 func (sw *SessionWatcher) Stop() {
-	sw.stopOnce.Do(func() {
+	sw.closeOnce.Do(func() {
 		// Acquire restartMu to ensure no concurrent SetCurrentSession is modifying restartCh
 		sw.restartMu.Lock()
 		close(sw.done)

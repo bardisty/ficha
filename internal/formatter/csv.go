@@ -25,6 +25,10 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		"cache_savings",
 		"message_count",
 		"duration_seconds",
+		"agent_count",
+		"agent_message_count",
+		"parent_cost",
+		"agents_cost",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing CSV header: %w", err)
@@ -42,6 +46,10 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		fmt.Sprintf("%.6f", analysis.TotalCost.CacheSavings),
 		fmt.Sprintf("%d", analysis.MessageCount),
 		fmt.Sprintf("%.0f", analysis.Duration.Duration().Seconds()),
+		fmt.Sprintf("%d", analysis.AgentCount),
+		fmt.Sprintf("%d", analysis.AgentMessageCount),
+		fmt.Sprintf("%.6f", analysis.ParentCost.TotalCost),
+		fmt.Sprintf("%.6f", analysis.AgentsCost.TotalCost),
 	}
 	if err := w.Write(row); err != nil {
 		return "", fmt.Errorf("writing CSV row: %w", err)
@@ -129,6 +137,8 @@ func FormatSessionListCSV(entries []models.SessionEntry) (string, error) {
 		"message_count",
 		"created",
 		"modified",
+		"agent_count",
+		"agent_message_count",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing session list CSV header: %w", err)
@@ -142,6 +152,8 @@ func FormatSessionListCSV(entries []models.SessionEntry) (string, error) {
 			fmt.Sprintf("%d", entry.MessageCount),
 			entry.Created.Format("2006-01-02T15:04:05Z07:00"),
 			entry.Modified.Format("2006-01-02T15:04:05Z07:00"),
+			fmt.Sprintf("%d", entry.AgentCount),
+			fmt.Sprintf("%d", entry.AgentMessageCount),
 		}
 		if err := w.Write(row); err != nil {
 			return "", fmt.Errorf("writing session entry row: %w", err)

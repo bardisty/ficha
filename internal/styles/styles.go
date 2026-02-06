@@ -36,9 +36,6 @@ var (
 	HeaderStyle = lipgloss.NewStyle().
 			Bold(true)
 
-	// TitleStyle for session metadata (de-emphasized compared to financial data)
-	TitleStyle = lipgloss.NewStyle()
-
 	// HeroCostStyle for the prominent centered total cost display
 	HeroCostStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -57,22 +54,14 @@ var (
 // Note: Width/Padding removed - use fmt.Sprintf for consistent formatting
 var (
 	BorderStyle = lipgloss.NewStyle().
-			Foreground(SecondaryColor)
-
-	LabelStyle = lipgloss.NewStyle()
-
-	ValueStyle = lipgloss.NewStyle()
+		Foreground(SecondaryColor)
 )
 
 // Total row styles for summary lines
 var (
-	TotalLabelStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(SuccessColor)
-
 	TotalValueStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(SuccessColor)
+		Bold(true).
+		Foreground(SuccessColor)
 )
 
 // Savings styles for cache savings display
@@ -87,11 +76,7 @@ var (
 // Status and footer styles
 var (
 	FooterStyle = lipgloss.NewStyle().
-			Foreground(SecondaryColor)
-
-	StatusBarStyle = lipgloss.NewStyle().
-			Foreground(SecondaryColor).
-			MarginTop(1)
+		Foreground(SecondaryColor)
 )
 
 // Live mode styles
@@ -102,18 +87,11 @@ var (
 		Foreground(SuccessColor)
 )
 
-// Help and spinner styles
+// Spinner style
 var (
-	HelpStyle = lipgloss.NewStyle().
-			Foreground(SecondaryColor).
-			MarginTop(1)
-
 	SpinnerStyle = lipgloss.NewStyle().
-			Foreground(PrimaryColor)
+		Foreground(PrimaryColor)
 )
-
-// Session ID style (de-emphasized - metadata shouldn't compete with financial data)
-var SessionIDStyle = lipgloss.NewStyle()
 
 // Highlight style for recently changed values
 var (
@@ -122,27 +100,11 @@ var (
 	HighlightStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(HighlightColor)
-
-	HighlightTotalStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(HighlightColor)
-
-	HighlightSavingsStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(HighlightColor)
 )
 
 // Dim style for extra decimal precision in costs
 var DimStyle = lipgloss.NewStyle().
 	Foreground(SecondaryColor)
-
-// Breakdown view styles
-var (
-	// BreakdownNewRowStyle highlights newly added rows in the breakdown view
-	BreakdownNewRowStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(HighlightColor)
-)
 
 // Model-specific colors (by tier)
 var (
@@ -156,13 +118,6 @@ var (
 	OutputTokenColor     = lipgloss.Color("75")  // Light blue
 	CacheWriteTokenColor = lipgloss.Color("214") // Warm orange - cost investment
 	CacheReadTokenColor  = lipgloss.Color("43")  // Cyan - efficiency/savings
-)
-
-// Cost magnitude colors (for relative cost shading)
-var (
-	CostHighColor   = lipgloss.Color("255") // Bright white - high proportion
-	CostMediumColor = lipgloss.Color("250") // Normal white - medium proportion
-	CostLowColor    = lipgloss.Color("245") // Dimmed - low proportion
 )
 
 // Context usage level colors (thresholds based on ~75-78% compaction trigger)
@@ -196,24 +151,24 @@ var AgentColors = []lipgloss.Color{
 	lipgloss.Color("43"),  // Cyan - A5
 }
 
-// GetAgentColor returns a color for the given agent ID (cycles through palette)
+// GetAgentColor returns a color for the given agent ID (cycles through palette).
+// Parses numeric agent IDs (e.g., "1", "2"); non-numeric IDs default to first color.
 func GetAgentColor(agentID string) lipgloss.Color {
 	if agentID == "" {
 		return SecondaryColor
 	}
-	// Parse agent number from ID (e.g., "1", "2", "3")
 	var num int
 	_, _ = fmt.Sscanf(agentID, "%d", &num)
 	if num < 1 {
 		num = 1
 	}
-	// Cycle through the palette (0-indexed)
 	return AgentColors[(num-1)%len(AgentColors)]
 }
 
-// GetModelColor returns the tier-appropriate color for a model display name
+// GetModelColor returns the tier-appropriate color for a model name or ID.
+// Works with both display names ("Opus 4.5") and raw IDs ("claude-opus-4-6")
+// via case-insensitive substring matching.
 func GetModelColor(modelName string) lipgloss.Color {
-	// Check for tier keywords in the model name
 	switch {
 	case contains(modelName, "Opus"):
 		return OpusColor

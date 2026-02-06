@@ -540,10 +540,10 @@ func renderSessionBreakdown(sessions []models.SessionEntry, noColor bool, expand
 	for i, sd := range sessionData {
 		num := i + 1
 
-		// Truncate session ID to first 8 chars (consistent with other commands)
+		// Truncate session ID with ellipsis (consistent with TUI truncateID)
 		shortID := sd.entry.SessionID
 		if len(shortID) > 8 {
-			shortID = shortID[:8]
+			shortID = shortID[:5] + "..."
 		}
 
 		// Format modified date with time (mainframe style: DD MMM HH:MM with uppercase month)
@@ -1631,7 +1631,7 @@ func formatCostComponentLabel(component string) string {
 
 // formatContextProgressBar creates a visual progress bar showing context usage
 // Bar segments: used (█), free (░), buffer (▒)
-// Total width: 40 characters (matches TUI)
+// Total width: 40 characters (TUI uses barWidth=38 for narrower panel)
 func formatContextProgressBar(contextSize, freeSpace, buffer int64, maxContext int, noColor bool) string {
 	const barWidth = 40
 
@@ -1664,10 +1664,13 @@ func formatContextProgressBar(contextSize, freeSpace, buffer int64, maxContext i
 		}
 	}
 
-	// Guard against negative values from rounding adjustments
+	// Guard against negative values from rounding adjustments and ensure total == barWidth
 	usedChars = max(0, usedChars)
 	freeChars = max(0, freeChars)
 	bufferChars = max(0, bufferChars)
+	if total := usedChars + freeChars + bufferChars; total < barWidth {
+		freeChars += barWidth - total
+	}
 
 	usedStr := strings.Repeat("█", usedChars)
 	freeStr := strings.Repeat("░", freeChars)

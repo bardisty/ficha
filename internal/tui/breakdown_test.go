@@ -44,8 +44,8 @@ func TestFormatCompactNumber(t *testing.T) {
 		{"one thousand", 1000, "1.0K"},
 		{"thousands", 1234, "1.2K"},
 		{"large thousands", 89300, "89.3K"},
-		{"one million", 1000000, "1.0M"},
-		{"millions", 1500000, "1.5M"},
+		{"one million", 1000000, "1.00M"},
+		{"millions", 1500000, "1.50M"},
 	}
 
 	for _, tt := range tests {

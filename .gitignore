@@ -1,4 +1,6 @@
 bin/
 ccusage
 .claude/
-reference/
+agent-outputs/
+references/
+.claudeignore

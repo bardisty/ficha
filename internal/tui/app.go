@@ -23,6 +23,9 @@ import (
 // Highlight duration for changed values
 const highlightDuration = 2 * time.Second
 
+// watchDebounce coalesces rapid fsnotify write events into a single reload.
+const watchDebounce = 50 * time.Millisecond
+
 // Duration to show "Switched to new session" notification
 const switchNotifyDuration = 5 * time.Second
 
@@ -57,10 +60,10 @@ type Model struct {
 
 	spinner   spinner.Model
 	watcher   *fsnotify.Watcher
-	done      chan struct{} // Channel to signal watcher goroutine to stop
-	closing   *atomic.Bool  // Atomic flag for shutdown coordination
-	closeOnce *sync.Once    // Ensure shutdown happens exactly once
-	watching  *atomic.Bool  // Tracks if a watcher goroutine is active
+	done      chan struct{}   // Channel to signal watcher goroutine to stop
+	closing   *atomic.Bool    // Atomic flag for shutdown coordination
+	closeOnce *sync.Once      // Ensure shutdown happens exactly once
+	wg        *sync.WaitGroup // Waits for goroutines to drain on shutdown
 
 	// Auto-follow mode for tracking new sessions
 	projectDir     string          // Project directory to watch for new sessions
@@ -102,7 +105,6 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 	chart := sparkline.New(chartWidth, chartHeight, sparkline.WithStyle(chartStyle))
 
 	closing := &atomic.Bool{}
-	watching := &atomic.Bool{}
 	closeOnce := &sync.Once{}
 	return Model{
 		sessionPath: sessionPath,
@@ -115,7 +117,7 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 		done:        make(chan struct{}),
 		closing:     closing,
 		closeOnce:   closeOnce,
-		watching:    watching,
+		wg:          &sync.WaitGroup{},
 		changedAt:   make(map[string]time.Time),
 		deltaTokens: make(map[string]int64),
 		projectDir:  projectDir,
@@ -168,6 +170,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.sessionWatcher.Stop()
 				}
 			})
+			m.wg.Wait()
 			return m, tea.Quit
 		case "r":
 			m.loading = true
@@ -473,7 +476,9 @@ func (m *Model) detectChanges(old, new *models.SessionAnalysis) {
 
 // cleanupStaleChanges removes entries from changedAt/deltaTokens that are past their highlight window.
 // Called periodically from tickMsg to prevent unbounded map growth during idle sessions.
-// Note: Uses value receiver to match Update() signature; map mutations work because maps are reference types.
+// Note: Uses value receiver to match bubbletea Update() convention; map mutations work because maps
+// are reference types. Non-map fields (e.g., deltaCount) are NOT cleaned up here — they are only
+// displayed when recentlyChanged("messages") is true, which depends on changedAt (a map).
 func (m Model) cleanupStaleChanges() {
 	for field, changedTime := range m.changedAt {
 		if time.Since(changedTime) > highlightDuration*2 {
@@ -603,27 +608,20 @@ func (m Model) renderAnalysis() string {
 		"Output", a.TotalCost.OutputCost, a.TotalUsage.OutputTokens,
 		"output_cost", "output_tokens", styles.OutputTokenColor, ""))
 
-	// Cache write rows - tokens aren't split by TTL, so show them on whichever row has cost
-	// If both TTLs have cost, tokens go on the 5m row (first one shown)
-	cacheWriteTokens := a.TotalUsage.CacheCreationInputTokens
+	// Cache write rows - split tokens by TTL when detailed breakdown available
+	cache5mTokens, cache1hTokens := getCacheTokensByTTL(a.TotalUsage)
 	has5mCost := a.TotalCost.CacheWrite5mCost > 0
 	has1hCost := a.TotalCost.CacheWrite1hCost > 0
 
 	if has5mCost {
-		// 5m row gets tokens whenever it has cost
 		sb.WriteString(m.renderUnifiedCostRow(
-			"Cache write", a.TotalCost.CacheWrite5mCost, cacheWriteTokens,
+			"Cache write", a.TotalCost.CacheWrite5mCost, cache5mTokens,
 			"cache_write_5m", "cache_write_tokens", styles.CacheWriteTokenColor, "5m TTL"))
 	}
 
 	if has1hCost {
-		// 1h row gets tokens only if 5m row doesn't exist
-		var tokens int64
-		if !has5mCost {
-			tokens = cacheWriteTokens
-		}
 		sb.WriteString(m.renderUnifiedCostRow(
-			"Cache write", a.TotalCost.CacheWrite1hCost, tokens,
+			"Cache write", a.TotalCost.CacheWrite1hCost, cache1hTokens,
 			"cache_write_1h", "cache_write_tokens", styles.CacheWriteTokenColor, "1h TTL"))
 	}
 
@@ -880,8 +878,11 @@ func (m Model) renderCostByModelContent() string {
 	for id, breakdown := range m.analysis.CostByModel {
 		models = append(models, modelCost{id, breakdown.TotalCost})
 	}
-	sort.Slice(models, func(i, j int) bool {
-		return models[i].cost > models[j].cost
+	sort.SliceStable(models, func(i, j int) bool {
+		if models[i].cost != models[j].cost {
+			return models[i].cost > models[j].cost
+		}
+		return models[i].id < models[j].id
 	})
 
 	for _, mc := range models {
@@ -892,7 +893,7 @@ func (m Model) renderCostByModelContent() string {
 		// Apply model color to the label (reduced padding from 18 to 12)
 		var labelStr string
 		if !m.noColor {
-			modelColor := getModelColor(mc.id)
+			modelColor := styles.GetModelColor(modelName)
 			labelStyle := lipgloss.NewStyle().Foreground(modelColor)
 			labelStr = labelStyle.Render(fmt.Sprintf("%-12s", modelName))
 		} else {
@@ -1021,7 +1022,7 @@ func (m Model) renderInsightsContent() string {
 		highlighted := m.isHighlighted("insights_first")
 
 		if !m.noColor {
-			labelStr := dimStyle.Render(fmt.Sprintf("%-8s", "First"))
+			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "First"))
 			costStr := formatCostStyled(first.Cost, 10, highlighted, m.noColor)
 			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", first.Timestamp.Format("15:04:05")))
 			componentCostStr := formatCostStyledDim(first.MainCostValue)
@@ -1032,7 +1033,7 @@ func (m Model) renderInsightsContent() string {
 				timestampStr,
 				componentStr))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s: %s\n",
+			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  %s: %s\n",
 				"First",
 				formatCost(first.Cost),
 				first.Timestamp.Format("15:04:05"),
@@ -1048,7 +1049,7 @@ func (m Model) renderInsightsContent() string {
 		highlighted := m.isHighlighted("insights_last")
 
 		if !m.noColor {
-			labelStr := dimStyle.Render(fmt.Sprintf("%-8s", "Last"))
+			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "Last"))
 			costStr := formatCostStyled(last.Cost, 10, highlighted, m.noColor)
 			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", last.Timestamp.Format("15:04:05")))
 			componentCostStr := formatCostStyledDim(last.MainCostValue)
@@ -1059,7 +1060,7 @@ func (m Model) renderInsightsContent() string {
 				timestampStr,
 				componentStr))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  %s: %s\n",
+			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  %s: %s\n",
 				"Last",
 				formatCost(last.Cost),
 				last.Timestamp.Format("15:04:05"),
@@ -1076,7 +1077,7 @@ func (m Model) renderInsightsContent() string {
 		highlighted := m.isHighlighted("insights_highest")
 
 		if !m.noColor {
-			labelStr := dimStyle.Render(fmt.Sprintf("%-8s", "Peak"))
+			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "Peak"))
 			costStr := formatCostStyled(highest.Cost, 10, highlighted, m.noColor)
 			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", highest.Timestamp.Format("15:04:05")))
 			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render("⚠ " + warningStr)
@@ -1086,7 +1087,7 @@ func (m Model) renderInsightsContent() string {
 				timestampStr,
 				warningStyled))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %-8s %s  (%s)  ! %s\n",
+			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  ! %s\n",
 				"Peak",
 				formatCost(highest.Cost),
 				highest.Timestamp.Format("15:04:05"),
@@ -1104,7 +1105,7 @@ func (m Model) renderInsightsContent() string {
 		lateStr := fmt.Sprintf("$%.2f/msg", insights.LateAvgCost)
 
 		if !m.noColor {
-			labelStr := dimStyle.Render(fmt.Sprintf("%-8s", "Trend"))
+			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "Trend"))
 			// Color the trend symbol and description based on direction
 			var symbolStyled, descStyled string
 			switch insights.CostTrend {
@@ -1131,7 +1132,7 @@ func (m Model) renderInsightsContent() string {
 				symbolStyled,
 				descStyled))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %-8s %s -> %s  %s %s\n",
+			sb.WriteString(fmt.Sprintf("    %-10s %s -> %s  %s %s\n",
 				"Trend",
 				earlyStr,
 				lateStr,
@@ -1164,6 +1165,9 @@ func formatCostComponentLabel(component string) string {
 // Commands
 
 func (m Model) loadAnalysis() tea.Msg {
+	if m.closing != nil && m.closing.Load() {
+		return nil
+	}
 	// Always include messages for the cost trend chart
 	// The verbose flag controls additional output details, but we need messages
 	// for the live chart regardless
@@ -1195,11 +1199,10 @@ func (m Model) watchFile() tea.Msg {
 	return watcherStartedMsg{watcher: watcher}
 }
 
-// waitForFileChange returns a command that waits for file changes or shutdown
-// Uses a loop instead of recursion to avoid unbounded goroutine spawning
+// waitForFileChange returns a command that waits for file changes or shutdown.
+// Coalesces rapid write events with a 50ms debounce to avoid redundant reloads.
 func (m Model) waitForFileChange() tea.Cmd {
 	return func() tea.Msg {
-		// Check shutdown flag before starting
 		if m.closing != nil && m.closing.Load() {
 			return nil
 		}
@@ -1207,33 +1210,49 @@ func (m Model) waitForFileChange() tea.Cmd {
 			return nil
 		}
 
-		// Ensure only one watcher goroutine runs at a time
-		// If another is already watching, exit early
-		if m.watching != nil && !m.watching.CompareAndSwap(false, true) {
-			return nil
-		}
-		// Mark as not watching when this goroutine exits
-		defer func() {
-			if m.watching != nil {
-				m.watching.Store(false)
-			}
-		}()
+		m.wg.Add(1)
+		defer m.wg.Done()
 
-		// Loop within this goroutine to avoid recursive goroutine creation
 		for {
 			select {
 			case <-m.done:
-				// Shutdown signal received
 				return nil
 			case event, ok := <-m.watcher.Events:
 				if !ok {
 					return nil
 				}
 				if event.Op&fsnotify.Write == fsnotify.Write {
+					// Debounce: wait for writes to settle before signaling reload
+					timer := time.NewTimer(watchDebounce)
+					defer timer.Stop()
+				drain:
+					for {
+						select {
+						case <-m.done:
+							return nil
+						case <-timer.C:
+							break drain
+						case ev, ok := <-m.watcher.Events:
+							if !ok {
+								return nil
+							}
+							if ev.Op&fsnotify.Write == fsnotify.Write {
+								if !timer.Stop() {
+									select {
+									case <-timer.C:
+									default:
+									}
+								}
+								timer.Reset(watchDebounce)
+							}
+						case _, ok := <-m.watcher.Errors:
+							if !ok {
+								return nil
+							}
+						}
+					}
 					return fileChangedMsg{}
 				}
-				// For other events (chmod, rename, etc.), continue looping
-				// instead of spawning a new goroutine
 				continue
 			case err, ok := <-m.watcher.Errors:
 				if !ok {
@@ -1273,6 +1292,9 @@ func (m Model) waitForNewSession() tea.Cmd {
 			return nil
 		}
 
+		m.wg.Add(1)
+		defer m.wg.Done()
+
 		path, id := m.sessionWatcher.WaitForNewSession()
 		if path == "" {
 			return nil // Shutdown or error
@@ -1305,7 +1327,7 @@ func (m Model) renderHeaderPanel(width int) string {
 	}
 
 	// Inner width (accounting for box borders and padding)
-	innerWidth := width - 4 // 2 for borders, 2 for padding
+	innerWidth := width - 6 // 2 for borders, 2 for left padding, 2 for right padding
 
 	// Build content parts
 	sessionDisplay := truncateID(m.sessionID)
@@ -1587,22 +1609,16 @@ func truncateID(id string) string {
 	if len(id) <= 8 {
 		return id
 	}
-	return id[:8]
+	return id[:5] + "..."
 }
 
-// getModelColor returns the appropriate color for a model based on its tier
-func getModelColor(modelID string) lipgloss.Color {
-	modelLower := strings.ToLower(modelID)
-	switch {
-	case strings.Contains(modelLower, "opus"):
-		return styles.OpusColor
-	case strings.Contains(modelLower, "sonnet"):
-		return styles.SonnetColor
-	case strings.Contains(modelLower, "haiku"):
-		return styles.HaikuColor
-	default:
-		return styles.SecondaryColor
+// getCacheTokensByTTL returns separate token counts for 5m and 1h TTL cache writes.
+// Falls back to aggregate (all 5m) when detailed breakdown unavailable.
+func getCacheTokensByTTL(usage models.TokenUsage) (int64, int64) {
+	if usage.CacheCreation != nil {
+		return usage.CacheCreation.Ephemeral5mInputTokens, usage.CacheCreation.Ephemeral1hInputTokens
 	}
+	return usage.CacheCreationInputTokens, 0
 }
 
 // formatContextProgressBar creates a visual progress bar showing context usage
@@ -1644,9 +1660,13 @@ func formatContextProgressBar(contextSize, freeSpace, buffer int64, maxContext i
 		}
 	}
 
-	// Final safety: ensure non-negative for strings.Repeat
+	// Final safety: ensure non-negative for strings.Repeat and total == barWidth
 	usedChars = max(0, usedChars)
 	freeChars = max(0, freeChars)
+	bufferChars = max(0, bufferChars)
+	if total := usedChars + freeChars + bufferChars; total < barWidth {
+		freeChars += barWidth - total
+	}
 
 	usedStr := strings.Repeat("█", usedChars)
 	freeStr := strings.Repeat("░", freeChars)
