@@ -540,10 +540,10 @@ func renderSessionBreakdown(sessions []models.SessionEntry, noColor bool, expand
 	for i, sd := range sessionData {
 		num := i + 1
 
-		// Truncate session ID with ellipsis (consistent with TUI truncateID)
+		// Truncate session ID to first 8 chars
 		shortID := sd.entry.SessionID
 		if len(shortID) > 8 {
-			shortID = shortID[:5] + "..."
+			shortID = shortID[:8]
 		}
 
 		// Format modified date with time (mainframe style: DD MMM HH:MM with uppercase month)

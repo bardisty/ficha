@@ -1609,7 +1609,7 @@ func truncateID(id string) string {
 	if len(id) <= 8 {
 		return id
 	}
-	return id[:5] + "..."
+	return id[:8]
 }
 
 // getCacheTokensByTTL returns separate token counts for 5m and 1h TTL cache writes.
