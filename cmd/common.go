@@ -78,7 +78,7 @@ func resolveProjectDirectory() (string, error) {
 		return "", err
 	}
 
-	// Try exact match first (fast path)
+	// Try exact match first (fast path, duplicated in paths.FindProjectDir for same reason)
 	exactDir, err := paths.GetProjectDirForPath(projPath)
 	if err != nil {
 		return "", err

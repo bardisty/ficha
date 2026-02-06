@@ -302,6 +302,7 @@ type ProjectAnalysis struct {
 	CostByModel  map[string]CostBreakdown `json:"cost_by_model"`
 	SessionCount int                      `json:"session_count"`
 	MessageCount int                      `json:"message_count"`
+	FirstActive  time.Time                `json:"first_active"`
 	LastActive   time.Time                `json:"last_active"`
 }
 

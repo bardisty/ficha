@@ -7,6 +7,7 @@ import (
 
 	"github.com/bardisty/ccusage/internal/models"
 	"github.com/bardisty/ccusage/internal/parser"
+	"github.com/bardisty/ccusage/internal/paths"
 )
 
 // projectResult holds the result of analyzing a single project
@@ -94,11 +95,13 @@ func AnalyzeAllProjects(projects []models.ProjectInfo) (*models.GlobalAnalysis, 
 		}
 
 		// Track time range
-		if !analysis.LastActive.IsZero() {
-			if !firstActiveSet || analysis.LastActive.Before(global.FirstActive) {
-				global.FirstActive = analysis.LastActive
+		if !analysis.FirstActive.IsZero() {
+			if !firstActiveSet || analysis.FirstActive.Before(global.FirstActive) {
+				global.FirstActive = analysis.FirstActive
 				firstActiveSet = true
 			}
+		}
+		if !analysis.LastActive.IsZero() {
 			if analysis.LastActive.After(global.LastActive) {
 				global.LastActive = analysis.LastActive
 			}
@@ -127,7 +130,7 @@ func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error)
 	}
 
 	// Try to load index (may not exist)
-	indexPath := project.FullPath + "/sessions-index.json"
+	indexPath := paths.GetSessionsIndexPath(project.FullPath)
 	index, _ := parser.ParseSessionsIndex(indexPath) // Ignore error - index may not exist
 
 	// Merge sources
@@ -156,10 +159,13 @@ func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error)
 		MessageCount: aggregate.MessageCount,
 	}
 
-	// Find last active time from sessions
+	// Find first/last active times from sessions
 	for _, session := range sessions {
 		if session.Modified.After(analysis.LastActive) {
 			analysis.LastActive = session.Modified
+		}
+		if analysis.FirstActive.IsZero() || session.Modified.Before(analysis.FirstActive) {
+			analysis.FirstActive = session.Modified
 		}
 	}
 

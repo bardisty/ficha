@@ -59,8 +59,10 @@ func GetProjectsDir() (string, error) {
 	return filepath.Join(configDir, "projects"), nil
 }
 
-// PathToProjectDir converts a filesystem path to the Claude project directory name
+// PathToProjectDir converts a filesystem path to the Claude project directory name.
 // e.g., /home/user/project -> -home-user-project
+// Note: encoding is lossy (e.g., underscores and slashes both become dashes),
+// which mirrors Claude Code's own behavior. Collisions are possible but rare.
 func PathToProjectDir(path string) string {
 	path = filepath.Clean(path)
 	// Replace all non-alphanumeric chars (except dash) with dashes
@@ -84,12 +86,9 @@ func CanonicalizePath(path string) (string, error) {
 	// This ensures /symlink/to/project and /real/path/to/project map to the same directory
 	realPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		// If the path doesn't exist yet, EvalSymlinks fails
-		// In that case, just return the absolute path
-		if os.IsNotExist(err) {
-			return path, nil
-		}
-		return "", err
+		// Fall back to uncanonicalized path for any error:
+		// ENOENT, ELOOP (circular symlinks), EACCES (permission denied), etc.
+		return path, nil
 	}
 
 	return realPath, nil
@@ -168,7 +167,7 @@ func FindProjectDir(path string, allProjects []models.ProjectInfo) (*ProjectMatc
 	encodedPath := PathToProjectDir(canonicalPath)
 	exactDir := filepath.Join(projectsDir, encodedPath)
 
-	// Try exact match first
+	// Try exact match first (duplicated in cmd/common.go resolveProjectDirectory for perf)
 	if info, err := os.Stat(exactDir); err == nil && info.IsDir() {
 		return &ProjectMatch{
 			ProjectDir:  exactDir,
@@ -186,7 +185,7 @@ func FindProjectDir(path string, allProjects []models.ProjectInfo) (*ProjectMatc
 		// Match by basename of originalPath
 		if proj.OriginalPath != "" {
 			projBasename := filepath.Base(proj.OriginalPath)
-			if projBasename == basename {
+			if strings.EqualFold(projBasename, basename) {
 				matches = append(matches, proj)
 			}
 		}
@@ -221,6 +220,14 @@ func ResolveProjectDir(projectDirFlag string) (string, error) {
 	if filepath.IsAbs(projectDirFlag) {
 		// Absolute path - use directly but validate it exists
 		fullPath = projectDirFlag
+	} else if strings.HasPrefix(projectDirFlag, "./") || strings.HasPrefix(projectDirFlag, "../") ||
+		projectDirFlag == "." || projectDirFlag == ".." {
+		// Relative path - convert to absolute before validating
+		absPath, err := filepath.Abs(projectDirFlag)
+		if err != nil {
+			return "", err
+		}
+		fullPath = absPath
 	} else {
 		// Assume it's an encoded directory name
 		projectsDir, err := GetProjectsDir()

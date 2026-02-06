@@ -20,6 +20,9 @@ func DiscoverAllProjects() ([]models.ProjectInfo, error) {
 
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -66,6 +69,8 @@ func DiscoverAllProjects() ([]models.ProjectInfo, error) {
 
 // getOriginalPathFromIndex reads sessions-index.json and returns the originalPath if present.
 // Falls back to projectPath from the first session entry if originalPath is empty.
+// Errors intentionally ignored: corrupt/unreadable index files fall back to
+// encoded directory name display via formatDisplayNameFromEncoded.
 func getOriginalPathFromIndex(projectDir string) string {
 	indexPath := filepath.Join(projectDir, "sessions-index.json")
 	index, err := ParseSessionsIndex(indexPath)
@@ -120,7 +125,10 @@ func formatDisplayNameFromPath(path string) string {
 	}
 
 	// Return full path with drive prefix
-	return drivePrefix + normalized
+	if drivePrefix != "" {
+		return drivePrefix + "/" + normalized
+	}
+	return normalized
 }
 
 // formatDisplayNameFromEncoded creates a display name from an encoded folder name.
@@ -138,6 +146,7 @@ func formatDisplayNameFromEncoded(encoded string) string {
 // stripUserPrefix removes the common user directory prefix from an encoded path.
 // Windows: C--Users-Brian- or C--Users-Brian--
 // Unix: -home-username- or -Users-username-
+// Note: uses runtime.GOOS dispatch, so cross-OS config transfers decode incorrectly.
 func stripUserPrefix(encoded string) string {
 	if runtime.GOOS == "windows" {
 		return stripWindowsUserPrefix(encoded)
@@ -172,17 +181,6 @@ func stripUnixUserPrefix(encoded string) string {
 	return encoded[1:]
 }
 
-// truncateWithEllipsis truncates a string to maxLen by taking the last N chars
-func truncateWithEllipsis(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-
-	// Take last (maxLen-3) chars, prefix with "..."
-	suffixLen := maxLen - 3
-	return "..." + s[len(s)-suffixLen:]
-}
-
 // resolveDisplayNameCollisions adds ~2, ~3, etc. suffixes when display names collide
 func resolveDisplayNameCollisions(projects []models.ProjectInfo) {
 	// Count occurrences of each display name
@@ -207,135 +205,6 @@ func resolveDisplayNameCollisions(projects []models.ProjectInfo) {
 // isDriveRoot checks if an encoded path represents a Windows drive root (e.g., "F--" for "F:\")
 func isDriveRoot(encoded string) bool {
 	return len(encoded) == 3 && isLetter(encoded[0]) && encoded[1] == '-' && encoded[2] == '-'
-}
-
-// generateUnixPathCandidates generates candidate paths for Unix systems
-func generateUnixPathCandidates(encoded string) []string {
-	// Remove leading dash if present
-	if len(encoded) > 0 && encoded[0] == '-' {
-		encoded = encoded[1:]
-	}
-
-	parts := strings.Split(encoded, "-")
-	if len(parts) < 2 {
-		return nil
-	}
-
-	// Build path by keeping last N segments joined with dashes
-	// This handles cases like "source-claude-code-usage" -> "source/claude-code-usage"
-	var candidates []string
-	for joinFrom := len(parts) - 1; joinFrom >= 1; joinFrom-- {
-		// Build path: /parts[0]/parts[1]/.../parts[joinFrom-1]/parts[joinFrom]-parts[joinFrom+1]-...
-		prefix := "/" + strings.Join(parts[:joinFrom], "/")
-		suffix := strings.Join(parts[joinFrom:], "-")
-		candidate := prefix + "/" + suffix
-		candidates = append(candidates, candidate)
-	}
-
-	return candidates
-}
-
-// generateWindowsPathCandidates generates candidate paths for Windows systems
-// For "C--Users-Brian-source-foo-bar", tries:
-//   - C:\Users\Brian\source\foo-bar
-//   - C:\Users\Brian\source-foo-bar
-//   - C:\Users\Brian-source-foo-bar
-//   - etc.
-//
-// Also handles "--" patterns which may represent "\.folder" (dot-prefixed folders)
-// since Claude Code encodes "." as "-" as well.
-func generateWindowsPathCandidates(encoded string) []string {
-	if len(encoded) < 4 {
-		return nil
-	}
-
-	// Check for drive letter pattern: "X--..." (e.g., "C--Users-...")
-	// The encoding produces C:\ → C-/ → C-- (colon to dash, then slash to dash)
-	if !isLetter(encoded[0]) || encoded[1] != '-' || encoded[2] != '-' {
-		return nil
-	}
-
-	driveLetter := string(encoded[0])
-	rest := encoded[3:] // Skip "X--"
-
-	var candidates []string
-
-	// First, try with "--" interpreted as "\." (dot-prefixed folder)
-	// e.g., "Users-Brian--config-yasb" → "Users\Brian\.config\yasb"
-	if strings.Contains(rest, "--") {
-		dotVariant := strings.ReplaceAll(rest, "--", "\\.")
-		dotVariant = strings.ReplaceAll(dotVariant, "-", "\\")
-		candidate := filepath.Clean(driveLetter + ":\\" + dotVariant)
-		candidates = append(candidates, candidate)
-	}
-
-	parts := strings.Split(rest, "-")
-
-	// Filter out empty parts (from "--" sequences)
-	var filteredParts []string
-	for _, p := range parts {
-		if p != "" {
-			filteredParts = append(filteredParts, p)
-		}
-	}
-
-	if len(filteredParts) < 2 {
-		return candidates // Return any dot-variant candidates we found
-	}
-
-	for joinFrom := len(filteredParts) - 1; joinFrom >= 1; joinFrom-- {
-		prefix := driveLetter + ":\\" + strings.Join(filteredParts[:joinFrom], "\\")
-		suffix := strings.Join(filteredParts[joinFrom:], "-")
-		candidate := prefix + "\\" + suffix
-		candidates = append(candidates, candidate)
-	}
-
-	return candidates
-}
-
-// DecodeProjectPath converts an encoded project directory name back to the original path
-// e.g., "-home-bah-source-foo" -> "/home/bah/source/foo"
-func DecodeProjectPath(encoded string) string {
-	if encoded == "" {
-		return ""
-	}
-
-	// Handle Windows-style paths (e.g., "C--Users-foo" -> "C:\Users\foo")
-	if runtime.GOOS == "windows" {
-		return decodeWindowsPath(encoded)
-	}
-
-	// Unix-style: "-home-bah-source-foo" -> "/home/bah/source/foo"
-	// Leading dash becomes leading slash
-	if strings.HasPrefix(encoded, "-") {
-		encoded = "/" + encoded[1:]
-	}
-	// Remaining dashes become slashes
-	return strings.ReplaceAll(encoded, "-", "/")
-}
-
-// decodeWindowsPath handles Windows-specific path decoding
-// e.g., "C--Users-foo" -> "C:\Users\foo"
-func decodeWindowsPath(encoded string) string {
-	// Windows encoding produces: C:\ → C:/ → C-/ → C--
-	// So "C--Users-foo-bar" decodes to "C:\Users\foo\bar" (naive, treating all dashes as separators)
-
-	if len(encoded) < 3 {
-		return encoded
-	}
-
-	// Check for drive letter pattern: "X--..." means "X:\..."
-	// The double-dash comes from: colon→dash, then backslash→slash→dash
-	if isLetter(encoded[0]) && encoded[1] == '-' && encoded[2] == '-' {
-		driveLetter := string(encoded[0])
-		rest := encoded[3:] // Skip "X--"
-		// Replace remaining dashes with backslashes
-		rest = strings.ReplaceAll(rest, "-", "\\")
-		return driveLetter + ":\\" + rest
-	}
-
-	// Fallback: just replace dashes with backslashes
-	return strings.ReplaceAll(encoded, "-", "\\")
 }
 
 func isLetter(c byte) bool {

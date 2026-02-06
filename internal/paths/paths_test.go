@@ -189,6 +189,20 @@ func TestFindProjectDir(t *testing.T) {
 		}
 	})
 
+	t.Run("case insensitive match", func(t *testing.T) {
+		// Looking for "OtherProject" (different case) should still match
+		match, err := FindProjectDir("/new/path/OtherProject", allProjects)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if match.MatchMethod != "suffix" {
+			t.Errorf("expected suffix match, got %s", match.MatchMethod)
+		}
+		if match.EncodedPath != "-other-path-otherproject" {
+			t.Errorf("expected -other-path-otherproject, got %s", match.EncodedPath)
+		}
+	})
+
 	t.Run("no match", func(t *testing.T) {
 		_, err := FindProjectDir("/path/to/unknownproject", allProjects)
 		if err == nil {
@@ -232,6 +246,27 @@ func TestResolveProjectDir(t *testing.T) {
 		_, err := ResolveProjectDir(filepath.Join(tempDir, "nonexistent"))
 		if err == nil {
 			t.Fatal("expected error for nonexistent path")
+		}
+	})
+
+	t.Run("relative path with dot prefix", func(t *testing.T) {
+		// Create a directory accessible via relative path
+		relDir := filepath.Join(tempDir, "rel-project")
+		if err := os.MkdirAll(relDir, 0755); err != nil {
+			t.Fatalf("failed to create dir: %v", err)
+		}
+
+		// Save and restore cwd
+		origDir, _ := os.Getwd()
+		defer os.Chdir(origDir)
+		os.Chdir(tempDir)
+
+		result, err := ResolveProjectDir("./rel-project")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != relDir {
+			t.Errorf("expected %s, got %s", relDir, result)
 		}
 	})
 }

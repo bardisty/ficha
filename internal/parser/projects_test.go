@@ -4,133 +4,6 @@ import (
 	"testing"
 )
 
-func TestDecodeProjectPath(t *testing.T) {
-	tests := []struct {
-		name     string
-		encoded  string
-		expected string
-	}{
-		{
-			name:     "empty string",
-			encoded:  "",
-			expected: "",
-		},
-		{
-			name:     "simple unix path",
-			encoded:  "-home-user-project",
-			expected: "/home/user/project",
-		},
-		{
-			name:     "path with dashes in name",
-			encoded:  "-home-user-my-project",
-			expected: "/home/user/my/project", // Naive decode - ambiguous
-		},
-		{
-			name:     "single component",
-			encoded:  "-tmp",
-			expected: "/tmp",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := DecodeProjectPath(tt.encoded)
-			if result != tt.expected {
-				t.Errorf("DecodeProjectPath(%q) = %q, want %q", tt.encoded, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestGenerateUnixPathCandidates(t *testing.T) {
-	// Test that candidates are generated correctly for Unix
-	encoded := "-home-user-my-project"
-	// Strip leading dash like generatePathCandidates does
-	candidates := generateUnixPathCandidates(encoded)
-
-	// Should generate multiple candidates
-	if len(candidates) == 0 {
-		t.Fatal("generateUnixPathCandidates should return candidates")
-	}
-
-	// Should include /home/user/my-project as a candidate
-	found := false
-	for _, c := range candidates {
-		if c == "/home/user/my-project" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("Expected /home/user/my-project in candidates, got: %v", candidates)
-	}
-
-	// Should include /home/user-my-project as a candidate
-	found = false
-	for _, c := range candidates {
-		if c == "/home/user-my-project" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("Expected /home/user-my-project in candidates, got: %v", candidates)
-	}
-}
-
-func TestGenerateWindowsPathCandidates(t *testing.T) {
-	// Test Windows path candidate generation
-	encoded := "C--Users-Brian-source-firefox-tab-management"
-	candidates := generateWindowsPathCandidates(encoded)
-
-	// Should generate multiple candidates
-	if len(candidates) == 0 {
-		t.Fatal("generateWindowsPathCandidates should return candidates")
-	}
-
-	// Should include C:\Users\Brian\source\firefox-tab-management
-	expected := `C:\Users\Brian\source\firefox-tab-management`
-	found := false
-	for _, c := range candidates {
-		if c == expected {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("Expected %s in candidates, got: %v", expected, candidates)
-	}
-
-	// Should include C:\Users\Brian\source-firefox-tab-management
-	expected = `C:\Users\Brian\source-firefox-tab-management`
-	found = false
-	for _, c := range candidates {
-		if c == expected {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("Expected %s in candidates, got: %v", expected, candidates)
-	}
-}
-
-func TestGenerateWindowsPathCandidates_DotFolder(t *testing.T) {
-	// Test handling of "--" which represents "\.folder" (dot-prefixed)
-	encoded := "C--Users-Brian--config-yasb"
-	candidates := generateWindowsPathCandidates(encoded)
-
-	if len(candidates) == 0 {
-		t.Fatal("generateWindowsPathCandidates should return candidates for dot-folder paths")
-	}
-
-	// First candidate should be the dot-variant: C:\Users\Brian\.config\yasb
-	expected := `C:\Users\Brian\.config\yasb`
-	if candidates[0] != expected {
-		t.Errorf("First candidate should be %s, got: %s", expected, candidates[0])
-	}
-}
-
 func TestIsDriveRoot(t *testing.T) {
 	tests := []struct {
 		encoded  string
@@ -197,7 +70,7 @@ func TestFormatDisplayNameFromPath(t *testing.T) {
 		{
 			name:     "shows full path with drive",
 			path:     "C:\\Users\\Brian\\source\\my-project",
-			expected: "C:Users/Brian/source/my-project",
+			expected: "C:/Users/Brian/source/my-project",
 		},
 		{
 			name:     "unix path (no drive)",
@@ -212,7 +85,7 @@ func TestFormatDisplayNameFromPath(t *testing.T) {
 		{
 			name:     "user home path",
 			path:     "C:\\Users\\Brian",
-			expected: "C:Users/Brian",
+			expected: "C:/Users/Brian",
 		},
 		{
 			name:     "unix home path",
@@ -227,7 +100,7 @@ func TestFormatDisplayNameFromPath(t *testing.T) {
 		{
 			name:     "deep path",
 			path:     "C:\\Users\\Brian\\AppData\\Roaming\\Heynote\\notes",
-			expected: "C:Users/Brian/AppData/Roaming/Heynote/notes",
+			expected: "C:/Users/Brian/AppData/Roaming/Heynote/notes",
 		},
 	}
 
@@ -327,76 +200,6 @@ func TestStripUnixUserPrefix(t *testing.T) {
 			result := stripUnixUserPrefix(tt.encoded)
 			if result != tt.expected {
 				t.Errorf("stripUnixUserPrefix(%q) = %q, want %q", tt.encoded, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestTruncateWithEllipsis(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		maxLen   int
-		expected string
-	}{
-		{
-			name:     "no truncation needed",
-			input:    "short",
-			maxLen:   25,
-			expected: "short",
-		},
-		{
-			name:     "simple truncation",
-			input:    "this-is-a-very-long-project-name-that-exceeds-limit",
-			maxLen:   25,
-			expected: "...ame-that-exceeds-limit",
-		},
-		{
-			name:     "exact truncation",
-			input:    "foo-bar-baz-qux-very-long-name",
-			maxLen:   20,
-			expected: "...ux-very-long-name",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := truncateWithEllipsis(tt.input, tt.maxLen)
-			if result != tt.expected {
-				t.Errorf("truncateWithEllipsis(%q, %d) = %q, want %q", tt.input, tt.maxLen, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestDecodeWindowsPath(t *testing.T) {
-	tests := []struct {
-		name     string
-		encoded  string
-		expected string
-	}{
-		{
-			name:     "simple path",
-			encoded:  "C--Users-Brian",
-			expected: `C:\Users\Brian`,
-		},
-		{
-			name:     "path with dashes in name (naive decode)",
-			encoded:  "C--Users-Brian-source-firefox-tab-management",
-			expected: `C:\Users\Brian\source\firefox\tab\management`,
-		},
-		{
-			name:     "short path",
-			encoded:  "C--tmp",
-			expected: `C:\tmp`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := decodeWindowsPath(tt.encoded)
-			if result != tt.expected {
-				t.Errorf("decodeWindowsPath(%q) = %q, want %q", tt.encoded, result, tt.expected)
 			}
 		})
 	}
