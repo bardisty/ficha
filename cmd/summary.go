@@ -54,6 +54,9 @@ func runSummary(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "Warning: %d agent sub-session(s) could not be parsed\n", analysis.SkippedAgents)
 	}
 
+	// Warn about unknown models (using fallback pricing)
+	warnUnknownModels(analysis.CostByModel)
+
 	// Update session ID to indicate it's a summary
 	analysis.SessionID = fmt.Sprintf("Summary (%d sessions)", len(sessions))
 

@@ -164,7 +164,14 @@ type AssistantMessage struct {
 // matching what Claude Code's /context command displays.
 // This is the sum of all input token types: regular, cache write, and cache read.
 func (t TokenUsage) ContextWindowSize() int64 {
-	return t.InputTokens + t.CacheCreationInputTokens + t.CacheReadInputTokens
+	cacheWriteTokens := t.CacheCreationInputTokens
+	if t.CacheCreation != nil {
+		ccSum := t.CacheCreation.Ephemeral5mInputTokens + t.CacheCreation.Ephemeral1hInputTokens
+		if ccSum > cacheWriteTokens {
+			cacheWriteTokens = ccSum
+		}
+	}
+	return t.InputTokens + cacheWriteTokens + t.CacheReadInputTokens
 }
 
 // Add aggregates token usage from another TokenUsage

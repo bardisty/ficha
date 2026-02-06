@@ -194,6 +194,26 @@ func TestParseResultWarning_InconsistentState(t *testing.T) {
 	// The key test: this must not panic
 }
 
+func TestExtractUsageReconcilesCacheCreation(t *testing.T) {
+	// CacheCreation present but CacheCreationInputTokens is 0 in JSON
+	input := `{"type":"assistant","timestamp":"2024-01-15T10:30:00Z","message":{"model":"claude-opus-4-5","usage":{"input_tokens":1000,"output_tokens":500,"cache_creation":{"ephemeral_5m_input_tokens":300,"ephemeral_1h_input_tokens":400}}}}`
+
+	messages, err := ParseJSONL(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	analyses := ExtractUsageFromMessages(messages)
+	if len(analyses) != 1 {
+		t.Fatalf("expected 1 analysis, got %d", len(analyses))
+	}
+
+	a := analyses[0]
+	if a.Usage.CacheCreationInputTokens != 700 {
+		t.Errorf("CacheCreationInputTokens: got %d, want 700 (reconciled from CacheCreation)", a.Usage.CacheCreationInputTokens)
+	}
+}
+
 func TestExtractUsageFromMessages(t *testing.T) {
 	input := `{"type":"assistant","timestamp":"2024-01-15T10:30:00Z","message":{"model":"claude-opus-4-5","usage":{"input_tokens":1000,"output_tokens":500,"cache_read_input_tokens":100}}}`
 

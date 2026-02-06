@@ -59,7 +59,7 @@ func runShow(cmd *cobra.Command, args []string) {
 	}
 
 	// Warn about unknown models (using fallback pricing)
-	warnUnknownModels(analysis)
+	warnUnknownModels(analysis.CostByModel)
 
 	// Output in requested format
 	output, err := formatOutput(analysis, includeMessages)

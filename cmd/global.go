@@ -81,6 +81,9 @@ func runGlobal(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "Warning: %d project(s) could not be analyzed\n", analysis.SkippedProjects)
 	}
 
+	// Warn about unknown models (using fallback pricing)
+	warnUnknownModels(analysis.CostByModel)
+
 	// Apply custom sort if requested
 	if globalSortBy != "cost" {
 		analyzer.SortProjectsBy(analysis.Projects, globalSortBy)

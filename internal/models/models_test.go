@@ -214,6 +214,44 @@ func TestContextWindowSize(t *testing.T) {
 			},
 			expected: 35500,
 		},
+		{
+			name: "CacheCreation only, no flat field",
+			usage: TokenUsage{
+				InputTokens:          100,
+				CacheReadInputTokens: 200,
+				CacheCreation: &CacheCreation{
+					Ephemeral5mInputTokens: 300,
+					Ephemeral1hInputTokens: 400,
+				},
+			},
+			expected: 100 + 700 + 200, // CC sum (700) > flat (0)
+		},
+		{
+			name: "CacheCreation sum > flat field",
+			usage: TokenUsage{
+				InputTokens:              100,
+				CacheCreationInputTokens: 500,
+				CacheReadInputTokens:     200,
+				CacheCreation: &CacheCreation{
+					Ephemeral5mInputTokens: 400,
+					Ephemeral1hInputTokens: 400,
+				},
+			},
+			expected: 100 + 800 + 200, // CC sum (800) > flat (500)
+		},
+		{
+			name: "flat field > CacheCreation sum",
+			usage: TokenUsage{
+				InputTokens:              100,
+				CacheCreationInputTokens: 1000,
+				CacheReadInputTokens:     200,
+				CacheCreation: &CacheCreation{
+					Ephemeral5mInputTokens: 300,
+					Ephemeral1hInputTokens: 400,
+				},
+			},
+			expected: 100 + 1000 + 200, // flat (1000) > CC sum (700)
+		},
 	}
 
 	for _, tt := range tests {

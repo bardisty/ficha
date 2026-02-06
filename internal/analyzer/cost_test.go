@@ -69,6 +69,20 @@ func TestCalculateCost(t *testing.T) {
 			modelID:       "claude-opus-4-5",
 			expectedTotal: 0,
 		},
+		{
+			name: "both CacheCreation and CacheCreationInputTokens",
+			usage: models.TokenUsage{
+				InputTokens:              500_000,
+				OutputTokens:             100_000,
+				CacheCreationInputTokens: 500_000, // flat field (should be ignored when CacheCreation present)
+				CacheCreation: &models.CacheCreation{
+					Ephemeral5mInputTokens: 250_000,
+					Ephemeral1hInputTokens: 250_000,
+				},
+			},
+			modelID:       "claude-sonnet-4-5",
+			expectedTotal: 1.5 + 1.5 + 0.9375 + 1.5, // input + output + 5m + 1h (uses CacheCreation detail)
+		},
 	}
 
 	for _, tt := range tests {
@@ -158,5 +172,45 @@ func TestAggregateUsage(t *testing.T) {
 	}
 	if total.CacheReadInputTokens != 45 {
 		t.Errorf("CacheReadInputTokens: got %d, want 45", total.CacheReadInputTokens)
+	}
+}
+
+func TestSanitizeNegativeTokens(t *testing.T) {
+	usage := models.TokenUsage{
+		InputTokens:              -100,
+		OutputTokens:             -200,
+		CacheCreationInputTokens: -300,
+		CacheReadInputTokens:     -400,
+		CacheCreation: &models.CacheCreation{
+			Ephemeral5mInputTokens: -500,
+			Ephemeral1hInputTokens: -600,
+		},
+	}
+
+	cost := CalculateCost(usage, "claude-sonnet-4-5")
+	if cost.TotalCost != 0 {
+		t.Errorf("TotalCost: got %f, want 0 (all negatives clamped)", cost.TotalCost)
+	}
+}
+
+func TestSanitizePointerAliasing(t *testing.T) {
+	original := &models.CacheCreation{
+		Ephemeral5mInputTokens: -100,
+		Ephemeral1hInputTokens: 200,
+	}
+	usage := models.TokenUsage{
+		InputTokens:   1000,
+		OutputTokens:  500,
+		CacheCreation: original,
+	}
+
+	CalculateCost(usage, "claude-sonnet-4-5")
+
+	// Original struct must be unchanged (sanitize should deep-copy)
+	if original.Ephemeral5mInputTokens != -100 {
+		t.Errorf("Ephemeral5mInputTokens mutated: got %d, want -100", original.Ephemeral5mInputTokens)
+	}
+	if original.Ephemeral1hInputTokens != 200 {
+		t.Errorf("Ephemeral1hInputTokens mutated: got %d, want 200", original.Ephemeral1hInputTokens)
 	}
 }

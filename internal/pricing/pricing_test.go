@@ -25,6 +25,8 @@ func TestGetModelPricing(t *testing.T) {
 		{"sonnet 4 versioned", "claude-sonnet-4-20250514", 3.00, 15.00},
 		{"sonnet 3.7 exact", "claude-sonnet-3-7", 3.00, 15.00},
 		{"sonnet 3.7 versioned", "claude-sonnet-3-7-20250219", 3.00, 15.00},
+		{"sonnet 3.7 alt format", "claude-3-7-sonnet", 3.00, 15.00},
+		{"sonnet 3.7 alt versioned", "claude-3-7-sonnet-20250219", 3.00, 15.00},
 		{"haiku 4.5 exact", "claude-haiku-4-5", 1.00, 5.00},
 		{"haiku 4.5 versioned", "claude-haiku-4-5-20250101", 1.00, 5.00},
 		{"claude 3.5 sonnet", "claude-3-5-sonnet", 3.00, 15.00},
@@ -68,6 +70,8 @@ func TestGetModelDisplayName(t *testing.T) {
 		{"claude-sonnet-4-20250514", "Sonnet 4"},
 		{"claude-sonnet-3-7", "Sonnet 3.7"},
 		{"claude-sonnet-3-7-20250219", "Sonnet 3.7"},
+		{"claude-3-7-sonnet", "Sonnet 3.7"},
+		{"claude-3-7-sonnet-20250219", "Sonnet 3.7"},
 		{"claude-haiku-4-5", "Haiku 4.5"},
 		{"claude-3-5-sonnet", "Sonnet 3.5"},
 		{"claude-3-5-haiku", "Haiku 3.5"},
@@ -126,7 +130,10 @@ func TestNormalizeModelID(t *testing.T) {
 		{"claude-sonnet-4", "claude-sonnet-4"},
 		{"claude-sonnet-3-7-20250219", "claude-sonnet-3-7"},
 		{"claude-sonnet-3-7", "claude-sonnet-3-7"},
+		{"claude-3-7-sonnet-20250219", "claude-3-7-sonnet"},
+		{"claude-3-7-sonnet", "claude-3-7-sonnet"},
 		{"claude-3-5-sonnet-20241022", "claude-3-5-sonnet"},
+		{"claude-opus-4-10-20260601", "claude-opus-4"},
 		{"some-other-model", "some-other-model"},
 	}
 
@@ -153,6 +160,7 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-sonnet-4-5", true},
 		{"claude-sonnet-4", true},
 		{"claude-sonnet-3-7", true},
+		{"claude-3-7-sonnet", true},
 		{"claude-haiku-4-5", true},
 		{"claude-3-5-sonnet", true},
 		{"claude-3-5-haiku", true},
@@ -168,12 +176,16 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-sonnet-4-5-20251022", true},
 		{"claude-sonnet-4-20250514", true},
 		{"claude-sonnet-3-7-20250219", true},
+		{"claude-3-7-sonnet-20250219", true},
 		{"claude-haiku-4-5-20250101", true},
 		{"claude-3-5-sonnet-20241022", true},
 		{"claude-3-5-haiku-20241022", true},
 		{"claude-3-opus-20240229", true},
 		{"claude-3-sonnet-20240229", true},
 		{"claude-3-haiku-20240307", true},
+
+		// Versioned variants that match a broader prefix (F5 boundary guard)
+		{"claude-opus-4-10-20260601", true},
 
 		// Unknown models - should return false
 		{"unknown-model", false},

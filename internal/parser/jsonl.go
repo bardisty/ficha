@@ -138,6 +138,10 @@ func ExtractUsageFromMessages(messages []models.JSONLMessage) []models.MessageAn
 			Model:     msg.Message.Model,
 			Usage:     msg.Message.Usage,
 		}
+		// Reconcile CacheCreationInputTokens with detailed CacheCreation
+		if analysis.Usage.CacheCreation != nil {
+			analysis.Usage.CacheCreationInputTokens = analysis.Usage.CacheCreation.Ephemeral5mInputTokens + analysis.Usage.CacheCreation.Ephemeral1hInputTokens
+		}
 		analyses = append(analyses, analysis)
 	}
 

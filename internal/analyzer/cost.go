@@ -101,6 +101,8 @@ func sanitizeTokenUsage(usage models.TokenUsage) models.TokenUsage {
 		usage.CacheReadInputTokens = 0
 	}
 	if usage.CacheCreation != nil {
+		cc := *usage.CacheCreation
+		usage.CacheCreation = &cc
 		if usage.CacheCreation.Ephemeral5mInputTokens < 0 {
 			usage.CacheCreation.Ephemeral5mInputTokens = 0
 		}

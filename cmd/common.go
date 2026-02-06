@@ -141,10 +141,10 @@ func formatNoProjectError(projPath string, allProjects []models.ProjectInfo) err
 	return errors.New(sb.String())
 }
 
-// warnUnknownModels prints a warning if any models in the analysis have unknown pricing
-func warnUnknownModels(analysis *models.SessionAnalysis) {
+// warnUnknownModels prints a warning if any models have unknown pricing
+func warnUnknownModels(costByModel map[string]models.CostBreakdown) {
 	var unknownModels []string
-	for model := range analysis.CostByModel {
+	for model := range costByModel {
 		if !pricing.IsKnownModel(model) {
 			unknownModels = append(unknownModels, model)
 		}

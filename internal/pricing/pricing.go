@@ -71,6 +71,11 @@ var modelPricing = map[string]ModelPricing{
 		OutputRate:       15.00,
 		MaxContextTokens: 200000,
 	},
+	"claude-3-7-sonnet": {
+		InputRate:        3.00,
+		OutputRate:       15.00,
+		MaxContextTokens: 200000,
+	},
 	"claude-3-5-sonnet": {
 		InputRate:        3.00,
 		OutputRate:       15.00,
@@ -136,6 +141,7 @@ func normalizeModelID(modelID string) string {
 		"claude-sonnet-4",
 		"claude-sonnet-3-7",
 		"claude-haiku-4-5",
+		"claude-3-7-sonnet",
 		"claude-3-5-sonnet",
 		"claude-3-5-haiku",
 		"claude-3-opus",
@@ -145,7 +151,10 @@ func normalizeModelID(modelID string) string {
 
 	for _, pattern := range patterns {
 		if strings.HasPrefix(modelID, pattern) {
-			return pattern
+			rest := modelID[len(pattern):]
+			if rest == "" || rest[0] == '-' {
+				return pattern
+			}
 		}
 	}
 
@@ -164,6 +173,7 @@ func GetModelDisplayName(modelID string) string {
 		"claude-sonnet-4-5": "Sonnet 4.5",
 		"claude-sonnet-4":   "Sonnet 4",
 		"claude-sonnet-3-7": "Sonnet 3.7",
+		"claude-3-7-sonnet": "Sonnet 3.7",
 		"claude-haiku-4-5":  "Haiku 4.5",
 		"claude-3-5-sonnet": "Sonnet 3.5",
 		"claude-3-5-haiku":  "Haiku 3.5",
