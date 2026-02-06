@@ -39,23 +39,35 @@ Examples:
   ccusage list               List all sessions for current project
   ccusage summary            Show aggregate stats across all sessions
   ccusage --live             Watch session in real-time`,
+	SilenceErrors: true,
+	SilenceUsage:  true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Validate format flag
 		if !validFormats[format] {
 			return fmt.Errorf("invalid format %q: must be one of table, json, csv", format)
 		}
+		// TUI/live modes only support table format.
+		// Note: cmd.Name() checks are needed because watch sets live=true in Run (after PreRunE).
+		isTUI := live || cmd.Name() == "breakdown" || cmd.Name() == "watch"
+		if isTUI && format != "table" {
+			return fmt.Errorf("--format %s is not supported in live/TUI mode", format)
+		}
+		// Warn about --no-follow outside live/watch/breakdown
+		if noFollow && !live && cmd.Name() != "watch" && cmd.Name() != "breakdown" {
+			fmt.Fprintln(os.Stderr, "Warning: --no-follow has no effect outside live/watch/breakdown mode")
+		}
 		return nil
 	},
-	Run: func(cmd *cobra.Command, args []string) {
-		// Default behavior: show latest session
-		showCmd.Run(cmd, args)
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runShow(cmd, args)
 	},
 }
 
 // Execute runs the root command
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }

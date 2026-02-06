@@ -25,14 +25,13 @@ Examples:
   ccusage show --live             Watch latest session in real-time
   ccusage show -f json            Output as JSON`,
 	Args: cobra.MaximumNArgs(1),
-	Run:  runShow,
+	RunE: runShow,
 }
 
-func runShow(cmd *cobra.Command, args []string) {
+func runShow(cmd *cobra.Command, args []string) error {
 	session, projectDir, explicitSessionID, err := selectSession(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	// Live mode
@@ -41,16 +40,14 @@ func runShow(cmd *cobra.Command, args []string) {
 		// - User specified a session ID explicitly (pinned to that session)
 		// - User passed --no-follow flag
 		followMode := !explicitSessionID && !noFollow
-		runLiveMode(session, projectDir, followMode)
-		return
+		return runLiveMode(session, projectDir, followMode)
 	}
 
 	// Analyze the session
 	includeMessages := format == "csv" || verbose
 	analysis, err := analyzer.AnalyzeSession(session.FullPath, session.SessionID, includeMessages)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error analyzing session: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("analyzing session: %w", err)
 	}
 
 	// Warn about skipped agents
@@ -64,21 +61,21 @@ func runShow(cmd *cobra.Command, args []string) {
 	// Output in requested format
 	output, err := formatOutput(analysis, includeMessages)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error formatting output: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("formatting output: %w", err)
 	}
 
 	fmt.Println(output)
+	return nil
 }
 
-func runLiveMode(session *models.SessionEntry, projectDir string, followMode bool) {
+func runLiveMode(session *models.SessionEntry, projectDir string, followMode bool) error {
 	model := tui.NewModel(session.FullPath, session.SessionID, verbose, noColor, projectDir, followMode)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("running TUI: %w", err)
 	}
+	return nil
 }
 
 func formatOutput(analysis *models.SessionAnalysis, includeMessages bool) (string, error) {

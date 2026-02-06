@@ -20,9 +20,9 @@ Examples:
   ccusage watch --no-follow       Watch latest session, don't auto-follow
   ccusage watch abc123            Watch specific session (pinned, no auto-follow)`,
 	Args: cobra.MaximumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// Set live mode and run show
 		live = true
-		runShow(cmd, args)
+		return runShow(cmd, args)
 	},
 }

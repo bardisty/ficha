@@ -45,7 +45,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	const sectionWidth = 76
 
 	// Detect summary vs show mode
-	isSummary := strings.HasPrefix(analysis.SessionID, "Summary")
+	isSummary := analysis.IsSummary
 
 	// Header panel
 	sb.WriteString(renderHeaderPanel(analysis, sectionWidth, noColor))
@@ -134,9 +134,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 
 	footerText := fmt.Sprintf("Messages: %s", msgStr)
 	if isSummary {
-		// Extract session count from the ID (format: "Summary (N sessions)")
-		var sessionCount int
-		_, _ = fmt.Sscanf(analysis.SessionID, "Summary (%d sessions)", &sessionCount)
+		sessionCount := analysis.SessionCount
 		if sessionCount > 0 {
 			footerText += fmt.Sprintf("  │  Sessions: %d", sessionCount)
 		}
@@ -162,7 +160,7 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 	const sectionWidth = 76
 
 	// Detect summary vs show mode
-	isSummary := strings.HasPrefix(analysis.SessionID, "Summary")
+	isSummary := analysis.IsSummary
 
 	// Header panel
 	sb.WriteString(renderHeaderPanel(analysis, sectionWidth, true))
@@ -244,8 +242,7 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 
 	footerText := fmt.Sprintf("Messages: %s", msgStr)
 	if isSummary {
-		var sessionCount int
-		_, _ = fmt.Sscanf(analysis.SessionID, "Summary (%d sessions)", &sessionCount)
+		sessionCount := analysis.SessionCount
 		if sessionCount > 0 {
 			footerText += fmt.Sprintf("  |  Sessions: %d", sessionCount)
 		}
@@ -345,8 +342,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, sessions []
 			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
 	}
 
-	var sessionCount int
-	_, _ = fmt.Sscanf(analysis.SessionID, "Summary (%d sessions)", &sessionCount)
+	sessionCount := analysis.SessionCount
 
 	footerText := fmt.Sprintf("Messages: %s  │  Sessions: %d", msgStr, sessionCount)
 	sb.WriteString(footerStyle.Render(footerText))
@@ -436,8 +432,7 @@ func formatSummaryTableWithDetailsPlain(analysis *models.SessionAnalysis, sessio
 			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
 	}
 
-	var sessionCount int
-	_, _ = fmt.Sscanf(analysis.SessionID, "Summary (%d sessions)", &sessionCount)
+	sessionCount := analysis.SessionCount
 
 	footerText := fmt.Sprintf("Messages: %s  |  Sessions: %d", msgStr, sessionCount)
 	sb.WriteString(footerText)
@@ -917,15 +912,19 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 	innerWidth := width - 6 // 2 for borders, 2 for left padding, 2 for right padding
 
 	// Detect summary vs show mode
-	isSummary := strings.HasPrefix(analysis.SessionID, "Summary")
+	isSummary := analysis.IsSummary
 
 	// Build content parts - use consistent format for both plain and styled
 	var titlePart string
 	var sessionCount int
+	var sessionWord string
 	if isSummary {
-		// Extract session count from ID (format: "Summary (N sessions)")
-		_, _ = fmt.Sscanf(analysis.SessionID, "Summary (%d sessions)", &sessionCount)
-		titlePart = fmt.Sprintf("Summary: %d sessions", sessionCount)
+		sessionCount = analysis.SessionCount
+		sessionWord = "sessions"
+		if sessionCount == 1 {
+			sessionWord = "session"
+		}
+		titlePart = fmt.Sprintf("Summary: %d %s", sessionCount, sessionWord)
 	} else {
 		titlePart = fmt.Sprintf("Session: %s", truncateID(analysis.SessionID))
 	}
@@ -965,9 +964,9 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 		// Build styled content - matches plain text format
 		var titleStyled string
 		if isSummary {
-			titleStyled = fmt.Sprintf("%s %d sessions",
+			titleStyled = fmt.Sprintf("%s %d %s",
 				sectionHeaderStyle.Render("Summary:"),
-				sessionCount)
+				sessionCount, sessionWord)
 		} else {
 			titleStyled = fmt.Sprintf("%s %s",
 				sectionHeaderStyle.Render("Session:"),

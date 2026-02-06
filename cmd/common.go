@@ -14,8 +14,8 @@ import (
 	"github.com/bardisty/ccusage/internal/pricing"
 )
 
-// ErrNoSessions is returned when no sessions are found
-var ErrNoSessions = errors.New("no sessions found")
+// ErrSessionNotFound is returned when a specific session ID cannot be matched
+var ErrSessionNotFound = errors.New("session not found")
 
 // loadProjectSessions loads all sessions for the current project.
 // It handles project path resolution, disk scanning, index loading, and source merging.
@@ -52,7 +52,7 @@ func loadProjectSessionsWithDir() ([]models.SessionEntry, string, error) {
 	sessions, orphanCount := parser.MergeSessionSources(index, diskSessions)
 
 	if len(sessions) == 0 {
-		return nil, "", ErrNoSessions
+		return nil, "", fmt.Errorf("no sessions found in %s", projDir)
 	}
 
 	// Warn about orphans (only in verbose mode - this is common and usually not actionable)
@@ -115,13 +115,17 @@ func resolveProjectDirectory() (string, error) {
 func formatNoProjectError(projPath string, allProjects []models.ProjectInfo) error {
 	basename := strings.ToLower(filepath.Base(projPath))
 
-	// Find similar projects by partial basename match
+	// Find similar projects by prefix basename match
 	var suggestions []string
+	const maxSuggestions = 5
 	for _, proj := range allProjects {
 		if proj.OriginalPath != "" {
 			projBasename := strings.ToLower(filepath.Base(proj.OriginalPath))
-			if strings.Contains(projBasename, basename) || strings.Contains(basename, projBasename) {
+			if strings.HasPrefix(projBasename, basename) || strings.HasPrefix(basename, projBasename) {
 				suggestions = append(suggestions, fmt.Sprintf("  %s (original: %s)", proj.EncodedPath, proj.OriginalPath))
+				if len(suggestions) >= maxSuggestions {
+					break
+				}
 			}
 		}
 	}
@@ -150,6 +154,7 @@ func warnUnknownModels(costByModel map[string]models.CostBreakdown) {
 		}
 	}
 	if len(unknownModels) > 0 {
+		sort.Strings(unknownModels)
 		if len(unknownModels) == 1 {
 			fmt.Fprintf(os.Stderr, "Warning: unknown model %q using fallback pricing\n", unknownModels[0])
 		} else {
@@ -170,19 +175,22 @@ func selectSession(args []string) (*models.SessionEntry, string, bool, error) {
 	if explicitSessionID {
 		session, err := findSessionByPartialID(sessions, args[0])
 		if err != nil {
+			if errors.Is(err, ErrSessionNotFound) {
+				return nil, "", false, fmt.Errorf("session not found: %s", args[0])
+			}
 			return nil, "", false, err
-		}
-		if session == nil {
-			return nil, "", false, fmt.Errorf("session not found: %s", args[0])
 		}
 		return session, projectDir, true, nil
 	}
 
-	// Get latest session (sort by modified time)
-	sort.Slice(sessions, func(i, j int) bool {
+	// Get latest session (sort by modified time, SessionID tiebreaker)
+	sort.SliceStable(sessions, func(i, j int) bool {
+		if sessions[i].Modified.Equal(sessions[j].Modified) {
+			return sessions[i].SessionID < sessions[j].SessionID
+		}
 		return sessions[i].Modified.After(sessions[j].Modified)
 	})
-	// Note: len(sessions) == 0 case is already handled by loadProjectSessionsWithDir returning ErrNoSessions
+	// Note: len(sessions) == 0 is already handled by loadProjectSessionsWithDir
 	return &sessions[0], projectDir, false, nil
 }
 
@@ -190,12 +198,12 @@ func selectSession(args []string) (*models.SessionEntry, string, bool, error) {
 // Returns the matching session, or an error if multiple sessions match.
 func findSessionByPartialID(sessions []models.SessionEntry, partialID string) (*models.SessionEntry, error) {
 	if len(sessions) == 0 {
-		return nil, nil
+		return nil, ErrSessionNotFound
 	}
 
 	// Empty ID would match all sessions via prefix matching - reject it
 	if partialID == "" {
-		return nil, nil
+		return nil, ErrSessionNotFound
 	}
 
 	// Try exact match first
@@ -214,17 +222,22 @@ func findSessionByPartialID(sessions []models.SessionEntry, partialID string) (*
 	}
 
 	if len(matches) == 0 {
-		return nil, nil
+		return nil, ErrSessionNotFound
 	}
 
 	if len(matches) == 1 {
 		return &matches[0], nil
 	}
 
-	// Multiple matches - return error with list
+	// Multiple matches - return error with list (capped at 10)
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("ambiguous session ID %q matches %d sessions:\n", partialID, len(matches)))
-	for _, m := range matches {
+	displayLimit := 10
+	for i, m := range matches {
+		if i >= displayLimit {
+			sb.WriteString(fmt.Sprintf("  ... and %d more\n", len(matches)-displayLimit))
+			break
+		}
 		sb.WriteString(fmt.Sprintf("  %s\n", m.SessionID))
 	}
 	return nil, fmt.Errorf("%s", sb.String())

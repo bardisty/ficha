@@ -1349,7 +1349,9 @@ func (m Model) renderHeaderPanel(width int) string {
 	// Calculate separator positions
 	sep := styles.BoxVerticalSep
 	content := fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart)
-	contentLen := len(sessionPart) + 2 + 1 + 2 + len(livePart) + 2 + 1 + 2 + len(statusPart)
+	// Use runeCount for display width — len() overcounts multi-byte UTF-8 chars like ● (3 bytes, 1 column)
+	liveDisplayLen := len([]rune(livePart))
+	contentLen := len(sessionPart) + 2 + 1 + 2 + liveDisplayLen + 2 + 1 + 2 + len(statusPart)
 	padding := innerWidth - contentLen
 	if padding < 0 {
 		padding = 0

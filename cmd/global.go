@@ -6,7 +6,6 @@ import (
 
 	"github.com/bardisty/ccusage/internal/analyzer"
 	"github.com/bardisty/ccusage/internal/formatter"
-	"github.com/bardisty/ccusage/internal/models"
 	"github.com/bardisty/ccusage/internal/parser"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +30,7 @@ Examples:
   ccusage global --top 20          Show top 20 projects
   ccusage global --sort-by name    Sort by project name
   ccusage global -f json           Output as JSON`,
-	Run: runGlobal,
+	RunE: runGlobal,
 }
 
 func init() {
@@ -39,41 +38,37 @@ func init() {
 	globalCmd.Flags().IntVarP(&globalTopN, "top", "n", 10, "Number of top projects to show")
 	globalCmd.Flags().StringVar(&globalSortBy, "sort-by", "cost", "Sort by: cost, sessions, name, activity")
 	globalCmd.Flags().BoolVar(&globalNoCache, "no-cache", false, "Skip cache, force fresh analysis (reserved for future use)")
+	_ = globalCmd.Flags().MarkHidden("no-cache")
 
 	rootCmd.AddCommand(globalCmd)
 }
 
-func runGlobal(cmd *cobra.Command, args []string) {
+func runGlobal(cmd *cobra.Command, args []string) error {
+	// Validate --sort-by
+	validSortValues := map[string]bool{"cost": true, "sessions": true, "name": true, "activity": true}
+	if !validSortValues[globalSortBy] {
+		return fmt.Errorf("invalid --sort-by value %q: must be one of cost, sessions, name, activity", globalSortBy)
+	}
+
+	// Global command shows all projects — reject project-specific flags
+	if projectPath != "" || projectDir != "" {
+		return fmt.Errorf("--project and --project-dir flags are not supported with the global command")
+	}
+
 	// Discover all projects
 	projects, err := parser.DiscoverAllProjects()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error discovering projects: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("discovering projects: %w", err)
 	}
 
 	if len(projects) == 0 {
-		fmt.Fprintln(os.Stderr, "No Claude projects found in ~/.claude/projects/")
-		os.Exit(1)
+		return fmt.Errorf("no Claude projects found in ~/.claude/projects/")
 	}
 
-	// Filter to projects that have sessions
-	var projectsWithSessions []models.ProjectInfo
-	for _, p := range projects {
-		if parser.HasSessions(p.FullPath) {
-			projectsWithSessions = append(projectsWithSessions, p)
-		}
-	}
-
-	if len(projectsWithSessions) == 0 {
-		fmt.Fprintln(os.Stderr, "No Claude projects with sessions found")
-		os.Exit(1)
-	}
-
-	// Analyze all projects
-	analysis, err := analyzer.AnalyzeAllProjects(projectsWithSessions)
+	// Analyze all projects (analyzeProject handles empty-session projects internally)
+	analysis, err := analyzer.AnalyzeAllProjects(projects)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error analyzing projects: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("analyzing projects: %w", err)
 	}
 
 	// Warn about skipped projects
@@ -95,18 +90,17 @@ func runGlobal(cmd *cobra.Command, args []string) {
 	case "json":
 		output, err = formatter.FormatGlobalJSON(analysis, true)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error formatting output: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("formatting output: %w", err)
 		}
 	case "csv":
 		output, err = formatter.FormatGlobalCSV(analysis)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error formatting output: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("formatting output: %w", err)
 		}
 	default:
 		output = formatter.FormatGlobalTable(analysis, noColor, globalTopN, globalDetails)
 	}
 
 	fmt.Println(output)
+	return nil
 }

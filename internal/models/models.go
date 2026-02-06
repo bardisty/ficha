@@ -125,6 +125,8 @@ type SessionAnalysis struct {
 	AgentMessageCount  int                      `json:"agent_message_count"`        // Messages from all agents
 	SkippedAgents      int                      `json:"skipped_agents,omitempty"`   // Agents that failed to parse
 	SkippedSessions    int                      `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)
+	IsSummary          bool                     `json:"-"`                          // True for aggregate summaries
+	SessionCount       int                      `json:"-"`                          // Number of sessions in summary
 }
 
 // SessionEntry represents an entry in sessions-index.json

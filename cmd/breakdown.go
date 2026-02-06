@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/bardisty/ccusage/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,18 +28,17 @@ Examples:
   ccusage breakdown --no-follow  Show breakdown for latest, don't auto-follow
   ccusage breakdown abc123       Show breakdown for specific session (pinned)`,
 	Args: cobra.MaximumNArgs(1),
-	Run:  runBreakdown,
+	RunE: runBreakdown,
 }
 
 func init() {
 	rootCmd.AddCommand(breakdownCmd)
 }
 
-func runBreakdown(cmd *cobra.Command, args []string) {
+func runBreakdown(cmd *cobra.Command, args []string) error {
 	session, projectDir, explicitSessionID, err := selectSession(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	// Auto-follow is enabled by default unless:
@@ -53,7 +51,7 @@ func runBreakdown(cmd *cobra.Command, args []string) {
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("running TUI: %w", err)
 	}
+	return nil
 }

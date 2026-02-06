@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"sort"
 
 	"github.com/bardisty/ccusage/internal/formatter"
@@ -21,14 +20,13 @@ Examples:
   ccusage list                    List all sessions
   ccusage list -f json            Output as JSON
   ccusage list -f csv             Output as CSV`,
-	Run: runList,
+	RunE: runList,
 }
 
-func runList(cmd *cobra.Command, args []string) {
+func runList(cmd *cobra.Command, args []string) error {
 	sessions, err := loadProjectSessions()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	// Sort sessions by modified time (most recent first)
@@ -40,25 +38,28 @@ func runList(cmd *cobra.Command, args []string) {
 	case "json":
 		output, err = formatter.FormatSessionListJSON(sessions, true)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error formatting output: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("formatting output: %w", err)
 		}
 	case "csv":
 		output, err = formatter.FormatSessionListCSV(sessions)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error formatting output: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("formatting output: %w", err)
 		}
 	default:
 		output = formatter.FormatSessionListTable(sessions, noColor)
 	}
 
 	fmt.Println(output)
+	return nil
 }
 
-// sortSessionsByModified sorts sessions by modified time (most recent first)
+// sortSessionsByModified sorts sessions by modified time (most recent first).
+// Uses SessionID as a tiebreaker for deterministic ordering.
 func sortSessionsByModified(sessions []models.SessionEntry) {
-	sort.Slice(sessions, func(i, j int) bool {
+	sort.SliceStable(sessions, func(i, j int) bool {
+		if sessions[i].Modified.Equal(sessions[j].Modified) {
+			return sessions[i].SessionID < sessions[j].SessionID
+		}
 		return sessions[i].Modified.After(sessions[j].Modified)
 	})
 }
