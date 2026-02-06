@@ -3,6 +3,7 @@ package parser
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -201,7 +202,8 @@ func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.Sess
 
 	for _, disk := range diskSessions {
 		if indexed, ok := indexMap[disk.SessionID]; ok {
-			// Prefer index metadata but preserve agent info from disk
+			// Prefer index metadata but use disk values for paths and agent info
+			indexed.FullPath = disk.FullPath
 			indexed.AgentPaths = disk.AgentPaths
 			indexed.AgentCount = disk.AgentCount
 			indexed.AgentMessageCount = disk.AgentMessageCount
@@ -219,9 +221,11 @@ func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.Sess
 		}
 	}
 
-	// Add any index entries for files that no longer exist (rare)
+	// Add index entries only if their files still exist on disk
 	for _, e := range indexMap {
-		merged = append(merged, e)
+		if _, err := os.Stat(e.FullPath); err == nil {
+			merged = append(merged, e)
+		}
 	}
 
 	return merged, orphanCount
@@ -265,7 +269,8 @@ func ExtractAgentID(agentPath string) string {
 }
 
 // countMessagesInFile counts assistant messages in a JSONL file
-// Returns -1 on error (file access, buffer overflow, I/O) to distinguish from empty files (0)
+// Returns -1 on error (file access, I/O) to distinguish from empty files (0)
+// Returns partial count on buffer overflow (oversized lines are skipped)
 func countMessagesInFile(path string) int {
 	file, err := os.Open(path)
 	if err != nil {
@@ -284,14 +289,18 @@ func countMessagesInFile(path string) int {
 			continue
 		}
 		var msg struct {
-			Type string `json:"type"`
+			Type    string           `json:"type"`
+			Message *json.RawMessage `json:"message"`
 		}
-		if json.Unmarshal(line, &msg) == nil && msg.Type == "assistant" {
+		if json.Unmarshal(line, &msg) == nil && msg.Type == "assistant" && msg.Message != nil {
 			count++
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return -1 // Buffer overflow or I/O error
+		if errors.Is(err, bufio.ErrTooLong) {
+			return count // Return partial count for oversized lines
+		}
+		return -1 // I/O error
 	}
 	return count
 }

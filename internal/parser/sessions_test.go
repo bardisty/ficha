@@ -292,9 +292,9 @@ func TestMergeSessionSources(t *testing.T) {
 		t.Errorf("expected 1 orphan, got %d", orphanCount)
 	}
 
-	// Should have 3 sessions total: 2 from disk (1 matched, 1 orphan) + 1 from index only
-	if len(merged) != 3 {
-		t.Errorf("expected 3 merged sessions, got %d", len(merged))
+	// Should have 2 sessions: 1 matched + 1 orphan (session-2 is a ghost — filtered)
+	if len(merged) != 2 {
+		t.Errorf("expected 2 merged sessions, got %d", len(merged))
 	}
 
 	// Check that session-1 has the index metadata (with Created time)
@@ -327,11 +327,11 @@ func TestMergeOrphanDetection(t *testing.T) {
 func TestMergeIndexOnly(t *testing.T) {
 	t1 := time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC)
 
-	// Index has entries for files that no longer exist
+	// Index has entries for files that no longer exist on disk
 	index := &models.SessionsIndex{
 		Entries: []models.SessionEntry{
-			{SessionID: "deleted-1", Created: t1},
-			{SessionID: "deleted-2", Created: t1},
+			{SessionID: "deleted-1", FullPath: "/nonexistent/deleted-1.jsonl", Created: t1},
+			{SessionID: "deleted-2", FullPath: "/nonexistent/deleted-2.jsonl", Created: t1},
 		},
 	}
 
@@ -344,9 +344,9 @@ func TestMergeIndexOnly(t *testing.T) {
 		t.Errorf("expected 0 orphans (only index entries), got %d", orphanCount)
 	}
 
-	// Should still include index entries
-	if len(merged) != 2 {
-		t.Errorf("expected 2 merged sessions from index, got %d", len(merged))
+	// Ghost sessions should be filtered out — files don't exist
+	if len(merged) != 0 {
+		t.Errorf("expected 0 merged sessions (ghost sessions filtered), got %d", len(merged))
 	}
 }
 
@@ -668,5 +668,127 @@ func TestDiscoverAgentSessions_SessionDirNotExist(t *testing.T) {
 
 	if paths != nil && len(paths) != 0 {
 		t.Errorf("expected nil or empty paths for nonexistent session, got %v", paths)
+	}
+}
+
+func TestMergeGhostSessionsFiltered(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "ghost-sessions-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create one real file on disk
+	realPath := filepath.Join(tmpDir, "real-session.jsonl")
+	if err := os.WriteFile(realPath, []byte(`{"type":"assistant","message":{"model":"test","usage":{}}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t1 := time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC)
+
+	// Index has entries: one with a real file, two with nonexistent files
+	index := &models.SessionsIndex{
+		Entries: []models.SessionEntry{
+			{SessionID: "real-session", FullPath: realPath, Created: t1},
+			{SessionID: "ghost-1", FullPath: "/nonexistent/ghost-1.jsonl", Created: t1},
+			{SessionID: "ghost-2", FullPath: "/nonexistent/ghost-2.jsonl", Created: t1},
+		},
+	}
+
+	// Only ghost sessions remain in index (real-session matched disk)
+	diskSessions := []models.SessionEntry{
+		{SessionID: "real-session", FullPath: realPath, Modified: t1, MessageCount: 1},
+	}
+
+	merged, orphanCount := MergeSessionSources(index, diskSessions)
+
+	if orphanCount != 0 {
+		t.Errorf("expected 0 orphans, got %d", orphanCount)
+	}
+
+	// Should have 1: real-session matched. ghost-1 and ghost-2 filtered.
+	if len(merged) != 1 {
+		t.Errorf("expected 1 merged session (ghosts filtered), got %d", len(merged))
+	}
+
+	if len(merged) > 0 && merged[0].SessionID != "real-session" {
+		t.Errorf("expected real-session, got %s", merged[0].SessionID)
+	}
+}
+
+func TestMergeFullPathFromDisk(t *testing.T) {
+	t1 := time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC)
+
+	index := &models.SessionsIndex{
+		Entries: []models.SessionEntry{
+			{SessionID: "session-1", FullPath: "/old/path/session-1.jsonl", Created: t1},
+		},
+	}
+
+	diskSessions := []models.SessionEntry{
+		{SessionID: "session-1", FullPath: "/new/path/session-1.jsonl", Modified: t1, MessageCount: 5},
+	}
+
+	merged, _ := MergeSessionSources(index, diskSessions)
+
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged session, got %d", len(merged))
+	}
+
+	// FullPath should come from disk, not the stale index
+	if merged[0].FullPath != "/new/path/session-1.jsonl" {
+		t.Errorf("expected disk FullPath, got %s", merged[0].FullPath)
+	}
+
+	// Created should still come from index
+	if merged[0].Created.IsZero() {
+		t.Error("expected Created time from index to be preserved")
+	}
+}
+
+func TestCountMessagesInFile_BufferOverflow(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "overflow-count-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	testFile := filepath.Join(tmpDir, "overflow.jsonl")
+	validLine := `{"type":"assistant","message":{"model":"test","usage":{}}}`
+	// Create oversized line exceeding 10MB scanner buffer
+	oversizedLine := `{"type":"assistant","message":{"model":"test","data":"` + string(make([]byte, 11*1024*1024)) + `"}}`
+	content := validLine + "\n" + oversizedLine
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	count := countMessagesInFile(testFile)
+	// Should return partial count (1), not -1
+	if count != 1 {
+		t.Errorf("expected partial count 1, got %d", count)
+	}
+}
+
+func TestCountMessagesInFile_NullMessage(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "null-message-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	testFile := filepath.Join(tmpDir, "null-msg.jsonl")
+	content := `{"type":"assistant","message":null}
+{"type":"assistant","message":{"model":"test","usage":{}}}
+{"type":"assistant"}`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	count := countMessagesInFile(testFile)
+	// Only the second line has a non-null message
+	if count != 1 {
+		t.Errorf("expected 1 (only non-null message), got %d", count)
 	}
 }

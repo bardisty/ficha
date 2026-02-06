@@ -3,6 +3,7 @@ package parser
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,7 +28,10 @@ func (r ParseResult) Warning() string {
 		return ""
 	}
 	if r.SkippedLines == 1 {
-		return fmt.Sprintf("warning: 1 malformed line skipped (line %d)", r.SkippedAt[0])
+		if len(r.SkippedAt) > 0 {
+			return fmt.Sprintf("warning: 1 malformed line skipped (line %d)", r.SkippedAt[0])
+		}
+		return "warning: 1 malformed line skipped"
 	}
 	// Show first few line numbers if there are many
 	if len(r.SkippedAt) > 5 {
@@ -106,6 +110,14 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			// Return partial results — one oversized line shouldn't destroy the session
+			result.SkippedLines++
+			if len(result.SkippedAt) < maxSkippedLineNumbers {
+				result.SkippedAt = append(result.SkippedAt, lineNum+1)
+			}
+			return result, nil
+		}
 		return nil, err
 	}
 

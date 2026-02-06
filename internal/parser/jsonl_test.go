@@ -159,6 +159,41 @@ func TestParseResultWarning(t *testing.T) {
 	}
 }
 
+func TestParseJSONLWithResult_BufferOverflow(t *testing.T) {
+	// Build a reader with valid messages followed by an oversized line
+	validLine := `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":50}}}`
+	// Create a line that exceeds scannerMaxBufSize (10MB)
+	oversizedLine := strings.Repeat("x", 11*1024*1024)
+	input := validLine + "\n" + oversizedLine
+
+	result, err := ParseJSONLWithResult(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("expected no error (partial results), got: %v", err)
+	}
+	if len(result.Messages) != 1 {
+		t.Errorf("expected 1 message (partial result), got %d", len(result.Messages))
+	}
+	if result.SkippedLines != 1 {
+		t.Errorf("expected 1 skipped line (overflow), got %d", result.SkippedLines)
+	}
+	if len(result.SkippedAt) != 1 || result.SkippedAt[0] != 2 {
+		t.Errorf("expected SkippedAt=[2], got %v", result.SkippedAt)
+	}
+}
+
+func TestParseResultWarning_InconsistentState(t *testing.T) {
+	// Externally constructed ParseResult with SkippedLines=1 but empty SkippedAt
+	r := ParseResult{SkippedLines: 1, SkippedAt: []int{}}
+	warning := r.Warning()
+	if warning == "" {
+		t.Error("expected non-empty warning")
+	}
+	if !strings.Contains(warning, "1 malformed line skipped") {
+		t.Errorf("unexpected warning text: %q", warning)
+	}
+	// The key test: this must not panic
+}
+
 func TestExtractUsageFromMessages(t *testing.T) {
 	input := `{"type":"assistant","timestamp":"2024-01-15T10:30:00Z","message":{"model":"claude-opus-4-5","usage":{"input_tokens":1000,"output_tokens":500,"cache_read_input_tokens":100}}}`
 
