@@ -271,6 +271,62 @@ func TestResolveProjectDir(t *testing.T) {
 	})
 }
 
+func TestCanonicalizePath(t *testing.T) {
+	t.Run("absolute path", func(t *testing.T) {
+		// An absolute path that exists should resolve
+		tmpDir, err := os.MkdirTemp("", "canon-test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		result, err := CanonicalizePath(tmpDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !filepath.IsAbs(result) {
+			t.Errorf("expected absolute path, got %q", result)
+		}
+	})
+
+	t.Run("symlink resolution", func(t *testing.T) {
+		tmpDir, err := os.MkdirTemp("", "canon-symlink-test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		realDir := filepath.Join(tmpDir, "real")
+		if err := os.Mkdir(realDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		linkDir := filepath.Join(tmpDir, "link")
+		if err := os.Symlink(realDir, linkDir); err != nil {
+			t.Skip("symlink creation not supported")
+		}
+
+		result, err := CanonicalizePath(linkDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != realDir {
+			t.Errorf("expected %q, got %q", realDir, result)
+		}
+	})
+
+	t.Run("nonexistent path fallback", func(t *testing.T) {
+		path := "/nonexistent/path/to/project"
+		result, err := CanonicalizePath(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Should fall back to the uncanonicalized path
+		if result != path {
+			t.Errorf("expected fallback to %q, got %q", path, result)
+		}
+	})
+}
+
 func TestAmbiguousProjectError(t *testing.T) {
 	err := &AmbiguousProjectError{
 		Basename: "myproject",

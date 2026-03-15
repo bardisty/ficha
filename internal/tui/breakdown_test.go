@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -167,23 +168,23 @@ func TestBreakdownModel_RenderRow(t *testing.T) {
 	row := m.renderRow(msg, false, 0.0, true) // prevCost=0, isFirst=true
 
 	// Check that the row contains expected values
-	if !containsSubstring(row, "42") {
+	if !strings.Contains(row, "42") {
 		t.Error("row should contain index 42")
 	}
-	if !containsSubstring(row, "14:30:45") {
+	if !strings.Contains(row, "14:30:45") {
 		t.Error("row should contain timestamp")
 	}
-	if !containsSubstring(row, "Sonnet 4") {
+	if !strings.Contains(row, "Sonnet 4") {
 		t.Error("row should contain model name 'Sonnet 4'")
 	}
-	if !containsSubstring(row, "$0.051200") {
+	if !strings.Contains(row, "$0.051200") {
 		t.Error("row should contain cost with 6 decimal places")
 	}
-	if !containsSubstring(row, "1.2K") {
+	if !strings.Contains(row, "1.2K") {
 		t.Error("row should contain input tokens")
 	}
 	// Check trend indicator (first message, should be stable ·)
-	if !containsSubstring(row, "·") {
+	if !strings.Contains(row, "·") {
 		t.Error("row should contain stable trend indicator · for first message")
 	}
 }
@@ -208,12 +209,51 @@ func TestBreakdownModel_RenderRow_WithAgent(t *testing.T) {
 	row := m.renderRow(msg, false, 0.05, false) // prevCost=0.05, isFirst=false
 
 	// Check agent marker is present
-	if !containsSubstring(row, "[A1]") {
+	if !strings.Contains(row, "[A1]") {
 		t.Error("row should contain agent marker [A1]")
 	}
 	// Check model name is present (agent using Haiku)
-	if !containsSubstring(row, "Haiku 4.5") {
+	if !strings.Contains(row, "Haiku 4.5") {
 		t.Error("row should contain model name 'Haiku 4.5'")
+	}
+}
+
+func TestBreakdownModel_RenderRow_ANSICodes(t *testing.T) {
+	msg := models.BreakdownMessage{
+		Index:     1,
+		Timestamp: time.Date(2024, 1, 15, 14, 30, 45, 0, time.UTC),
+		Model:     "claude-sonnet-4",
+		Usage:     models.TokenUsage{InputTokens: 100, OutputTokens: 50},
+		Cost:      models.CostBreakdown{TotalCost: 0.05},
+	}
+
+	// noColor=false takes color code path
+	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
+	coloredRow := m.renderRow(msg, false, 0.0, true)
+
+	// noColor=true takes plain code path - must not contain ANSI
+	m2 := NewBreakdownModel("/test/path", "test-session", true, "", false)
+	plainRow := m2.renderRow(msg, false, 0.0, true)
+
+	if strings.Contains(plainRow, "\x1b[") {
+		t.Error("noColor output should not contain ANSI escape codes")
+	}
+
+	// Both rows should contain essential data
+	for _, row := range []string{coloredRow, plainRow} {
+		if !strings.Contains(row, "14:30:45") {
+			t.Errorf("row should contain timestamp: %q", row)
+		}
+		if !strings.Contains(row, "Sonnet 4") {
+			t.Errorf("row should contain model name: %q", row)
+		}
+	}
+
+	// In a TTY environment, colored output would contain ANSI codes;
+	// in non-TTY test environments, lipgloss may strip them.
+	// Verify the colored path was exercised by checking both produce valid output.
+	if !strings.Contains(coloredRow, "14:30:45") {
+		t.Errorf("colored row should contain timestamp: %q", coloredRow)
 	}
 }
 
@@ -297,16 +337,3 @@ func TestGetRowTrendIndicator(t *testing.T) {
 	}
 }
 
-func containsSubstring(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && containsSubstringHelper(s, substr)))
-}
-
-func containsSubstringHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

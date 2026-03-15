@@ -186,9 +186,9 @@ func TestGetBreakdownMessages_CostCalculation(t *testing.T) {
 		t.Errorf("expected 500 output tokens, got %d", msg.Usage.OutputTokens)
 	}
 
-	// Verify cost was calculated (should be > 0 for non-zero tokens)
-	if msg.Cost.TotalCost <= 0 {
-		t.Error("expected positive total cost")
+	// Verify exact cost: 1000 input @ $3/M + 500 output @ $15/M = 0.003 + 0.0075 = 0.0105
+	if !almostEqual(msg.Cost.TotalCost, 0.0105, 0.0001) {
+		t.Errorf("TotalCost: got %f, want 0.0105", msg.Cost.TotalCost)
 	}
 
 	// Verify model is preserved

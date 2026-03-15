@@ -770,6 +770,44 @@ func TestCountMessagesInFile_BufferOverflow(t *testing.T) {
 	}
 }
 
+func TestMergeDuplicateSessionIDsInIndex(t *testing.T) {
+	// Index has 2 entries with same ID - last wins in Go map
+	t1 := time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC)
+	index := &models.SessionsIndex{
+		Entries: []models.SessionEntry{
+			{SessionID: "dup-id", FullPath: "/path/first.jsonl", Created: t1, MessageCount: 5},
+			{SessionID: "dup-id", FullPath: "/path/second.jsonl", Created: t1, MessageCount: 10},
+		},
+	}
+	diskSessions := []models.SessionEntry{
+		{SessionID: "dup-id", FullPath: "/path/first.jsonl", Modified: t1, MessageCount: 5},
+	}
+	merged, _ := MergeSessionSources(index, diskSessions)
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged session, got %d", len(merged))
+	}
+}
+
+func TestMergeBothNilAndEmpty(t *testing.T) {
+	// nil index + nil disk
+	merged1, orphans1 := MergeSessionSources(nil, nil)
+	if len(merged1) != 0 {
+		t.Errorf("nil+nil: expected 0 merged, got %d", len(merged1))
+	}
+	if orphans1 != 0 {
+		t.Errorf("nil+nil: expected 0 orphans, got %d", orphans1)
+	}
+
+	// nil index + empty disk
+	merged2, orphans2 := MergeSessionSources(nil, []models.SessionEntry{})
+	if len(merged2) != 0 {
+		t.Errorf("nil+empty: expected 0 merged, got %d", len(merged2))
+	}
+	if orphans2 != 0 {
+		t.Errorf("nil+empty: expected 0 orphans, got %d", orphans2)
+	}
+}
+
 func TestCountMessagesInFile_NullMessage(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "null-message-test")
 	if err != nil {

@@ -99,26 +99,6 @@ This project uses semantic versioning. The version is stored in the `VERSION` fi
 
 **Pre-1.0 note:** While version is 0.x.y, minor version bumps may include breaking changes without going to 1.0.
 
-## Multi-Model Agent Pattern
-
-For complex analysis tasks where uncertainty or ambiguity exists, use a multi-model approach:
-
-**When to use:**
-- Architectural decisions with multiple valid approaches
-- Complex codebase analysis where interpretation matters
-- Tasks where disagreement between models reveals genuine uncertainty
-
-**When NOT to use:**
-- Routine exploration or simple file searches
-- Straightforward analysis with clear answers
-
-**Pattern:**
-1. Spawn 3 agents in parallel with identical prompts: Haiku, Sonnet, and Opus
-2. Have a 4th Opus agent (synthesizer) review all outputs and report:
-   - **Overlap**: Points where multiple models agree (higher confidence)
-   - **Contradictions**: Areas of disagreement (reveals uncertainty)
-   - **Best insights**: Select the strongest analysis from each
-
 ## Working Style Reminder
 
 This section reinforces the critical working style expectations:

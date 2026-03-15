@@ -57,6 +57,30 @@ func TestGetModelColor(t *testing.T) {
 	}
 }
 
+func TestGetContextUsageColor(t *testing.T) {
+	tests := []struct {
+		name     string
+		pct      float64
+		expected lipgloss.Color
+	}{
+		{"0% → green", 0, ContextLowColor},
+		{"64.9% → green", 64.9, ContextLowColor},
+		{"65.0% → orange", 65.0, ContextHighColor},
+		{"74.9% → orange", 74.9, ContextHighColor},
+		{"75.0% → red", 75.0, ContextCriticalColor},
+		{"100% → red", 100.0, ContextCriticalColor},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetContextUsageColor(tt.pct)
+			if got != tt.expected {
+				t.Errorf("GetContextUsageColor(%v) = %v, want %v", tt.pct, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestGetCostGradientColor(t *testing.T) {
 	// Test the gradient: 0-50%=neutral, 50-75%=yellow, 75-90%=orange, 90%+=red
 	tests := []struct {

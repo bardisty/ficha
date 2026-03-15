@@ -1,7 +1,11 @@
 package parser
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/bardisty/ccusage/internal/models"
 )
 
 func TestIsDriveRoot(t *testing.T) {
@@ -202,6 +206,64 @@ func TestStripUnixUserPrefix(t *testing.T) {
 				t.Errorf("stripUnixUserPrefix(%q) = %q, want %q", tt.encoded, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestHasSessions(t *testing.T) {
+	// With .jsonl file → true
+	tmpDir, err := os.MkdirTemp("", "has-sessions-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.jsonl"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if !HasSessions(tmpDir) {
+		t.Error("expected true when .jsonl file exists")
+	}
+
+	// Without .jsonl → false
+	emptyDir, err := os.MkdirTemp("", "no-sessions-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(emptyDir)
+	if HasSessions(emptyDir) {
+		t.Error("expected false for empty directory")
+	}
+
+	// Nonexistent → false
+	if HasSessions("/nonexistent/path/xyz") {
+		t.Error("expected false for nonexistent directory")
+	}
+}
+
+func TestResolveDisplayNameCollisions(t *testing.T) {
+	projects := []models.ProjectInfo{
+		{DisplayName: "myproject"},
+		{DisplayName: "myproject"},
+		{DisplayName: "myproject"},
+		{DisplayName: "unique"},
+	}
+	resolveDisplayNameCollisions(projects)
+
+	// First occurrence keeps original name
+	if projects[0].DisplayName != "myproject" {
+		t.Errorf("first: got %q, want %q", projects[0].DisplayName, "myproject")
+	}
+	// Second gets ~2
+	if projects[1].DisplayName != "myproject~2" {
+		t.Errorf("second: got %q, want %q", projects[1].DisplayName, "myproject~2")
+	}
+	// Third gets ~3
+	if projects[2].DisplayName != "myproject~3" {
+		t.Errorf("third: got %q, want %q", projects[2].DisplayName, "myproject~3")
+	}
+	// Unique stays unchanged
+	if projects[3].DisplayName != "unique" {
+		t.Errorf("unique: got %q, want %q", projects[3].DisplayName, "unique")
 	}
 }
 

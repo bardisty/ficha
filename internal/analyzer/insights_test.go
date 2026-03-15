@@ -1,7 +1,6 @@
 package analyzer
 
 import (
-	"math"
 	"testing"
 	"time"
 
@@ -52,7 +51,7 @@ func TestCalculateInsights_SingleMessage(t *testing.T) {
 	}
 
 	// Average should equal the single message cost
-	if !almostEqualInsights(result.AverageCost, 0.15, 0.001) {
+	if !almostEqual(result.AverageCost, 0.15, 0.001) {
 		t.Errorf("Expected AverageCost=0.15, got %f", result.AverageCost)
 	}
 
@@ -86,10 +85,10 @@ func TestCalculateInsights_TwoMessages(t *testing.T) {
 	}
 
 	// Check first and last
-	if !almostEqualInsights(result.FirstMessage.Cost, 0.10, 0.001) {
+	if !almostEqual(result.FirstMessage.Cost, 0.10, 0.001) {
 		t.Errorf("Expected FirstMessage.Cost=0.10, got %f", result.FirstMessage.Cost)
 	}
-	if !almostEqualInsights(result.LastMessage.Cost, 0.05, 0.001) {
+	if !almostEqual(result.LastMessage.Cost, 0.05, 0.001) {
 		t.Errorf("Expected LastMessage.Cost=0.05, got %f", result.LastMessage.Cost)
 	}
 
@@ -118,13 +117,13 @@ func TestCalculateInsights_FiveMessages_DecreasingTrend(t *testing.T) {
 
 	// Early avg = (0.30 + 0.25 + 0.20) / 3 = 0.25
 	expectedEarlyAvg := 0.25
-	if !almostEqualInsights(result.EarlyAvgCost, expectedEarlyAvg, 0.001) {
+	if !almostEqual(result.EarlyAvgCost, expectedEarlyAvg, 0.001) {
 		t.Errorf("Expected EarlyAvgCost=%f, got %f", expectedEarlyAvg, result.EarlyAvgCost)
 	}
 
 	// Late avg = (0.20 + 0.10 + 0.05) / 3 = 0.1167
 	expectedLateAvg := (0.20 + 0.10 + 0.05) / 3
-	if !almostEqualInsights(result.LateAvgCost, expectedLateAvg, 0.001) {
+	if !almostEqual(result.LateAvgCost, expectedLateAvg, 0.001) {
 		t.Errorf("Expected LateAvgCost=%f, got %f", expectedLateAvg, result.LateAvgCost)
 	}
 
@@ -202,12 +201,12 @@ func TestCalculateInsights_HighestCostNotable(t *testing.T) {
 		t.Fatal("Expected HighestCost to be set")
 	}
 
-	if !almostEqualInsights(result.HighestCost.Cost, 0.50, 0.001) {
+	if !almostEqual(result.HighestCost.Cost, 0.50, 0.001) {
 		t.Errorf("Expected HighestCost.Cost=0.50, got %f", result.HighestCost.Cost)
 	}
 
 	multiplier := result.CostMultiplier()
-	if !almostEqualInsights(multiplier, 2.5, 0.01) {
+	if !almostEqual(multiplier, 2.5, 0.01) {
 		t.Errorf("Expected multiplier=2.5, got %f", multiplier)
 	}
 }
@@ -331,7 +330,7 @@ func TestGetMainCostComponent(t *testing.T) {
 			if name != tt.expectedName {
 				t.Errorf("Expected component name %q, got %q", tt.expectedName, name)
 			}
-			if !almostEqualInsights(value, tt.expectedValue, 0.001) {
+			if !almostEqual(value, tt.expectedValue, 0.001) {
 				t.Errorf("Expected value %f, got %f", tt.expectedValue, value)
 			}
 		})
@@ -424,7 +423,7 @@ func TestMessageInsights_CostMultiplier(t *testing.T) {
 	// Normal case
 	insights.AverageCost = 0.10
 	mult := insights.CostMultiplier()
-	if !almostEqualInsights(mult, 5.0, 0.001) {
+	if !almostEqual(mult, 5.0, 0.001) {
 		t.Errorf("Expected multiplier 5.0, got %f", mult)
 	}
 }
@@ -456,10 +455,10 @@ func TestCalculateInsights_ManyMessages(t *testing.T) {
 	}
 
 	// First = 0.10, Last = 0.19
-	if !almostEqualInsights(result.FirstMessage.Cost, 0.10, 0.001) {
+	if !almostEqual(result.FirstMessage.Cost, 0.10, 0.001) {
 		t.Errorf("Expected FirstMessage.Cost=0.10, got %f", result.FirstMessage.Cost)
 	}
-	if !almostEqualInsights(result.LastMessage.Cost, 0.19, 0.001) {
+	if !almostEqual(result.LastMessage.Cost, 0.19, 0.001) {
 		t.Errorf("Expected LastMessage.Cost=0.19, got %f", result.LastMessage.Cost)
 	}
 
@@ -467,8 +466,4 @@ func TestCalculateInsights_ManyMessages(t *testing.T) {
 	if result.CostTrend != models.TrendIncreasing {
 		t.Errorf("Expected TrendIncreasing, got %v", result.CostTrend)
 	}
-}
-
-func almostEqualInsights(a, b, tolerance float64) bool {
-	return math.Abs(a-b) < tolerance
 }
