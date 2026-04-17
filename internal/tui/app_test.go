@@ -121,8 +121,8 @@ func TestFormatCostStyledBoldGreen_NoColor(t *testing.T) {
 }
 
 func TestFormatContextProgressBar_NoColor(t *testing.T) {
-	// 50% usage: contextSize=50000, freeSpace=25000, buffer=25000, maxContext=100000
-	bar := formatContextProgressBar(50000, 25000, 25000, 100000, true)
+	// 50% usage: contextSize=50000, freeSpace=50000, maxContext=100000
+	bar := formatContextProgressBar(50000, 50000, 100000, true)
 
 	// Must start with [ and end with ]
 	if !strings.HasPrefix(bar, "[") || !strings.HasSuffix(bar, "]") {
@@ -135,15 +135,12 @@ func TestFormatContextProgressBar_NoColor(t *testing.T) {
 		t.Errorf("bar rune length = %d, want 40", runeCount)
 	}
 
-	// Should contain all three segment types
+	// Should contain used and free segment types
 	if !strings.ContainsRune(bar, '\u2588') { // █
 		t.Error("bar should contain filled segments (█)")
 	}
 	if !strings.ContainsRune(bar, '\u2591') { // ░
 		t.Error("bar should contain free segments (░)")
-	}
-	if !strings.ContainsRune(bar, '\u2592') { // ▒
-		t.Error("bar should contain buffer segments (▒)")
 	}
 
 	// No ANSI
@@ -153,7 +150,7 @@ func TestFormatContextProgressBar_NoColor(t *testing.T) {
 }
 
 func TestFormatContextProgressBar_MaxContextZero(t *testing.T) {
-	bar := formatContextProgressBar(0, 0, 0, 0, true)
+	bar := formatContextProgressBar(0, 0, 0, true)
 	// maxContext=0 early-returns all free blocks without brackets
 	expected := strings.Repeat("░", 38)
 	if bar != expected {
@@ -304,9 +301,9 @@ func TestGetChartWidth(t *testing.T) {
 		want  int
 	}{
 		{"zero width returns default", 0, 68},
-		{"wide terminal", 80, 68},          // 80-8=72 > 68, capped at 68
-		{"narrow terminal", 50, 42},        // 50-8=42 < 68, use 42
-		{"very narrow terminal", 10, 2},    // 10-8=2 < 68, use 2
+		{"wide terminal", 80, 68},       // 80-8=72 > 68, capped at 68
+		{"narrow terminal", 50, 42},     // 50-8=42 < 68, use 42
+		{"very narrow terminal", 10, 2}, // 10-8=2 < 68, use 2
 	}
 
 	for _, tt := range tests {

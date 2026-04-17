@@ -126,7 +126,6 @@ var (
 	ContextHighColor     = lipgloss.Color("214") // Orange - 65-75% (approaching compaction)
 	ContextCriticalColor = ErrorColor            // Red - 75%+ (compaction territory)
 	ContextFreeColor     = lipgloss.Color("252") // Bright gray - clearly visible free space
-	ContextBufferColor   = lipgloss.Color("236") // Dark gray - reserved buffer (distinct from free)
 )
 
 // GetContextUsageColor returns the appropriate color based on context usage percentage.

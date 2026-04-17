@@ -336,4 +336,3 @@ func TestGetRowTrendIndicator(t *testing.T) {
 		})
 	}
 }
-

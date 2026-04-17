@@ -792,7 +792,6 @@ func (m Model) renderContextSection() string {
 	maxContext := modelPricing.MaxContextTokens
 	contextPct := pricing.GetContextPercentage(modelPricing, contextSize)
 	freeSpace := pricing.GetFreeSpace(modelPricing, contextSize)
-	buffer := pricing.GetAutocompactBuffer(modelPricing)
 	freePct := float64(freeSpace) / float64(maxContext) * 100
 
 	highlighted := m.isHighlighted("context_window")
@@ -803,25 +802,24 @@ func (m Model) renderContextSection() string {
 	contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(int64(maxContext)))
 
 	if m.noColor {
-		sb.WriteString(fmt.Sprintf("    Context  %s  %s %s\n", formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, true), contextVal, contextMeta))
-		sb.WriteString(fmt.Sprintf("             Free: %s (%.1f%%)  │  Buffer: %s\n", formatNumber(freeSpace), freePct, formatNumber(buffer)))
+		sb.WriteString(fmt.Sprintf("    Context  %s  %s %s\n", formatContextProgressBar(contextSize, freeSpace, maxContext, true), contextVal, contextMeta))
+		sb.WriteString(fmt.Sprintf("             Free: %s (%.1f%%)\n", formatNumber(freeSpace), freePct))
 	} else {
 		// Progress bar with context info
 		if highlighted {
 			sb.WriteString(fmt.Sprintf("    Context  %s  %s %s\n",
-				formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, false),
+				formatContextProgressBar(contextSize, freeSpace, maxContext, false),
 				highlightStyle.Render(contextVal),
 				dimStyle.Render(contextMeta)))
 		} else {
 			coloredMeta := lipgloss.NewStyle().Foreground(usageColor).Render(contextMeta)
 			sb.WriteString(fmt.Sprintf("    Context  %s  %s %s\n",
-				formatContextProgressBar(contextSize, freeSpace, buffer, maxContext, false),
+				formatContextProgressBar(contextSize, freeSpace, maxContext, false),
 				contextVal, coloredMeta))
 		}
 
-		// Free space and buffer info
+		// Free space info
 		freeVal := formatNumber(freeSpace)
-		bufferVal := formatNumber(buffer)
 		freeValWithPct := fmt.Sprintf("%s (%.1f%%)", freeVal, freePct)
 		var freeStyled string
 		if highlighted {
@@ -829,8 +827,7 @@ func (m Model) renderContextSection() string {
 		} else {
 			freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(fmt.Sprintf("Free: %s", freeValWithPct))
 		}
-		bufferStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(fmt.Sprintf("Buffer: %s", bufferVal))
-		sb.WriteString(fmt.Sprintf("             %s  %s  %s\n", freeStyled, dimStyle.Render("│"), bufferStyled))
+		sb.WriteString(fmt.Sprintf("             %s\n", freeStyled))
 	}
 
 	return sb.String()
@@ -1626,7 +1623,7 @@ func getCacheTokensByTTL(usage models.TokenUsage) (int64, int64) {
 // formatContextProgressBar creates a visual progress bar showing context usage
 // Bar segments: used (█), free (░), buffer (▒)
 // Total width: 38 characters (fits within 76-char panel with 4-space indent)
-func formatContextProgressBar(contextSize, freeSpace, buffer int64, maxContext int, noColor bool) string {
+func formatContextProgressBar(contextSize, freeSpace int64, maxContext int, noColor bool) string {
 	const barWidth = 38
 
 	if maxContext == 0 {
@@ -1640,14 +1637,9 @@ func formatContextProgressBar(contextSize, freeSpace, buffer int64, maxContext i
 	// Convert to bar segments
 	usedChars := int(usedRatio * float64(barWidth))
 	freeChars := int(freeRatio * float64(barWidth))
-	bufferChars := barWidth - usedChars - freeChars
 
-	// Ensure we don't go negative due to rounding
-	if bufferChars < 0 {
-		bufferChars = 0
-	}
 	// Adjust for rounding to hit exactly barWidth
-	total := usedChars + freeChars + bufferChars
+	total := usedChars + freeChars
 	if total < barWidth {
 		freeChars += barWidth - total
 	} else if total > barWidth {
@@ -1655,39 +1647,34 @@ func formatContextProgressBar(contextSize, freeSpace, buffer int64, maxContext i
 		if freeChars >= diff {
 			freeChars -= diff
 		} else {
-			// Reduce freeChars to zero, then take remainder from usedChars
 			diff -= freeChars
 			freeChars = 0
 			usedChars -= diff
 		}
 	}
 
-	// Final safety: ensure non-negative for strings.Repeat and total == barWidth
+	// Final safety: ensure non-negative for strings.Repeat
 	usedChars = max(0, usedChars)
 	freeChars = max(0, freeChars)
-	bufferChars = max(0, bufferChars)
-	if total := usedChars + freeChars + bufferChars; total < barWidth {
+	if total := usedChars + freeChars; total < barWidth {
 		freeChars += barWidth - total
 	}
 
 	usedStr := strings.Repeat("█", usedChars)
 	freeStr := strings.Repeat("░", freeChars)
-	bufferStr := strings.Repeat("▒", bufferChars)
 
 	if noColor {
-		return "[" + usedStr + freeStr + bufferStr + "]"
+		return "[" + usedStr + freeStr + "]"
 	}
 
 	// Get usage color based on percentage - only the used portion is colored
 	usagePct := usedRatio * 100
 	usageColor := styles.GetContextUsageColor(usagePct)
 
-	// Free space is neutral light gray for contrast, buffer is darker gray
 	usedStyled := lipgloss.NewStyle().Foreground(usageColor).Render(usedStr)
 	freeStyled := lipgloss.NewStyle().Foreground(styles.ContextFreeColor).Render(freeStr)
-	bufferStyled := lipgloss.NewStyle().Foreground(styles.ContextBufferColor).Render(bufferStr)
 
-	return "[" + usedStyled + freeStyled + bufferStyled + "]"
+	return "[" + usedStyled + freeStyled + "]"
 }
 
 // renderHeroCost renders the total cost integrated into a section header

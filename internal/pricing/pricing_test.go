@@ -19,6 +19,8 @@ func TestGetModelPricing(t *testing.T) {
 		{"opus 4.1 versioned", "claude-opus-4-1-20250414", 15.00, 75.00},
 		{"opus 4 exact", "claude-opus-4", 15.00, 75.00},
 		{"opus 4 versioned", "claude-opus-4-20250514", 15.00, 75.00},
+		{"sonnet 4.6 exact", "claude-sonnet-4-6", 3.00, 15.00},
+		{"sonnet 4.6 versioned", "claude-sonnet-4-6-20260101", 3.00, 15.00},
 		{"sonnet 4.5 exact", "claude-sonnet-4-5", 3.00, 15.00},
 		{"sonnet 4.5 versioned", "claude-sonnet-4-5-20251101", 3.00, 15.00},
 		{"sonnet 4 exact", "claude-sonnet-4", 3.00, 15.00},
@@ -65,6 +67,8 @@ func TestGetModelDisplayName(t *testing.T) {
 		{"claude-opus-4-1-20250414", "Opus 4.1"},
 		{"claude-opus-4", "Opus 4"},
 		{"claude-opus-4-20250514", "Opus 4"},
+		{"claude-sonnet-4-6", "Sonnet 4.6"},
+		{"claude-sonnet-4-6-20260101", "Sonnet 4.6"},
 		{"claude-sonnet-4-5", "Sonnet 4.5"},
 		{"claude-sonnet-4", "Sonnet 4"},
 		{"claude-sonnet-4-20250514", "Sonnet 4"},
@@ -126,6 +130,8 @@ func TestNormalizeModelID(t *testing.T) {
 		{"claude-opus-4-1", "claude-opus-4-1"},
 		{"claude-opus-4-20250514", "claude-opus-4"},
 		{"claude-opus-4", "claude-opus-4"},
+		{"claude-sonnet-4-6-20260101", "claude-sonnet-4-6"},
+		{"claude-sonnet-4-6", "claude-sonnet-4-6"},
 		{"claude-sonnet-4-20250514", "claude-sonnet-4"},
 		{"claude-sonnet-4", "claude-sonnet-4"},
 		{"claude-sonnet-3-7-20250219", "claude-sonnet-3-7"},
@@ -157,6 +163,7 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-opus-4-5", true},
 		{"claude-opus-4-1", true},
 		{"claude-opus-4", true},
+		{"claude-sonnet-4-6", true},
 		{"claude-sonnet-4-5", true},
 		{"claude-sonnet-4", true},
 		{"claude-sonnet-3-7", true},
@@ -173,6 +180,7 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-opus-4-5-20251101", true},
 		{"claude-opus-4-1-20250414", true},
 		{"claude-opus-4-20250514", true},
+		{"claude-sonnet-4-6-20260101", true},
 		{"claude-sonnet-4-5-20251022", true},
 		{"claude-sonnet-4-20250514", true},
 		{"claude-sonnet-3-7-20250219", true},
@@ -213,26 +221,20 @@ func TestContextWindowFunctions(t *testing.T) {
 		MaxContextTokens: 200000,
 	}
 
-	// Test autocompact buffer (22.5% of 200k = 45k)
-	autocompact := GetAutocompactBuffer(pricing)
-	if autocompact != 45000 {
-		t.Errorf("GetAutocompactBuffer: got %d, want 45000", autocompact)
-	}
-
 	// Test context percentage
 	contextPct := GetContextPercentage(pricing, 100000) // 50% usage
 	if contextPct < 49.9 || contextPct > 50.1 {
 		t.Errorf("GetContextPercentage: got %f, want 50.0", contextPct)
 	}
 
-	// Test free space (200k - 100k usage - 45k buffer = 55k)
+	// Test free space (200k - 100k usage = 100k)
 	freeSpace := GetFreeSpace(pricing, 100000)
-	if freeSpace != 55000 {
-		t.Errorf("GetFreeSpace: got %d, want 55000", freeSpace)
+	if freeSpace != 100000 {
+		t.Errorf("GetFreeSpace: got %d, want 100000", freeSpace)
 	}
 
-	// Test free space when usage exceeds available (should return 0, not negative)
-	freeSpaceExceeded := GetFreeSpace(pricing, 180000) // 180k usage, only 155k available
+	// Test free space when usage exceeds max (should return 0, not negative)
+	freeSpaceExceeded := GetFreeSpace(pricing, 250000)
 	if freeSpaceExceeded != 0 {
 		t.Errorf("GetFreeSpace (exceeded): got %d, want 0", freeSpaceExceeded)
 	}

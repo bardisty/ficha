@@ -16,18 +16,13 @@ const (
 	CacheReadMultiplier    = 0.1  // Cache read
 )
 
-// Context window constants
-const (
-	AutocompactBufferRatio = 0.225 // 22.5% of max context reserved for autocompact
-)
-
 // Model pricing constants (per million tokens)
 var modelPricing = map[string]ModelPricing{
 	// Opus 4.6
 	"claude-opus-4-6": {
 		InputRate:        5.00,
 		OutputRate:       25.00,
-		MaxContextTokens: 200000,
+		MaxContextTokens: 1000000,
 	},
 	// Opus 4.5
 	"claude-opus-4-5": {
@@ -46,6 +41,12 @@ var modelPricing = map[string]ModelPricing{
 		InputRate:        15.00,
 		OutputRate:       75.00,
 		MaxContextTokens: 200000,
+	},
+	// Sonnet 4.6
+	"claude-sonnet-4-6": {
+		InputRate:        3.00,
+		OutputRate:       15.00,
+		MaxContextTokens: 1000000,
 	},
 	// Sonnet 4.5
 	"claude-sonnet-4-5": {
@@ -137,6 +138,7 @@ func normalizeModelID(modelID string) string {
 		"claude-opus-4-5",
 		"claude-opus-4-1",
 		"claude-opus-4",
+		"claude-sonnet-4-6",
 		"claude-sonnet-4-5",
 		"claude-sonnet-4",
 		"claude-sonnet-3-7",
@@ -170,6 +172,7 @@ func GetModelDisplayName(modelID string) string {
 		"claude-opus-4-5":   "Opus 4.5",
 		"claude-opus-4-1":   "Opus 4.1",
 		"claude-opus-4":     "Opus 4",
+		"claude-sonnet-4-6": "Sonnet 4.6",
 		"claude-sonnet-4-5": "Sonnet 4.5",
 		"claude-sonnet-4":   "Sonnet 4",
 		"claude-sonnet-3-7": "Sonnet 3.7",
@@ -204,16 +207,9 @@ func GetCacheReadRate(pricing ModelPricing) float64 {
 	return pricing.InputRate * CacheReadMultiplier
 }
 
-// GetAutocompactBuffer returns the autocompact buffer size in tokens for a model
-func GetAutocompactBuffer(pricing ModelPricing) int64 {
-	return int64(float64(pricing.MaxContextTokens) * AutocompactBufferRatio)
-}
-
 // GetFreeSpace returns the free space in tokens given current context usage
-// Free space = max context - current usage - autocompact buffer
 func GetFreeSpace(pricing ModelPricing, currentUsage int64) int64 {
-	autocompact := GetAutocompactBuffer(pricing)
-	free := int64(pricing.MaxContextTokens) - currentUsage - autocompact
+	free := int64(pricing.MaxContextTokens) - currentUsage
 	if free < 0 {
 		return 0
 	}
