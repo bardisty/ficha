@@ -108,9 +108,10 @@ var DimStyle = lipgloss.NewStyle().
 
 // Model-specific colors (by tier)
 var (
-	OpusColor   = lipgloss.Color("99") // Purple - premium tier
-	SonnetColor = lipgloss.Color("75") // Blue - mid tier
-	HaikuColor  = lipgloss.Color("43") // Cyan/Teal - lightweight tier
+	FableColor  = lipgloss.Color("213") // Pink/Magenta - flagship tier
+	OpusColor   = lipgloss.Color("99")  // Purple - premium tier
+	SonnetColor = lipgloss.Color("75")  // Blue - mid tier
+	HaikuColor  = lipgloss.Color("43")  // Cyan/Teal - lightweight tier
 )
 
 // Token type colors
@@ -169,6 +170,8 @@ func GetAgentColor(agentID string) lipgloss.Color {
 // via case-insensitive substring matching.
 func GetModelColor(modelName string) lipgloss.Color {
 	switch {
+	case contains(modelName, "Fable"):
+		return FableColor
 	case contains(modelName, "Opus"):
 		return OpusColor
 	case contains(modelName, "Sonnet"):

@@ -18,6 +18,12 @@ const (
 
 // Model pricing constants (per million tokens)
 var modelPricing = map[string]ModelPricing{
+	// Fable 5
+	"claude-fable-5": {
+		InputRate:        10.00,
+		OutputRate:       50.00,
+		MaxContextTokens: 1000000,
+	},
 	// Opus 4.8
 	"claude-opus-4-8": {
 		InputRate:        5.00,
@@ -146,6 +152,7 @@ func GetModelPricing(modelID string) ModelPricing {
 func normalizeModelID(modelID string) string {
 	// Handle common patterns (order matters - longer prefixes first)
 	patterns := []string{
+		"claude-fable-5",
 		"claude-opus-4-8",
 		"claude-opus-4-7",
 		"claude-opus-4-6",
@@ -182,6 +189,7 @@ func GetModelDisplayName(modelID string) string {
 	normalized := normalizeModelID(modelID)
 
 	displayNames := map[string]string{
+		"claude-fable-5":    "Fable 5",
 		"claude-opus-4-8":   "Opus 4.8",
 		"claude-opus-4-7":   "Opus 4.7",
 		"claude-opus-4-6":   "Opus 4.6",

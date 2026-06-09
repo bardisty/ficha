@@ -37,6 +37,8 @@ func TestGetModelColor(t *testing.T) {
 		modelName string
 		expected  lipgloss.Color
 	}{
+		{"Fable 5", FableColor},
+		{"claude-fable-5", FableColor},
 		{"Opus 4.5", OpusColor},
 		{"opus 4", OpusColor},
 		{"Sonnet 4", SonnetColor},
