@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/bardisty/ccusage/internal/models"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestFormatCompactCost(t *testing.T) {
@@ -334,5 +336,103 @@ func TestGetRowTrendIndicator(t *testing.T) {
 				t.Errorf("getRowTrendIndicator() direction = %v, want %v", gotDirection, tt.wantDirection)
 			}
 		})
+	}
+}
+
+func TestBreakdownModel_DetectNewMessages_FirstLoad(t *testing.T) {
+	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
+
+	// First load has nothing to diff against — flagging every row would flash
+	// the whole table as "new"
+	first := []models.BreakdownMessage{
+		{Index: 1, Timestamp: time.Now()},
+		{Index: 2, Timestamp: time.Now()},
+		{Index: 3, Timestamp: time.Now()},
+	}
+	m.detectNewMessages(first)
+
+	if len(m.newMsgIndices) != 0 {
+		t.Errorf("first load flagged %d messages as new, want 0", len(m.newMsgIndices))
+	}
+}
+
+// tickReadyBreakdownModel returns a model with an initialized viewport holding
+// sentinel content, so tests can observe whether a tick re-rendered the table.
+func tickReadyBreakdownModel() BreakdownModel {
+	m := NewBreakdownModel("/test/path", "test-session", true, "", false)
+	m.ready = true
+	m.viewport = viewport.New(80, 10)
+	m.messages = []models.BreakdownMessage{{Index: 1, Timestamp: time.Now()}}
+	m.viewport.SetContent("SENTINEL")
+	return m
+}
+
+func TestBreakdownModel_TickSkipsRenderWhenIdle(t *testing.T) {
+	m := tickReadyBreakdownModel()
+
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(BreakdownModel)
+
+	if !strings.Contains(m.viewport.View(), "SENTINEL") {
+		t.Error("idle tick re-rendered the table; expected viewport content untouched")
+	}
+}
+
+func TestBreakdownModel_TickRendersWhileHighlightsActive(t *testing.T) {
+	m := tickReadyBreakdownModel()
+	m.newMsgIndices[1] = time.Now()
+
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(BreakdownModel)
+
+	if strings.Contains(m.viewport.View(), "SENTINEL") {
+		t.Error("tick with active highlights should re-render the table")
+	}
+}
+
+func TestBreakdownModel_TickRendersFinalFadeFrame(t *testing.T) {
+	m := tickReadyBreakdownModel()
+	// Expired highlight: this tick prunes it, but must still re-render once
+	// so the row doesn't stay highlighted forever
+	m.newMsgIndices[1] = time.Now().Add(-2 * highlightDuration)
+
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(BreakdownModel)
+
+	if strings.Contains(m.viewport.View(), "SENTINEL") {
+		t.Error("the tick that expires the last highlight must re-render once to un-highlight rows")
+	}
+	if len(m.newMsgIndices) != 0 {
+		t.Errorf("expired highlight not pruned: %d entries remain", len(m.newMsgIndices))
+	}
+
+	// Subsequent ticks are idle again
+	m.viewport.SetContent("SENTINEL")
+	updated, _ = m.Update(tickMsg(time.Now()))
+	m = updated.(BreakdownModel)
+	if !strings.Contains(m.viewport.View(), "SENTINEL") {
+		t.Error("tick after the fade frame should not re-render")
+	}
+}
+
+func TestBreakdownViewportDoesNotWrapRowsOnNarrowTerminal(t *testing.T) {
+	// Table rows are ~74 columns; on a narrower terminal the viewport
+	// soft-wraps overlong lines into extra rows, shifting the whole table.
+	// Content must be clipped before it reaches the viewport.
+	m := NewBreakdownModel("/test/path", "test-session", true, "", false)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
+	m = updated.(BreakdownModel)
+
+	msgs := []models.BreakdownMessage{
+		{Index: 1, Timestamp: time.Now(), Model: "claude-opus-4-8",
+			Usage: models.TokenUsage{InputTokens: 3500, OutputTokens: 717, CacheCreationInputTokens: 6000, CacheReadInputTokens: 15500}},
+		{Index: 2, Timestamp: time.Now(), Model: "claude-opus-4-8",
+			Usage: models.TokenUsage{InputTokens: 2, OutputTokens: 421, CacheCreationInputTokens: 144800, CacheReadInputTokens: 21500}},
+	}
+	updated, _ = m.Update(breakdownMsgsMsg{messages: msgs})
+	m = updated.(BreakdownModel)
+
+	if got := m.viewport.TotalLineCount(); got != len(msgs) {
+		t.Errorf("viewport holds %d lines for %d messages — overlong rows were wrapped, not clipped", got, len(msgs))
 	}
 }

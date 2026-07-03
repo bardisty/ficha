@@ -225,10 +225,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Resize cost chart to match new width
 		newChartWidth := m.getChartWidth()
 		m.costChart.Resize(newChartWidth, chartHeight)
+		// Resize keeps the data but clears the canvas; redraw so the chart
+		// isn't blank until the next message arrives
+		if len(m.costHistory) > 0 {
+			if !m.noColor {
+				m.costChart.DrawBraille()
+			} else {
+				m.costChart.Draw()
+			}
+		}
 
 		// Re-render content with new dimensions
 		if m.analysis != nil {
-			m.viewport.SetContent(m.renderAnalysis())
+			m.viewport.SetContent(clipToWidth(m.renderAnalysis(), m.width))
 			if m.autoScroll {
 				m.viewport.GotoBottom()
 			}
@@ -255,7 +264,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update viewport content
 		if m.ready {
-			m.viewport.SetContent(m.renderAnalysis())
+			m.viewport.SetContent(clipToWidth(m.renderAnalysis(), m.width))
 			if m.autoScroll {
 				m.viewport.GotoBottom()
 			}
@@ -334,7 +343,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cleanupStaleChanges()
 		// Re-render to update highlight fading (only if there are active highlights)
 		if m.ready && m.analysis != nil && len(m.changedAt) > 0 {
-			m.viewport.SetContent(m.renderAnalysis())
+			m.viewport.SetContent(clipToWidth(m.renderAnalysis(), m.width))
 		}
 		// Continue the animation tick for highlight fade
 		return m, tickCmd()
@@ -489,24 +498,16 @@ func (m Model) cleanupStaleChanges() {
 }
 
 // recentlyChanged checks if a field was recently changed (within highlight duration)
-// This is used to determine whether to show delta values, regardless of color mode
-func (m *Model) recentlyChanged(field string) bool {
+// This is used to determine whether to show delta values, regardless of color mode.
+// Read-only: it is reached from View(), which must not mutate model state; stale
+// entries are pruned by cleanupStaleChanges on tick instead.
+func (m Model) recentlyChanged(field string) bool {
 	changedTime, exists := m.changedAt[field]
 	if !exists {
 		return false
 	}
 
-	elapsed := time.Since(changedTime)
-
-	// Cleanup stale entry if it's past the highlight window
-	// This prevents unbounded map growth when updates are infrequent
-	if elapsed > highlightDuration*2 {
-		delete(m.changedAt, field)
-		delete(m.deltaTokens, field)
-		return false
-	}
-
-	return elapsed < highlightDuration
+	return time.Since(changedTime) < highlightDuration
 }
 
 // isHighlighted checks if a field should be highlighted with color (recently changed AND color enabled)
@@ -517,10 +518,42 @@ func (m Model) isHighlighted(field string) bool {
 	return m.recentlyChanged(field)
 }
 
+// Panel sizing: panels, separators, and section headers are designed for
+// defaultPanelWidth columns; on narrower terminals they shrink toward
+// minPanelWidth so box-drawing lines don't wrap and desynchronize the fixed
+// header/footer height math. Below minPanelWidth (plus indent) the frame is
+// clipped by View's MaxWidth instead.
+const (
+	defaultPanelWidth = 76
+	minPanelWidth     = 40
+)
+
+// panelWidthFor returns the panel width for a terminal width: the design width
+// when it fits (accounting for the 2-column left indent), otherwise clamped.
+// A zero/negative termWidth means no WindowSizeMsg yet — use the design width.
+func panelWidthFor(termWidth int) int {
+	if termWidth <= 0 {
+		return defaultPanelWidth
+	}
+	return max(min(termWidth-2, defaultPanelWidth), minPanelWidth)
+}
+
+// clipToWidth truncates every line of rendered output to the terminal width
+// (ANSI-aware) so overlong lines degrade by clipping instead of wrapping.
+// Applied to viewport content — the viewport soft-wraps overlong lines, which
+// inflates line counts — and to the final frame, where terminal hard-wrap
+// would desynchronize the fixed header/footer layout.
+func clipToWidth(frame string, termWidth int) string {
+	if termWidth <= 0 {
+		return frame
+	}
+	return lipgloss.NewStyle().MaxWidth(termWidth).Render(frame)
+}
+
 // View renders the TUI
 func (m Model) View() string {
 	var sb strings.Builder
-	const panelWidth = 76
+	panelWidth := panelWidthFor(m.width)
 
 	// FIXED HEADER (4 lines)
 	sb.WriteString(m.renderHeaderPanel(panelWidth))
@@ -574,7 +607,7 @@ func (m Model) View() string {
 		sb.WriteString("  q: quit • r: refresh • g/G: top/bottom • ↑↓: scroll")
 	}
 
-	return sb.String()
+	return clipToWidth(sb.String(), m.width)
 }
 
 func (m Model) renderAnalysis() string {
@@ -589,7 +622,7 @@ func (m Model) renderAnalysis() string {
 
 	var sb strings.Builder
 	a := m.analysis
-	const sectionWidth = 76
+	sectionWidth := panelWidthFor(m.width)
 
 	// Hero total cost as section header
 	sb.WriteString("\n")
@@ -689,7 +722,7 @@ func (m Model) renderAnalysisPlain() string {
 
 	var sb strings.Builder
 	a := m.analysis
-	const sectionWidth = 76
+	sectionWidth := panelWidthFor(m.width)
 
 	// Hero total cost as section header
 	sb.WriteString("\n")
@@ -1191,14 +1224,8 @@ type watcherStartedMsg struct {
 }
 
 func (m Model) watchFile() tea.Msg {
-	watcher, err := fsnotify.NewWatcher()
+	watcher, err := newSessionFileWatcher(m.sessionPath)
 	if err != nil {
-		return errorMsg(err)
-	}
-
-	err = watcher.Add(m.sessionPath)
-	if err != nil {
-		watcher.Close()
 		return errorMsg(err)
 	}
 
@@ -1207,9 +1234,13 @@ func (m Model) watchFile() tea.Msg {
 }
 
 // waitForFileChange returns a command that waits for file changes or shutdown.
-// Coalesces rapid write events with a 50ms debounce to avoid redundant reloads.
 func (m Model) waitForFileChange() tea.Cmd {
+	// Register with the WaitGroup before the command is scheduled: an Add
+	// inside the goroutine races the quit handler's Wait (Add-after-Wait
+	// violates the WaitGroup contract).
+	m.wg.Add(1)
 	return func() tea.Msg {
+		defer m.wg.Done()
 		if m.closing != nil && m.closing.Load() {
 			return nil
 		}
@@ -1217,57 +1248,14 @@ func (m Model) waitForFileChange() tea.Cmd {
 			return nil
 		}
 
-		m.wg.Add(1)
-		defer m.wg.Done()
-
-		for {
-			select {
-			case <-m.done:
-				return nil
-			case event, ok := <-m.watcher.Events:
-				if !ok {
-					return nil
-				}
-				if event.Op&fsnotify.Write == fsnotify.Write {
-					// Debounce: wait for writes to settle before signaling reload
-					timer := time.NewTimer(watchDebounce)
-					defer timer.Stop()
-				drain:
-					for {
-						select {
-						case <-m.done:
-							return nil
-						case <-timer.C:
-							break drain
-						case ev, ok := <-m.watcher.Events:
-							if !ok {
-								return nil
-							}
-							if ev.Op&fsnotify.Write == fsnotify.Write {
-								if !timer.Stop() {
-									select {
-									case <-timer.C:
-									default:
-									}
-								}
-								timer.Reset(watchDebounce)
-							}
-						case _, ok := <-m.watcher.Errors:
-							if !ok {
-								return nil
-							}
-						}
-					}
-					return fileChangedMsg{}
-				}
-				continue
-			case err, ok := <-m.watcher.Errors:
-				if !ok {
-					return nil
-				}
-				return errorMsg(err)
-			}
+		changed, err := awaitSessionFileChange(m.watcher, m.done, m.sessionPath)
+		if err != nil {
+			return errorMsg(err)
 		}
+		if !changed {
+			return nil
+		}
+		return fileChangedMsg{}
 	}
 }
 
@@ -1294,12 +1282,14 @@ type sessionWatcherRestartMsg struct{}
 
 // waitForNewSession returns a command that blocks until a new session is created
 func (m Model) waitForNewSession() tea.Cmd {
-	return func() tea.Msg {
-		if m.sessionWatcher == nil {
-			return nil
-		}
+	if m.sessionWatcher == nil {
+		return nil
+	}
 
-		m.wg.Add(1)
+	// Register with the WaitGroup before the command is scheduled: an Add
+	// inside the goroutine races the quit handler's Wait.
+	m.wg.Add(1)
+	return func() tea.Msg {
 		defer m.wg.Done()
 
 		path, id := m.sessionWatcher.WaitForNewSession()
@@ -1353,18 +1343,16 @@ func (m Model) renderHeaderPanel(width int) string {
 		statusPart = fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05"))
 	}
 
-	// Calculate separator positions
 	sep := styles.BoxVerticalSep
-	content := fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart)
-	// Use runeCount for display width — len() overcounts multi-byte UTF-8 chars like ● (3 bytes, 1 column)
-	liveDisplayLen := len([]rune(livePart))
-	contentLen := len(sessionPart) + 2 + 1 + 2 + liveDisplayLen + 2 + 1 + 2 + len(statusPart)
-	padding := innerWidth - contentLen
-	if padding < 0 {
-		padding = 0
-	}
 
 	if m.noColor {
+		content := fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart)
+		// Padding from rendered width — len() overcounts multi-byte UTF-8 chars like ● (3 bytes, 1 column)
+		padding := innerWidth - lipgloss.Width(content)
+		if padding < 0 {
+			padding = 0
+		}
+
 		// Top border
 		sb.WriteString("  ")
 		sb.WriteString(styles.BoxTopLeft)
@@ -1404,6 +1392,15 @@ func (m Model) renderHeaderPanel(width int) string {
 
 		sepStyled := panelBorderStyle.Render(sep)
 
+		// Padding from rendered width so styled parts of varying display width
+		// (e.g. the spinner shown next to "Loading...") can't push the right
+		// border out of alignment
+		content := sessionStyled + "  " + sepStyled + "  " + liveStyled + "  " + sepStyled + "  " + statusStyled
+		padding := innerWidth - lipgloss.Width(content)
+		if padding < 0 {
+			padding = 0
+		}
+
 		// Top border
 		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
@@ -1415,15 +1412,7 @@ func (m Model) renderHeaderPanel(width int) string {
 		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
 		sb.WriteString("  ")
-		sb.WriteString(sessionStyled)
-		sb.WriteString("  ")
-		sb.WriteString(sepStyled)
-		sb.WriteString("  ")
-		sb.WriteString(liveStyled)
-		sb.WriteString("  ")
-		sb.WriteString(sepStyled)
-		sb.WriteString("  ")
-		sb.WriteString(statusStyled)
+		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
 		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
@@ -1782,7 +1771,7 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 // renderEmptyState renders a clean empty state for new sessions
 func (m Model) renderEmptyState() string {
 	var sb strings.Builder
-	const sectionWidth = 76
+	sectionWidth := panelWidthFor(m.width)
 
 	// Hero cost (even $0.00 to establish visual anchor)
 	sb.WriteString("\n")
