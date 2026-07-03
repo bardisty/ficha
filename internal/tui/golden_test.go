@@ -1,0 +1,273 @@
+package tui
+
+import (
+	"flag"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+
+	"github.com/bardisty/ccusage/internal/models"
+)
+
+var update = flag.Bool("update", false, "rewrite .golden files with current rendered output")
+
+// forceProfile pins the lipgloss default renderer's color profile for the
+// duration of a test (see internal/formatter/golden_test.go). It must be set
+// BEFORE Update() runs: the sparkline chart is drawn during message handling,
+// not during View().
+func forceProfile(t *testing.T, p termenv.Profile) {
+	t.Helper()
+	r := lipgloss.DefaultRenderer()
+	orig := r.ColorProfile()
+	r.SetColorProfile(p)
+	t.Cleanup(func() { r.SetColorProfile(orig) })
+}
+
+// checkGolden compares got against testdata/<name>.golden byte-for-byte.
+// Regenerate with `make update-golden` after intentional rendering changes.
+func checkGolden(t *testing.T, name, got string) {
+	t.Helper()
+	path := filepath.Join("testdata", name+".golden")
+	if *update {
+		if err := os.MkdirAll("testdata", 0o755); err != nil {
+			t.Fatalf("creating testdata dir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+			t.Fatalf("writing golden file: %v", err)
+		}
+		return
+	}
+	wantBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading golden file %s (regenerate with `make update-golden`): %v", path, err)
+	}
+	want := string(wantBytes)
+	if got == want {
+		return
+	}
+	gotLines := strings.Split(got, "\n")
+	wantLines := strings.Split(want, "\n")
+	for i := 0; i < len(gotLines) || i < len(wantLines); i++ {
+		var g, w string
+		if i < len(gotLines) {
+			g = gotLines[i]
+		}
+		if i < len(wantLines) {
+			w = wantLines[i]
+		}
+		if g != w {
+			t.Fatalf("%s: output differs from golden at line %d\n got: %q\nwant: %q\n(intentional change? regenerate with `make update-golden` and review the diff)",
+				path, i+1, g, w)
+		}
+	}
+	t.Fatalf("%s: output differs from golden (same lines, different trailing bytes)", path)
+}
+
+func goldenTime(hour, min, sec int) time.Time {
+	return time.Date(2026, 1, 15, hour, min, sec, 0, time.UTC)
+}
+
+// goldenViewAnalysis mirrors the formatter golden fixture: both cache TTLs,
+// cache reads, savings, context window, three models, two agents, insights,
+// plus per-message costs so the watch view's COST TREND chart has data.
+func goldenViewAnalysis() *models.SessionAnalysis {
+	msgCosts := []float64{0.10, 0.35, 1.87, 0.42, 0.52, 0.55}
+	messages := make([]models.MessageAnalysis, len(msgCosts))
+	for i, c := range msgCosts {
+		messages[i] = models.MessageAnalysis{
+			Timestamp: goldenTime(10, 5*i, 0),
+			Model:     "claude-opus-4-8",
+			Usage:     models.TokenUsage{InputTokens: 100, OutputTokens: 200},
+			Cost:      models.CostBreakdown{TotalCost: c},
+		}
+	}
+	return &models.SessionAnalysis{
+		SessionID:    "0a1b2c3d-4e5f-6789-abcd-ef0123456789",
+		StartTime:    goldenTime(10, 0, 0),
+		EndTime:      goldenTime(11, 30, 0),
+		Duration:     models.Duration(90 * time.Minute),
+		MessageCount: 37,
+		Messages:     messages,
+		TotalUsage: models.TokenUsage{
+			InputTokens:              45678,
+			OutputTokens:             23456,
+			CacheCreationInputTokens: 250000,
+			CacheReadInputTokens:     1500000,
+			CacheCreation: &models.CacheCreation{
+				Ephemeral5mInputTokens: 200000,
+				Ephemeral1hInputTokens: 50000,
+			},
+		},
+		TotalCost: models.CostBreakdown{
+			InputCost:        0.30,
+			OutputCost:       2.10,
+			CacheWrite5mCost: 3.75,
+			CacheWrite1hCost: 1.50,
+			CacheReadCost:    2.25,
+			TotalCost:        9.90,
+			CacheSavings:     20.25,
+		},
+		CostByModel: map[string]models.CostBreakdown{
+			"claude-opus-4-8":  {TotalCost: 7.90},
+			"claude-haiku-4-5": {TotalCost: 0.42},
+			"claude-sonnet-5":  {TotalCost: 1.58},
+		},
+		LastMessageUsage: models.TokenUsage{
+			InputTokens:              12,
+			CacheCreationInputTokens: 8000,
+			CacheReadInputTokens:     371988,
+			CacheCreation:            &models.CacheCreation{Ephemeral5mInputTokens: 8000},
+		},
+		LastMessageModel: "claude-opus-4-8",
+		Agents: []models.AgentAnalysis{
+			{
+				AgentID:      "a1b2c3d4e5f6",
+				MessageCount: 12,
+				TotalCost:    models.CostBreakdown{TotalCost: 0.42},
+				CostByModel:  map[string]models.CostBreakdown{"claude-haiku-4-5": {TotalCost: 0.42}},
+			},
+			{
+				AgentID:      "f6e5d4c3b2a1",
+				MessageCount: 1,
+				TotalCost:    models.CostBreakdown{TotalCost: 1.58},
+				CostByModel:  map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 1.58}},
+			},
+		},
+		ParentCost:         models.CostBreakdown{TotalCost: 7.90},
+		ParentCostByModel:  map[string]models.CostBreakdown{"claude-opus-4-8": {TotalCost: 7.90}},
+		AgentsCost:         models.CostBreakdown{TotalCost: 2.00},
+		HasAgents:          true,
+		AgentCount:         2,
+		ParentMessageCount: 24,
+		AgentMessageCount:  13,
+		Insights: &models.MessageInsights{
+			FirstMessage: &models.MessageSnapshot{
+				Index: 1, Timestamp: goldenTime(10, 0, 5),
+				Cost: 0.35, MainCostComponent: "cache_write_5m", MainCostValue: 0.30,
+			},
+			LastMessage: &models.MessageSnapshot{
+				Index: 24, Timestamp: goldenTime(11, 29, 55),
+				Cost: 0.52, MainCostComponent: "cache_read", MainCostValue: 0.31,
+			},
+			HighestCost: &models.MessageSnapshot{
+				Index: 9, Timestamp: goldenTime(10, 42, 13),
+				Cost: 1.87, MainCostComponent: "output", MainCostValue: 1.02,
+			},
+			CostTrend:    models.TrendIncreasing,
+			EarlyAvgCost: 0.28,
+			LateAvgCost:  0.55,
+			AverageCost:  0.41,
+			MessageCount: 24,
+		},
+	}
+}
+
+// goldenWatchView builds a watch Model at a fixed size, feeds it the fixture
+// analysis, pins the time-dependent state, and returns View().
+// First load records no change highlights (m.analysis is nil in detectChanges'
+// guard), so the rendered frame is deterministic once lastUpdated is pinned.
+func goldenWatchView(t *testing.T, noColor bool) string {
+	t.Helper()
+	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", false, noColor, "", false)
+	// Height 60: tall enough that the whole analysis body fits the viewport,
+	// so the golden pins every section (autoScroll pins the window to the
+	// bottom and would otherwise clip the hero cost / token rows)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 60})
+	m = updated.(Model)
+	updated, _ = m.Update(analysisMsg(goldenViewAnalysis()))
+	m = updated.(Model)
+	m.lastUpdated = goldenTime(11, 30, 0)
+	return m.View()
+}
+
+func TestGoldenWatchView(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	checkGolden(t, "watch_view", goldenWatchView(t, true))
+}
+
+func TestGoldenWatchViewColor(t *testing.T) {
+	forceProfile(t, termenv.ANSI256)
+	checkGolden(t, "watch_view_color", goldenWatchView(t, false))
+}
+
+func goldenBreakdownMessages() []models.BreakdownMessage {
+	return []models.BreakdownMessage{
+		{
+			Index: 1, Timestamp: goldenTime(10, 0, 5), Model: "claude-opus-4-8",
+			Usage: models.TokenUsage{InputTokens: 1200, OutputTokens: 800, CacheCreationInputTokens: 4000, CacheReadInputTokens: 20000},
+			Cost:  models.CostBreakdown{TotalCost: 0.35},
+		},
+		{
+			Index: 2, Timestamp: goldenTime(10, 5, 0), Model: "claude-opus-4-8",
+			Usage: models.TokenUsage{InputTokens: 400, OutputTokens: 1500, CacheCreationInputTokens: 2000, CacheReadInputTokens: 30000},
+			Cost:  models.CostBreakdown{TotalCost: 0.52},
+		},
+		{
+			Index: 3, AgentID: "1", Timestamp: goldenTime(10, 6, 0), Model: "claude-haiku-4-5",
+			Usage: models.TokenUsage{InputTokens: 5000, OutputTokens: 2500, CacheCreationInputTokens: 10000},
+			Cost:  models.CostBreakdown{TotalCost: 0.04},
+		},
+		{
+			Index: 4, AgentID: "1", Timestamp: goldenTime(10, 8, 0), Model: "claude-haiku-4-5",
+			Usage: models.TokenUsage{InputTokens: 300, OutputTokens: 900, CacheReadInputTokens: 15000},
+			Cost:  models.CostBreakdown{TotalCost: 0.01},
+		},
+		{
+			Index: 5, Timestamp: goldenTime(10, 42, 13), Model: "claude-opus-4-8",
+			Usage: models.TokenUsage{InputTokens: 90, OutputTokens: 4200, CacheReadInputTokens: 50000},
+			Cost:  models.CostBreakdown{TotalCost: 1.87},
+		},
+		{
+			Index: 6, Timestamp: goldenTime(11, 29, 55), Model: "claude-sonnet-5",
+			Usage: models.TokenUsage{InputTokens: 12, OutputTokens: 600, CacheCreationInputTokens: 8000, CacheReadInputTokens: 371988},
+			Cost:  models.CostBreakdown{TotalCost: 0.55},
+		},
+	}
+}
+
+// goldenBreakdownView builds a BreakdownModel at a fixed size, feeds it fixed
+// rows (first load: no "new message" highlights), pins lastUpdated, and
+// returns View(). skippedLines is set to exercise the footer warning segment.
+func goldenBreakdownView(t *testing.T, noColor bool) string {
+	t.Helper()
+	m := NewBreakdownModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", noColor, "", false)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = updated.(BreakdownModel)
+	updated, _ = m.Update(breakdownMsgsMsg{
+		messages:  goldenBreakdownMessages(),
+		totalCost: 3.34,
+		minCost:   0.01,
+		maxCost:   1.87,
+		insights: &models.MessageInsights{
+			HighestCost: &models.MessageSnapshot{
+				Index: 5, Timestamp: goldenTime(10, 42, 13),
+				Cost: 1.87, MainCostComponent: "output", MainCostValue: 1.02,
+			},
+			CostTrend:    models.TrendIncreasing,
+			EarlyAvgCost: 0.30,
+			LateAvgCost:  0.81,
+			AverageCost:  0.56,
+			MessageCount: 6,
+		},
+		skippedLines: 3,
+	})
+	m = updated.(BreakdownModel)
+	m.lastUpdated = goldenTime(11, 30, 0)
+	return m.View()
+}
+
+func TestGoldenBreakdownView(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	checkGolden(t, "breakdown_view", goldenBreakdownView(t, true))
+}
+
+func TestGoldenBreakdownViewColor(t *testing.T) {
+	forceProfile(t, termenv.ANSI256)
+	checkGolden(t, "breakdown_view_color", goldenBreakdownView(t, false))
+}
