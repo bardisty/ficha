@@ -13,12 +13,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// FormatSummaryTableWithDetails formats the summary table with session breakdown
+// FormatSummaryTableWithDetails renders the summary table with per-session
+// breakdown. Color and glyph choices are driven by noColor.
 func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, sessions []models.SessionEntry, projectDir string, noColor bool, expandAgents bool) string {
-	if noColor {
-		return formatSummaryTableWithDetailsPlain(analysis, sessions, projectDir, expandAgents)
-	}
-
 	var sb strings.Builder
 	const sectionWidth = 76
 
@@ -54,11 +51,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, sessions []
 
 	// Savings row
 	if analysis.TotalCost.CacheSavings > 0 {
-		savingsStr := formatCostStyledGreen(analysis.TotalCost.CacheSavings, 11, noColor)
-		sb.WriteString(fmt.Sprintf("  %s %s  %s\n",
-			savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
-			savingsStr,
-			dimStyle.Render("(from cache reads)")))
+		sb.WriteString(renderSavingsRow(analysis.TotalCost.CacheSavings, noColor))
 	}
 
 	// Cost by model section
@@ -85,7 +78,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, sessions []
 
 	// Footer with double-line separator
 	sb.WriteString("\n")
-	sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, sectionWidth)))
+	sb.WriteString(renderFooterDoubleRule(sectionWidth, noColor))
 	sb.WriteString("\n")
 
 	// Footer stats
@@ -95,106 +88,25 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, sessions []
 			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
 	}
 
-	sessionCount := analysis.SessionCount
-
-	footerText := fmt.Sprintf("Messages: %s  │  Sessions: %d", msgStr, sessionCount)
-	sb.WriteString(footerStyle.Render(footerText))
+	footerText := fmt.Sprintf("Messages: %s  %s  Sessions: %d", msgStr, footerSep(noColor), analysis.SessionCount)
+	if noColor {
+		sb.WriteString(footerText)
+	} else {
+		sb.WriteString(footerStyle.Render(footerText))
+	}
 	sb.WriteString("\n")
 
 	// Single-line separator
-	sb.WriteString(dimStyle.Render(strings.Repeat(styles.LineHorizontal, sectionWidth)))
+	sb.WriteString(renderFooterSingleRule(sectionWidth, noColor))
 	sb.WriteString("\n")
 
 	// Project path
-	sb.WriteString(dimStyle.Render(fmt.Sprintf("Project: %s", projectDir)))
-
-	return sb.String()
-}
-
-// formatSummaryTableWithDetailsPlain formats the summary with details in plain text
-func formatSummaryTableWithDetailsPlain(analysis *models.SessionAnalysis, sessions []models.SessionEntry, projectDir string, expandAgents bool) string {
-	var sb strings.Builder
-	const sectionWidth = 76
-
-	// Header panel
-	sb.WriteString(renderHeaderPanel(analysis, sectionWidth, true))
-	sb.WriteString("\n\n")
-
-	// Hero total cost as section header
-	sb.WriteString(renderHeroCost(analysis.TotalCost.TotalCost, sectionWidth, true))
-	sb.WriteString("\n\n")
-
-	// Unified cost+token rows
-	sb.WriteString(renderUnifiedCostRowPlain("Input", analysis.TotalCost.InputCost, analysis.TotalUsage.InputTokens, ""))
-	sb.WriteString(renderUnifiedCostRowPlain("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, ""))
-
-	// Cache write rows
-	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
-	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
-	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
-
-	if has5mCost {
-		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite5mCost, cache5mTokens, "5m TTL"))
+	projectLine := fmt.Sprintf("Project: %s", projectDir)
+	if noColor {
+		sb.WriteString(projectLine)
+	} else {
+		sb.WriteString(dimStyle.Render(projectLine))
 	}
-
-	if has1hCost {
-		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite1hCost, cache1hTokens, "1h TTL"))
-	}
-
-	if analysis.TotalCost.CacheReadCost > 0 || analysis.TotalUsage.CacheReadInputTokens > 0 {
-		sb.WriteString(renderUnifiedCostRowPlain("Cache read", analysis.TotalCost.CacheReadCost, analysis.TotalUsage.CacheReadInputTokens, ""))
-	}
-
-	// Savings row
-	if analysis.TotalCost.CacheSavings > 0 {
-		sb.WriteString(fmt.Sprintf("  %-14s %11s  (from cache reads)\n",
-			"Savings", render.Cost(analysis.TotalCost.CacheSavings)))
-	}
-
-	// Cost by model section
-	sb.WriteString("\n")
-	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, true))
-	sb.WriteString("\n\n")
-	sb.WriteString(formatCostByModelContent(analysis, true))
-
-	// Get session breakdown data (needed for both chart and table)
-	breakdownResult := renderSessionBreakdown(sessions, true, expandAgents)
-
-	// Session breakdown section (includes chart and table)
-	sb.WriteString("\n")
-	sb.WriteString(render.SectionHeader("SESSION BREAKDOWN", sectionWidth, true))
-	sb.WriteString("\n\n")
-
-	// Cost chart at top of section (only show if we have 2+ data points)
-	if len(breakdownResult.costs) > 1 {
-		sb.WriteString(renderCostChart(breakdownResult.costs, breakdownResult.dates, sectionWidth, true))
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString(breakdownResult.table)
-
-	// Footer with double-line separator
-	sb.WriteString("\n")
-	sb.WriteString(strings.Repeat("=", sectionWidth))
-	sb.WriteString("\n")
-
-	// Footer stats
-	msgStr := fmt.Sprintf("%d", analysis.MessageCount)
-	if analysis.AgentMessageCount > 0 {
-		msgStr = fmt.Sprintf("%d (%d parent, %d agents)",
-			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
-	}
-
-	sessionCount := analysis.SessionCount
-
-	footerText := fmt.Sprintf("Messages: %s  |  Sessions: %d", msgStr, sessionCount)
-	sb.WriteString(footerText)
-	sb.WriteString("\n")
-	sb.WriteString(strings.Repeat("-", sectionWidth))
-	sb.WriteString("\n")
-
-	// Project path
-	sb.WriteString(fmt.Sprintf("Project: %s", projectDir))
 
 	return sb.String()
 }

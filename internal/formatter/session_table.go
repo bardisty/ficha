@@ -11,12 +11,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// FormatSessionTable formats a session analysis as a styled table
+// FormatSessionTable renders a session analysis as a table (single session or
+// summary). Color and glyph choices are driven by noColor.
 func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
-	if noColor {
-		return formatSessionTablePlain(analysis)
-	}
-
 	var sb strings.Builder
 	const sectionWidth = 76
 
@@ -58,11 +55,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 
 	// Savings row
 	if analysis.TotalCost.CacheSavings > 0 {
-		savingsStr := formatCostStyledGreen(analysis.TotalCost.CacheSavings, 11, noColor)
-		sb.WriteString(fmt.Sprintf("  %s %s  %s\n",
-			savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
-			savingsStr,
-			dimStyle.Render("(from cache reads)")))
+		sb.WriteString(renderSavingsRow(analysis.TotalCost.CacheSavings, noColor))
 	}
 
 	// Context window section - only for single sessions, not summaries
@@ -98,7 +91,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 
 	// Footer with double-line separator
 	sb.WriteString("\n")
-	sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, sectionWidth)))
+	sb.WriteString(renderFooterDoubleRule(sectionWidth, noColor))
 	sb.WriteString("\n")
 
 	// Footer stats
@@ -109,129 +102,25 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	}
 
 	footerText := fmt.Sprintf("Messages: %s", msgStr)
+	sep := footerSep(noColor)
 	if isSummary {
-		sessionCount := analysis.SessionCount
-		if sessionCount > 0 {
-			footerText += fmt.Sprintf("  │  Sessions: %d", sessionCount)
+		if sessionCount := analysis.SessionCount; sessionCount > 0 {
+			footerText += fmt.Sprintf("  %s  Sessions: %d", sep, sessionCount)
 		}
-	} else {
+	} else if !analysis.EndTime.IsZero() {
 		// Show last active time for single sessions
-		if !analysis.EndTime.IsZero() {
-			footerText += fmt.Sprintf("  │  Last active: %s", analysis.EndTime.Local().Format("2006-01-02 15:04"))
-		}
+		footerText += fmt.Sprintf("  %s  Last active: %s", sep, analysis.EndTime.Local().Format("2006-01-02 15:04"))
 	}
 
-	sb.WriteString(footerStyle.Render(footerText))
+	if noColor {
+		sb.WriteString(footerText)
+	} else {
+		sb.WriteString(footerStyle.Render(footerText))
+	}
 	sb.WriteString("\n")
 
 	// Single-line help separator
-	sb.WriteString(dimStyle.Render(strings.Repeat(styles.LineHorizontal, sectionWidth)))
-
-	return sb.String()
-}
-
-// formatSessionTablePlain formats a session analysis as a plain text table
-func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
-	var sb strings.Builder
-	const sectionWidth = 76
-
-	// Detect summary vs show mode
-	isSummary := analysis.IsSummary
-
-	// Header panel
-	sb.WriteString(renderHeaderPanel(analysis, sectionWidth, true))
-	sb.WriteString("\n\n")
-
-	// Hero total cost as section header
-	sb.WriteString(renderHeroCost(analysis.TotalCost.TotalCost, sectionWidth, true))
-	sb.WriteString("\n\n")
-
-	// Unified cost+token rows
-	sb.WriteString(renderUnifiedCostRowPlain("Input", analysis.TotalCost.InputCost, analysis.TotalUsage.InputTokens, ""))
-	sb.WriteString(renderUnifiedCostRowPlain("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, ""))
-
-	// Cache write rows
-	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
-	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
-	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
-
-	if has5mCost {
-		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite5mCost, cache5mTokens, "5m TTL"))
-	}
-
-	if has1hCost {
-		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite1hCost, cache1hTokens, "1h TTL"))
-	}
-
-	if analysis.TotalCost.CacheReadCost > 0 || analysis.TotalUsage.CacheReadInputTokens > 0 {
-		sb.WriteString(renderUnifiedCostRowPlain("Cache read", analysis.TotalCost.CacheReadCost, analysis.TotalUsage.CacheReadInputTokens, ""))
-	}
-
-	// Savings row
-	if analysis.TotalCost.CacheSavings > 0 {
-		sb.WriteString(fmt.Sprintf("  %-14s %11s  (from cache reads)\n",
-			"Savings", render.Cost(analysis.TotalCost.CacheSavings)))
-	}
-
-	// Context window section - only for single sessions, not summaries
-	if !isSummary {
-		contextSize := analysis.LastMessageUsage.ContextWindowSize()
-		if contextSize > 0 {
-			sb.WriteString("\n")
-			sb.WriteString(renderContextSection(analysis, true))
-		}
-	}
-
-	// Cost by model section
-	sb.WriteString("\n")
-	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, true))
-	sb.WriteString("\n\n")
-	sb.WriteString(formatCostByModelContent(analysis, true))
-
-	// Agent breakdown (shown when agents exist)
-	if analysis.HasAgents {
-		sb.WriteString("\n")
-		sb.WriteString(render.SectionHeader("AGENT SUB-SESSIONS", sectionWidth, true))
-		sb.WriteString("\n\n")
-		sb.WriteString(formatAgentBreakdownContent(analysis, true))
-	}
-
-	// Message insights (shown when insights are available)
-	if analysis.Insights != nil {
-		sb.WriteString("\n")
-		sb.WriteString(render.SectionHeader("MESSAGE INSIGHTS", sectionWidth, true))
-		sb.WriteString("\n\n")
-		sb.WriteString(formatInsightsSectionContent(analysis.Insights, true))
-	}
-
-	// Footer with double-line separator
-	sb.WriteString("\n")
-	sb.WriteString(strings.Repeat("=", sectionWidth))
-	sb.WriteString("\n")
-
-	// Footer stats
-	msgStr := fmt.Sprintf("%d", analysis.MessageCount)
-	if analysis.AgentMessageCount > 0 {
-		msgStr = fmt.Sprintf("%d (%d parent, %d agents)",
-			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
-	}
-
-	footerText := fmt.Sprintf("Messages: %s", msgStr)
-	if isSummary {
-		sessionCount := analysis.SessionCount
-		if sessionCount > 0 {
-			footerText += fmt.Sprintf("  |  Sessions: %d", sessionCount)
-		}
-	} else {
-		// Show last active time for single sessions
-		if !analysis.EndTime.IsZero() {
-			footerText += fmt.Sprintf("  |  Last active: %s", analysis.EndTime.Local().Format("2006-01-02 15:04"))
-		}
-	}
-
-	sb.WriteString(footerText)
-	sb.WriteString("\n")
-	sb.WriteString(strings.Repeat("-", sectionWidth))
+	sb.WriteString(renderFooterSingleRule(sectionWidth, noColor))
 
 	return sb.String()
 }
