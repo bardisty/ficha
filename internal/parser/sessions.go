@@ -268,7 +268,9 @@ func ExtractAgentID(agentPath string) string {
 	return base
 }
 
-// countMessagesInFile counts assistant messages in a JSONL file
+// countMessagesInFile counts distinct assistant messages in a JSONL file.
+// Streaming lines repeating the same message.id + requestId count once, so
+// the count matches the deduplicated analysis (see DeduplicateMessages).
 // Returns -1 on error (file access, I/O) to distinguish from empty files (0)
 // Returns partial count on buffer overflow (oversized lines are skipped)
 func countMessagesInFile(path string) int {
@@ -278,7 +280,8 @@ func countMessagesInFile(path string) int {
 	}
 	defer file.Close()
 
-	count := 0
+	count := 0 // lines without a message id — never collapsed
+	seen := make(map[string]struct{})
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, 0, scannerInitialBufSize)
 	scanner.Buffer(buf, scannerMaxBufSize)
@@ -289,18 +292,25 @@ func countMessagesInFile(path string) int {
 			continue
 		}
 		var msg struct {
-			Type    string           `json:"type"`
-			Message *json.RawMessage `json:"message"`
+			Type      string `json:"type"`
+			RequestID string `json:"requestId"`
+			Message   *struct {
+				ID string `json:"id"`
+			} `json:"message"`
 		}
 		if json.Unmarshal(line, &msg) == nil && msg.Type == "assistant" && msg.Message != nil {
-			count++
+			if msg.Message.ID == "" {
+				count++
+			} else {
+				seen[msg.Message.ID+":"+msg.RequestID] = struct{}{}
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		if errors.Is(err, bufio.ErrTooLong) {
-			return count // Return partial count for oversized lines
+			return count + len(seen) // Return partial count for oversized lines
 		}
 		return -1 // I/O error
 	}
-	return count
+	return count + len(seen)
 }

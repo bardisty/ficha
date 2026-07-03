@@ -4,3 +4,4 @@ ccusage
 agent-outputs/
 references/
 .claudeignore
+.audits/

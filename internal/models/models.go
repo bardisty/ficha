@@ -154,10 +154,12 @@ type JSONLMessage struct {
 	Type      string            `json:"type"`
 	Message   *AssistantMessage `json:"message,omitempty"`
 	Timestamp time.Time         `json:"timestamp"`
+	RequestID string            `json:"requestId,omitempty"`
 }
 
 // AssistantMessage represents the message field for assistant type messages
 type AssistantMessage struct {
+	ID    string     `json:"id"`
 	Model string     `json:"model"`
 	Usage TokenUsage `json:"usage"`
 }
