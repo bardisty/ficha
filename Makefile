@@ -1,4 +1,4 @@
-.PHONY: build build-linux build-windows build-all clean test install lint fmt vet check
+.PHONY: build build-linux build-windows build-all clean test install lint fmt vet check update-golden
 
 # Binary name
 BINARY=ccusage
@@ -53,6 +53,10 @@ build-all: build-linux build-linux-arm64 build-windows build-darwin build-darwin
 test:
 	$(GOTEST) -v ./...
 
+# Regenerate golden files after an intentional rendering change, then review the diff
+update-golden:
+	$(GOTEST) ./internal/formatter ./internal/tui -run 'TestGolden' -update
+
 # Run tests with coverage
 test-coverage:
 	$(GOTEST) -v -coverprofile=coverage.out ./...
@@ -105,6 +109,7 @@ help:
 	@echo "  build-darwin-arm64 - Build for macOS ARM64"
 	@echo "  build-all       - Build for all platforms"
 	@echo "  test            - Run tests"
+	@echo "  update-golden   - Regenerate .golden rendering snapshots"
 	@echo "  test-coverage   - Run tests with coverage"
 	@echo "  install         - Install to GOPATH/bin"
 	@echo "  clean           - Clean build artifacts"
