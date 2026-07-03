@@ -896,7 +896,7 @@ func (m Model) renderFooter() string {
 func (m Model) renderCostByModelContent() string {
 	var sb strings.Builder
 
-	// Order by cost descending (canonical COST BY MODEL ordering, audit DUP-2)
+	// Highest-cost model first.
 	for _, modelID := range render.OrderModelsByCost(m.analysis.CostByModel) {
 		cost := m.analysis.CostByModel[modelID]
 		modelName := pricing.GetModelDisplayName(modelID)
@@ -1168,11 +1168,10 @@ type sessionWatcherStartedMsg struct {
 // sessionWatcherRestartMsg signals that the watcher should restart waiting
 type sessionWatcherRestartMsg struct{}
 
-// wrapErr adapts this model's error message type for the shared watcher
-// commands in file_watcher.go (audit TUI-5).
+// wrapErr lets the shared watcher commands report failures as this model's
+// error message.
 func (m Model) wrapErr(err error) tea.Msg { return errorMsg(err) }
 
-// The watcher lifecycle lives in file_watcher.go, shared with breakdown.go.
 func (m Model) watchFile() tea.Msg { return watchFileCmd(m.sessionPath, m.wrapErr) }
 
 func (m Model) waitForFileChange() tea.Cmd {
@@ -1207,11 +1206,8 @@ func (m Model) renderHeaderPanel(width int) string {
 	})
 }
 
-// Helper functions
-//
-// Pure formatting/number/duration/section/progress-bar helpers now live in
-// internal/render (audit DUP-1). The TUI-only helpers below (dim cost,
-// number-with-delta) wrap the shared render helpers with live-view behavior.
+// TUI-only formatting helpers, layered over the shared render.* helpers with
+// live-view behavior (a fully dimmed cost, a value with a change delta).
 
 // formatCostStyledDim returns a cost string entirely in dim style
 // Used for secondary cost displays like component breakdowns in insights

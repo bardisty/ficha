@@ -1,17 +1,10 @@
-// Package render holds the shared, presentation-layer string helpers used by
-// both the static formatters (internal/formatter) and the live TUI
-// (internal/tui). Before this package existed, ~23 of these helpers were
-// copy-pasted between internal/formatter/table.go and internal/tui/app.go and
-// had silently diverged (see audit findings DUP-1/DUP-2): different session-ID
-// truncation, different progress-bar widths, and different COST BY MODEL
-// ordering between `show` and `watch`. Centralizing them here gives one
-// canonical behavior per helper so the static and live views can no longer
-// drift apart.
+// Package render provides the presentation-layer string helpers shared by the
+// static formatters (internal/formatter) and the live TUI (internal/tui) so
+// both render costs, tokens, durations, and section chrome identically.
 //
-// Everything here is a pure function of its arguments (plus the shared
-// internal/styles palette); nothing does I/O. Styling is driven by the same
-// styles.* values both callers already used, so moving a helper here produces
-// byte-identical output.
+// Every helper is a pure function of its arguments plus the internal/styles
+// palette — no I/O, no hidden state — so a given call yields the same bytes in
+// a piped `show` and a live `watch`.
 package render
 
 import (
@@ -42,8 +35,9 @@ func Number(n int64) string {
 	return fmt.Sprintf("%d", n)
 }
 
-// Duration formats a span with hours as the largest unit. Use it for
-// single-session and per-message durations, which rarely exceed a day.
+// Duration formats a span with hours as the largest unit (no day rollup), for
+// single-session and per-message durations. Use DurationLong for aggregate
+// spans that can reach days.
 func Duration(d time.Duration) string {
 	if d < time.Minute {
 		return fmt.Sprintf("%ds", int(d.Seconds()))
@@ -54,10 +48,9 @@ func Duration(d time.Duration) string {
 	return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
 }
 
-// DurationLong formats a span that can roll up to days. It is the single
-// day-aware formatter shared by the aggregate headers of `summary` and
-// `global` (audit finding CLI-6): summary previously showed "104h 45m" while
-// global showed "4d" for comparable spans.
+// DurationLong rolls up to days once a span reaches 24h, for aggregate headers
+// (summary, global) where a total can span weeks and "336h" would be unreadable.
+// Note minutes drop their trailing seconds here, unlike Duration.
 func DurationLong(d time.Duration) string {
 	if d < time.Minute {
 		return fmt.Sprintf("%ds", int(d.Seconds()))
@@ -72,12 +65,10 @@ func DurationLong(d time.Duration) string {
 	return fmt.Sprintf("%dd", days)
 }
 
-// TruncateID shortens an ID to at most maxLen characters with a hard prefix
-// cut (no ellipsis). The two callers deliberately pass different budgets: the
-// static session header has room for the full 36-char UUID (maxLen 40), while
-// the compact live TUI header shows an 8-char prefix. Parameterizing the
-// length keeps one implementation without forcing both views to the same width
-// (audit finding DUP-2: formatter kept 40, TUI kept 8).
+// TruncateID shortens an ID to a maxLen-character prefix. maxLen is a parameter
+// because callers have different width budgets — the static header shows the
+// full 36-char UUID, the compact live header an 8-char prefix. The cut is a
+// plain prefix with no ellipsis, so a fixed maxLen yields a fixed-width column.
 func TruncateID(id string, maxLen int) string {
 	if maxLen < 0 {
 		maxLen = 0
@@ -115,11 +106,10 @@ func PrimaryModel(costByModel map[string]models.CostBreakdown) string {
 	return pricing.GetModelDisplayName(maxModel)
 }
 
-// OrderModelsByCost returns the model IDs of a cost-by-model map ordered by
-// total cost descending, breaking ties by model ID ascending for determinism.
-// This is the single canonical COST BY MODEL ordering for every view (audit
-// finding DUP-2: `show`/`global` sorted alphabetically while `watch` sorted by
-// cost, so the same session rendered its models in different orders).
+// OrderModelsByCost returns a cost-by-model map's IDs ordered by total cost
+// descending. Ties break by ID ascending so the output is stable run to run —
+// Go randomizes map iteration order, so the tiebreak is what makes it
+// deterministic, not a cosmetic detail.
 func OrderModelsByCost(costByModel map[string]models.CostBreakdown) []string {
 	ids := make([]string, 0, len(costByModel))
 	for id := range costByModel {
@@ -177,11 +167,10 @@ func SectionHeader(name string, width int, noColor bool) string {
 	return styles.DimStyle.Render(leftLine) + "[ " + styles.SectionHeaderStyle.Render(name) + " ]" + styles.DimStyle.Render(rightLine)
 }
 
-// ContextBar creates a visual progress bar showing context-window usage.
-// Segments: used (█), free (░). Total width is 38 characters, the single
-// canonical width that fits within the 76-column live panel with its 4-space
-// indent (audit finding DUP-2: the formatter used 40, which overflows the
-// live panel and wraps).
+// ContextBar renders a used(█)/free(░) progress bar of context-window usage.
+// The width is fixed at 38 so the whole "Context [bar] 380.0K (38% of 1.00M)"
+// line fits the 76-column live panel; a wider bar wraps and desyncs the TUI's
+// fixed header/footer height math.
 func ContextBar(contextSize, freeSpace int64, maxContext int, noColor bool) string {
 	const barWidth = 38
 
@@ -236,11 +225,11 @@ func ContextBar(contextSize, freeSpace int64, maxContext int, noColor bool) stri
 	return "[" + usedStyled + freeStyled + "]"
 }
 
-// CostStyled returns a cost string padded to width (ignoring ANSI codes) with
-// the digits past two decimals dimmed. When highlighted, the whole value is
-// rendered in the highlight color instead. Static callers pass highlighted
-// false (audit finding DUP-2 unified the formatter's 3-arg form with the TUI's
-// 4-arg highlight-aware form).
+// CostStyled right-pads a cost to width columns and dims the digits past the
+// cent so the significant figures read first. Padding is measured on the plain
+// string, not the styled one, so ANSI escape codes can't throw off column
+// alignment. highlighted overrides the dimming to flag a value that just changed
+// in the live view; static callers pass false.
 func CostStyled(cost float64, width int, highlighted, noColor bool) string {
 	full := fmt.Sprintf("$%.6f", cost)
 	plainLen := len(full)
@@ -272,8 +261,8 @@ func CostStyled(cost float64, width int, highlighted, noColor bool) string {
 	return padding + main + styles.DimStyle.Render(extra)
 }
 
-// CostStyledGreen returns a cost string in the savings (green) style with
-// padding and dimmed trailing decimals; highlighted overrides to highlight.
+// CostStyledGreen is CostStyled in the savings (green) style, for cache-savings
+// figures.
 func CostStyledGreen(cost float64, width int, highlighted, noColor bool) string {
 	full := fmt.Sprintf("$%.6f", cost)
 	plainLen := len(full)
@@ -301,9 +290,8 @@ func CostStyledGreen(cost float64, width int, highlighted, noColor bool) string 
 	return padding + styles.SavingsValueStyle.Render(main) + styles.DimStyle.Render(extra)
 }
 
-// CostStyledBoldGreen returns a cost string in the bold-green total style
-// (for totals/subtotals) with padding and dimmed trailing decimals;
-// highlighted overrides to highlight.
+// CostStyledBoldGreen is CostStyled in the bold-green total style, for totals
+// and subtotals.
 func CostStyledBoldGreen(cost float64, width int, highlighted, noColor bool) string {
 	full := fmt.Sprintf("$%.6f", cost)
 	plainLen := len(full)
@@ -331,9 +319,9 @@ func CostStyledBoldGreen(cost float64, width int, highlighted, noColor bool) str
 	return padding + styles.TotalValueStyle.Render(main) + styles.DimStyle.Render(extra)
 }
 
-// CostWithDimDecimals formats a cost to 6 decimal places with the main part
-// ($X.XX) in the provided color and the trailing decimals dimmed. Used by the
-// per-message breakdown rows, which color each row by its own cost gradient.
+// CostWithDimDecimals renders a cost with the cents-and-above in color and the
+// trailing digits dimmed. color is a parameter because the per-message breakdown
+// colors each row by its own cost gradient rather than a fixed style.
 func CostWithDimDecimals(cost float64, color lipgloss.Color, width int) string {
 	full := fmt.Sprintf("$%.6f", cost)
 	plainLen := len(full)

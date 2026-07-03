@@ -920,9 +920,8 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 		titlePart = fmt.Sprintf("Session: %s", render.TruncateID(analysis.SessionID, 40))
 	}
 
-	// Summaries aggregate many sessions and can span days; a single session
-	// uses hours as the largest unit. One day-aware formatter now serves the
-	// summary header, matching global (audit CLI-6).
+	// Summaries aggregate many sessions and can span days, so they use the
+	// day-aware format; a single session stays in hours.
 	durationValue := render.Duration(analysis.Duration.Duration())
 	if isSummary {
 		durationValue = render.DurationLong(analysis.Duration.Duration())
@@ -1124,7 +1123,7 @@ func renderContextSection(analysis *models.SessionAnalysis, noColor bool) string
 func formatCostByModelContent(analysis *models.SessionAnalysis, noColor bool) string {
 	var sb strings.Builder
 
-	// Order by cost descending (canonical COST BY MODEL ordering, audit DUP-2)
+	// Highest-cost model first.
 	for _, modelID := range render.OrderModelsByCost(analysis.CostByModel) {
 		cost := analysis.CostByModel[modelID]
 		modelName := pricing.GetModelDisplayName(modelID)
@@ -1329,9 +1328,8 @@ func formatInsightsSectionContent(insights *models.MessageInsights, noColor bool
 	return sb.String()
 }
 
-// Cost-styling adapters: the static formatter never highlights live changes,
-// so it wraps the canonical 4-arg render helpers with highlighted=false. The
-// rendering logic itself lives once in internal/render (audit DUP-1/DUP-2).
+// The static formatter never highlights changed values, so these wrappers pin
+// render's highlighted parameter to false.
 func formatCostStyled(cost float64, width int, noColor bool) string {
 	return render.CostStyled(cost, width, false, noColor)
 }
@@ -1453,6 +1451,3 @@ func FormatSessionListTable(entries []models.SessionEntry, noColor bool) string 
 
 	return sb.String()
 }
-
-// Pure formatting/number/duration/section helpers now live in internal/render
-// (audit DUP-1). Cost-styling adapters are defined above.

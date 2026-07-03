@@ -11,15 +11,13 @@ import (
 )
 
 // sessionIDDisplayLen is how many leading characters of a session ID the
-// compact live header shows. The static `show` header has room for the full
-// UUID; the live panel is width-constrained, so it shows a short prefix.
+// compact live header shows; the width-constrained live panel can't fit the
+// full UUID that the static `show` header prints.
 const sessionIDDisplayLen = 8
 
-// liveHeaderParams carries the per-frame state the shared live header needs.
-// Both Model (watch) and BreakdownModel (breakdown) populate it identically,
-// so this one renderer keeps the two live headers from drifting apart
-// (audit finding TUI-5: the headers had already diverged on their dead
-// minimum-width fallback, 72 vs 76).
+// liveHeaderParams is the per-frame state the shared live header renders. Both
+// the watch and breakdown models fill it the same way so their headers stay
+// identical.
 type liveHeaderParams struct {
 	sessionID     string
 	prevSessionID string
@@ -40,8 +38,8 @@ type liveHeaderParams struct {
 func renderLiveHeaderPanel(p liveHeaderParams) string {
 	var sb strings.Builder
 
-	// Minimum width for content (dead in practice: callers clamp width to
-	// >= 40 via panelWidthFor, per audit D9). Canonicalized to 76.
+	// Fallback for an absurdly small width; callers clamp to >= 40 via
+	// panelWidthFor, so this rarely fires.
 	width := p.width
 	if width < 40 {
 		width = 76

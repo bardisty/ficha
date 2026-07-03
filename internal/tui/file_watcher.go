@@ -92,14 +92,9 @@ func awaitSessionFileChange(watcher *fsnotify.Watcher, done chan struct{}, sessi
 	}
 }
 
-// --- Shared watcher lifecycle commands (audit finding TUI-5) -----------------
-//
-// The watch and breakdown TUIs run the same file/session-watching state
-// machine; only their error-message type differs. These helpers hold the
-// single copy of that machinery, parameterized by an onErr constructor so each
-// model keeps its own error message. They replace the previously duplicated
-// watchFile / waitForFileChange* / startSessionWatcher / waitForNewSession
-// pairs that had begun to drift between app.go and breakdown.go.
+// The watch and breakdown models run the same file/session-watching state
+// machine and differ only in their error-message type, so each passes an onErr
+// constructor to wrap failures in its own message.
 
 // watchFileCmd creates the file watcher for sessionPath, returning a
 // watcherStartedMsg on success or onErr(err) on failure.
@@ -112,8 +107,9 @@ func watchFileCmd(sessionPath string, onErr func(error) tea.Msg) tea.Msg {
 }
 
 // waitForFileChangeCmd waits for the session file to change (or for shutdown).
-// It registers with wg before returning the command so the quit handler's
-// wg.Wait can never race an Add issued inside the goroutine (audit TUI-10).
+// wg.Add happens here, before the command is returned, not inside the returned
+// goroutine: the quit handler calls wg.Wait, and an Add that races Wait can be
+// missed, so shutdown wouldn't actually wait for this goroutine to drain.
 func waitForFileChangeCmd(wg *sync.WaitGroup, closing *atomic.Bool, watcher *fsnotify.Watcher, done chan struct{}, sessionPath string, onErr func(error) tea.Msg) tea.Cmd {
 	wg.Add(1)
 	return func() tea.Msg {
@@ -149,7 +145,8 @@ func startSessionWatcherCmd(projectDir, sessionID string, onErr func(error) tea.
 
 // waitForNewSessionCmd blocks until the session watcher reports a new session
 // (switch), a same-session restart, or shutdown. Returns a nil command when
-// there is no watcher. Registers with wg before returning (audit TUI-10).
+// there is no watcher. wg.Add is before the return for the same reason as
+// waitForFileChangeCmd.
 func waitForNewSessionCmd(wg *sync.WaitGroup, sw *SessionWatcher) tea.Cmd {
 	if sw == nil {
 		return nil

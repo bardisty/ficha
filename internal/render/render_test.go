@@ -75,9 +75,8 @@ func TestDuration(t *testing.T) {
 	}
 }
 
-// TestDurationLong pins the day-aware aggregate-header formatter (audit CLI-6).
-// The last three cases are the exact spans in the summary / summary-details /
-// global goldens, so they document the canonical rollups.
+// The last three cases mirror the exact spans in the summary, summary-details,
+// and global golden fixtures, so they pin how each header rolls up.
 func TestDurationLong(t *testing.T) {
 	tests := []struct {
 		input time.Duration
@@ -100,9 +99,8 @@ func TestDurationLong(t *testing.T) {
 	}
 }
 
-// TestTruncateID covers both budgets the two views pass: the compact live
-// header (8) and the static session header (40). Truncation is a hard prefix
-// cut with no ellipsis (audit DUP-2).
+// Covers both budgets the callers pass: 8 for the compact live header, 40 for
+// the static session header. Truncation is a plain prefix, no ellipsis.
 func TestTruncateID(t *testing.T) {
 	tests := []struct {
 		id     string
@@ -132,8 +130,7 @@ func TestTruncateID(t *testing.T) {
 	}
 }
 
-// TestOrderModelsByCost pins the canonical COST BY MODEL ordering: cost
-// descending, ties broken by model ID ascending (audit DUP-2).
+// Cost descending, ties broken by ID ascending for stable output.
 func TestOrderModelsByCost(t *testing.T) {
 	costByModel := map[string]models.CostBreakdown{
 		"claude-haiku-4-5": {TotalCost: 0.42},

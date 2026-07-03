@@ -249,7 +249,7 @@ func renderGlobalHeaderPanel(analysis *models.GlobalAnalysis, width int, noColor
 func formatGlobalCostByModel(costByModel map[string]models.CostBreakdown, noColor bool) string {
 	var sb strings.Builder
 
-	// Order by cost descending (canonical COST BY MODEL ordering, audit DUP-2)
+	// Highest-cost model first.
 	for _, modelID := range render.OrderModelsByCost(costByModel) {
 		cost := costByModel[modelID]
 		modelName := pricing.GetModelDisplayName(modelID)
