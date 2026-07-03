@@ -35,6 +35,10 @@ type BreakdownModel struct {
 	loading      bool
 	lastUpdated  time.Time
 
+	// agentCache memoizes agent sub-session parses so a reload triggered by a
+	// parent-file write doesn't re-parse every unchanged agent (see TUI-3).
+	agentCache *analyzer.AgentParseCache
+
 	// Viewport for scrolling
 	viewport   viewport.Model
 	autoScroll bool
@@ -97,6 +101,7 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 		newMsgIndices: make(map[int]time.Time),
 		projectDir:    projectDir,
 		followMode:    followMode,
+		agentCache:    analyzer.NewAgentParseCache(),
 	}
 }
 
@@ -252,6 +257,8 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.skippedLines = 0
 		m.loading = true
 		m.newMsgIndices = make(map[int]time.Time)
+		// Drop the previous session's cached agent parses
+		m.agentCache = analyzer.NewAgentParseCache()
 
 		// Stop old file watcher, will be restarted by watchFile
 		if m.watcher != nil {
@@ -642,7 +649,7 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	if m.closing != nil && m.closing.Load() {
 		return nil
 	}
-	messages, skippedLines, err := analyzer.GetBreakdownMessages(m.sessionPath, m.sessionID)
+	messages, skippedLines, err := analyzer.GetBreakdownMessagesWithCache(m.sessionPath, m.sessionID, m.agentCache)
 	if err != nil {
 		return breakdownErrorMsg(err)
 	}

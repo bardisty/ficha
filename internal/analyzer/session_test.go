@@ -362,7 +362,7 @@ func TestAnalyzeMultipleSessions_Basic(t *testing.T) {
 		{SessionID: "sess-two", FullPath: sess2Path},
 	}
 
-	result, err := AnalyzeMultipleSessions(entries)
+	result, results, err := AnalyzeMultipleSessions(entries)
 	if err != nil {
 		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
 	}
@@ -370,6 +370,19 @@ func TestAnalyzeMultipleSessions_Basic(t *testing.T) {
 	// MessageCount: 2 + 1 = 3
 	if result.MessageCount != 3 {
 		t.Errorf("MessageCount: got %d, want 3", result.MessageCount)
+	}
+
+	// One result per input entry, in input order, both parsed successfully
+	if len(results) != 2 {
+		t.Fatalf("results: got %d, want 2", len(results))
+	}
+	for i, r := range results {
+		if r.Entry.SessionID != entries[i].SessionID {
+			t.Errorf("results[%d].Entry.SessionID: got %q, want %q", i, r.Entry.SessionID, entries[i].SessionID)
+		}
+		if r.Analysis == nil {
+			t.Errorf("results[%d].Analysis: got nil, want non-nil", i)
+		}
 	}
 
 	// TotalCost: 0.015 + 0.021 = 0.036
@@ -407,12 +420,16 @@ func TestAnalyzeMultipleSessions_AllFail(t *testing.T) {
 		{SessionID: "bad-2", FullPath: "/nonexistent/path/bad-2.jsonl"},
 	}
 
-	_, err := AnalyzeMultipleSessions(entries)
+	_, results, err := AnalyzeMultipleSessions(entries)
 	if err == nil {
 		t.Fatal("expected error when all sessions fail")
 	}
 	if !strings.Contains(err.Error(), "all") {
 		t.Errorf("error message should contain 'all', got: %s", err.Error())
+	}
+	// When every session fails, no results are returned alongside the error
+	if results != nil {
+		t.Errorf("results: got %v, want nil on total failure", results)
 	}
 }
 
@@ -433,7 +450,7 @@ func TestAnalyzeMultipleSessions_MixedSuccess(t *testing.T) {
 		{SessionID: "invalid-sess", FullPath: "/nonexistent/invalid-sess.jsonl"},
 	}
 
-	result, err := AnalyzeMultipleSessions(entries)
+	result, results, err := AnalyzeMultipleSessions(entries)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -441,6 +458,18 @@ func TestAnalyzeMultipleSessions_MixedSuccess(t *testing.T) {
 	// SkippedSessions should be 1
 	if result.SkippedSessions != 1 {
 		t.Errorf("SkippedSessions: got %d, want 1", result.SkippedSessions)
+	}
+
+	// Per-session results carry every entry in order; the failed one has a nil
+	// Analysis (rendered as an error row), the valid one does not
+	if len(results) != 2 {
+		t.Fatalf("results: got %d, want 2", len(results))
+	}
+	if results[0].Analysis == nil {
+		t.Error("results[0].Analysis (valid-sess): got nil, want non-nil")
+	}
+	if results[1].Analysis != nil {
+		t.Error("results[1].Analysis (invalid-sess): got non-nil, want nil")
 	}
 
 	// Result should be non-nil with data from valid session

@@ -9,8 +9,16 @@ import (
 	"github.com/bardisty/ccusage/internal/parser"
 )
 
-// AnalyzeSession analyzes a session JSONL file and returns the complete analysis
+// AnalyzeSession analyzes a session JSONL file and returns the complete analysis.
 func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) (*models.SessionAnalysis, error) {
+	return AnalyzeSessionWithCache(sessionPath, sessionID, includeMessages, nil)
+}
+
+// AnalyzeSessionWithCache is AnalyzeSession with an optional agent-parse cache.
+// The parent session file is always re-parsed (it is the file being appended to
+// in live views); only agent sub-sessions are served from the cache when
+// unchanged. A nil cache parses every agent, matching AnalyzeSession.
+func AnalyzeSessionWithCache(sessionPath string, sessionID string, includeMessages bool, cache *AgentParseCache) (*models.SessionAnalysis, error) {
 	// Parse the JSONL file
 	result, err := parser.ParseJSONLFileWithResult(sessionPath)
 	if err != nil {
@@ -48,7 +56,7 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 		skippedAgents := 0
 
 		for _, agentPath := range agentPaths {
-			agentAnalysis, err := AnalyzeAgent(agentPath, includeMessages)
+			agentAnalysis, err := analyzeAgentWithCache(agentPath, cache)
 			if err != nil {
 				skippedAgents++
 				continue // Skip agents that can't be parsed
@@ -97,20 +105,19 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 	return analysis, nil
 }
 
-// AnalyzeAgent analyzes a single agent sub-session
+// AnalyzeAgent analyzes a single agent sub-session. includeMessages is accepted
+// for symmetry with AnalyzeSession but unused: AgentAnalysis carries aggregates
+// only, never the per-message list.
 func AnalyzeAgent(agentPath string, includeMessages bool) (*models.AgentAnalysis, error) {
-	// Parse the JSONL file
-	result, err := parser.ParseJSONLFileWithResult(agentPath)
+	return analyzeAgentWithCache(agentPath, nil)
+}
+
+// analyzeAgentWithCache builds an AgentAnalysis from an agent file, serving the
+// parse from cache when unchanged (nil cache always parses).
+func analyzeAgentWithCache(agentPath string, cache *AgentParseCache) (*models.AgentAnalysis, error) {
+	messageAnalyses, skippedLines, err := loadAgentMessages(agentPath, cache)
 	if err != nil {
 		return nil, err
-	}
-
-	// Extract usage data from messages
-	messageAnalyses := parser.ExtractUsageFromMessages(result.Messages)
-
-	// Calculate costs for each message
-	for i := range messageAnalyses {
-		CalculateMessageCost(&messageAnalyses[i])
 	}
 
 	agentID := parser.ExtractAgentID(agentPath)
@@ -120,7 +127,7 @@ func AnalyzeAgent(agentPath string, includeMessages bool) (*models.AgentAnalysis
 		FullPath:     agentPath,
 		MessageCount: len(messageAnalyses),
 		CostByModel:  make(map[string]models.CostBreakdown),
-		SkippedLines: result.SkippedLines,
+		SkippedLines: skippedLines,
 	}
 
 	if len(messageAnalyses) == 0 {
@@ -239,10 +246,14 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 	return analysis
 }
 
-// AnalyzeMultipleSessions analyzes multiple sessions and returns aggregate stats
-func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnalysis, error) {
+// AnalyzeMultipleSessions analyzes multiple sessions and returns aggregate
+// stats plus the per-session results (one per input entry, in input order). A
+// result whose Analysis is nil failed to parse. Returning the per-session
+// analyses lets the summary detail view render its breakdown without
+// re-parsing every file (the aggregate already parsed them once).
+func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnalysis, []models.SessionResult, error) {
 	if len(entries) == 0 {
-		return nil, fmt.Errorf("no sessions to analyze")
+		return nil, nil, fmt.Errorf("no sessions to analyze")
 	}
 
 	aggregate := &models.SessionAnalysis{
@@ -250,6 +261,7 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 		CostByModel: make(map[string]models.CostBreakdown),
 	}
 
+	results := make([]models.SessionResult, 0, len(entries))
 	var firstTime, lastTime time.Time
 	firstTimeSet := false
 	skippedSessions := 0
@@ -259,9 +271,11 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 		sessionAnalysis, err := AnalyzeSession(entry.FullPath, entry.SessionID, false)
 		if err != nil {
 			skippedSessions++
+			results = append(results, models.SessionResult{Entry: entry, Analysis: nil})
 			continue // Skip sessions that can't be parsed
 		}
 		successfulSessions++
+		results = append(results, models.SessionResult{Entry: entry, Analysis: sessionAnalysis})
 		// Also aggregate skipped agents and lines from individual sessions
 		aggregate.SkippedAgents += sessionAnalysis.SkippedAgents
 		aggregate.SkippedLines += sessionAnalysis.SkippedLines
@@ -304,8 +318,8 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 
 	// Return error if all sessions failed to parse
 	if successfulSessions == 0 {
-		return nil, fmt.Errorf("all %d sessions failed to parse", len(entries))
+		return nil, nil, fmt.Errorf("all %d sessions failed to parse", len(entries))
 	}
 
-	return aggregate, nil
+	return aggregate, results, nil
 }

@@ -131,6 +131,15 @@ type SessionAnalysis struct {
 	SessionCount       int                      `json:"-"`                          // Number of sessions in summary
 }
 
+// SessionResult pairs a session entry with its computed analysis. Analysis is
+// nil when the session failed to parse (the summary detail view renders such
+// rows as "(error)"). AnalyzeMultipleSessions returns one per input entry so
+// callers can render per-session breakdowns without re-parsing each file.
+type SessionResult struct {
+	Entry    SessionEntry
+	Analysis *SessionAnalysis
+}
+
 // SessionEntry represents an entry in sessions-index.json
 type SessionEntry struct {
 	SessionID    string    `json:"sessionId"`

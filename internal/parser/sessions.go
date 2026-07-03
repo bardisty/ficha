@@ -111,8 +111,11 @@ func GetSessionsByCreated(index *models.SessionsIndex) []models.SessionEntry {
 }
 
 // DiscoverSessionsFromDisk scans the project directory for .jsonl session files
-// and builds SessionEntry records from file metadata
-func DiscoverSessionsFromDisk(projectDir string) ([]models.SessionEntry, error) {
+// and builds SessionEntry records from file metadata. countMessages controls
+// whether each file is scanned for its message count: only `list` displays
+// discovery-time counts, so analysis paths pass false to skip the scan (they
+// recompute counts from their own parse — see buildDiskEntry).
+func DiscoverSessionsFromDisk(projectDir string, countMessages bool) ([]models.SessionEntry, error) {
 	entries, err := os.ReadDir(projectDir)
 	if err != nil {
 		return nil, err
@@ -132,22 +135,20 @@ func DiscoverSessionsFromDisk(projectDir string) ([]models.SessionEntry, error) 
 			continue // Skip files we can't stat
 		}
 
-		sessions = append(sessions, buildDiskEntry(projectDir, sessionID, fullPath, info.ModTime()))
+		sessions = append(sessions, buildDiskEntry(projectDir, sessionID, fullPath, info.ModTime(), countMessages))
 	}
 
 	return sessions, nil
 }
 
-// buildDiskEntry builds a SessionEntry for a session file on disk, counting
-// its messages and discovering agent sub-sessions.
-func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time) models.SessionEntry {
-	// Count messages by reading first pass of file
-	// Treat -1 (error) as 0 for display purposes
-	parentMsgCount := countMessagesInFile(fullPath)
-	if parentMsgCount < 0 {
-		parentMsgCount = 0
-	}
-
+// buildDiskEntry builds a SessionEntry for a session file on disk, discovering
+// its agent sub-sessions and (when countMessages is true) counting messages.
+//
+// Message counting fully scans every parent and agent file. That cost is wasted
+// on analysis paths, which re-parse the same files and recompute counts anyway,
+// so they pass countMessages=false and leave the counts zero. Agent discovery
+// is a cheap directory listing and always runs.
+func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time, countMessages bool) models.SessionEntry {
 	// Discover agent sub-sessions (ignore errors - missing subagents dir is common)
 	agentPaths, err := DiscoverAgentSessions(projectDir, sessionID)
 	if err != nil {
@@ -156,13 +157,18 @@ func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time) m
 		_ = err // Error intentionally ignored - subagent discovery is non-critical
 	}
 
-	// Count agent messages separately for display breakdown
-	// Treat -1 (error) as 0 for individual files
+	// Count parent + agent messages for display. countMessagesInFile returns -1
+	// on error; treat that (and empty files) as 0.
+	parentMsgCount := 0
 	agentMsgCount := 0
-	for _, agentPath := range agentPaths {
-		count := countMessagesInFile(agentPath)
-		if count > 0 {
-			agentMsgCount += count
+	if countMessages {
+		if c := countMessagesInFile(fullPath); c > 0 {
+			parentMsgCount = c
+		}
+		for _, agentPath := range agentPaths {
+			if c := countMessagesInFile(agentPath); c > 0 {
+				agentMsgCount += c
+			}
 		}
 	}
 
@@ -183,9 +189,10 @@ func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time) m
 // Index-only entries (present in the index but missed by the disk scan) are
 // kept only if their FullPath resolves inside projectDir and still exists;
 // their message counts and agent info are recomputed from disk because the
-// index may be stale. Returns merged list and count of orphaned sessions
-// found on disk.
-func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.SessionEntry, projectDir string) ([]models.SessionEntry, int) {
+// index may be stale. countMessages is forwarded to that rebuild so analysis
+// paths skip the message-count scan (see buildDiskEntry). Returns merged list
+// and count of orphaned sessions found on disk.
+func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.SessionEntry, projectDir string, countMessages bool) ([]models.SessionEntry, int) {
 	// Build map from index for fast lookup
 	indexMap := make(map[string]models.SessionEntry)
 	if index != nil {
@@ -235,7 +242,7 @@ func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.Sess
 		if err != nil || info.IsDir() {
 			continue
 		}
-		rebuilt := buildDiskEntry(projectDir, e.SessionID, e.FullPath, info.ModTime())
+		rebuilt := buildDiskEntry(projectDir, e.SessionID, e.FullPath, info.ModTime(), countMessages)
 		// Index metadata still takes precedence, as in the matched branch above
 		rebuilt.Created = e.Created
 		rebuilt.ProjectPath = e.ProjectPath

@@ -123,8 +123,9 @@ func AnalyzeAllProjects(projects []models.ProjectInfo) (*models.GlobalAnalysis, 
 
 // analyzeProject analyzes a single project directory
 func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error) {
-	// Discover sessions on disk
-	diskSessions, err := parser.DiscoverSessionsFromDisk(project.FullPath)
+	// Discover sessions on disk. AnalyzeMultipleSessions recomputes message
+	// counts from its own parse below, so skip the discovery-time count scan.
+	diskSessions, err := parser.DiscoverSessionsFromDisk(project.FullPath, false)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +135,7 @@ func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error)
 	index, _ := parser.ParseSessionsIndex(indexPath) // Ignore error - index may not exist
 
 	// Merge sources
-	sessions, _ := parser.MergeSessionSources(index, diskSessions, project.FullPath)
+	sessions, _ := parser.MergeSessionSources(index, diskSessions, project.FullPath, false)
 
 	if len(sessions) == 0 {
 		return &models.ProjectAnalysis{
@@ -143,8 +144,9 @@ func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error)
 		}, nil
 	}
 
-	// Analyze all sessions
-	aggregate, err := AnalyzeMultipleSessions(sessions)
+	// Analyze all sessions (the per-session results are only needed by the
+	// summary detail view, not the global rollup)
+	aggregate, _, err := AnalyzeMultipleSessions(sessions)
 	if err != nil {
 		return nil, err
 	}

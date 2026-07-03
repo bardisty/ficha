@@ -372,10 +372,12 @@ func TestGoldenGlobalTableDetails(t *testing.T) {
 
 // --- golden tests: FormatSummaryTableWithDetails ---
 //
-// FormatSummaryTableWithDetails re-analyzes each session from disk
-// (analyzer.AnalyzeSession inside renderSessionBreakdown), so these tests build
-// a real temp-dir project fixture. Costs in the goldens therefore come from the
-// live pricing catalog; a pricing change legitimately changes them.
+// The formatter is pure: it renders the per-session results that
+// AnalyzeMultipleSessions produces, doing no parsing itself. These tests build
+// a real temp-dir project fixture and run it through AnalyzeMultipleSessions so
+// the results (and the goldens) reflect the real analysis pipeline. Costs in
+// the goldens therefore come from the live pricing catalog; a pricing change
+// legitimately changes them.
 
 const goldenAlphaID = "aaaa1111-2222-3333-4444-555566667777"
 const goldenBetaID = "bbbb2222-3333-4444-5555-666677778888"
@@ -441,35 +443,36 @@ func summaryDetailsFixture(t *testing.T) []models.SessionEntry {
 	}
 }
 
-// summaryDetailsAnalysis aggregates the fixture the same way cmd/summary does.
-func summaryDetailsAnalysis(t *testing.T, entries []models.SessionEntry) *models.SessionAnalysis {
+// summaryDetailsAnalysis aggregates the fixture the same way cmd/summary does,
+// returning both the aggregate and the per-session results the formatter renders.
+func summaryDetailsAnalysis(t *testing.T, entries []models.SessionEntry) (*models.SessionAnalysis, []models.SessionResult) {
 	t.Helper()
-	analysis, err := analyzer.AnalyzeMultipleSessions(entries)
+	analysis, results, err := analyzer.AnalyzeMultipleSessions(entries)
 	if err != nil {
 		t.Fatalf("AnalyzeMultipleSessions: %v", err)
 	}
 	analysis.IsSummary = true
 	analysis.SessionCount = len(entries)
-	return analysis
+	return analysis, results
 }
 
 func TestGoldenSummaryDetails(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	entries := summaryDetailsFixture(t)
-	analysis := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details", FormatSummaryTableWithDetails(analysis, entries, "/home/user/src/app", true, false))
+	analysis, results := summaryDetailsAnalysis(t, entries)
+	checkGolden(t, "summary_details", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false))
 }
 
 func TestGoldenSummaryDetailsExpandAgents(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	entries := summaryDetailsFixture(t)
-	analysis := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_expand", FormatSummaryTableWithDetails(analysis, entries, "/home/user/src/app", true, true))
+	analysis, results := summaryDetailsAnalysis(t, entries)
+	checkGolden(t, "summary_details_expand", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true))
 }
 
 func TestGoldenSummaryDetailsColor(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
 	entries := summaryDetailsFixture(t)
-	analysis := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_color", FormatSummaryTableWithDetails(analysis, entries, "/home/user/src/app", false, false))
+	analysis, results := summaryDetailsAnalysis(t, entries)
+	checkGolden(t, "summary_details_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, false))
 }

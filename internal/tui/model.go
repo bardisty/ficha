@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/NimbleMarkets/ntcharts/sparkline"
+	"github.com/bardisty/ccusage/internal/analyzer"
 	"github.com/bardisty/ccusage/internal/models"
 	"github.com/bardisty/ccusage/internal/styles"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -42,6 +43,10 @@ type Model struct {
 	err         error
 	loading     bool
 	lastUpdated time.Time
+
+	// agentCache memoizes agent sub-session parses so a reload triggered by a
+	// parent-file write doesn't re-parse every unchanged agent (see TUI-3).
+	agentCache *analyzer.AgentParseCache
 
 	// Change tracking for highlight animation
 	changedAt   map[string]time.Time
@@ -119,6 +124,7 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 		followMode:  followMode,
 		costChart:   chart,
 		costHistory: make([]float64, 0),
+		agentCache:  analyzer.NewAgentParseCache(),
 	}
 }
 
@@ -269,6 +275,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.changedAt = make(map[string]time.Time)
 		m.deltaTokens = make(map[string]int64)
 		m.deltaCount = 0
+		// Drop the previous session's cached agent parses
+		m.agentCache = analyzer.NewAgentParseCache()
 
 		// Reset cost chart for new session
 		m.costHistory = make([]float64, 0)

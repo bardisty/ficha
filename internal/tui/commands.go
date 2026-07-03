@@ -40,8 +40,9 @@ func (m Model) loadAnalysis() tea.Msg {
 	}
 	// Always include messages for the cost trend chart
 	// The verbose flag controls additional output details, but we need messages
-	// for the live chart regardless
-	analysis, err := analyzer.AnalyzeSession(m.sessionPath, m.sessionID, true)
+	// for the live chart regardless. The agent cache skips re-parsing unchanged
+	// agent sub-sessions on each reload.
+	analysis, err := analyzer.AnalyzeSessionWithCache(m.sessionPath, m.sessionID, true, m.agentCache)
 	if err != nil {
 		return errorMsg(err)
 	}
