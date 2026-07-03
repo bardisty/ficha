@@ -64,6 +64,9 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 
 	// Calculate content length
 	sep := styles.BoxVerticalSep
+	if noColor {
+		sep = styles.AsciiVertical
+	}
 	content := fmt.Sprintf("%s  %s  %s", titlePart, sep, durationPart)
 	contentLen := len(titlePart) + 2 + 1 + 2 + len(durationPart)
 	padding := innerWidth - contentLen
@@ -73,24 +76,24 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 
 	if noColor {
 		// Top border
-		sb.WriteString(styles.BoxTopLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxTopRight)
+		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
+		sb.WriteString(styles.AsciiCorner)
 		sb.WriteString("\n")
 
 		// Content line
-		sb.WriteString(styles.BoxVertical)
+		sb.WriteString(styles.AsciiVertical)
 		sb.WriteString("  ")
 		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
 		sb.WriteString("  ")
-		sb.WriteString(styles.BoxVertical)
+		sb.WriteString(styles.AsciiVertical)
 		sb.WriteString("\n")
 
 		// Bottom border
-		sb.WriteString(styles.BoxBottomLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxBottomRight)
+		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
+		sb.WriteString(styles.AsciiCorner)
 	} else {
 		// Build styled content - matches plain text format
 		var titleStyled string
@@ -151,8 +154,12 @@ func renderHeroCost(cost float64, width int, noColor bool) string {
 		rightLen = 0
 	}
 
-	leftLine := strings.Repeat(styles.LineHorizontal, sideLen)
-	rightLine := strings.Repeat(styles.LineHorizontal, rightLen)
+	rule := styles.LineHorizontal
+	if noColor {
+		rule = styles.AsciiRule
+	}
+	leftLine := strings.Repeat(rule, sideLen)
+	rightLine := strings.Repeat(rule, rightLen)
 
 	if noColor {
 		return leftLine + bracketedCost + rightLine

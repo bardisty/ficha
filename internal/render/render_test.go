@@ -255,15 +255,19 @@ func TestContextBar(t *testing.T) {
 	if n := len([]rune(bar)); n != 40 {
 		t.Errorf("bar rune length = %d, want 40 (38 bar + 2 brackets)", n)
 	}
-	if !strings.ContainsRune(bar, '█') || !strings.ContainsRune(bar, '░') {
-		t.Errorf("bar should contain both used (█) and free (░) segments: %q", bar)
+	// no-color uses the ASCII bar fallback (D4): '#' used, '-' free.
+	if !strings.ContainsRune(bar, '#') || !strings.ContainsRune(bar, '-') {
+		t.Errorf("bar should contain both used (#) and free (-) segments: %q", bar)
+	}
+	if strings.ContainsRune(bar, '█') || strings.ContainsRune(bar, '░') {
+		t.Errorf("no-color bar should not contain Unicode block glyphs: %q", bar)
 	}
 	if strings.Contains(bar, "\x1b[") {
 		t.Errorf("noColor bar should not contain ANSI codes: %q", bar)
 	}
 
-	// maxContext == 0 returns 38 free blocks with no brackets.
-	if got, want := ContextBar(0, 0, 0, true), strings.Repeat("░", 38); got != want {
+	// maxContext == 0 returns 38 free cells with no brackets.
+	if got, want := ContextBar(0, 0, 0, true), strings.Repeat("-", 38); got != want {
 		t.Errorf("ContextBar(maxContext=0) = %q, want %q", got, want)
 	}
 }

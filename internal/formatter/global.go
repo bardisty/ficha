@@ -114,6 +114,9 @@ func renderGlobalHeaderPanel(analysis *models.GlobalAnalysis, width int, noColor
 	durationPart := fmt.Sprintf("Duration: %s", render.DurationLong(analysis.Duration.Duration()))
 
 	sep := styles.BoxVerticalSep
+	if noColor {
+		sep = styles.AsciiVertical
+	}
 	content := fmt.Sprintf("%s  %s  %s  %s  %s", titlePart, sep, sessionPart, sep, durationPart)
 	contentLen := len(titlePart) + 2 + 1 + 2 + len(sessionPart) + 2 + 1 + 2 + len(durationPart)
 	padding := innerWidth - contentLen
@@ -122,22 +125,22 @@ func renderGlobalHeaderPanel(analysis *models.GlobalAnalysis, width int, noColor
 	}
 
 	if noColor {
-		sb.WriteString(styles.BoxTopLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxTopRight)
+		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
+		sb.WriteString(styles.AsciiCorner)
 		sb.WriteString("\n")
 
-		sb.WriteString(styles.BoxVertical)
+		sb.WriteString(styles.AsciiVertical)
 		sb.WriteString("  ")
 		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
 		sb.WriteString("  ")
-		sb.WriteString(styles.BoxVertical)
+		sb.WriteString(styles.AsciiVertical)
 		sb.WriteString("\n")
 
-		sb.WriteString(styles.BoxBottomLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxBottomRight)
+		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
+		sb.WriteString(styles.AsciiCorner)
 	} else {
 		titleStyled := fmt.Sprintf("%s %d projects",
 			sectionHeaderStyle.Render("Global:"),

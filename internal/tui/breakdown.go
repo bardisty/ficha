@@ -373,7 +373,11 @@ func (m BreakdownModel) View() string {
 	sb.WriteString("\n")
 
 	// Double-line footer separator
-	footerSep := strings.Repeat(styles.BoxHorizontal, panelWidth)
+	footerRule := styles.BoxHorizontal
+	if m.noColor {
+		footerRule = styles.AsciiHorizontal
+	}
+	footerSep := strings.Repeat(footerRule, panelWidth)
 	if !m.noColor {
 		footerSep = panelBorderStyle.Render(footerSep)
 	}
@@ -408,16 +412,20 @@ func (m BreakdownModel) View() string {
 			sb.WriteString(warnStyle.Render(fmt.Sprintf("⚠ %d skipped line(s)", m.skippedLines)))
 		}
 	} else {
-		sb.WriteString(fmt.Sprintf("  Messages: %d │ Total: $%.6f │ Scroll: %s",
+		sb.WriteString(fmt.Sprintf("  Messages: %d | Total: $%.6f | Scroll: %s",
 			len(m.messages), m.totalCost, scrollMode))
 		if m.skippedLines > 0 {
-			sb.WriteString(fmt.Sprintf(" │ ! %d skipped line(s)", m.skippedLines))
+			sb.WriteString(fmt.Sprintf(" | ! %d skipped line(s)", m.skippedLines))
 		}
 	}
 	sb.WriteString("\n")
 
 	// Single-line separator before help
-	helpSep := strings.Repeat(styles.LineHorizontal, panelWidth)
+	helpRule := styles.LineHorizontal
+	if m.noColor {
+		helpRule = styles.AsciiRule
+	}
+	helpSep := strings.Repeat(helpRule, panelWidth)
 	if !m.noColor {
 		helpSep = dimStyle.Render(helpSep)
 	}
@@ -492,7 +500,11 @@ func (m BreakdownModel) renderCompactInsights() string {
 		}
 	}
 
-	return "  " + strings.Join(parts, " │ ")
+	sep := " │ "
+	if m.noColor {
+		sep = " | "
+	}
+	return "  " + strings.Join(parts, sep)
 }
 
 // renderTableHeader renders the table header row
@@ -507,9 +519,14 @@ func (m BreakdownModel) renderTableHeader() string {
 	return header
 }
 
-// renderTableSeparator renders the separator line using Unicode box-drawing characters
+// renderTableSeparator renders the table separator rule: box-drawing when
+// colored, an ASCII fallback in no-color (D4).
 func (m BreakdownModel) renderTableSeparator() string {
-	sep := "  " + strings.Repeat(styles.LineHorizontal, panelWidthFor(m.width))
+	rule := styles.LineHorizontal
+	if m.noColor {
+		rule = styles.AsciiRule
+	}
+	sep := "  " + strings.Repeat(rule, panelWidthFor(m.width))
 	if !m.noColor {
 		return tableBorderStyle.Render(sep)
 	}

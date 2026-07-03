@@ -22,22 +22,22 @@ func FormatSessionListTable(entries []models.SessionEntry, noColor bool) string 
 
 	if noColor {
 		// Plain header panel
-		sb.WriteString(styles.BoxTopLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxTopRight)
+		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
+		sb.WriteString(styles.AsciiCorner)
 		sb.WriteString("\n")
 
-		sb.WriteString(styles.BoxVertical)
+		sb.WriteString(styles.AsciiVertical)
 		sb.WriteString("  ")
 		sb.WriteString(headerText)
 		sb.WriteString(strings.Repeat(" ", width-6-len(headerText)))
 		sb.WriteString("  ")
-		sb.WriteString(styles.BoxVertical)
+		sb.WriteString(styles.AsciiVertical)
 		sb.WriteString("\n")
 
-		sb.WriteString(styles.BoxBottomLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxBottomRight)
+		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
+		sb.WriteString(styles.AsciiCorner)
 		sb.WriteString("\n\n")
 	} else {
 		// Styled header panel
