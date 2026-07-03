@@ -699,6 +699,3 @@ func TestFormatGlobalTable(t *testing.T) {
 		t.Error("output should contain 'TOTAL'")
 	}
 }
-
-// Pure helper tests (FormatNumber/FormatDuration/TruncateID/Cost) now live in
-// internal/render (audit DUP-1). Formatter goldens still exercise them end-to-end.

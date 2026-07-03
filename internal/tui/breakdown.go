@@ -677,11 +677,10 @@ func (m BreakdownModel) loadBreakdownCmd() tea.Cmd {
 	}
 }
 
-// wrapErr adapts this model's error message type for the shared watcher
-// commands in file_watcher.go (audit TUI-5).
+// wrapErr lets the shared watcher commands report failures as this model's
+// error message.
 func (m BreakdownModel) wrapErr(err error) tea.Msg { return breakdownErrorMsg(err) }
 
-// The watcher lifecycle lives in file_watcher.go, shared with app.go.
 func (m BreakdownModel) watchFile() tea.Msg { return watchFileCmd(m.sessionPath, m.wrapErr) }
 
 func (m BreakdownModel) waitForFileChangeBreakdown() tea.Cmd {
@@ -724,10 +723,6 @@ func formatCompactCost(cost float64) string {
 	}
 	return fmt.Sprintf("$%.4f", cost)
 }
-
-// Cost-with-dim-decimals and compact-number formatting now live in
-// internal/render (audit DUP-1); formatCompactNumber was byte-identical to
-// render.Number.
 
 func (m BreakdownModel) startSessionWatcher() tea.Cmd {
 	return startSessionWatcherCmd(m.projectDir, m.sessionID, m.wrapErr)
