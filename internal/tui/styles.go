@@ -8,7 +8,6 @@ var (
 	heroCostStyle      = styles.HeroCostStyle
 	tableBorderStyle   = styles.BorderStyle
 	savingsLabelStyle  = styles.SavingsLabelStyle
-	savingsValueStyle  = styles.SavingsValueStyle
 	footerStyle        = styles.FooterStyle // No margin, just color
 	liveIndicatorStyle = styles.LiveIndicatorStyle
 	spinnerStyle       = styles.SpinnerStyle

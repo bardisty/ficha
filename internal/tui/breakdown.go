@@ -10,6 +10,7 @@ import (
 	"github.com/bardisty/ccusage/internal/analyzer"
 	"github.com/bardisty/ccusage/internal/models"
 	"github.com/bardisty/ccusage/internal/pricing"
+	"github.com/bardisty/ccusage/internal/render"
 	"github.com/bardisty/ccusage/internal/styles"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -124,19 +125,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
-			m.closeOnce.Do(func() {
-				m.closing.Store(true)
-				if m.done != nil {
-					close(m.done)
-				}
-				if m.watcher != nil {
-					m.watcher.Close()
-				}
-				if m.sessionWatcher != nil {
-					m.sessionWatcher.Stop()
-				}
-			})
-			m.wg.Wait()
+			shutdownWatchers(m.closeOnce, m.closing, m.done, m.watcher, m.sessionWatcher, m.wg)
 			return m, tea.Quit
 
 		case "up", "k":
@@ -398,7 +387,7 @@ func (m BreakdownModel) View() string {
 	if !m.noColor {
 		// Build footer with highlighted cost (6 decimals, trailing dimmed)
 		msgPart := fmt.Sprintf("Messages: %d", len(m.messages))
-		costStyled := formatCostWithDimDecimals(m.totalCost, styles.SuccessColor, 0)
+		costStyled := render.CostWithDimDecimals(m.totalCost, styles.SuccessColor, 0)
 		scrollPart := fmt.Sprintf("Scroll: %s", scrollMode)
 
 		// Use lighter gray (250) for text
@@ -447,116 +436,16 @@ func (m BreakdownModel) View() string {
 
 // renderHeaderPanel renders the mainframe-style header panel with session info
 func (m BreakdownModel) renderHeaderPanel(width int) string {
-	var sb strings.Builder
-
-	// Minimum width for content
-	if width < 40 {
-		width = 76
-	}
-
-	// Inner width (accounting for box borders and padding)
-	innerWidth := width - 6 // 2 for borders, 2 for left padding, 2 for right padding
-
-	// Build content parts
-	sessionDisplay := truncateID(m.sessionID)
-	if m.prevSessionID != "" {
-		sessionDisplay = fmt.Sprintf("%s (prev: %s)", truncateID(m.sessionID), truncateID(m.prevSessionID))
-	}
-
-	sessionPart := fmt.Sprintf("Session: %s", sessionDisplay)
-	livePart := "● LIVE"
-	var statusPart string
-	if m.loading {
-		statusPart = "Loading..."
-	} else if m.err != nil {
-		statusPart = "Error"
-	} else {
-		statusPart = fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05"))
-	}
-
-	sep := styles.BoxVerticalSep
-
-	if m.noColor {
-		content := fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart)
-		// Padding from rendered width — len() overcounts multi-byte UTF-8 chars like ● (3 bytes, 1 column)
-		padding := innerWidth - lipgloss.Width(content)
-		if padding < 0 {
-			padding = 0
-		}
-
-		// Top border
-		sb.WriteString("  ")
-		sb.WriteString(styles.BoxTopLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxTopRight)
-		sb.WriteString("\n")
-
-		// Content line
-		sb.WriteString("  ")
-		sb.WriteString(styles.BoxVertical)
-		sb.WriteString("  ")
-		sb.WriteString(content)
-		sb.WriteString(strings.Repeat(" ", padding))
-		sb.WriteString("  ")
-		sb.WriteString(styles.BoxVertical)
-		sb.WriteString("\n")
-
-		// Bottom border
-		sb.WriteString("  ")
-		sb.WriteString(styles.BoxBottomLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxBottomRight)
-	} else {
-		// Build styled content
-		sessionStyled := fmt.Sprintf("%s %s",
-			sectionHeaderStyle.Render("Session:"),
-			sessionDisplay)
-		liveStyled := liveIndicatorStyle.Render(livePart)
-		var statusStyled string
-		if m.loading {
-			statusStyled = m.spinner.View() + " Loading..."
-		} else if m.err != nil {
-			statusStyled = lipgloss.NewStyle().Foreground(styles.ErrorColor).Render("Error")
-		} else {
-			statusStyled = fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05"))
-		}
-
-		sepStyled := panelBorderStyle.Render(sep)
-
-		// Padding from rendered width so styled parts of varying display width
-		// (e.g. the spinner shown next to "Loading...") can't push the right
-		// border out of alignment
-		content := sessionStyled + "  " + sepStyled + "  " + liveStyled + "  " + sepStyled + "  " + statusStyled
-		padding := innerWidth - lipgloss.Width(content)
-		if padding < 0 {
-			padding = 0
-		}
-
-		// Top border
-		sb.WriteString("  ")
-		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
-		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
-		sb.WriteString(panelBorderStyle.Render(styles.BoxTopRight))
-		sb.WriteString("\n")
-
-		// Content line
-		sb.WriteString("  ")
-		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
-		sb.WriteString("  ")
-		sb.WriteString(content)
-		sb.WriteString(strings.Repeat(" ", padding))
-		sb.WriteString("  ")
-		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
-		sb.WriteString("\n")
-
-		// Bottom border
-		sb.WriteString("  ")
-		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomLeft))
-		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
-		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomRight))
-	}
-
-	return sb.String()
+	return renderLiveHeaderPanel(liveHeaderParams{
+		sessionID:     m.sessionID,
+		prevSessionID: m.prevSessionID,
+		loading:       m.loading,
+		err:           m.err,
+		lastUpdated:   m.lastUpdated,
+		spinnerView:   m.spinner.View(),
+		noColor:       m.noColor,
+		width:         width,
+	})
 }
 
 // renderCompactInsights renders a single line of insights
@@ -653,10 +542,10 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevC
 	modelStr := fmt.Sprintf("%-10s", modelName)
 	// Cost: 6 decimal places, 10 char width (e.g., "$0.093528" = 9 chars)
 	costStr := fmt.Sprintf("%-10s", fmt.Sprintf("$%.6f", msg.Cost.TotalCost))
-	inStr := fmt.Sprintf("%6s", formatCompactNumber(msg.Usage.InputTokens))
-	outStr := fmt.Sprintf("%5s", formatCompactNumber(msg.Usage.OutputTokens))
-	cacheWriteStr := fmt.Sprintf("%6s", formatCompactNumber(msg.Usage.CacheCreationInputTokens))
-	cacheReadStr := fmt.Sprintf("%6s", formatCompactNumber(msg.Usage.CacheReadInputTokens))
+	inStr := fmt.Sprintf("%6s", render.Number(msg.Usage.InputTokens))
+	outStr := fmt.Sprintf("%5s", render.Number(msg.Usage.OutputTokens))
+	cacheWriteStr := fmt.Sprintf("%6s", render.Number(msg.Usage.CacheCreationInputTokens))
+	cacheReadStr := fmt.Sprintf("%6s", render.Number(msg.Usage.CacheReadInputTokens))
 
 	// Get trend indicator
 	trendSymbol, trendDirection := getRowTrendIndicator(msg.Cost.TotalCost, prevCost, isFirst)
@@ -692,7 +581,7 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevC
 	}
 
 	// Format cost with dimmed trailing decimals (main $X.XX colored, XXXX dimmed)
-	costStyled := formatCostWithDimDecimals(msg.Cost.TotalCost, costColor, 10)
+	costStyled := render.CostWithDimDecimals(msg.Cost.TotalCost, costColor, 10)
 
 	// For new messages, override with highlight style
 	if isNew {
@@ -788,39 +677,15 @@ func (m BreakdownModel) loadBreakdownCmd() tea.Cmd {
 	}
 }
 
-func (m BreakdownModel) watchFile() tea.Msg {
-	watcher, err := newSessionFileWatcher(m.sessionPath)
-	if err != nil {
-		return breakdownErrorMsg(err)
-	}
+// wrapErr adapts this model's error message type for the shared watcher
+// commands in file_watcher.go (audit TUI-5).
+func (m BreakdownModel) wrapErr(err error) tea.Msg { return breakdownErrorMsg(err) }
 
-	return watcherStartedMsg{watcher: watcher}
-}
+// The watcher lifecycle lives in file_watcher.go, shared with app.go.
+func (m BreakdownModel) watchFile() tea.Msg { return watchFileCmd(m.sessionPath, m.wrapErr) }
 
-// waitForFileChangeBreakdown returns a command that waits for file changes.
 func (m BreakdownModel) waitForFileChangeBreakdown() tea.Cmd {
-	// Register with the WaitGroup before the command is scheduled: an Add
-	// inside the goroutine races the quit handler's Wait (Add-after-Wait
-	// violates the WaitGroup contract).
-	m.wg.Add(1)
-	return func() tea.Msg {
-		defer m.wg.Done()
-		if m.closing != nil && m.closing.Load() {
-			return nil
-		}
-		if m.watcher == nil || m.done == nil {
-			return nil
-		}
-
-		changed, err := awaitSessionFileChange(m.watcher, m.done, m.sessionPath)
-		if err != nil {
-			return breakdownErrorMsg(err)
-		}
-		if !changed {
-			return nil
-		}
-		return fileChangedMsg{}
-	}
+	return waitForFileChangeCmd(m.wg, m.closing, m.watcher, m.done, m.sessionPath, m.wrapErr)
 }
 
 // Per-message change symbols (distinct from session trend ▲/▼/═)
@@ -860,81 +725,14 @@ func formatCompactCost(cost float64) string {
 	return fmt.Sprintf("$%.4f", cost)
 }
 
-// formatCostWithDimDecimals formats cost to 6 decimal places with trailing decimals dimmed.
-// The main part ($X.XX) uses the provided color, extra decimals (XXXX) are dimmed gray.
-func formatCostWithDimDecimals(cost float64, color lipgloss.Color, width int) string {
-	full := fmt.Sprintf("$%.6f", cost)
-	plainLen := len(full)
+// Cost-with-dim-decimals and compact-number formatting now live in
+// internal/render (audit DUP-1); formatCompactNumber was byte-identical to
+// render.Number.
 
-	// Calculate padding needed
-	padding := ""
-	if width > plainLen {
-		padding = strings.Repeat(" ", width-plainLen)
-	}
-
-	// Split into main ($X.XX) and extra (XXXX) parts
-	dotIdx := strings.Index(full, ".")
-	if dotIdx == -1 || len(full) <= dotIdx+3 {
-		return padding + lipgloss.NewStyle().Foreground(color).Render(full)
-	}
-
-	main := full[:dotIdx+3]  // "$0.09"
-	extra := full[dotIdx+3:] // "3528"
-
-	mainStyle := lipgloss.NewStyle().Foreground(color)
-	dimStyle := lipgloss.NewStyle().Foreground(styles.SecondaryColor)
-
-	return padding + mainStyle.Render(main) + dimStyle.Render(extra)
-}
-
-// formatCompactNumber formats a number compactly (e.g., "89.3K")
-func formatCompactNumber(n int64) string {
-	if n >= 1000000 {
-		return fmt.Sprintf("%.2fM", float64(n)/1000000)
-	}
-	if n >= 1000 {
-		return fmt.Sprintf("%.1fK", float64(n)/1000)
-	}
-	return fmt.Sprintf("%d", n)
-}
-
-// startSessionWatcher creates and starts the session watcher for auto-follow mode
 func (m BreakdownModel) startSessionWatcher() tea.Cmd {
-	return func() tea.Msg {
-		watcher := NewSessionWatcher(m.projectDir, m.sessionID)
-
-		if err := watcher.Start(); err != nil {
-			return breakdownErrorMsg(err)
-		}
-
-		return sessionWatcherStartedMsg{watcher: watcher}
-	}
+	return startSessionWatcherCmd(m.projectDir, m.sessionID, m.wrapErr)
 }
 
-// waitForNewSession returns a command that blocks until a new session is created
 func (m BreakdownModel) waitForNewSession() tea.Cmd {
-	if m.sessionWatcher == nil {
-		return nil
-	}
-
-	// Register with the WaitGroup before the command is scheduled: an Add
-	// inside the goroutine races the quit handler's Wait.
-	m.wg.Add(1)
-	return func() tea.Msg {
-		defer m.wg.Done()
-
-		path, id := m.sessionWatcher.WaitForNewSession()
-		if path == "" {
-			return nil // Shutdown or error
-		}
-		if path == sessionRestartedPath {
-			// Session was updated externally, just restart waiting
-			return sessionWatcherRestartMsg{}
-		}
-
-		return sessionSwitchedMsg{
-			newSessionPath: path,
-			newSessionID:   id,
-		}
-	}
+	return waitForNewSessionCmd(m.wg, m.sessionWatcher)
 }

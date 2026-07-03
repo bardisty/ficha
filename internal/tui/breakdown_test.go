@@ -35,32 +35,6 @@ func TestFormatCompactCost(t *testing.T) {
 	}
 }
 
-func TestFormatCompactNumber(t *testing.T) {
-	tests := []struct {
-		name     string
-		n        int64
-		expected string
-	}{
-		{"zero", 0, "0"},
-		{"small number", 42, "42"},
-		{"hundreds", 999, "999"},
-		{"one thousand", 1000, "1.0K"},
-		{"thousands", 1234, "1.2K"},
-		{"large thousands", 89300, "89.3K"},
-		{"one million", 1000000, "1.00M"},
-		{"millions", 1500000, "1.50M"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := formatCompactNumber(tt.n)
-			if result != tt.expected {
-				t.Errorf("formatCompactNumber(%d) = %q, want %q", tt.n, result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestBreakdownModel_DetectNewMessages(t *testing.T) {
 	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
 

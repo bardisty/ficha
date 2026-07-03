@@ -4,12 +4,11 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/bardisty/ccusage/internal/models"
 	"github.com/bardisty/ccusage/internal/pricing"
+	"github.com/bardisty/ccusage/internal/render"
 	"github.com/bardisty/ccusage/internal/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
@@ -40,7 +39,7 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, topN int, 
 	sb.WriteString(renderUnifiedCostRow("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, styles.OutputTokenColor, "", noColor))
 
 	// Cache write rows
-	cache5mTokens, cache1hTokens := getCacheTokensByTTL(analysis.TotalUsage)
+	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
 	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
 	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
 
@@ -67,7 +66,7 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, topN int, 
 
 	// Cost by model section
 	sb.WriteString("\n")
-	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, noColor))
+	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, noColor))
 	sb.WriteString("\n\n")
 	sb.WriteString(formatGlobalCostByModel(analysis.CostByModel, noColor))
 
@@ -81,7 +80,7 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, topN int, 
 	if showDetails {
 		headerText = fmt.Sprintf("ALL PROJECTS (%d)", len(analysis.Projects))
 	}
-	sb.WriteString(renderSectionHeader(headerText, sectionWidth, noColor))
+	sb.WriteString(render.SectionHeader(headerText, sectionWidth, noColor))
 	sb.WriteString("\n\n")
 	sb.WriteString(renderProjectsTable(analysis, noColor, topN, showDetails))
 
@@ -91,7 +90,7 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, topN int, 
 	sb.WriteString("\n")
 
 	footerText := fmt.Sprintf("Messages: %s  │  Sessions: %d  │  Projects: %d",
-		formatNumber(int64(analysis.MessageCount)),
+		render.Number(int64(analysis.MessageCount)),
 		analysis.SessionCount,
 		analysis.ProjectCount)
 	sb.WriteString(footerStyle.Render(footerText))
@@ -118,7 +117,7 @@ func formatGlobalTablePlain(analysis *models.GlobalAnalysis, topN int, showDetai
 	sb.WriteString(renderUnifiedCostRowPlain("Input", analysis.TotalCost.InputCost, analysis.TotalUsage.InputTokens, ""))
 	sb.WriteString(renderUnifiedCostRowPlain("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, ""))
 
-	cache5mTokens, cache1hTokens := getCacheTokensByTTL(analysis.TotalUsage)
+	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
 	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
 	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
 
@@ -135,12 +134,12 @@ func formatGlobalTablePlain(analysis *models.GlobalAnalysis, topN int, showDetai
 
 	if analysis.TotalCost.CacheSavings > 0 {
 		sb.WriteString(fmt.Sprintf("  %-14s %11s  (from cache reads)\n",
-			"Savings", formatCost(analysis.TotalCost.CacheSavings)))
+			"Savings", render.Cost(analysis.TotalCost.CacheSavings)))
 	}
 
 	// Cost by model section
 	sb.WriteString("\n")
-	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, true))
+	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, true))
 	sb.WriteString("\n\n")
 	sb.WriteString(formatGlobalCostByModel(analysis.CostByModel, true))
 
@@ -154,7 +153,7 @@ func formatGlobalTablePlain(analysis *models.GlobalAnalysis, topN int, showDetai
 	if showDetails {
 		headerText = fmt.Sprintf("ALL PROJECTS (%d)", len(analysis.Projects))
 	}
-	sb.WriteString(renderSectionHeader(headerText, sectionWidth, true))
+	sb.WriteString(render.SectionHeader(headerText, sectionWidth, true))
 	sb.WriteString("\n\n")
 	sb.WriteString(renderProjectsTable(analysis, true, topN, showDetails))
 
@@ -164,7 +163,7 @@ func formatGlobalTablePlain(analysis *models.GlobalAnalysis, topN int, showDetai
 	sb.WriteString("\n")
 
 	footerText := fmt.Sprintf("Messages: %s  |  Sessions: %d  |  Projects: %d",
-		formatNumber(int64(analysis.MessageCount)),
+		render.Number(int64(analysis.MessageCount)),
 		analysis.SessionCount,
 		analysis.ProjectCount)
 	sb.WriteString(footerText)
@@ -187,7 +186,7 @@ func renderGlobalHeaderPanel(analysis *models.GlobalAnalysis, width int, noColor
 	// Build content
 	titlePart := fmt.Sprintf("Global: %d projects", analysis.ProjectCount)
 	sessionPart := fmt.Sprintf("%d sessions", analysis.SessionCount)
-	durationPart := fmt.Sprintf("Duration: %s", formatGlobalDuration(analysis.Duration.Duration()))
+	durationPart := fmt.Sprintf("Duration: %s", render.DurationLong(analysis.Duration.Duration()))
 
 	sep := styles.BoxVerticalSep
 	content := fmt.Sprintf("%s  %s  %s  %s  %s", titlePart, sep, sessionPart, sep, durationPart)
@@ -246,37 +245,16 @@ func renderGlobalHeaderPanel(analysis *models.GlobalAnalysis, width int, noColor
 	return sb.String()
 }
 
-// formatGlobalDuration formats duration for global stats (can span days)
-func formatGlobalDuration(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	}
-	if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	}
-	if d < 24*time.Hour {
-		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
-	}
-	days := int(d.Hours() / 24)
-	return fmt.Sprintf("%dd", days)
-}
-
 // formatGlobalCostByModel renders cost by model for global stats
 func formatGlobalCostByModel(costByModel map[string]models.CostBreakdown, noColor bool) string {
 	var sb strings.Builder
 
-	// Sort model IDs for deterministic output
-	modelIDs := make([]string, 0, len(costByModel))
-	for modelID := range costByModel {
-		modelIDs = append(modelIDs, modelID)
-	}
-	sort.Strings(modelIDs)
-
-	for _, modelID := range modelIDs {
+	// Order by cost descending (canonical COST BY MODEL ordering, audit DUP-2)
+	for _, modelID := range render.OrderModelsByCost(costByModel) {
 		cost := costByModel[modelID]
 		modelName := pricing.GetModelDisplayName(modelID)
 		if noColor {
-			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelName, formatCost(cost.TotalCost)))
+			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelName, render.Cost(cost.TotalCost)))
 		} else {
 			modelColor := styles.GetModelColor(modelName)
 			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-12s", modelName))
