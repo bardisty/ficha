@@ -17,20 +17,23 @@ func newGlobalCmd(cfg *config) *cobra.Command {
 
 This calculates total cost and token usage across every project in ~/.claude/projects/.
 
+json/csv always export every project; --top and --details only shape the table
+(filter downstream with jq/head if you need a subset).
+
 Examples:
   ccusage global                   Show global stats (top 10 projects)
   ccusage global --details         Show all projects with cumulative column
   ccusage global --top 20          Show top 20 projects
   ccusage global --sort-by name    Sort by project name
-  ccusage global -f json           Output as JSON`,
+  ccusage global -f json           Output every project as JSON`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGlobal(cfg)
 		},
 	}
 
-	globalCmd.Flags().BoolVarP(&cfg.globalDetails, "details", "d", false, "Show all projects with cumulative column")
-	globalCmd.Flags().IntVarP(&cfg.globalTopN, "top", "n", 10, "Number of top projects to show")
+	globalCmd.Flags().BoolVarP(&cfg.globalDetails, "details", "d", false, "Show all projects with a cumulative column (table view only)")
+	globalCmd.Flags().IntVarP(&cfg.globalTopN, "top", "n", 10, "Top projects to show in the table (json/csv always export all)")
 	globalCmd.Flags().StringVar(&cfg.globalSortBy, "sort-by", "cost", "Sort by: cost, sessions, name, activity")
 	globalCmd.Flags().BoolVar(&cfg.globalNoCache, "no-cache", false, "Skip cache, force fresh analysis (reserved for future use)")
 	_ = globalCmd.Flags().MarkHidden("no-cache")

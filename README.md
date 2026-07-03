@@ -36,7 +36,26 @@
   ccusage show abc123           View session by partial ID
   ccusage watch abc123          Watch specific session (pinned)
   ccusage -f json > out.json    Export to JSON
+  ccusage summary -d -f csv     Per-session rows as CSV
+  ccusage show -f csv --messages Per-message rows as CSV
   ccusage list -p /path/to/dir  List sessions for different project
+
+─── MACHINE OUTPUT (json / csv) ───────────────────────────────────────
+
+  -f only picks the encoding; json/csv always export the complete
+  dataset as a single object / uniform-column table (safe for jq and
+  pandas). One rule decides how flags interact with them:
+
+    Flags that ADD records apply to json/csv:
+      summary --details          per-session records
+      summary --expand-agents    per-agent records (nested / rows)
+      show --messages            per-message rows, not the summary
+    Flags that only shape the table do NOT change json/csv:
+      global --top / --details   json/csv always list every project;
+                                 subset downstream with jq / head
+
+  Sessions that fail to parse are omitted from detail output and
+  reported on stderr (stdout stays clean for piping).
 
 ─── HOW IT WORKS ──────────────────────────────────────────────────────
 

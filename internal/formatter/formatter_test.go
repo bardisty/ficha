@@ -174,34 +174,17 @@ func TestFormatSessionCSV_WithMessages(t *testing.T) {
 		},
 	}
 
+	// includeMessages switches granularity: the output is a single per-message
+	// CSV table (no stacked session row), so single-table parsers stay happy.
 	output, err := FormatSessionCSV(analysis, true)
 	if err != nil {
 		t.Fatalf("FormatSessionCSV with messages returned error: %v", err)
 	}
 
-	// The output contains two CSV sections separated by a blank line.
-	// Split on double newline to get session section and messages section.
-	sections := strings.SplitN(output, "\n\n", 2)
-	if len(sections) != 2 {
-		t.Fatalf("Expected 2 CSV sections (session + messages), got %d", len(sections))
-	}
-
-	// Parse session section
-	sessionRecords, err := csv.NewReader(strings.NewReader(sections[0])).ReadAll()
+	// The entire output is one valid CSV table — parse it whole.
+	msgRecords, err := csv.NewReader(strings.NewReader(output)).ReadAll()
 	if err != nil {
-		t.Fatalf("Failed to parse session CSV section: %v", err)
-	}
-	if len(sessionRecords) != 2 {
-		t.Fatalf("Session section: expected 2 rows, got %d", len(sessionRecords))
-	}
-	if sessionRecords[1][0] != "test-session-123" {
-		t.Errorf("Session section session_id: got %q, want %q", sessionRecords[1][0], "test-session-123")
-	}
-
-	// Parse messages section
-	msgRecords, err := csv.NewReader(strings.NewReader(sections[1])).ReadAll()
-	if err != nil {
-		t.Fatalf("Failed to parse messages CSV section: %v", err)
+		t.Fatalf("Failed to parse messages CSV: %v", err)
 	}
 
 	// Verify messages header
@@ -212,7 +195,7 @@ func TestFormatSessionCSV_WithMessages(t *testing.T) {
 		"cache_write_1h_cost", "cache_read_cost", "total_cost",
 	}
 	if len(msgRecords) < 2 {
-		t.Fatalf("Messages section: expected at least 2 rows (header + data), got %d", len(msgRecords))
+		t.Fatalf("Messages CSV: expected at least 2 rows (header + data), got %d", len(msgRecords))
 	}
 	msgHeader := msgRecords[0]
 	if len(msgHeader) != len(expectedMsgHeader) {

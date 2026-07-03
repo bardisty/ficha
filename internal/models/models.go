@@ -140,6 +140,16 @@ type SessionResult struct {
 	Analysis *SessionAnalysis
 }
 
+// SummaryDetail is the JSON shape of `summary --details`: the aggregate plus a
+// per-session breakdown. Each session nests its agent sub-sessions only when
+// --expand-agents is set (otherwise the agents array is omitted and the summary
+// counts on each session convey the agent rollup). Sessions that failed to parse
+// are excluded; the aggregate's skipped_sessions reports how many.
+type SummaryDetail struct {
+	Summary  *SessionAnalysis  `json:"summary"`
+	Sessions []SessionAnalysis `json:"sessions"`
+}
+
 // SessionEntry represents an entry in sessions-index.json
 type SessionEntry struct {
 	SessionID    string    `json:"sessionId"`
