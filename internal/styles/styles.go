@@ -170,7 +170,7 @@ func GetAgentColor(agentID string) lipgloss.Color {
 // via case-insensitive substring matching.
 func GetModelColor(modelName string) lipgloss.Color {
 	switch {
-	case contains(modelName, "Fable"):
+	case contains(modelName, "Fable"), contains(modelName, "Mythos"):
 		return FableColor
 	case contains(modelName, "Opus"):
 		return OpusColor
