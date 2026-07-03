@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -43,71 +42,6 @@ func ParseSessionsIndex(path string) (*models.SessionsIndex, error) {
 	}
 
 	return &index, nil
-}
-
-// GetLatestSession returns the most recently modified session entry
-func GetLatestSession(index *models.SessionsIndex) *models.SessionEntry {
-	if index == nil || len(index.Entries) == 0 {
-		return nil
-	}
-
-	// We have at least one entry, safe to access entries[0] below
-	// Sort by modified time descending
-	entries := make([]models.SessionEntry, len(index.Entries))
-	copy(entries, index.Entries)
-
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Modified.After(entries[j].Modified)
-	})
-
-	return &entries[0]
-}
-
-// GetSessionByID finds a session entry by its ID
-func GetSessionByID(index *models.SessionsIndex, sessionID string) *models.SessionEntry {
-	if index == nil {
-		return nil
-	}
-
-	for _, entry := range index.Entries {
-		if entry.SessionID == sessionID {
-			return &entry
-		}
-	}
-
-	return nil
-}
-
-// GetSessionsByModified returns sessions sorted by modified time (most recent first)
-func GetSessionsByModified(index *models.SessionsIndex) []models.SessionEntry {
-	if index == nil || len(index.Entries) == 0 {
-		return nil
-	}
-
-	entries := make([]models.SessionEntry, len(index.Entries))
-	copy(entries, index.Entries)
-
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Modified.After(entries[j].Modified)
-	})
-
-	return entries
-}
-
-// GetSessionsByCreated returns sessions sorted by creation time (most recent first)
-func GetSessionsByCreated(index *models.SessionsIndex) []models.SessionEntry {
-	if index == nil || len(index.Entries) == 0 {
-		return nil
-	}
-
-	entries := make([]models.SessionEntry, len(index.Entries))
-	copy(entries, index.Entries)
-
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Created.After(entries[j].Created)
-	})
-
-	return entries
 }
 
 // DiscoverSessionsFromDisk scans the project directory for .jsonl session files

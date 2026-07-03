@@ -210,18 +210,3 @@ func isDriveRoot(encoded string) bool {
 func isLetter(c byte) bool {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
 }
-
-// HasSessions checks if a project directory contains any session files
-func HasSessions(projectDir string) bool {
-	entries, err := os.ReadDir(projectDir)
-	if err != nil {
-		return false
-	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".jsonl") {
-			return true
-		}
-	}
-	return false
-}

@@ -17,19 +17,32 @@
 
   Command              Description
   ───────────────────  ───────────────────────────────────────────────
-  ccusage              Show latest session costs
+  ccusage [show]       Show latest (or specified) session costs
   ccusage watch        Live monitoring with auto-follow
   ccusage breakdown    Per-message cost table (scrollable)
   ccusage list         List all sessions
   ccusage summary      Total costs across all sessions
+  ccusage global       Aggregated stats across ALL projects
+  ccusage version      Print version information
 
 ─── FLAGS ─────────────────────────────────────────────────────────────
 
   -f, --format <fmt>   Output format: table, json, csv
-  -p, --project <dir>  Specify project directory
+  -p, --project <dir>  Project directory (default: current dir)
+  --project-dir <name> Claude project dir name (bypass auto-detect)
+  -v, --verbose        Show debug information
   -l, --live           Enable live mode (auto-updates)
   --no-follow          Disable auto-follow in live mode
   --no-color           Disable colored output
+
+─── COMMAND FLAGS ─────────────────────────────────────────────────────
+
+  summary -d, --details    Add a per-session breakdown
+  summary --expand-agents  Per-agent records (requires --details)
+  global  -n, --top <n>    Top N projects in table (default 10)
+  global  --sort-by <key>  Sort: cost, sessions, name, activity
+  global  -d, --details    All projects + cumulative column (table)
+  show    --messages       Per-message rows (json/csv only)
 
 ─── EXAMPLES ──────────────────────────────────────────────────────────
 
@@ -37,6 +50,7 @@
   ccusage watch abc123          Watch specific session (pinned)
   ccusage -f json > out.json    Export to JSON
   ccusage summary -d -f csv     Per-session rows as CSV
+  ccusage global --top 5        Top 5 projects by cost
   ccusage show -f csv --messages Per-message rows as CSV
   ccusage list -p /path/to/dir  List sessions for different project
 

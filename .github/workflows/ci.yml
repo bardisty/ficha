@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Build from source with the job's Go toolchain. The pinned release's
+      # prebuilt binary is built with an older Go than go.mod targets, and
+      # golangci-lint refuses to run when its build Go trails the target version.
+      - name: Install golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      # Same gate developers run locally (fmt + lint + test); lint includes govet.
+      - name: make check
+        run: make check
+
+      # `make check` runs `gofmt -w` before linting, so unformatted code would be
+      # silently rewritten rather than failing. Catch it by requiring a clean tree.
+      - name: Ensure gofmt left the tree clean
+        run: git diff --exit-code

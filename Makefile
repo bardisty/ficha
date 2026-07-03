@@ -91,7 +91,8 @@ lint:
 fmt:
 	gofmt -w .
 
-# Run go vet (informational - has known issues)
+# Run go vet standalone. The gate (check) enforces the same analyzers through
+# golangci-lint's govet, so running this separately is only for convenience.
 vet:
 	$(GOCMD) vet ./...
 

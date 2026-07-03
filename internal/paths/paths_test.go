@@ -83,21 +83,6 @@ func TestGetSessionsIndexPath(t *testing.T) {
 	}
 }
 
-func TestGetSessionFilePath(t *testing.T) {
-	projectDir := "/home/user/.claude/projects/-home-user-myproject"
-	sessionID := "abc123-def456"
-	result := GetSessionFilePath(projectDir, sessionID)
-	expected := projectDir + "/" + sessionID + ".jsonl"
-
-	// Normalize for cross-platform
-	result = strings.ReplaceAll(result, "\\", "/")
-	expected = strings.ReplaceAll(expected, "\\", "/")
-
-	if result != expected {
-		t.Errorf("got %s, want %s", result, expected)
-	}
-}
-
 func TestFindProjectDir(t *testing.T) {
 	// Create temp directory structure
 	tempDir, err := os.MkdirTemp("", "ccusage-test-*")
@@ -256,10 +241,8 @@ func TestResolveProjectDir(t *testing.T) {
 			t.Fatalf("failed to create dir: %v", err)
 		}
 
-		// Save and restore cwd
-		origDir, _ := os.Getwd()
-		defer os.Chdir(origDir)
-		os.Chdir(tempDir)
+		// t.Chdir restores the original working directory at test end.
+		t.Chdir(tempDir)
 
 		result, err := ResolveProjectDir("./rel-project")
 		if err != nil {
