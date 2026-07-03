@@ -156,8 +156,12 @@ func SectionHeader(name string, width int, noColor bool) string {
 	sideLen := max((width-nameLen)/2, 0)
 	rightLen := max(width-sideLen-nameLen, 0)
 
-	leftLine := strings.Repeat(styles.LineHorizontal, sideLen)
-	rightLine := strings.Repeat(styles.LineHorizontal, rightLen)
+	rule := styles.LineHorizontal
+	if noColor {
+		rule = styles.AsciiRule
+	}
+	leftLine := strings.Repeat(rule, sideLen)
+	rightLine := strings.Repeat(rule, rightLen)
 
 	if noColor {
 		return leftLine + bracketedName + rightLine
@@ -174,8 +178,13 @@ func SectionHeader(name string, width int, noColor bool) string {
 func ContextBar(contextSize, freeSpace int64, maxContext int, noColor bool) string {
 	const barWidth = 38
 
+	usedGlyph, freeGlyph := "█", "░"
+	if noColor {
+		usedGlyph, freeGlyph = styles.AsciiBarUsed, styles.AsciiBarFree
+	}
+
 	if maxContext == 0 {
-		return strings.Repeat("░", barWidth)
+		return strings.Repeat(freeGlyph, barWidth)
 	}
 
 	// Calculate proportions
@@ -208,8 +217,8 @@ func ContextBar(contextSize, freeSpace int64, maxContext int, noColor bool) stri
 		freeChars += barWidth - total
 	}
 
-	usedStr := strings.Repeat("█", usedChars)
-	freeStr := strings.Repeat("░", freeChars)
+	usedStr := strings.Repeat(usedGlyph, usedChars)
+	freeStr := strings.Repeat(freeGlyph, freeChars)
 
 	if noColor {
 		return "[" + usedStr + freeStr + "]"

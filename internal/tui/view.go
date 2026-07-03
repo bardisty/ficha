@@ -73,7 +73,11 @@ func (m Model) View() string {
 	sb.WriteString("\n")
 
 	// FIXED FOOTER (4 lines) - with 2-space padding
-	footerSep := strings.Repeat(styles.BoxHorizontal, panelWidth)
+	footerRule := styles.BoxHorizontal
+	if m.noColor {
+		footerRule = styles.AsciiHorizontal
+	}
+	footerSep := strings.Repeat(footerRule, panelWidth)
 	if !m.noColor {
 		footerSep = panelBorderStyle.Render(footerSep)
 	}
@@ -87,7 +91,11 @@ func (m Model) View() string {
 	}
 
 	// Single-line help separator
-	helpSep := strings.Repeat(styles.LineHorizontal, panelWidth)
+	helpRule := styles.LineHorizontal
+	if m.noColor {
+		helpRule = styles.AsciiRule
+	}
+	helpSep := strings.Repeat(helpRule, panelWidth)
 	if !m.noColor {
 		helpSep = dimStyle.Render(helpSep)
 	}
@@ -271,6 +279,10 @@ func (m Model) renderFooter() string {
 	a := m.analysis
 	changed := m.recentlyChanged("messages")
 	highlighted := m.isHighlighted("messages")
+	sep := styles.BoxVerticalSep
+	if m.noColor {
+		sep = styles.AsciiVertical
+	}
 
 	var footerLine string
 	if changed {
@@ -284,22 +296,22 @@ func (m Model) renderFooter() string {
 		}
 		if highlighted {
 			footerLine = footerStyle.Render("Messages: ") + highlightStyle.Render(valStr) +
-				footerStyle.Render(fmt.Sprintf("  │  Duration: %s", render.Duration(a.Duration.Duration())))
+				footerStyle.Render(fmt.Sprintf("  %s  Duration: %s", sep, render.Duration(a.Duration.Duration())))
 		} else {
-			footerLine = fmt.Sprintf("Messages: %s  │  Duration: %s", valStr, render.Duration(a.Duration.Duration()))
+			footerLine = fmt.Sprintf("Messages: %s  %s  Duration: %s", valStr, sep, render.Duration(a.Duration.Duration()))
 		}
 	} else {
-		footerLine = footerStyle.Render(fmt.Sprintf("Messages: %d  │  Duration: %s",
-			a.MessageCount, render.Duration(a.Duration.Duration())))
+		footerLine = footerStyle.Render(fmt.Sprintf("Messages: %d  %s  Duration: %s",
+			a.MessageCount, sep, render.Duration(a.Duration.Duration())))
 	}
 
 	// Surface parse warnings so undercounted totals don't look authoritative
 	if a.SkippedLines > 0 {
 		if m.noColor {
-			footerLine += fmt.Sprintf("  │  ! %d skipped line(s)", a.SkippedLines)
+			footerLine += fmt.Sprintf("  %s  ! %d skipped line(s)", sep, a.SkippedLines)
 		} else {
 			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
-			footerLine += footerStyle.Render("  │  ") + warnStyle.Render(fmt.Sprintf("⚠ %d skipped line(s)", a.SkippedLines))
+			footerLine += footerStyle.Render("  "+sep+"  ") + warnStyle.Render(fmt.Sprintf("⚠ %d skipped line(s)", a.SkippedLines))
 		}
 	}
 	return footerLine
@@ -616,8 +628,12 @@ func (m Model) renderHeroCost(cost float64, highlighted bool, width int) string 
 		rightLen = 0
 	}
 
-	leftLine := strings.Repeat(styles.LineHorizontal, sideLen)
-	rightLine := strings.Repeat(styles.LineHorizontal, rightLen)
+	rule := styles.LineHorizontal
+	if m.noColor {
+		rule = styles.AsciiRule
+	}
+	leftLine := strings.Repeat(rule, sideLen)
+	rightLine := strings.Repeat(rule, rightLen)
 
 	if m.noColor {
 		return leftLine + bracketedCost + rightLine

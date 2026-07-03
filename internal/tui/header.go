@@ -68,6 +68,9 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 	}
 
 	sep := styles.BoxVerticalSep
+	if p.noColor {
+		sep = styles.AsciiVertical
+	}
 
 	if p.noColor {
 		content := fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart)
@@ -76,26 +79,26 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 
 		// Top border
 		sb.WriteString("  ")
-		sb.WriteString(styles.BoxTopLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxTopRight)
+		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
+		sb.WriteString(styles.AsciiCorner)
 		sb.WriteString("\n")
 
 		// Content line
 		sb.WriteString("  ")
-		sb.WriteString(styles.BoxVertical)
+		sb.WriteString(styles.AsciiVertical)
 		sb.WriteString("  ")
 		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
 		sb.WriteString("  ")
-		sb.WriteString(styles.BoxVertical)
+		sb.WriteString(styles.AsciiVertical)
 		sb.WriteString("\n")
 
 		// Bottom border
 		sb.WriteString("  ")
-		sb.WriteString(styles.BoxBottomLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxBottomRight)
+		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
+		sb.WriteString(styles.AsciiCorner)
 	} else {
 		// Build styled content
 		sessionStyled := fmt.Sprintf("%s %s",
