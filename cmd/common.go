@@ -19,15 +19,21 @@ var ErrSessionNotFound = errors.New("session not found")
 
 // loadProjectSessions loads all sessions for the current project.
 // It handles project path resolution, disk scanning, index loading, and source merging.
-// Returns the merged sessions list or an error.
-func loadProjectSessions() ([]models.SessionEntry, error) {
-	sessions, _, err := loadProjectSessionsWithDir()
+// countMessages controls whether per-file message counts are computed during
+// discovery (see loadProjectSessionsWithDir). Returns the merged sessions list
+// or an error.
+func loadProjectSessions(countMessages bool) ([]models.SessionEntry, error) {
+	sessions, _, err := loadProjectSessionsWithDir(countMessages)
 	return sessions, err
 }
 
 // loadProjectSessionsWithDir loads all sessions and returns the project directory path.
 // Used by live-view commands that need to watch the project directory for new sessions.
-func loadProjectSessionsWithDir() ([]models.SessionEntry, string, error) {
+//
+// countMessages gates the discovery-time message-count scan: only `list`
+// displays those counts, so every analysis path passes false and lets the
+// analyzer recompute counts from its own parse (avoids scanning each file twice).
+func loadProjectSessionsWithDir(countMessages bool) ([]models.SessionEntry, string, error) {
 	// Resolve project directory
 	projDir, err := resolveProjectDirectory()
 	if err != nil {
@@ -35,7 +41,7 @@ func loadProjectSessionsWithDir() ([]models.SessionEntry, string, error) {
 	}
 
 	// Scan disk for session files
-	diskSessions, err := parser.DiscoverSessionsFromDisk(projDir)
+	diskSessions, err := parser.DiscoverSessionsFromDisk(projDir, countMessages)
 	if err != nil {
 		return nil, "", fmt.Errorf("scanning sessions in %s: %w", projDir, err)
 	}
@@ -49,7 +55,7 @@ func loadProjectSessionsWithDir() ([]models.SessionEntry, string, error) {
 	}
 
 	// Merge sources
-	sessions, orphanCount := parser.MergeSessionSources(index, diskSessions, projDir)
+	sessions, orphanCount := parser.MergeSessionSources(index, diskSessions, projDir, countMessages)
 
 	if len(sessions) == 0 {
 		return nil, "", fmt.Errorf("no sessions found in %s", projDir)
@@ -175,7 +181,9 @@ func warnUnknownModels(costByModel map[string]models.CostBreakdown) {
 // selectSession finds the appropriate session based on CLI args.
 // Returns the session, project directory, whether a session ID was explicitly provided, and any error.
 func selectSession(args []string) (*models.SessionEntry, string, bool, error) {
-	sessions, projectDir, err := loadProjectSessionsWithDir()
+	// Analysis paths (show/watch/breakdown) recompute counts from their own
+	// parse, so skip the discovery-time message-count scan.
+	sessions, projectDir, err := loadProjectSessionsWithDir(false)
 	if err != nil {
 		return nil, "", false, err
 	}

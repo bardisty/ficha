@@ -25,7 +25,8 @@ Examples:
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	sessions, err := loadProjectSessions()
+	// list displays per-session message counts, so request the discovery-time scan.
+	sessions, err := loadProjectSessions(true)
 	if err != nil {
 		return err
 	}

@@ -225,7 +225,7 @@ func TestDiscoverSessionsFromDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessions, err := DiscoverSessionsFromDisk(tmpDir)
+	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,6 +254,58 @@ func TestDiscoverSessionsFromDisk(t *testing.T) {
 	}
 }
 
+// TestDiscoverSessionsFromDisk_SkipsCounting verifies that countMessages=false
+// leaves message counts at zero while still discovering agent sub-sessions.
+// Analysis paths rely on this: they recompute counts from their own parse, so
+// the discovery-time file scan would be wasted work.
+func TestDiscoverSessionsFromDisk_SkipsCounting(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sessionID := "sess-count-skip"
+	line := `{"type":"assistant","message":{"id":"m1","model":"test","usage":{}},"timestamp":"2024-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(tmpDir, sessionID+".jsonl"), []byte(line+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// An agent sub-session so we can confirm discovery still runs
+	subDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subDir, "agent-a1.jsonl"), []byte(line+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := DiscoverSessionsFromDisk(tmpDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+
+	s := sessions[0]
+	// Counting skipped
+	if s.MessageCount != 0 {
+		t.Errorf("MessageCount: got %d, want 0 when counting disabled", s.MessageCount)
+	}
+	if s.AgentMessageCount != 0 {
+		t.Errorf("AgentMessageCount: got %d, want 0 when counting disabled", s.AgentMessageCount)
+	}
+	// Agent discovery still ran (cheap directory listing, always performed)
+	if s.AgentCount != 1 || len(s.AgentPaths) != 1 {
+		t.Errorf("agent discovery: got AgentCount=%d AgentPaths=%v, want 1 agent", s.AgentCount, s.AgentPaths)
+	}
+
+	// Counting enabled must still work (parent + agent = 2)
+	counted, err := DiscoverSessionsFromDisk(tmpDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counted[0].MessageCount != 2 {
+		t.Errorf("MessageCount with counting: got %d, want 2", counted[0].MessageCount)
+	}
+}
+
 func TestDiscoverEmptyDirectory(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "sessions-empty-test")
 	if err != nil {
@@ -261,7 +313,7 @@ func TestDiscoverEmptyDirectory(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	sessions, err := DiscoverSessionsFromDisk(tmpDir)
+	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +339,7 @@ func TestMergeSessionSources(t *testing.T) {
 		{SessionID: "session-3", FullPath: "/path/session-3.jsonl", Modified: t1, MessageCount: 3}, // Orphan
 	}
 
-	merged, orphanCount := MergeSessionSources(index, diskSessions, "/path")
+	merged, orphanCount := MergeSessionSources(index, diskSessions, "/path", true)
 
 	if orphanCount != 1 {
 		t.Errorf("expected 1 orphan, got %d", orphanCount)
@@ -314,7 +366,7 @@ func TestMergeOrphanDetection(t *testing.T) {
 		{SessionID: "orphan-3"},
 	}
 
-	merged, orphanCount := MergeSessionSources(nil, diskSessions, "/path")
+	merged, orphanCount := MergeSessionSources(nil, diskSessions, "/path", true)
 
 	if orphanCount != 3 {
 		t.Errorf("expected 3 orphans, got %d", orphanCount)
@@ -339,7 +391,7 @@ func TestMergeIndexOnly(t *testing.T) {
 	// No files on disk
 	diskSessions := []models.SessionEntry{}
 
-	merged, orphanCount := MergeSessionSources(index, diskSessions, "/path")
+	merged, orphanCount := MergeSessionSources(index, diskSessions, "/path", true)
 
 	if orphanCount != 0 {
 		t.Errorf("expected 0 orphans (only index entries), got %d", orphanCount)
@@ -701,7 +753,7 @@ func TestMergeGhostSessionsFiltered(t *testing.T) {
 		{SessionID: "real-session", FullPath: realPath, Modified: t1, MessageCount: 1},
 	}
 
-	merged, orphanCount := MergeSessionSources(index, diskSessions, tmpDir)
+	merged, orphanCount := MergeSessionSources(index, diskSessions, tmpDir, true)
 
 	if orphanCount != 0 {
 		t.Errorf("expected 0 orphans, got %d", orphanCount)
@@ -730,7 +782,7 @@ func TestMergeFullPathFromDisk(t *testing.T) {
 		{SessionID: "session-1", FullPath: "/new/path/session-1.jsonl", Modified: t1, MessageCount: 5},
 	}
 
-	merged, _ := MergeSessionSources(index, diskSessions, "/new/path")
+	merged, _ := MergeSessionSources(index, diskSessions, "/new/path", true)
 
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged session, got %d", len(merged))
@@ -805,7 +857,7 @@ func TestMergeIndexOnly_RebuildsFromDisk(t *testing.T) {
 	}
 
 	// Disk scan missed the session (e.g. created after the scan)
-	merged, orphanCount := MergeSessionSources(index, nil, tmpDir)
+	merged, orphanCount := MergeSessionSources(index, nil, tmpDir, true)
 
 	if orphanCount != 0 {
 		t.Errorf("expected 0 orphans, got %d", orphanCount)
@@ -831,6 +883,56 @@ func TestMergeIndexOnly_RebuildsFromDisk(t *testing.T) {
 	}
 }
 
+// TestMergeIndexOnly_SkipsCounting verifies countMessages=false is forwarded to
+// the index-only rebuild: agents are still discovered, but the message-count
+// scan is skipped (analysis paths recompute counts themselves).
+func TestMergeIndexOnly_SkipsCounting(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sessionPath := filepath.Join(tmpDir, "idx-only.jsonl")
+	parentContent := `{"type":"assistant","requestId":"r1","message":{"id":"m1","model":"test","usage":{}}}
+{"type":"assistant","requestId":"r2","message":{"id":"m2","model":"test","usage":{}}}
+`
+	if err := os.WriteFile(sessionPath, []byte(parentContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	subagentsDir := filepath.Join(tmpDir, "idx-only", "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	agentContent := `{"type":"assistant","requestId":"r3","message":{"id":"m3","model":"test","usage":{}}}
+`
+	if err := os.WriteFile(filepath.Join(subagentsDir, "agent-a1.jsonl"), []byte(agentContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t1 := time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC)
+	index := &models.SessionsIndex{
+		Entries: []models.SessionEntry{
+			{SessionID: "idx-only", FullPath: sessionPath, Created: t1, MessageCount: 99},
+		},
+	}
+
+	merged, _ := MergeSessionSources(index, nil, tmpDir, false)
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged session, got %d", len(merged))
+	}
+	e := merged[0]
+	// Counting skipped: the stale index count (99) must not survive, and no
+	// fresh count is computed either
+	if e.MessageCount != 0 {
+		t.Errorf("MessageCount: got %d, want 0 when counting disabled", e.MessageCount)
+	}
+	if e.AgentMessageCount != 0 {
+		t.Errorf("AgentMessageCount: got %d, want 0 when counting disabled", e.AgentMessageCount)
+	}
+	// Agent discovery still runs
+	if e.AgentCount != 1 || len(e.AgentPaths) != 1 {
+		t.Errorf("agent discovery not re-run: AgentCount=%d, AgentPaths=%v", e.AgentCount, e.AgentPaths)
+	}
+}
+
 func TestMergeIndexOnly_OutsideProjectDirDropped(t *testing.T) {
 	// The index's FullPath is untrusted: entries pointing outside the project
 	// directory are dropped even if the file exists.
@@ -848,7 +950,7 @@ func TestMergeIndexOnly_OutsideProjectDirDropped(t *testing.T) {
 		},
 	}
 
-	merged, _ := MergeSessionSources(index, nil, projectDir)
+	merged, _ := MergeSessionSources(index, nil, projectDir, true)
 	if len(merged) != 0 {
 		t.Errorf("expected entry outside projectDir to be dropped, got %d entries", len(merged))
 	}
@@ -891,7 +993,7 @@ func TestMergeDuplicateSessionIDsInIndex(t *testing.T) {
 	diskSessions := []models.SessionEntry{
 		{SessionID: "dup-id", FullPath: "/path/first.jsonl", Modified: t1, MessageCount: 5},
 	}
-	merged, _ := MergeSessionSources(index, diskSessions, "/path")
+	merged, _ := MergeSessionSources(index, diskSessions, "/path", true)
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged session, got %d", len(merged))
 	}
@@ -899,7 +1001,7 @@ func TestMergeDuplicateSessionIDsInIndex(t *testing.T) {
 
 func TestMergeBothNilAndEmpty(t *testing.T) {
 	// nil index + nil disk
-	merged1, orphans1 := MergeSessionSources(nil, nil, "/path")
+	merged1, orphans1 := MergeSessionSources(nil, nil, "/path", true)
 	if len(merged1) != 0 {
 		t.Errorf("nil+nil: expected 0 merged, got %d", len(merged1))
 	}
@@ -908,7 +1010,7 @@ func TestMergeBothNilAndEmpty(t *testing.T) {
 	}
 
 	// nil index + empty disk
-	merged2, orphans2 := MergeSessionSources(nil, []models.SessionEntry{}, "/path")
+	merged2, orphans2 := MergeSessionSources(nil, []models.SessionEntry{}, "/path", true)
 	if len(merged2) != 0 {
 		t.Errorf("nil+empty: expected 0 merged, got %d", len(merged2))
 	}

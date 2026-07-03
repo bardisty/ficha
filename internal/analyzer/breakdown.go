@@ -14,6 +14,13 @@ import (
 // The int result counts JSONL lines skipped as malformed or oversized
 // (parent + agents) so callers can warn that the breakdown may be incomplete.
 func GetBreakdownMessages(sessionPath, sessionID string) ([]models.BreakdownMessage, int, error) {
+	return GetBreakdownMessagesWithCache(sessionPath, sessionID, nil)
+}
+
+// GetBreakdownMessagesWithCache is GetBreakdownMessages with an optional
+// agent-parse cache. The parent session is always re-parsed; unchanged agent
+// sub-sessions are served from the cache. A nil cache parses every agent.
+func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentParseCache) ([]models.BreakdownMessage, int, error) {
 	// Parse parent session messages
 	result, err := parser.ParseJSONLFileWithResult(sessionPath)
 	if err != nil {
@@ -48,24 +55,19 @@ func GetBreakdownMessages(sessionPath, sessionID string) ([]models.BreakdownMess
 	agentIDMap := make(map[string]string) // agentPath -> display ID like "1", "2"
 
 	for _, agentPath := range agentPaths {
-		agentResult, err := parser.ParseJSONLFileWithResult(agentPath)
+		agentAnalyses, agentSkipped, err := loadAgentMessages(agentPath, cache)
 		if err != nil {
 			continue // Skip agents that fail to parse
 		}
-		skippedLines += agentResult.SkippedLines
+		skippedLines += agentSkipped
 
 		// Assign a display ID for this agent
 		displayID := fmt.Sprintf("%d", agentNum)
 		agentIDMap[agentPath] = displayID
 		agentNum++
 
-		// Extract and calculate costs for agent messages
-		agentAnalyses := parser.ExtractUsageFromMessages(agentResult.Messages)
-		for i := range agentAnalyses {
-			CalculateMessageCost(&agentAnalyses[i])
-		}
-
-		// Convert agent messages to breakdown format
+		// Convert agent messages to breakdown format (already cost-annotated by
+		// loadAgentMessages)
 		for _, msg := range agentAnalyses {
 			allMessages = append(allMessages, models.BreakdownMessage{
 				AgentID:   displayID,

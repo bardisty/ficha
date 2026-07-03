@@ -38,13 +38,16 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--expand-agents requires --details")
 	}
 
-	sessions, projectDir, err := loadProjectSessionsWithDir()
+	// Summary analyzes every session, recomputing counts, so skip the
+	// discovery-time message-count scan.
+	sessions, projectDir, err := loadProjectSessionsWithDir(false)
 	if err != nil {
 		return err
 	}
 
-	// Analyze all sessions
-	analysis, err := analyzer.AnalyzeMultipleSessions(sessions)
+	// Analyze all sessions. The per-session results feed the --details view so
+	// the formatter doesn't re-parse every session.
+	analysis, results, err := analyzer.AnalyzeMultipleSessions(sessions)
 	if err != nil {
 		return fmt.Errorf("analyzing sessions: %w", err)
 	}
@@ -80,7 +83,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		}
 	default:
 		if showDetails {
-			output = formatter.FormatSummaryTableWithDetails(analysis, sessions, projectDir, noColor, expandAgents)
+			output = formatter.FormatSummaryTableWithDetails(analysis, results, projectDir, noColor, expandAgents)
 		} else {
 			output = formatter.FormatSessionTable(analysis, noColor)
 		}

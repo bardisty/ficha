@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bardisty/ccusage/internal/analyzer"
 	"github.com/bardisty/ccusage/internal/models"
 	"github.com/bardisty/ccusage/internal/render"
 	"github.com/bardisty/ccusage/internal/styles"
@@ -14,8 +13,10 @@ import (
 )
 
 // FormatSummaryTableWithDetails renders the summary table with per-session
-// breakdown. Color and glyph choices are driven by noColor.
-func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, sessions []models.SessionEntry, projectDir string, noColor bool, expandAgents bool) string {
+// breakdown. results carries each session's pre-computed analysis (from
+// AnalyzeMultipleSessions), so the formatter never re-parses. Color and glyph
+// choices are driven by noColor.
+func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []models.SessionResult, projectDir string, noColor bool, expandAgents bool) string {
 	var sb strings.Builder
 	const sectionWidth = 76
 
@@ -61,7 +62,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, sessions []
 	sb.WriteString(formatCostByModelContent(analysis, noColor))
 
 	// Get session breakdown data (needed for both chart and table)
-	breakdownResult := renderSessionBreakdown(sessions, noColor, expandAgents)
+	breakdownResult := renderSessionBreakdown(results, noColor, expandAgents)
 
 	// Session breakdown section (includes chart and table)
 	sb.WriteString("\n")
@@ -121,17 +122,20 @@ type sessionBreakdownResult struct {
 // renderSessionBreakdown renders the session breakdown table with cumulative column
 // When expandAgents is false, shows AGENTS column with count + cost
 // When expandAgents is true, shows agent sub-sessions as indented tree rows
-func renderSessionBreakdown(sessions []models.SessionEntry, noColor bool, expandAgents bool) sessionBreakdownResult {
+//
+// Each result carries its session's pre-computed analysis (nil when the session
+// failed to parse, rendered as an "(error)" row); the formatter does no parsing.
+func renderSessionBreakdown(results []models.SessionResult, noColor bool, expandAgents bool) sessionBreakdownResult {
 	var sb strings.Builder
 
 	// Sort by modified time
-	sorted := make([]models.SessionEntry, len(sessions))
-	copy(sorted, sessions)
+	sorted := make([]models.SessionResult, len(results))
+	copy(sorted, results)
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Modified.Before(sorted[j].Modified)
+		return sorted[i].Entry.Modified.Before(sorted[j].Entry.Modified)
 	})
 
-	// Analyze each session and collect costs
+	// Pair each session with its analysis and collect costs
 	type sessionWithAnalysis struct {
 		entry    models.SessionEntry
 		analysis *models.SessionAnalysis
@@ -144,16 +148,15 @@ func renderSessionBreakdown(sessions []models.SessionEntry, noColor bool, expand
 	var dates []time.Time
 	var totalCost float64
 
-	for _, s := range sorted {
-		analysis, err := analyzer.AnalyzeSession(s.FullPath, s.SessionID, false)
-		if err != nil {
-			sessionData = append(sessionData, sessionWithAnalysis{entry: s, analysis: nil, cost: 0, err: true})
+	for _, r := range sorted {
+		if r.Analysis == nil {
+			sessionData = append(sessionData, sessionWithAnalysis{entry: r.Entry, analysis: nil, cost: 0, err: true})
 			continue
 		}
-		cost := analysis.TotalCost.TotalCost
-		sessionData = append(sessionData, sessionWithAnalysis{entry: s, analysis: analysis, cost: cost, err: false})
+		cost := r.Analysis.TotalCost.TotalCost
+		sessionData = append(sessionData, sessionWithAnalysis{entry: r.Entry, analysis: r.Analysis, cost: cost, err: false})
 		costs = append(costs, cost)
-		dates = append(dates, s.Modified)
+		dates = append(dates, r.Entry.Modified)
 		totalCost += cost
 	}
 
