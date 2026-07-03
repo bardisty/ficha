@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/bardisty/ccusage/internal/analyzer"
 	"github.com/bardisty/ccusage/internal/formatter"
@@ -12,10 +11,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var showCmd = &cobra.Command{
-	Use:   "show [session-id]",
-	Short: "Show session cost breakdown",
-	Long: `Show cost breakdown for a Claude Code session.
+func newShowCmd(cfg *config) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show [session-id]",
+		Short: "Show session cost breakdown",
+		Long: `Show cost breakdown for a Claude Code session.
 
 If no session ID is provided, shows the most recent session.
 
@@ -24,12 +24,18 @@ Examples:
   ccusage show abc123             Show specific session
   ccusage show --live             Watch latest session in real-time
   ccusage show -f json            Output as JSON`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: runShow,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runShow(cfg, args, cfg.live)
+		},
+	}
 }
 
-func runShow(cmd *cobra.Command, args []string) error {
-	session, projectDir, explicitSessionID, err := selectSession(args)
+// runShow renders (or, when live, watches) a single session. live is passed
+// explicitly rather than read from cfg so watch can force it on without a
+// shared mutation: `show`/bare root pass cfg.live, `watch` passes true.
+func runShow(cfg *config, args []string, live bool) error {
+	session, projectDir, explicitSessionID, err := selectSession(cfg, args)
 	if err != nil {
 		return err
 	}
@@ -39,12 +45,12 @@ func runShow(cmd *cobra.Command, args []string) error {
 		// Auto-follow is enabled by default unless:
 		// - User specified a session ID explicitly (pinned to that session)
 		// - User passed --no-follow flag
-		followMode := !explicitSessionID && !noFollow
-		return runLiveMode(session, projectDir, followMode)
+		followMode := !explicitSessionID && !cfg.noFollow
+		return runLiveMode(cfg, session, projectDir, followMode)
 	}
 
 	// Analyze the session
-	includeMessages := format == "csv" || verbose
+	includeMessages := cfg.format == "csv" || cfg.verbose
 	analysis, err := analyzer.AnalyzeSession(session.FullPath, session.SessionID, includeMessages)
 	if err != nil {
 		return fmt.Errorf("analyzing session: %w", err)
@@ -52,25 +58,25 @@ func runShow(cmd *cobra.Command, args []string) error {
 
 	// Warn about skipped agents and skipped lines
 	if analysis.SkippedAgents > 0 {
-		fmt.Fprintf(os.Stderr, "Warning: %d agent sub-session(s) could not be parsed\n", analysis.SkippedAgents)
+		fmt.Fprintf(cfg.stderr, "Warning: %d agent sub-session(s) could not be parsed\n", analysis.SkippedAgents)
 	}
-	warnSkippedLines(analysis.SkippedLines)
+	warnSkippedLines(cfg.stderr, analysis.SkippedLines)
 
 	// Warn about unknown models (using fallback pricing)
-	warnUnknownModels(analysis.CostByModel)
+	warnUnknownModels(cfg.stderr, analysis.CostByModel)
 
 	// Output in requested format
-	output, err := formatOutput(analysis, includeMessages)
+	output, err := formatOutput(cfg, analysis, includeMessages)
 	if err != nil {
 		return fmt.Errorf("formatting output: %w", err)
 	}
 
-	fmt.Println(output)
+	fmt.Fprintln(cfg.stdout, output)
 	return nil
 }
 
-func runLiveMode(session *models.SessionEntry, projectDir string, followMode bool) error {
-	model := tui.NewModel(session.FullPath, session.SessionID, verbose, noColor, projectDir, followMode)
+func runLiveMode(cfg *config, session *models.SessionEntry, projectDir string, followMode bool) error {
+	model := tui.NewModel(session.FullPath, session.SessionID, cfg.verbose, cfg.noColor, projectDir, followMode)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
@@ -79,13 +85,13 @@ func runLiveMode(session *models.SessionEntry, projectDir string, followMode boo
 	return nil
 }
 
-func formatOutput(analysis *models.SessionAnalysis, includeMessages bool) (string, error) {
-	switch format {
+func formatOutput(cfg *config, analysis *models.SessionAnalysis, includeMessages bool) (string, error) {
+	switch cfg.format {
 	case "json":
 		return formatter.FormatSessionJSON(analysis, true)
 	case "csv":
 		return formatter.FormatSessionCSV(analysis, includeMessages)
 	default:
-		return formatter.FormatSessionTable(analysis, noColor), nil
+		return formatter.FormatSessionTable(analysis, cfg.noColor), nil
 	}
 }
