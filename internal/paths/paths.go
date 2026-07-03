@@ -122,37 +122,6 @@ func GetSessionsIndexPath(projectDir string) string {
 	return filepath.Join(projectDir, "sessions-index.json")
 }
 
-// GetCurrentProjectDir returns the Claude project directory for the current working directory
-func GetCurrentProjectDir() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	return GetProjectDirForPath(cwd)
-}
-
-// GetSessionFilePath returns the full path to a session JSONL file
-func GetSessionFilePath(projectDir, sessionID string) string {
-	return filepath.Join(projectDir, sessionID+".jsonl")
-}
-
-// ProjectDirExists checks if a Claude project directory exists
-func ProjectDirExists(path string) (bool, error) {
-	projectDir, err := GetProjectDirForPath(path)
-	if err != nil {
-		return false, err
-	}
-
-	info, err := os.Stat(projectDir)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return info.IsDir(), nil
-}
-
 // FindProjectDir finds the Claude project directory for a given path.
 // It tries exact match first, then falls back to basename matching.
 // allProjects should be obtained from parser.DiscoverAllProjects().

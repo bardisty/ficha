@@ -9,6 +9,10 @@ linters:
     - staticcheck
     - unused
 
+    # Correctness - vet analyzers (printf, lostcancel, copylocks, ...) and security
+    - govet
+    - gosec
+
     # Style - enforce consistency
     - gofmt
     - goimports
@@ -25,6 +29,16 @@ issues:
   max-issues-per-linter: 0
   max-same-issues: 0
   exclude-rules:
+    # Tests write fixtures under t.TempDir(); 0644 there is not a security
+    # surface. G306 still gates real (production) file writes.
     - path: _test\.go
+      text: "G306"
       linters:
-        - errcheck
+        - gosec
+    # staticcheck loses testing.T.Fatal's no-return fact when it runs alongside
+    # govet, so it reports false nil-derefs after `if x == nil { t.Fatal() }`
+    # guards in tests. SA5011 still gates production code.
+    - path: _test\.go
+      text: "SA5011"
+      linters:
+        - staticcheck

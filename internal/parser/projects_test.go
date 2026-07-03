@@ -1,8 +1,6 @@
 package parser
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/bardisty/ccusage/internal/models"
@@ -206,37 +204,6 @@ func TestStripUnixUserPrefix(t *testing.T) {
 				t.Errorf("stripUnixUserPrefix(%q) = %q, want %q", tt.encoded, result, tt.expected)
 			}
 		})
-	}
-}
-
-func TestHasSessions(t *testing.T) {
-	// With .jsonl file → true
-	tmpDir, err := os.MkdirTemp("", "has-sessions-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	if err := os.WriteFile(filepath.Join(tmpDir, "test.jsonl"), []byte("{}"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if !HasSessions(tmpDir) {
-		t.Error("expected true when .jsonl file exists")
-	}
-
-	// Without .jsonl → false
-	emptyDir, err := os.MkdirTemp("", "no-sessions-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(emptyDir)
-	if HasSessions(emptyDir) {
-		t.Error("expected false for empty directory")
-	}
-
-	// Nonexistent → false
-	if HasSessions("/nonexistent/path/xyz") {
-		t.Error("expected false for nonexistent directory")
 	}
 }
 

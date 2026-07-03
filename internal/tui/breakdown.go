@@ -135,10 +135,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "up", "k":
 			m.autoScroll = false
-			m.viewport.LineUp(1)
+			m.viewport.ScrollUp(1)
 
 		case "down", "j":
-			m.viewport.LineDown(1)
+			m.viewport.ScrollDown(1)
 			// Re-enable auto-scroll if at bottom
 			if m.viewport.AtBottom() {
 				m.autoScroll = true
@@ -146,10 +146,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "pgup":
 			m.autoScroll = false
-			m.viewport.HalfViewUp()
+			m.viewport.HalfPageUp()
 
 		case "pgdown":
-			m.viewport.HalfViewDown()
+			m.viewport.HalfPageDown()
 			if m.viewport.AtBottom() {
 				m.autoScroll = true
 			}
