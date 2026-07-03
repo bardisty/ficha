@@ -8,8 +8,15 @@ import (
 	"github.com/bardisty/ccusage/internal/models"
 )
 
-// FormatSessionCSV formats a session analysis as CSV
+// FormatSessionCSV formats a session analysis as CSV. includeMessages switches
+// granularity rather than stacking: false emits a single session-summary row,
+// true emits one row per message. Either way the result is a single valid CSV
+// table (one header, uniform column count) so single-table parsers never choke.
 func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (string, error) {
+	if includeMessages {
+		return formatMessagesCSV(analysis.Messages)
+	}
+
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
 
@@ -58,16 +65,6 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 	w.Flush()
 	if err := w.Error(); err != nil {
 		return "", fmt.Errorf("flushing CSV: %w", err)
-	}
-
-	// Optionally include individual messages
-	if includeMessages && len(analysis.Messages) > 0 {
-		sb.WriteString("\n")
-		messagesCSV, err := formatMessagesCSV(analysis.Messages)
-		if err != nil {
-			return "", err
-		}
-		sb.WriteString(messagesCSV)
 	}
 
 	return sb.String(), nil

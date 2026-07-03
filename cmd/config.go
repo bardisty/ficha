@@ -16,6 +16,9 @@ type config struct {
 	live        bool
 	noFollow    bool
 
+	// show flags.
+	messages bool // --messages: per-message rows/records in json/csv instead of the session summary
+
 	// summary flags.
 	showDetails  bool
 	expandAgents bool

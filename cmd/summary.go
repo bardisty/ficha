@@ -16,19 +16,22 @@ func newSummaryCmd(cfg *config) *cobra.Command {
 
 This calculates the total cost and token usage across all sessions.
 
+--details and --expand-agents also enrich json/csv output: --details adds a
+per-session breakdown, --expand-agents adds each session's agent sub-sessions.
+
 Examples:
-  ccusage summary                          Show aggregate stats
-  ccusage summary --details                Show per-session cost breakdown
-  ccusage summary --details --expand-agents Show agent sub-sessions in tree view
-  ccusage summary -f json                  Output as JSON`,
+  ccusage summary                           Show aggregate stats
+  ccusage summary --details                 Show per-session cost breakdown
+  ccusage summary --details --expand-agents Include agent sub-sessions
+  ccusage summary --details -f json         Per-session records as JSON`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSummary(cfg)
 		},
 	}
 
-	summaryCmd.Flags().BoolVarP(&cfg.showDetails, "details", "d", false, "Show per-session cost breakdown")
-	summaryCmd.Flags().BoolVar(&cfg.expandAgents, "expand-agents", false, "Show agent sub-sessions as indented tree rows (requires --details)")
+	summaryCmd.Flags().BoolVarP(&cfg.showDetails, "details", "d", false, "Add a per-session breakdown (table rows / json sessions / csv rows)")
+	summaryCmd.Flags().BoolVar(&cfg.expandAgents, "expand-agents", false, "Include per-agent records: tree rows (table), nested agents (json), agent rows (csv); requires --details")
 
 	return summaryCmd
 }
@@ -68,16 +71,26 @@ func runSummary(cfg *config) error {
 	analysis.IsSummary = true
 	analysis.SessionCount = len(sessions)
 
-	// Output in requested format
+	// Output in requested format. --details/--expand-agents add per-session and
+	// per-agent records to json/csv (not just the table); without --details the
+	// machine formats emit the aggregate alone.
 	var output string
 	switch cfg.format {
 	case "json":
-		output, err = formatter.FormatSessionJSON(analysis, true)
+		if cfg.showDetails {
+			output, err = formatter.FormatSummaryDetailJSON(analysis, results, cfg.expandAgents, true)
+		} else {
+			output, err = formatter.FormatSessionJSON(analysis, true)
+		}
 		if err != nil {
 			return fmt.Errorf("formatting output: %w", err)
 		}
 	case "csv":
-		output, err = formatter.FormatSessionCSV(analysis, false)
+		if cfg.showDetails {
+			output, err = formatter.FormatSummaryDetailCSV(results, cfg.expandAgents)
+		} else {
+			output, err = formatter.FormatSessionCSV(analysis, false)
+		}
 		if err != nil {
 			return fmt.Errorf("formatting output: %w", err)
 		}

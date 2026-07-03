@@ -126,13 +126,57 @@ func TestE2ECommands(t *testing.T) {
 			},
 		},
 		{
-			name: "show csv",
+			name: "show csv is one session table",
 			args: []string{"show", projFlag, e2eAlphaID, "-f", "csv"},
 			check: func(t *testing.T, out string) {
-				// show hard-wires includeMessages for csv, so a per-message table
-				// follows the session row (CLI-2). Just assert the session table
-				// header and row are present.
-				mustContainAll(t, out, "session_id,input_cost", "total_cost", e2eAlphaID)
+				// mustCSV uses a default reader, which errors on a ragged table —
+				// so this passing is itself the proof that show no longer stacks a
+				// second per-message table with a different column count (CLI-2).
+				records := mustCSV(t, out)
+				if len(records) != 2 { // header + one session row
+					t.Fatalf("show csv: got %d rows, want 2 (header + session)", len(records))
+				}
+				if records[0][0] != "session_id" {
+					t.Errorf("header col 0: got %q, want session_id", records[0][0])
+				}
+				if records[1][0] != e2eAlphaID {
+					t.Errorf("session_id: got %q, want %q", records[1][0], e2eAlphaID)
+				}
+			},
+		},
+		{
+			name: "show csv --messages switches to per-message rows",
+			args: []string{"show", projFlag, e2eAlphaID, "-f", "csv", "--messages"},
+			check: func(t *testing.T, out string) {
+				records := mustCSV(t, out)
+				if records[0][0] != "timestamp" {
+					t.Errorf("header col 0: got %q, want timestamp (per-message table)", records[0][0])
+				}
+				if len(records) != 3 { // header + 2 messages (alpha has two)
+					t.Fatalf("show csv --messages: got %d rows, want 3 (header + 2 messages)", len(records))
+				}
+			},
+		},
+		{
+			name: "show json omits messages by default, includes them with --messages",
+			args: []string{"show", projFlag, e2eAlphaID, "-f", "json"},
+			check: func(t *testing.T, out string) {
+				var a models.SessionAnalysis
+				mustJSON(t, out, &a)
+				if len(a.Messages) != 0 {
+					t.Errorf("messages should be omitted without --messages, got %d", len(a.Messages))
+				}
+			},
+		},
+		{
+			name: "show json --messages includes the message array",
+			args: []string{"show", projFlag, e2eAlphaID, "-f", "json", "--messages"},
+			check: func(t *testing.T, out string) {
+				var a models.SessionAnalysis
+				mustJSON(t, out, &a)
+				if len(a.Messages) != 2 {
+					t.Errorf("messages: got %d, want 2", len(a.Messages))
+				}
 			},
 		},
 		{
@@ -208,6 +252,78 @@ func TestE2ECommands(t *testing.T) {
 			},
 		},
 		{
+			name: "summary --details json carries per-session records",
+			args: []string{"summary", projFlag, "--details", "-f", "json"},
+			check: func(t *testing.T, out string) {
+				var d models.SummaryDetail
+				mustJSON(t, out, &d)
+				if d.Summary == nil || d.Summary.TotalCost.TotalCost <= 0 {
+					t.Error("summary aggregate missing or zero cost")
+				}
+				if len(d.Sessions) != 2 {
+					t.Fatalf("sessions: got %d, want 2", len(d.Sessions))
+				}
+				// No --expand-agents: nested agents omitted even though beta owns one.
+				for _, s := range d.Sessions {
+					if len(s.Agents) != 0 {
+						t.Errorf("session %s: agents must be omitted without --expand-agents", s.SessionID)
+					}
+				}
+			},
+		},
+		{
+			name: "summary --details --expand-agents json nests the agent",
+			args: []string{"summary", projFlag, "--details", "--expand-agents", "-f", "json"},
+			check: func(t *testing.T, out string) {
+				var d models.SummaryDetail
+				mustJSON(t, out, &d)
+				total := 0
+				for _, s := range d.Sessions {
+					total += len(s.Agents)
+				}
+				if total != 1 { // beta has exactly one agent sub-session
+					t.Errorf("nested agents across sessions: got %d, want 1", total)
+				}
+			},
+		},
+		{
+			name: "summary --details csv is one per-session table",
+			args: []string{"summary", projFlag, "--details", "-f", "csv"},
+			check: func(t *testing.T, out string) {
+				records := mustCSV(t, out)
+				if records[0][0] != "row_type" {
+					t.Errorf("header col 0: got %q, want row_type", records[0][0])
+				}
+				if len(records) != 3 { // header + 2 session rows, no agent rows
+					t.Fatalf("rows: got %d, want 3 (header + 2 sessions)", len(records))
+				}
+				for _, r := range records[1:] {
+					if r[0] != "session" {
+						t.Errorf("row_type: got %q, want session (agents excluded without --expand-agents)", r[0])
+					}
+				}
+			},
+		},
+		{
+			name: "summary --details --expand-agents csv adds an agent row",
+			args: []string{"summary", projFlag, "--details", "--expand-agents", "-f", "csv"},
+			check: func(t *testing.T, out string) {
+				records := mustCSV(t, out)
+				if len(records) != 4 { // header + 2 sessions + 1 agent
+					t.Fatalf("rows: got %d, want 4 (header + 2 sessions + 1 agent)", len(records))
+				}
+				agentRows := 0
+				for _, r := range records[1:] {
+					if r[0] == "agent" {
+						agentRows++
+					}
+				}
+				if agentRows != 1 {
+					t.Errorf("agent rows: got %d, want 1", agentRows)
+				}
+			},
+		},
+		{
 			name: "global table shows both projects",
 			args: []string{"global"},
 			check: func(t *testing.T, out string) {
@@ -237,6 +353,27 @@ func TestE2ECommands(t *testing.T) {
 				}
 				if g.TotalCost.TotalCost <= 0 {
 					t.Errorf("total_cost = %v, want > 0", g.TotalCost.TotalCost)
+				}
+			},
+		},
+		{
+			name: "global --top does not truncate json (D3: machine formats export all)",
+			args: []string{"global", "--top", "1", "-f", "json"},
+			check: func(t *testing.T, out string) {
+				var g models.GlobalAnalysis
+				mustJSON(t, out, &g)
+				if len(g.Projects) != 2 {
+					t.Errorf("projects in json: got %d, want 2 (--top is table-only)", len(g.Projects))
+				}
+			},
+		},
+		{
+			name: "global --top does not truncate csv (D3: machine formats export all)",
+			args: []string{"global", "--top", "1", "-f", "csv"},
+			check: func(t *testing.T, out string) {
+				records := mustCSV(t, out)
+				if len(records) != 3 { // header + 2 project rows regardless of --top
+					t.Errorf("csv rows: got %d, want 3 (header + 2 projects); --top is table-only", len(records))
 				}
 			},
 		},

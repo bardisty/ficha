@@ -12,7 +12,7 @@ import (
 )
 
 func newShowCmd(cfg *config) *cobra.Command {
-	return &cobra.Command{
+	showCmd := &cobra.Command{
 		Use:   "show [session-id]",
 		Short: "Show session cost breakdown",
 		Long: `Show cost breakdown for a Claude Code session.
@@ -23,12 +23,17 @@ Examples:
   ccusage show                    Show latest session
   ccusage show abc123             Show specific session
   ccusage show --live             Watch latest session in real-time
-  ccusage show -f json            Output as JSON`,
+  ccusage show -f json            Output as JSON
+  ccusage show -f csv --messages  Per-message rows as CSV`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runShow(cfg, args, cfg.live)
 		},
 	}
+
+	showCmd.Flags().BoolVar(&cfg.messages, "messages", false, "Output per-message rows/records instead of the session summary (json/csv only)")
+
+	return showCmd
 }
 
 // runShow renders (or, when live, watches) a single session. live is passed
@@ -49,8 +54,10 @@ func runShow(cfg *config, args []string, live bool) error {
 		return runLiveMode(cfg, session, projectDir, followMode)
 	}
 
-	// Analyze the session
-	includeMessages := cfg.format == "csv" || cfg.verbose
+	// Analyze the session. Per-message data is retained only for --messages,
+	// which switches json/csv to per-message granularity; the table never renders
+	// the message list (insights are computed regardless), so it ignores the flag.
+	includeMessages := cfg.messages
 	analysis, err := analyzer.AnalyzeSession(session.FullPath, session.SessionID, includeMessages)
 	if err != nil {
 		return fmt.Errorf("analyzing session: %w", err)
