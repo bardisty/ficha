@@ -20,6 +20,7 @@ Examples:
   ccusage list                    List all sessions
   ccusage list -f json            Output as JSON
   ccusage list -f csv             Output as CSV`,
+	Args: cobra.NoArgs,
 	RunE: runList,
 }
 

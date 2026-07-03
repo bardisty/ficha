@@ -544,3 +544,117 @@ func TestAnalyzeSessionFromMessages_Deduplicates(t *testing.T) {
 		t.Errorf("OutputTokens: got %d, want 500 (last occurrence)", analysis.TotalUsage.OutputTokens)
 	}
 }
+
+// CORE-4 regression: Start/EndTime were taken positionally (first/last message),
+// yielding negative durations for out-of-order or zero timestamps.
+func TestTimeRange(t *testing.T) {
+	t1 := time.Date(2024, 1, 15, 9, 0, 0, 0, time.UTC)
+	t2 := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	t3 := time.Date(2024, 1, 15, 11, 0, 0, 0, time.UTC)
+	var zero time.Time
+
+	tests := []struct {
+		name       string
+		timestamps []time.Time
+		wantStart  time.Time
+		wantEnd    time.Time
+	}{
+		{"chronological", []time.Time{t1, t2, t3}, t1, t3},
+		{"reversed", []time.Time{t3, t2, t1}, t1, t3},
+		{"interleaved", []time.Time{t2, t1, t3}, t1, t3},
+		{"zero first", []time.Time{zero, t1, t2}, t1, t2},
+		{"zero last", []time.Time{t1, t2, zero}, t1, t2},
+		{"all zero", []time.Time{zero, zero}, zero, zero},
+		{"empty", nil, zero, zero},
+		{"single", []time.Time{t2}, t2, t2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			messages := make([]models.MessageAnalysis, len(tt.timestamps))
+			for i, ts := range tt.timestamps {
+				messages[i].Timestamp = ts
+			}
+			start, end := timeRange(messages)
+			if !start.Equal(tt.wantStart) {
+				t.Errorf("start: got %v, want %v", start, tt.wantStart)
+			}
+			if !end.Equal(tt.wantEnd) {
+				t.Errorf("end: got %v, want %v", end, tt.wantEnd)
+			}
+		})
+	}
+}
+
+func TestBuildSessionAnalysis_OutOfOrderTimestamps(t *testing.T) {
+	early := time.Date(2024, 1, 15, 9, 0, 0, 0, time.UTC)
+	late := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	// Later timestamp appears first (resumed/interleaved session)
+	messages := []models.MessageAnalysis{
+		{Timestamp: late, Cost: models.CostBreakdown{TotalCost: 0.1}},
+		{Timestamp: early, Cost: models.CostBreakdown{TotalCost: 0.1}},
+	}
+
+	analysis := buildSessionAnalysis("sess", "/path", messages, false)
+
+	if !analysis.StartTime.Equal(early) {
+		t.Errorf("StartTime: got %v, want %v", analysis.StartTime, early)
+	}
+	if !analysis.EndTime.Equal(late) {
+		t.Errorf("EndTime: got %v, want %v", analysis.EndTime, late)
+	}
+	if analysis.Duration.Duration() != time.Hour {
+		t.Errorf("Duration: got %v, want 1h (was negative before fix)", analysis.Duration.Duration())
+	}
+}
+
+func TestBuildSessionAnalysis_ZeroTimestampLast(t *testing.T) {
+	t1 := time.Date(2024, 1, 15, 9, 0, 0, 0, time.UTC)
+	t2 := time.Date(2024, 1, 15, 9, 30, 0, 0, time.UTC)
+
+	// Final message has a missing timestamp (unmarshals to zero time)
+	messages := []models.MessageAnalysis{
+		{Timestamp: t1},
+		{Timestamp: t2},
+		{},
+	}
+
+	analysis := buildSessionAnalysis("sess", "/path", messages, false)
+
+	if !analysis.EndTime.Equal(t2) {
+		t.Errorf("EndTime: got %v, want %v (zero timestamp must be ignored)", analysis.EndTime, t2)
+	}
+	if analysis.Duration.Duration() != 30*time.Minute {
+		t.Errorf("Duration: got %v, want 30m", analysis.Duration.Duration())
+	}
+}
+
+func TestAnalyzeAgent_OutOfOrderTimestamps(t *testing.T) {
+	tmpDir := t.TempDir()
+	agentPath := filepath.Join(tmpDir, "agent-ooo.jsonl")
+
+	// Later timestamp first, then earlier — duration must not go negative
+	content := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"id":"m1","model":"claude-sonnet-4-5","usage":{"input_tokens":100,"output_tokens":50}}}
+{"type":"assistant","timestamp":"2024-01-15T09:00:00Z","message":{"id":"m2","model":"claude-sonnet-4-5","usage":{"input_tokens":100,"output_tokens":50}}}`
+	if err := os.WriteFile(agentPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write agent file: %v", err)
+	}
+
+	analysis, err := AnalyzeAgent(agentPath, false)
+	if err != nil {
+		t.Fatalf("AnalyzeAgent failed: %v", err)
+	}
+
+	wantStart := time.Date(2024, 1, 15, 9, 0, 0, 0, time.UTC)
+	wantEnd := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	if !analysis.StartTime.Equal(wantStart) {
+		t.Errorf("StartTime: got %v, want %v", analysis.StartTime, wantStart)
+	}
+	if !analysis.EndTime.Equal(wantEnd) {
+		t.Errorf("EndTime: got %v, want %v", analysis.EndTime, wantEnd)
+	}
+	if analysis.Duration.Duration() != time.Hour {
+		t.Errorf("Duration: got %v, want 1h (was negative before fix)", analysis.Duration.Duration())
+	}
+}

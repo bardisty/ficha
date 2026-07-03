@@ -98,15 +98,16 @@ func TestCalculateInsights_TwoMessages(t *testing.T) {
 	}
 }
 
-func TestCalculateInsights_FiveMessages_DecreasingTrend(t *testing.T) {
+func TestCalculateInsights_SixMessages_DecreasingTrend(t *testing.T) {
 	now := time.Now()
-	// Decreasing costs: 0.30, 0.25, 0.20, 0.10, 0.05
+	// Decreasing costs: 0.30, 0.25, 0.20, 0.10, 0.05, 0.03
 	messages := []models.MessageAnalysis{
 		{Timestamp: now, Cost: models.CostBreakdown{TotalCost: 0.30}},
 		{Timestamp: now.Add(time.Minute), Cost: models.CostBreakdown{TotalCost: 0.25}},
 		{Timestamp: now.Add(2 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.20}},
 		{Timestamp: now.Add(3 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.10}},
 		{Timestamp: now.Add(4 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.05}},
+		{Timestamp: now.Add(5 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.03}},
 	}
 
 	result := CalculateInsights(messages)
@@ -121,8 +122,8 @@ func TestCalculateInsights_FiveMessages_DecreasingTrend(t *testing.T) {
 		t.Errorf("Expected EarlyAvgCost=%f, got %f", expectedEarlyAvg, result.EarlyAvgCost)
 	}
 
-	// Late avg = (0.20 + 0.10 + 0.05) / 3 = 0.1167
-	expectedLateAvg := (0.20 + 0.10 + 0.05) / 3
+	// Late avg = (0.10 + 0.05 + 0.03) / 3 = 0.06 — disjoint from the early window
+	expectedLateAvg := (0.10 + 0.05 + 0.03) / 3
 	if !almostEqual(result.LateAvgCost, expectedLateAvg, 0.001) {
 		t.Errorf("Expected LateAvgCost=%f, got %f", expectedLateAvg, result.LateAvgCost)
 	}
@@ -133,15 +134,16 @@ func TestCalculateInsights_FiveMessages_DecreasingTrend(t *testing.T) {
 	}
 }
 
-func TestCalculateInsights_FiveMessages_IncreasingTrend(t *testing.T) {
+func TestCalculateInsights_SixMessages_IncreasingTrend(t *testing.T) {
 	now := time.Now()
-	// Increasing costs: 0.05, 0.10, 0.15, 0.25, 0.30
+	// Increasing costs: 0.05, 0.10, 0.15, 0.25, 0.30, 0.35
 	messages := []models.MessageAnalysis{
 		{Timestamp: now, Cost: models.CostBreakdown{TotalCost: 0.05}},
 		{Timestamp: now.Add(time.Minute), Cost: models.CostBreakdown{TotalCost: 0.10}},
 		{Timestamp: now.Add(2 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.15}},
 		{Timestamp: now.Add(3 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.25}},
 		{Timestamp: now.Add(4 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.30}},
+		{Timestamp: now.Add(5 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.35}},
 	}
 
 	result := CalculateInsights(messages)
@@ -156,7 +158,7 @@ func TestCalculateInsights_FiveMessages_IncreasingTrend(t *testing.T) {
 	}
 }
 
-func TestCalculateInsights_FiveMessages_StableTrend(t *testing.T) {
+func TestCalculateInsights_SixMessages_StableTrend(t *testing.T) {
 	now := time.Now()
 	// Stable costs (within 20% variance)
 	messages := []models.MessageAnalysis{
@@ -165,6 +167,7 @@ func TestCalculateInsights_FiveMessages_StableTrend(t *testing.T) {
 		{Timestamp: now.Add(2 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.09}},
 		{Timestamp: now.Add(3 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.10}},
 		{Timestamp: now.Add(4 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.11}},
+		{Timestamp: now.Add(5 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.10}},
 	}
 
 	result := CalculateInsights(messages)
@@ -176,6 +179,37 @@ func TestCalculateInsights_FiveMessages_StableTrend(t *testing.T) {
 	// Should be stable
 	if result.CostTrend != models.TrendStable {
 		t.Errorf("Expected TrendStable, got %v", result.CostTrend)
+	}
+}
+
+// CORE-3 regression: at exactly 5 messages the early [0,1,2] and late [2,3,4]
+// windows overlapped, double-counting the middle message. Trend now requires
+// 2*trendSampleSize messages so the windows are always disjoint.
+func TestCalculateInsights_FiveMessages_NoTrend(t *testing.T) {
+	now := time.Now()
+	messages := []models.MessageAnalysis{
+		{Timestamp: now, Cost: models.CostBreakdown{TotalCost: 0.05}},
+		{Timestamp: now.Add(time.Minute), Cost: models.CostBreakdown{TotalCost: 0.10}},
+		{Timestamp: now.Add(2 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.15}},
+		{Timestamp: now.Add(3 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.25}},
+		{Timestamp: now.Add(4 * time.Minute), Cost: models.CostBreakdown{TotalCost: 0.30}},
+	}
+
+	result := CalculateInsights(messages)
+
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+
+	// Trend must not be computed with overlapping windows
+	if result.EarlyAvgCost != 0 {
+		t.Errorf("EarlyAvgCost should be 0 at 5 messages, got %f", result.EarlyAvgCost)
+	}
+	if result.LateAvgCost != 0 {
+		t.Errorf("LateAvgCost should be 0 at 5 messages, got %f", result.LateAvgCost)
+	}
+	if result.CostTrend != models.TrendStable {
+		t.Errorf("CostTrend should stay at zero value (stable), got %v", result.CostTrend)
 	}
 }
 
