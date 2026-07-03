@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/bardisty/ccusage/internal/analyzer"
 	"github.com/bardisty/ccusage/internal/formatter"
@@ -10,17 +9,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	globalDetails bool
-	globalTopN    int
-	globalSortBy  string
-	globalNoCache bool
-)
-
-var globalCmd = &cobra.Command{
-	Use:   "global",
-	Short: "Show aggregated stats across ALL projects",
-	Long: `Show aggregate statistics across all Claude Code projects.
+func newGlobalCmd(cfg *config) *cobra.Command {
+	globalCmd := &cobra.Command{
+		Use:   "global",
+		Short: "Show aggregated stats across ALL projects",
+		Long: `Show aggregate statistics across all Claude Code projects.
 
 This calculates total cost and token usage across every project in ~/.claude/projects/.
 
@@ -30,34 +23,35 @@ Examples:
   ccusage global --top 20          Show top 20 projects
   ccusage global --sort-by name    Sort by project name
   ccusage global -f json           Output as JSON`,
-	Args: cobra.NoArgs,
-	RunE: runGlobal,
-}
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGlobal(cfg)
+		},
+	}
 
-func init() {
-	globalCmd.Flags().BoolVarP(&globalDetails, "details", "d", false, "Show all projects with cumulative column")
-	globalCmd.Flags().IntVarP(&globalTopN, "top", "n", 10, "Number of top projects to show")
-	globalCmd.Flags().StringVar(&globalSortBy, "sort-by", "cost", "Sort by: cost, sessions, name, activity")
-	globalCmd.Flags().BoolVar(&globalNoCache, "no-cache", false, "Skip cache, force fresh analysis (reserved for future use)")
+	globalCmd.Flags().BoolVarP(&cfg.globalDetails, "details", "d", false, "Show all projects with cumulative column")
+	globalCmd.Flags().IntVarP(&cfg.globalTopN, "top", "n", 10, "Number of top projects to show")
+	globalCmd.Flags().StringVar(&cfg.globalSortBy, "sort-by", "cost", "Sort by: cost, sessions, name, activity")
+	globalCmd.Flags().BoolVar(&cfg.globalNoCache, "no-cache", false, "Skip cache, force fresh analysis (reserved for future use)")
 	_ = globalCmd.Flags().MarkHidden("no-cache")
 
-	rootCmd.AddCommand(globalCmd)
+	return globalCmd
 }
 
-func runGlobal(cmd *cobra.Command, args []string) error {
+func runGlobal(cfg *config) error {
 	// Validate --sort-by
 	validSortValues := map[string]bool{"cost": true, "sessions": true, "name": true, "activity": true}
-	if !validSortValues[globalSortBy] {
-		return fmt.Errorf("invalid --sort-by value %q: must be one of cost, sessions, name, activity", globalSortBy)
+	if !validSortValues[cfg.globalSortBy] {
+		return fmt.Errorf("invalid --sort-by value %q: must be one of cost, sessions, name, activity", cfg.globalSortBy)
 	}
 
 	// Validate --top (0 = show no project rows, just the summary)
-	if globalTopN < 0 {
-		return fmt.Errorf("invalid --top value %d: must be >= 0", globalTopN)
+	if cfg.globalTopN < 0 {
+		return fmt.Errorf("invalid --top value %d: must be >= 0", cfg.globalTopN)
 	}
 
 	// Global command shows all projects — reject project-specific flags
-	if projectPath != "" || projectDir != "" {
+	if cfg.projectPath != "" || cfg.projectDir != "" {
 		return fmt.Errorf("--project and --project-dir flags are not supported with the global command")
 	}
 
@@ -79,20 +73,20 @@ func runGlobal(cmd *cobra.Command, args []string) error {
 
 	// Warn about skipped projects
 	if analysis.SkippedProjects > 0 {
-		fmt.Fprintf(os.Stderr, "Warning: %d project(s) could not be analyzed\n", analysis.SkippedProjects)
+		fmt.Fprintf(cfg.stderr, "Warning: %d project(s) could not be analyzed\n", analysis.SkippedProjects)
 	}
 
 	// Warn about unknown models (using fallback pricing)
-	warnUnknownModels(analysis.CostByModel)
+	warnUnknownModels(cfg.stderr, analysis.CostByModel)
 
 	// Apply custom sort if requested
-	if globalSortBy != "cost" {
-		analyzer.SortProjectsBy(analysis.Projects, globalSortBy)
+	if cfg.globalSortBy != "cost" {
+		analyzer.SortProjectsBy(analysis.Projects, cfg.globalSortBy)
 	}
 
 	// Output in requested format
 	var output string
-	switch format {
+	switch cfg.format {
 	case "json":
 		output, err = formatter.FormatGlobalJSON(analysis, true)
 		if err != nil {
@@ -104,9 +98,9 @@ func runGlobal(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("formatting output: %w", err)
 		}
 	default:
-		output = formatter.FormatGlobalTable(analysis, noColor, globalTopN, globalDetails)
+		output = formatter.FormatGlobalTable(analysis, cfg.noColor, cfg.globalTopN, cfg.globalDetails)
 	}
 
-	fmt.Println(output)
+	fmt.Fprintln(cfg.stdout, output)
 	return nil
 }

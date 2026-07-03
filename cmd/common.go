@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -22,8 +23,8 @@ var ErrSessionNotFound = errors.New("session not found")
 // countMessages controls whether per-file message counts are computed during
 // discovery (see loadProjectSessionsWithDir). Returns the merged sessions list
 // or an error.
-func loadProjectSessions(countMessages bool) ([]models.SessionEntry, error) {
-	sessions, _, err := loadProjectSessionsWithDir(countMessages)
+func loadProjectSessions(cfg *config, countMessages bool) ([]models.SessionEntry, error) {
+	sessions, _, err := loadProjectSessionsWithDir(cfg, countMessages)
 	return sessions, err
 }
 
@@ -33,9 +34,9 @@ func loadProjectSessions(countMessages bool) ([]models.SessionEntry, error) {
 // countMessages gates the discovery-time message-count scan: only `list`
 // displays those counts, so every analysis path passes false and lets the
 // analyzer recompute counts from its own parse (avoids scanning each file twice).
-func loadProjectSessionsWithDir(countMessages bool) ([]models.SessionEntry, string, error) {
+func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.SessionEntry, string, error) {
 	// Resolve project directory
-	projDir, err := resolveProjectDirectory()
+	projDir, err := resolveProjectDirectory(cfg)
 	if err != nil {
 		return nil, "", err
 	}
@@ -51,7 +52,7 @@ func loadProjectSessionsWithDir(countMessages bool) ([]models.SessionEntry, stri
 	index, indexErr := parser.ParseSessionsIndex(indexPath)
 	if indexErr != nil && !os.IsNotExist(indexErr) {
 		// Index exists but is malformed - warn but continue
-		fmt.Fprintf(os.Stderr, "Warning: failed to parse sessions-index.json: %v\n", indexErr)
+		fmt.Fprintf(cfg.stderr, "Warning: failed to parse sessions-index.json: %v\n", indexErr)
 	}
 
 	// Merge sources
@@ -62,8 +63,8 @@ func loadProjectSessionsWithDir(countMessages bool) ([]models.SessionEntry, stri
 	}
 
 	// Warn about orphans (only in verbose mode - this is common and usually not actionable)
-	if orphanCount > 0 && verbose {
-		fmt.Fprintf(os.Stderr, "Note: Found %d session(s) not in sessions-index.json\n", orphanCount)
+	if orphanCount > 0 && cfg.verbose {
+		fmt.Fprintf(cfg.stderr, "Note: Found %d session(s) not in sessions-index.json\n", orphanCount)
 	}
 
 	return sessions, projDir, nil
@@ -72,14 +73,14 @@ func loadProjectSessionsWithDir(countMessages bool) ([]models.SessionEntry, stri
 // resolveProjectDirectory determines which Claude project directory to use.
 // Priority: --project-dir flag > --project/-p flag > current directory
 // Uses fallback matching when exact encoded path doesn't exist.
-func resolveProjectDirectory() (string, error) {
+func resolveProjectDirectory(cfg *config) (string, error) {
 	// If --project-dir is set, use it directly (bypass all auto-detection)
-	if projectDir != "" {
-		return paths.ResolveProjectDir(projectDir)
+	if cfg.projectDir != "" {
+		return paths.ResolveProjectDir(cfg.projectDir)
 	}
 
 	// Get the source path (from --project or cwd)
-	projPath, err := getProjectPath()
+	projPath, err := getProjectPath(cfg)
 	if err != nil {
 		return "", err
 	}
@@ -111,7 +112,7 @@ func resolveProjectDirectory() (string, error) {
 
 	// Print match info if matched by suffix
 	if match.MatchInfo != "" {
-		fmt.Fprintf(os.Stderr, "Note: %s\n", match.MatchInfo)
+		fmt.Fprintf(cfg.stderr, "Note: %s\n", match.MatchInfo)
 	}
 
 	return match.ProjectDir, nil
@@ -154,14 +155,14 @@ func formatNoProjectError(projPath string, allProjects []models.ProjectInfo) err
 // warnSkippedLines prints a stderr warning when JSONL lines were skipped
 // during parsing (malformed or oversized), so undercounted totals don't
 // look authoritative. Stderr keeps -f json/csv stdout clean.
-func warnSkippedLines(skippedLines int) {
+func warnSkippedLines(w io.Writer, skippedLines int) {
 	if skippedLines > 0 {
-		fmt.Fprintf(os.Stderr, "Warning: %d unparseable line(s) skipped (malformed or oversized) — totals may be undercounted\n", skippedLines)
+		fmt.Fprintf(w, "Warning: %d unparseable line(s) skipped (malformed or oversized) — totals may be undercounted\n", skippedLines)
 	}
 }
 
 // warnUnknownModels prints a warning if any models have unknown pricing
-func warnUnknownModels(costByModel map[string]models.CostBreakdown) {
+func warnUnknownModels(w io.Writer, costByModel map[string]models.CostBreakdown) {
 	var unknownModels []string
 	for model := range costByModel {
 		if !pricing.IsKnownModel(model) {
@@ -171,19 +172,19 @@ func warnUnknownModels(costByModel map[string]models.CostBreakdown) {
 	if len(unknownModels) > 0 {
 		sort.Strings(unknownModels)
 		if len(unknownModels) == 1 {
-			fmt.Fprintf(os.Stderr, "Warning: unknown model %q using fallback pricing\n", unknownModels[0])
+			fmt.Fprintf(w, "Warning: unknown model %q using fallback pricing\n", unknownModels[0])
 		} else {
-			fmt.Fprintf(os.Stderr, "Warning: %d unknown models using fallback pricing: %v\n", len(unknownModels), unknownModels)
+			fmt.Fprintf(w, "Warning: %d unknown models using fallback pricing: %v\n", len(unknownModels), unknownModels)
 		}
 	}
 }
 
 // selectSession finds the appropriate session based on CLI args.
 // Returns the session, project directory, whether a session ID was explicitly provided, and any error.
-func selectSession(args []string) (*models.SessionEntry, string, bool, error) {
+func selectSession(cfg *config, args []string) (*models.SessionEntry, string, bool, error) {
 	// Analysis paths (show/watch/breakdown) recompute counts from their own
 	// parse, so skip the discovery-time message-count scan.
-	sessions, projectDir, err := loadProjectSessionsWithDir(false)
+	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, false)
 	if err != nil {
 		return nil, "", false, err
 	}

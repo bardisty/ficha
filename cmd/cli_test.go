@@ -6,21 +6,17 @@ import (
 	"testing"
 )
 
-// executeCLI runs the root command with args, capturing cobra-managed output.
-// Note: versionCmd prints via cmd.OutOrStdout(), so it lands in the buffer too.
+// executeCLI runs a fresh root command with args, capturing cobra-managed
+// output. A new tree per call means no flag state leaks between tests, so no
+// cleanup is needed (that re-entrancy is the point of the config refactor).
 func executeCLI(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	buf := new(bytes.Buffer)
-	rootCmd.SetOut(buf)
-	rootCmd.SetErr(buf)
-	rootCmd.SetArgs(args)
-	t.Cleanup(func() {
-		rootCmd.SetOut(nil)
-		rootCmd.SetErr(nil)
-		rootCmd.SetArgs(nil)
-		format = "table"
-	})
-	err := rootCmd.Execute()
+	root := newRootCmd()
+	root.SetOut(buf)
+	root.SetErr(buf)
+	root.SetArgs(args)
+	err := root.Execute()
 	return buf.String(), err
 }
 
@@ -79,7 +75,6 @@ func TestInvalidFormatStillRejected(t *testing.T) {
 // A negative --top must be rejected before it reaches renderProjectsTable,
 // where it would index projects[-1] and panic.
 func TestGlobalRejectsNegativeTop(t *testing.T) {
-	t.Cleanup(func() { globalTopN = 10 })
 	_, err := executeCLI(t, "global", "--top=-1")
 	if err == nil {
 		t.Fatal("global --top=-1 should error")
