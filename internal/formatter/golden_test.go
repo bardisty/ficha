@@ -373,10 +373,9 @@ func TestGoldenGlobalTableDetails(t *testing.T) {
 // --- golden tests: FormatSummaryTableWithDetails ---
 //
 // FormatSummaryTableWithDetails re-analyzes each session from disk
-// (analyzer.AnalyzeSession inside renderSessionBreakdown — the ARCH-1
-// layering violation, slated for removal in Session 8), so these tests build
-// a real temp-dir project fixture. Costs in the goldens therefore come from
-// the live pricing catalog; a pricing change legitimately changes them.
+// (analyzer.AnalyzeSession inside renderSessionBreakdown), so these tests build
+// a real temp-dir project fixture. Costs in the goldens therefore come from the
+// live pricing catalog; a pricing change legitimately changes them.
 
 const goldenAlphaID = "aaaa1111-2222-3333-4444-555566667777"
 const goldenBetaID = "bbbb2222-3333-4444-5555-666677778888"

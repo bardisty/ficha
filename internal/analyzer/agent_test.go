@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-// Direct tests for AnalyzeAgent (TEST-4). It is exercised transitively via
-// AnalyzeSession's agent roll-up, but its own contract (empty files, malformed
-// lines, ID extraction, time range) was previously unpinned.
+// Direct tests for AnalyzeAgent. AnalyzeSession's agent roll-up exercises it
+// transitively, but not its own contract: empty files, malformed lines, ID
+// extraction, and time range.
 
 func writeAgentFile(t *testing.T, name, content string) string {
 	t.Helper()

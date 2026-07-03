@@ -351,7 +351,7 @@ func TestAmbiguousProjectError(t *testing.T) {
 	}
 }
 
-// PARSE-4 regression: CLAUDE_CONFIG_DIR (Claude Code's own override) was ignored.
+// GetClaudeConfigDir must honor CLAUDE_CONFIG_DIR, Claude Code's own location override.
 func TestGetClaudeConfigDir_EnvOverride(t *testing.T) {
 	custom := filepath.Join(string(filepath.Separator), "custom", "claude-config")
 	t.Setenv("CLAUDE_CONFIG_DIR", custom)

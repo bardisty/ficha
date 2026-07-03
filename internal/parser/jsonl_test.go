@@ -119,10 +119,9 @@ also not json
 	}
 }
 
-// TestParseJSONLWithResult_OversizedLineMiddle is the PARSE-1 regression test:
-// a line over maxLineBytes in the MIDDLE of the file must be skipped alone —
-// every line after it must still be parsed. (bufio.Scanner aborted the whole
-// scan on ErrTooLong, silently dropping the rest of the file.)
+// An oversized line (over maxLineBytes) in the MIDDLE of the file must be
+// skipped on its own, with every following line still parsed — a reader that
+// stops at the first oversized line silently drops the rest of the session.
 func TestParseJSONLWithResult_OversizedLineMiddle(t *testing.T) {
 	line1 := `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"id":"msg_1","model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":50}}}`
 	line3 := `{"type":"assistant","timestamp":"2024-01-01T12:01:00Z","message":{"id":"msg_2","model":"claude-opus-4-5","usage":{"input_tokens":200,"output_tokens":75}}}`

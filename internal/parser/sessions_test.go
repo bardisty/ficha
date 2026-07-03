@@ -775,7 +775,7 @@ func TestCountMessagesInFile_OversizedLineMiddle(t *testing.T) {
 }
 
 func TestMergeIndexOnly_RebuildsFromDisk(t *testing.T) {
-	// PARSE-5: index-only entries must not keep stale counts or miss agents
+	// Index-only entries must not keep stale counts or miss agents.
 	tmpDir := t.TempDir()
 
 	sessionPath := filepath.Join(tmpDir, "idx-only.jsonl")
@@ -832,8 +832,8 @@ func TestMergeIndexOnly_RebuildsFromDisk(t *testing.T) {
 }
 
 func TestMergeIndexOnly_OutsideProjectDirDropped(t *testing.T) {
-	// PARSE-5: index FullPath is untrusted — entries pointing outside the
-	// project directory are dropped even if the file exists
+	// The index's FullPath is untrusted: entries pointing outside the project
+	// directory are dropped even if the file exists.
 	projectDir := t.TempDir()
 	outsideDir := t.TempDir()
 

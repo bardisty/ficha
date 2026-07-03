@@ -545,8 +545,8 @@ func TestAnalyzeSessionFromMessages_Deduplicates(t *testing.T) {
 	}
 }
 
-// CORE-4 regression: Start/EndTime were taken positionally (first/last message),
-// yielding negative durations for out-of-order or zero timestamps.
+// Start/EndTime must be the min/max over timestamps, not the first/last message
+// positionally — out-of-order or zero timestamps otherwise yield negative durations.
 func TestTimeRange(t *testing.T) {
 	t1 := time.Date(2024, 1, 15, 9, 0, 0, 0, time.UTC)
 	t2 := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
