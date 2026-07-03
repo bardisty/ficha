@@ -188,7 +188,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Re-render content with new dimensions
 		if len(m.messages) > 0 {
-			m.viewport.SetContent(m.renderTableContent())
+			m.viewport.SetContent(clipToWidth(m.renderTableContent(), m.width))
 			if m.autoScroll {
 				m.viewport.GotoBottom()
 			}
@@ -214,7 +214,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 
 		if m.ready {
-			m.viewport.SetContent(m.renderTableContent())
+			m.viewport.SetContent(clipToWidth(m.renderTableContent(), m.width))
 			if m.autoScroll {
 				m.viewport.GotoBottom()
 			}
@@ -285,11 +285,14 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tickMsg:
-		// Clean up expired highlights
+		// Re-render only while highlights are active — an idle table would
+		// otherwise be fully re-rendered every tick. Capture before cleanup:
+		// the tick that expires the last highlight still needs one final
+		// re-render to un-highlight its rows.
+		hadHighlights := len(m.newMsgIndices) > 0
 		m.cleanupExpiredHighlights()
-		// Re-render to update highlight fading
-		if m.ready && len(m.messages) > 0 {
-			m.viewport.SetContent(m.renderTableContent())
+		if hadHighlights && m.ready && len(m.messages) > 0 {
+			m.viewport.SetContent(clipToWidth(m.renderTableContent(), m.width))
 		}
 		return m, tickCmd()
 	}
@@ -299,8 +302,15 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // detectNewMessages compares old and new messages to find newly added ones
 func (m *BreakdownModel) detectNewMessages(newMessages []models.BreakdownMessage) {
-	now := time.Now()
 	oldCount := len(m.messages)
+
+	// Nothing to diff against on first load (or right after a session switch):
+	// flagging every row would flash the whole table as "new"
+	if oldCount == 0 {
+		return
+	}
+
+	now := time.Now()
 
 	// Any message with index > oldCount is new
 	for _, msg := range newMessages {
@@ -334,7 +344,7 @@ func (m *BreakdownModel) isNewMessage(index int) bool {
 // View renders the breakdown TUI
 func (m BreakdownModel) View() string {
 	var sb strings.Builder
-	const panelWidth = 76
+	panelWidth := panelWidthFor(m.width)
 
 	// Header panel
 	sb.WriteString(m.renderHeaderPanel(panelWidth))
@@ -432,7 +442,7 @@ func (m BreakdownModel) View() string {
 		sb.WriteString("  q: quit • g/G: top/bottom • ↑↓: scroll")
 	}
 
-	return sb.String()
+	return clipToWidth(sb.String(), m.width)
 }
 
 // renderHeaderPanel renders the mainframe-style header panel with session info
@@ -464,17 +474,16 @@ func (m BreakdownModel) renderHeaderPanel(width int) string {
 		statusPart = fmt.Sprintf("Updated: %s", m.lastUpdated.Format("15:04:05"))
 	}
 
-	// Calculate separator positions
 	sep := styles.BoxVerticalSep
-	// Use runeCount for display width — len() overcounts multi-byte UTF-8 chars like ● (3 bytes, 1 column)
-	liveDisplayLen := len([]rune(livePart))
-	contentLen := len(sessionPart) + 2 + 1 + 2 + liveDisplayLen + 2 + 1 + 2 + len(statusPart)
-	padding := innerWidth - contentLen
-	if padding < 0 {
-		padding = 0
-	}
 
 	if m.noColor {
+		content := fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart)
+		// Padding from rendered width — len() overcounts multi-byte UTF-8 chars like ● (3 bytes, 1 column)
+		padding := innerWidth - lipgloss.Width(content)
+		if padding < 0 {
+			padding = 0
+		}
+
 		// Top border
 		sb.WriteString("  ")
 		sb.WriteString(styles.BoxTopLeft)
@@ -486,7 +495,7 @@ func (m BreakdownModel) renderHeaderPanel(width int) string {
 		sb.WriteString("  ")
 		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("  ")
-		sb.WriteString(fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart))
+		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
 		sb.WriteString("  ")
 		sb.WriteString(styles.BoxVertical)
@@ -514,6 +523,15 @@ func (m BreakdownModel) renderHeaderPanel(width int) string {
 
 		sepStyled := panelBorderStyle.Render(sep)
 
+		// Padding from rendered width so styled parts of varying display width
+		// (e.g. the spinner shown next to "Loading...") can't push the right
+		// border out of alignment
+		content := sessionStyled + "  " + sepStyled + "  " + liveStyled + "  " + sepStyled + "  " + statusStyled
+		padding := innerWidth - lipgloss.Width(content)
+		if padding < 0 {
+			padding = 0
+		}
+
 		// Top border
 		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
@@ -525,15 +543,7 @@ func (m BreakdownModel) renderHeaderPanel(width int) string {
 		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
 		sb.WriteString("  ")
-		sb.WriteString(sessionStyled)
-		sb.WriteString("  ")
-		sb.WriteString(sepStyled)
-		sb.WriteString("  ")
-		sb.WriteString(liveStyled)
-		sb.WriteString("  ")
-		sb.WriteString(sepStyled)
-		sb.WriteString("  ")
-		sb.WriteString(statusStyled)
+		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
 		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
@@ -610,7 +620,7 @@ func (m BreakdownModel) renderTableHeader() string {
 
 // renderTableSeparator renders the separator line using Unicode box-drawing characters
 func (m BreakdownModel) renderTableSeparator() string {
-	sep := "  " + strings.Repeat(styles.LineHorizontal, 76)
+	sep := "  " + strings.Repeat(styles.LineHorizontal, panelWidthFor(m.width))
 	if !m.noColor {
 		return tableBorderStyle.Render(sep)
 	}
@@ -779,14 +789,8 @@ func (m BreakdownModel) loadBreakdownCmd() tea.Cmd {
 }
 
 func (m BreakdownModel) watchFile() tea.Msg {
-	watcher, err := fsnotify.NewWatcher()
+	watcher, err := newSessionFileWatcher(m.sessionPath)
 	if err != nil {
-		return breakdownErrorMsg(err)
-	}
-
-	err = watcher.Add(m.sessionPath)
-	if err != nil {
-		watcher.Close()
 		return breakdownErrorMsg(err)
 	}
 
@@ -794,9 +798,13 @@ func (m BreakdownModel) watchFile() tea.Msg {
 }
 
 // waitForFileChangeBreakdown returns a command that waits for file changes.
-// Coalesces rapid write events with a 50ms debounce to avoid redundant reloads.
 func (m BreakdownModel) waitForFileChangeBreakdown() tea.Cmd {
+	// Register with the WaitGroup before the command is scheduled: an Add
+	// inside the goroutine races the quit handler's Wait (Add-after-Wait
+	// violates the WaitGroup contract).
+	m.wg.Add(1)
 	return func() tea.Msg {
+		defer m.wg.Done()
 		if m.closing != nil && m.closing.Load() {
 			return nil
 		}
@@ -804,56 +812,14 @@ func (m BreakdownModel) waitForFileChangeBreakdown() tea.Cmd {
 			return nil
 		}
 
-		m.wg.Add(1)
-		defer m.wg.Done()
-
-		for {
-			select {
-			case <-m.done:
-				return nil
-			case event, ok := <-m.watcher.Events:
-				if !ok {
-					return nil
-				}
-				if event.Op&fsnotify.Write == fsnotify.Write {
-					timer := time.NewTimer(watchDebounce)
-					defer timer.Stop()
-				drain:
-					for {
-						select {
-						case <-m.done:
-							return nil
-						case <-timer.C:
-							break drain
-						case ev, ok := <-m.watcher.Events:
-							if !ok {
-								return nil
-							}
-							if ev.Op&fsnotify.Write == fsnotify.Write {
-								if !timer.Stop() {
-									select {
-									case <-timer.C:
-									default:
-									}
-								}
-								timer.Reset(watchDebounce)
-							}
-						case _, ok := <-m.watcher.Errors:
-							if !ok {
-								return nil
-							}
-						}
-					}
-					return fileChangedMsg{}
-				}
-				continue
-			case err, ok := <-m.watcher.Errors:
-				if !ok {
-					return nil
-				}
-				return breakdownErrorMsg(err)
-			}
+		changed, err := awaitSessionFileChange(m.watcher, m.done, m.sessionPath)
+		if err != nil {
+			return breakdownErrorMsg(err)
 		}
+		if !changed {
+			return nil
+		}
+		return fileChangedMsg{}
 	}
 }
 
@@ -947,12 +913,14 @@ func (m BreakdownModel) startSessionWatcher() tea.Cmd {
 
 // waitForNewSession returns a command that blocks until a new session is created
 func (m BreakdownModel) waitForNewSession() tea.Cmd {
-	return func() tea.Msg {
-		if m.sessionWatcher == nil {
-			return nil
-		}
+	if m.sessionWatcher == nil {
+		return nil
+	}
 
-		m.wg.Add(1)
+	// Register with the WaitGroup before the command is scheduled: an Add
+	// inside the goroutine races the quit handler's Wait.
+	m.wg.Add(1)
+	return func() tea.Msg {
 		defer m.wg.Done()
 
 		path, id := m.sessionWatcher.WaitForNewSession()
