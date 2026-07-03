@@ -203,13 +203,43 @@ func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor l
 	return fmt.Sprintf("  %s %s  %s tokens%s\n", labelStr, costStr, tokenStr, extraStr)
 }
 
-// renderUnifiedCostRowPlain renders a cost row in plain text mode
-func renderUnifiedCostRowPlain(label string, cost float64, tokens int64, extra string) string {
-	extraStr := ""
-	if extra != "" {
-		extraStr = "  " + extra
+// renderSavingsRow renders the cache-savings line shared by the session,
+// summary, and global tables (2-space indent, 11-wide cost). In no-color mode
+// the label and parenthetical are plain; otherwise the label is cyan and the
+// value green.
+func renderSavingsRow(savings float64, noColor bool) string {
+	if noColor {
+		return fmt.Sprintf("  %-14s %11s  (from cache reads)\n", "Savings", render.Cost(savings))
 	}
-	return fmt.Sprintf("  %-14s %11s  %12s tokens%s\n", label, render.Cost(cost), render.Number(tokens), extraStr)
+	return fmt.Sprintf("  %s %s  %s\n",
+		savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
+		formatCostStyledGreen(savings, 11, noColor),
+		dimStyle.Render("(from cache reads)"))
+}
+
+// footerSep is the field separator used inside footer stat lines. no-color uses
+// an ASCII pipe so non-UTF-8 terminals stay legible.
+func footerSep(noColor bool) string {
+	if noColor {
+		return "|"
+	}
+	return styles.BoxVerticalSep
+}
+
+// renderFooterDoubleRule renders the heavy separator that closes a table body.
+func renderFooterDoubleRule(width int, noColor bool) string {
+	if noColor {
+		return strings.Repeat("=", width)
+	}
+	return panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width))
+}
+
+// renderFooterSingleRule renders the light rule drawn under the footer stats.
+func renderFooterSingleRule(width int, noColor bool) string {
+	if noColor {
+		return strings.Repeat("-", width)
+	}
+	return dimStyle.Render(strings.Repeat(styles.LineHorizontal, width))
 }
 
 // formatCostByModelContent renders cost by model rows (content only, no header)

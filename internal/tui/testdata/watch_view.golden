@@ -6,8 +6,8 @@
                                                                                                     
     Input            $0.300000         45.7K tokens                                                 
     Output           $2.100000         23.5K tokens                                                 
-    Cache write      $3.750000        250.0K tokens  5m TTL                                         
-    Cache write      $1.500000             0 tokens  1h TTL                                         
+    Cache write      $3.750000        200.0K tokens  5m TTL                                         
+    Cache write      $1.500000         50.0K tokens  1h TTL                                         
     Cache read       $2.250000         1.50M tokens                                                 
     Savings        $20.250000  (from cache reads)                                                   
                                                                                                     

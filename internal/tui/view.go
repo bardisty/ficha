@@ -103,11 +103,10 @@ func (m Model) View() string {
 
 	return clipToWidth(sb.String(), m.width)
 }
-func (m Model) renderAnalysis() string {
-	if m.noColor {
-		return m.renderAnalysisPlain()
-	}
 
+// renderAnalysis renders the live analysis body. Cache-write tokens are split by
+// TTL in both modes; only the per-fragment styling varies with m.noColor.
+func (m Model) renderAnalysis() string {
 	// Handle empty session state
 	if m.isEmptySession() {
 		return m.renderEmptyState()
@@ -158,111 +157,20 @@ func (m Model) renderAnalysis() string {
 			"cache_read", "cache_read_tokens", styles.CacheReadTokenColor, ""))
 	}
 
-	// Savings row (no separator - the rows above sum to hero TOTAL, not savings)
+	// Savings row (no separator - the rows above sum to hero TOTAL, not savings).
+	// The plain form is intentionally simpler (no highlight, unpadded value).
 	if a.TotalCost.CacheSavings > 0 {
-		savingsHighlighted := m.isHighlighted("savings")
-		savingsStr := render.CostStyledGreen(a.TotalCost.CacheSavings, 11, savingsHighlighted, m.noColor)
-		sb.WriteString(fmt.Sprintf("    %s %s  %s\n",
-			savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
-			savingsStr,
-			dimStyle.Render("(from cache reads)")))
-	}
-
-	// Context window section
-	sb.WriteString("\n")
-	sb.WriteString(m.renderContextSection())
-
-	// Cost trend chart (only show if we have 2+ data points)
-	if len(m.costHistory) >= 2 {
-		sb.WriteString("\n")
-		sb.WriteString("  " + render.SectionHeader("COST TREND", sectionWidth, m.noColor))
-		sb.WriteString("\n\n")
-		sb.WriteString(m.renderCostChart())
-	}
-
-	// Section: COST BY MODEL
-	sb.WriteString("\n")
-	sb.WriteString("  " + render.SectionHeader("COST BY MODEL", sectionWidth, m.noColor))
-	sb.WriteString("\n\n")
-	sb.WriteString(m.renderCostByModelContent())
-
-	// Agent breakdown (shown when agents exist)
-	if a.HasAgents {
-		sb.WriteString("\n")
-		sb.WriteString("  " + render.SectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
-		sb.WriteString("\n\n")
-		sb.WriteString(m.renderAgentBreakdownContent())
-	}
-
-	// Message insights (shown when insights are available)
-	if a.Insights != nil {
-		sb.WriteString("\n")
-		sb.WriteString("  " + render.SectionHeader("MESSAGE INSIGHTS", sectionWidth, m.noColor))
-		sb.WriteString("\n\n")
-		sb.WriteString(m.renderInsightsContent())
-	}
-
-	// Note: Footer is rendered separately in View() after the separators
-
-	return sb.String()
-}
-func (m Model) renderAnalysisPlain() string {
-	// Handle empty session state
-	if m.isEmptySession() {
-		return m.renderEmptyState()
-	}
-
-	var sb strings.Builder
-	a := m.analysis
-	sectionWidth := panelWidthFor(m.width)
-
-	// Hero total cost as section header
-	sb.WriteString("\n")
-	sb.WriteString("  " + m.renderHeroCost(a.TotalCost.TotalCost, false, sectionWidth))
-	sb.WriteString("\n\n")
-
-	// Unified cost+token rows
-	sb.WriteString(m.renderUnifiedCostRow(
-		"Input", a.TotalCost.InputCost, a.TotalUsage.InputTokens,
-		"input_cost", "input_tokens", lipgloss.Color(""), ""))
-
-	// Output tokens
-	sb.WriteString(m.renderUnifiedCostRow(
-		"Output", a.TotalCost.OutputCost, a.TotalUsage.OutputTokens,
-		"output_cost", "output_tokens", lipgloss.Color(""), ""))
-
-	// Cache write rows - tokens aren't split by TTL, so show them on whichever row has cost
-	cacheWriteTokens := a.TotalUsage.CacheCreationInputTokens
-	has5mCost := a.TotalCost.CacheWrite5mCost > 0
-	has1hCost := a.TotalCost.CacheWrite1hCost > 0
-
-	if has5mCost {
-		sb.WriteString(m.renderUnifiedCostRow(
-			"Cache write", a.TotalCost.CacheWrite5mCost, cacheWriteTokens,
-			"cache_write_5m", "cache_write_tokens", lipgloss.Color(""), "5m TTL"))
-	}
-
-	if has1hCost {
-		var tokens int64
-		if !has5mCost {
-			tokens = cacheWriteTokens
+		if m.noColor {
+			sb.WriteString(fmt.Sprintf("    %-14s %s  (from cache reads)\n",
+				"Savings", render.Cost(a.TotalCost.CacheSavings)))
+		} else {
+			savingsHighlighted := m.isHighlighted("savings")
+			savingsStr := render.CostStyledGreen(a.TotalCost.CacheSavings, 11, savingsHighlighted, m.noColor)
+			sb.WriteString(fmt.Sprintf("    %s %s  %s\n",
+				savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
+				savingsStr,
+				dimStyle.Render("(from cache reads)")))
 		}
-		sb.WriteString(m.renderUnifiedCostRow(
-			"Cache write", a.TotalCost.CacheWrite1hCost, tokens,
-			"cache_write_1h", "cache_write_tokens", lipgloss.Color(""), "1h TTL"))
-	}
-
-	// Cache read
-	if a.TotalCost.CacheReadCost > 0 || a.TotalUsage.CacheReadInputTokens > 0 {
-		sb.WriteString(m.renderUnifiedCostRow(
-			"Cache read", a.TotalCost.CacheReadCost, a.TotalUsage.CacheReadInputTokens,
-			"cache_read", "cache_read_tokens", lipgloss.Color(""), ""))
-	}
-
-	// Savings row (no separator - rows above sum to hero TOTAL, not savings)
-	if a.TotalCost.CacheSavings > 0 {
-		sb.WriteString(fmt.Sprintf("    %-14s %s  (from cache reads)\n",
-			"Savings", render.Cost(a.TotalCost.CacheSavings)))
 	}
 
 	// Context window section

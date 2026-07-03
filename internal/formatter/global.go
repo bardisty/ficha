@@ -14,13 +14,11 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// FormatGlobalTable formats global analysis as a styled table
+// FormatGlobalTable renders global analysis as a table. Color and glyph choices
+// are driven by noColor.
 func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, topN int, showDetails bool) string {
 	if topN < 0 {
 		topN = 0
-	}
-	if noColor {
-		return formatGlobalTablePlain(analysis, topN, showDetails)
 	}
 
 	var sb strings.Builder
@@ -57,11 +55,7 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, topN int, 
 
 	// Savings row
 	if analysis.TotalCost.CacheSavings > 0 {
-		savingsStr := formatCostStyledGreen(analysis.TotalCost.CacheSavings, 11, noColor)
-		sb.WriteString(fmt.Sprintf("  %s %s  %s\n",
-			savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
-			savingsStr,
-			dimStyle.Render("(from cache reads)")))
+		sb.WriteString(renderSavingsRow(analysis.TotalCost.CacheSavings, noColor))
 	}
 
 	// Cost by model section
@@ -86,89 +80,20 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, topN int, 
 
 	// Footer
 	sb.WriteString("\n")
-	sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, sectionWidth)))
+	sb.WriteString(renderFooterDoubleRule(sectionWidth, noColor))
 	sb.WriteString("\n")
 
-	footerText := fmt.Sprintf("Messages: %s  │  Sessions: %d  │  Projects: %d",
-		render.Number(int64(analysis.MessageCount)),
-		analysis.SessionCount,
+	footerText := fmt.Sprintf("Messages: %s  %s  Sessions: %d  %s  Projects: %d",
+		render.Number(int64(analysis.MessageCount)), footerSep(noColor),
+		analysis.SessionCount, footerSep(noColor),
 		analysis.ProjectCount)
-	sb.WriteString(footerStyle.Render(footerText))
-	sb.WriteString("\n")
-	sb.WriteString(dimStyle.Render(strings.Repeat(styles.LineHorizontal, sectionWidth)))
-
-	return sb.String()
-}
-
-// formatGlobalTablePlain formats global analysis as plain text
-func formatGlobalTablePlain(analysis *models.GlobalAnalysis, topN int, showDetails bool) string {
-	var sb strings.Builder
-	const sectionWidth = 96
-
-	// Header panel
-	sb.WriteString(renderGlobalHeaderPanel(analysis, sectionWidth, true))
-	sb.WriteString("\n\n")
-
-	// Hero total cost
-	sb.WriteString(renderHeroCost(analysis.TotalCost.TotalCost, sectionWidth, true))
-	sb.WriteString("\n\n")
-
-	// Token breakdown rows
-	sb.WriteString(renderUnifiedCostRowPlain("Input", analysis.TotalCost.InputCost, analysis.TotalUsage.InputTokens, ""))
-	sb.WriteString(renderUnifiedCostRowPlain("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, ""))
-
-	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
-	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
-	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
-
-	if has5mCost {
-		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite5mCost, cache5mTokens, "5m TTL"))
+	if noColor {
+		sb.WriteString(footerText)
+	} else {
+		sb.WriteString(footerStyle.Render(footerText))
 	}
-	if has1hCost {
-		sb.WriteString(renderUnifiedCostRowPlain("Cache write", analysis.TotalCost.CacheWrite1hCost, cache1hTokens, "1h TTL"))
-	}
-
-	if analysis.TotalCost.CacheReadCost > 0 || analysis.TotalUsage.CacheReadInputTokens > 0 {
-		sb.WriteString(renderUnifiedCostRowPlain("Cache read", analysis.TotalCost.CacheReadCost, analysis.TotalUsage.CacheReadInputTokens, ""))
-	}
-
-	if analysis.TotalCost.CacheSavings > 0 {
-		sb.WriteString(fmt.Sprintf("  %-14s %11s  (from cache reads)\n",
-			"Savings", render.Cost(analysis.TotalCost.CacheSavings)))
-	}
-
-	// Cost by model section
 	sb.WriteString("\n")
-	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, true))
-	sb.WriteString("\n\n")
-	sb.WriteString(formatGlobalCostByModel(analysis.CostByModel, true))
-
-	// Top projects section
-	sb.WriteString("\n")
-	projectsShown := topN
-	if showDetails || topN >= len(analysis.Projects) {
-		projectsShown = len(analysis.Projects)
-	}
-	headerText := fmt.Sprintf("TOP PROJECTS (%d)", projectsShown)
-	if showDetails {
-		headerText = fmt.Sprintf("ALL PROJECTS (%d)", len(analysis.Projects))
-	}
-	sb.WriteString(render.SectionHeader(headerText, sectionWidth, true))
-	sb.WriteString("\n\n")
-	sb.WriteString(renderProjectsTable(analysis, true, topN, showDetails))
-
-	// Footer
-	sb.WriteString("\n")
-	sb.WriteString(strings.Repeat("=", sectionWidth))
-	sb.WriteString("\n")
-
-	footerText := fmt.Sprintf("Messages: %s  |  Sessions: %d  |  Projects: %d",
-		render.Number(int64(analysis.MessageCount)),
-		analysis.SessionCount,
-		analysis.ProjectCount)
-	sb.WriteString(footerText)
-	sb.WriteString("\n")
-	sb.WriteString(strings.Repeat("-", sectionWidth))
+	sb.WriteString(renderFooterSingleRule(sectionWidth, noColor))
 
 	return sb.String()
 }
