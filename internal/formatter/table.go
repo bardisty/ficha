@@ -10,6 +10,7 @@ import (
 	"github.com/bardisty/ccusage/internal/analyzer"
 	"github.com/bardisty/ccusage/internal/models"
 	"github.com/bardisty/ccusage/internal/pricing"
+	"github.com/bardisty/ccusage/internal/render"
 	"github.com/bardisty/ccusage/internal/styles"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -17,7 +18,6 @@ import (
 // Local aliases for frequently used styles
 var (
 	savingsLabelStyle  = styles.SavingsLabelStyle
-	savingsValueStyle  = styles.SavingsValueStyle
 	footerStyle        = styles.FooterStyle
 	heroCostStyle      = styles.HeroCostStyle
 	sectionHeaderStyle = styles.SectionHeaderStyle
@@ -25,15 +25,6 @@ var (
 	dimStyle           = styles.DimStyle
 	headerStyle        = styles.HeaderStyle
 )
-
-// getCacheTokensByTTL returns separate token counts for 5m and 1h TTL cache writes.
-// Falls back to aggregate (all 5m) when detailed breakdown unavailable.
-func getCacheTokensByTTL(usage models.TokenUsage) (int64, int64) {
-	if usage.CacheCreation != nil {
-		return usage.CacheCreation.Ephemeral5mInputTokens, usage.CacheCreation.Ephemeral1hInputTokens
-	}
-	return usage.CacheCreationInputTokens, 0
-}
 
 // FormatSessionTable formats a session analysis as a styled table
 func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
@@ -63,7 +54,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	sb.WriteString(renderUnifiedCostRow("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, styles.OutputTokenColor, "", noColor))
 
 	// Cache write rows
-	cache5mTokens, cache1hTokens := getCacheTokensByTTL(analysis.TotalUsage)
+	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
 	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
 	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
 
@@ -100,14 +91,14 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 
 	// Cost by model section
 	sb.WriteString("\n")
-	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, noColor))
+	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, noColor))
 	sb.WriteString("\n\n")
 	sb.WriteString(formatCostByModelContent(analysis, noColor))
 
 	// Agent breakdown (shown when agents exist)
 	if analysis.HasAgents {
 		sb.WriteString("\n")
-		sb.WriteString(renderSectionHeader("AGENT SUB-SESSIONS", sectionWidth, noColor))
+		sb.WriteString(render.SectionHeader("AGENT SUB-SESSIONS", sectionWidth, noColor))
 		sb.WriteString("\n\n")
 		sb.WriteString(formatAgentBreakdownContent(analysis, noColor))
 	}
@@ -115,7 +106,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	// Message insights (shown when insights are available)
 	if analysis.Insights != nil {
 		sb.WriteString("\n")
-		sb.WriteString(renderSectionHeader("MESSAGE INSIGHTS", sectionWidth, noColor))
+		sb.WriteString(render.SectionHeader("MESSAGE INSIGHTS", sectionWidth, noColor))
 		sb.WriteString("\n\n")
 		sb.WriteString(formatInsightsSectionContent(analysis.Insights, noColor))
 	}
@@ -175,7 +166,7 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 	sb.WriteString(renderUnifiedCostRowPlain("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, ""))
 
 	// Cache write rows
-	cache5mTokens, cache1hTokens := getCacheTokensByTTL(analysis.TotalUsage)
+	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
 	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
 	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
 
@@ -194,7 +185,7 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 	// Savings row
 	if analysis.TotalCost.CacheSavings > 0 {
 		sb.WriteString(fmt.Sprintf("  %-14s %11s  (from cache reads)\n",
-			"Savings", formatCost(analysis.TotalCost.CacheSavings)))
+			"Savings", render.Cost(analysis.TotalCost.CacheSavings)))
 	}
 
 	// Context window section - only for single sessions, not summaries
@@ -208,14 +199,14 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 
 	// Cost by model section
 	sb.WriteString("\n")
-	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, true))
+	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, true))
 	sb.WriteString("\n\n")
 	sb.WriteString(formatCostByModelContent(analysis, true))
 
 	// Agent breakdown (shown when agents exist)
 	if analysis.HasAgents {
 		sb.WriteString("\n")
-		sb.WriteString(renderSectionHeader("AGENT SUB-SESSIONS", sectionWidth, true))
+		sb.WriteString(render.SectionHeader("AGENT SUB-SESSIONS", sectionWidth, true))
 		sb.WriteString("\n\n")
 		sb.WriteString(formatAgentBreakdownContent(analysis, true))
 	}
@@ -223,7 +214,7 @@ func formatSessionTablePlain(analysis *models.SessionAnalysis) string {
 	// Message insights (shown when insights are available)
 	if analysis.Insights != nil {
 		sb.WriteString("\n")
-		sb.WriteString(renderSectionHeader("MESSAGE INSIGHTS", sectionWidth, true))
+		sb.WriteString(render.SectionHeader("MESSAGE INSIGHTS", sectionWidth, true))
 		sb.WriteString("\n\n")
 		sb.WriteString(formatInsightsSectionContent(analysis.Insights, true))
 	}
@@ -282,7 +273,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, sessions []
 	sb.WriteString(renderUnifiedCostRow("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, styles.OutputTokenColor, "", noColor))
 
 	// Cache write rows
-	cache5mTokens, cache1hTokens := getCacheTokensByTTL(analysis.TotalUsage)
+	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
 	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
 	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
 
@@ -310,7 +301,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, sessions []
 
 	// Cost by model section
 	sb.WriteString("\n")
-	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, noColor))
+	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, noColor))
 	sb.WriteString("\n\n")
 	sb.WriteString(formatCostByModelContent(analysis, noColor))
 
@@ -319,7 +310,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, sessions []
 
 	// Session breakdown section (includes chart and table)
 	sb.WriteString("\n")
-	sb.WriteString(renderSectionHeader("SESSION BREAKDOWN", sectionWidth, noColor))
+	sb.WriteString(render.SectionHeader("SESSION BREAKDOWN", sectionWidth, noColor))
 	sb.WriteString("\n\n")
 
 	// Cost chart at top of section (only show if we have 2+ data points)
@@ -376,7 +367,7 @@ func formatSummaryTableWithDetailsPlain(analysis *models.SessionAnalysis, sessio
 	sb.WriteString(renderUnifiedCostRowPlain("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, ""))
 
 	// Cache write rows
-	cache5mTokens, cache1hTokens := getCacheTokensByTTL(analysis.TotalUsage)
+	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
 	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
 	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
 
@@ -395,12 +386,12 @@ func formatSummaryTableWithDetailsPlain(analysis *models.SessionAnalysis, sessio
 	// Savings row
 	if analysis.TotalCost.CacheSavings > 0 {
 		sb.WriteString(fmt.Sprintf("  %-14s %11s  (from cache reads)\n",
-			"Savings", formatCost(analysis.TotalCost.CacheSavings)))
+			"Savings", render.Cost(analysis.TotalCost.CacheSavings)))
 	}
 
 	// Cost by model section
 	sb.WriteString("\n")
-	sb.WriteString(renderSectionHeader("COST BY MODEL", sectionWidth, true))
+	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, true))
 	sb.WriteString("\n\n")
 	sb.WriteString(formatCostByModelContent(analysis, true))
 
@@ -409,7 +400,7 @@ func formatSummaryTableWithDetailsPlain(analysis *models.SessionAnalysis, sessio
 
 	// Session breakdown section (includes chart and table)
 	sb.WriteString("\n")
-	sb.WriteString(renderSectionHeader("SESSION BREAKDOWN", sectionWidth, true))
+	sb.WriteString(render.SectionHeader("SESSION BREAKDOWN", sectionWidth, true))
 	sb.WriteString("\n\n")
 
 	// Cost chart at top of section (only show if we have 2+ data points)
@@ -585,9 +576,9 @@ func renderSessionBreakdown(sessions []models.SessionEntry, noColor bool, expand
 		if sd.analysis != nil {
 			// Use ParentCostByModel to get parent-only model, fall back to CostByModel for backwards compatibility
 			if len(sd.analysis.ParentCostByModel) > 0 {
-				modelName = getPrimaryModel(sd.analysis.ParentCostByModel)
+				modelName = render.PrimaryModel(sd.analysis.ParentCostByModel)
 			} else {
-				modelName = getPrimaryModel(sd.analysis.CostByModel)
+				modelName = render.PrimaryModel(sd.analysis.CostByModel)
 			}
 		}
 
@@ -748,7 +739,7 @@ func renderAgentTreeRows(agents []models.AgentAnalysis, noColor bool) string {
 		}
 
 		// Get primary model for this agent
-		modelName := getPrimaryModel(agent.CostByModel)
+		modelName := render.PrimaryModel(agent.CostByModel)
 
 		// Format message count
 		msgStr := fmt.Sprintf("%d msgs", agent.MessageCount)
@@ -926,10 +917,17 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 		}
 		titlePart = fmt.Sprintf("Summary: %d %s", sessionCount, sessionWord)
 	} else {
-		titlePart = fmt.Sprintf("Session: %s", truncateID(analysis.SessionID))
+		titlePart = fmt.Sprintf("Session: %s", render.TruncateID(analysis.SessionID, 40))
 	}
 
-	durationPart := fmt.Sprintf("Duration: %s", formatDuration(analysis.Duration.Duration()))
+	// Summaries aggregate many sessions and can span days; a single session
+	// uses hours as the largest unit. One day-aware formatter now serves the
+	// summary header, matching global (audit CLI-6).
+	durationValue := render.Duration(analysis.Duration.Duration())
+	if isSummary {
+		durationValue = render.DurationLong(analysis.Duration.Duration())
+	}
+	durationPart := fmt.Sprintf("Duration: %s", durationValue)
 
 	// Calculate content length
 	sep := styles.BoxVerticalSep
@@ -970,10 +968,10 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 		} else {
 			titleStyled = fmt.Sprintf("%s %s",
 				sectionHeaderStyle.Render("Session:"),
-				truncateID(analysis.SessionID))
+				render.TruncateID(analysis.SessionID, 40))
 		}
 
-		durationStyled := fmt.Sprintf("Duration: %s", formatDuration(analysis.Duration.Duration()))
+		durationStyled := fmt.Sprintf("Duration: %s", durationValue)
 		sepStyled := panelBorderStyle.Render(sep)
 
 		// Top border
@@ -1002,35 +1000,6 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 	}
 
 	return sb.String()
-}
-
-// renderSectionHeader renders a bracketed section header
-// Format: ─────────────────────────────[ SECTION NAME ]─────────────────────────────
-func renderSectionHeader(name string, width int, noColor bool) string {
-	if width < 20 {
-		width = 76
-	}
-
-	bracketedName := "[ " + name + " ]"
-	nameLen := len(bracketedName)
-	sideLen := (width - nameLen) / 2
-	if sideLen < 0 {
-		sideLen = 0
-	}
-	rightLen := width - sideLen - nameLen
-	if rightLen < 0 {
-		rightLen = 0
-	}
-
-	leftLine := strings.Repeat(styles.LineHorizontal, sideLen)
-	rightLine := strings.Repeat(styles.LineHorizontal, rightLen)
-
-	if noColor {
-		return leftLine + bracketedName + rightLine
-	}
-
-	// Section name in cyan, lines in dim
-	return dimStyle.Render(leftLine) + "[ " + sectionHeaderStyle.Render(name) + " ]" + dimStyle.Render(rightLine)
 }
 
 // renderHeroCost renders the total cost integrated into a section header
@@ -1086,7 +1055,7 @@ func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor l
 	costStr := formatCostStyled(cost, 11, noColor)
 
 	// Format tokens
-	tokenStr := fmt.Sprintf("%12s", formatNumber(tokens))
+	tokenStr := fmt.Sprintf("%12s", render.Number(tokens))
 
 	// Add extra info (like TTL)
 	extraStr := ""
@@ -1107,7 +1076,7 @@ func renderUnifiedCostRowPlain(label string, cost float64, tokens int64, extra s
 	if extra != "" {
 		extraStr = "  " + extra
 	}
-	return fmt.Sprintf("  %-14s %11s  %12s tokens%s\n", label, formatCost(cost), formatNumber(tokens), extraStr)
+	return fmt.Sprintf("  %-14s %11s  %12s tokens%s\n", label, render.Cost(cost), render.Number(tokens), extraStr)
 }
 
 // renderContextSection renders the context window section
@@ -1128,21 +1097,21 @@ func renderContextSection(analysis *models.SessionAnalysis, noColor bool) string
 	usageColor := styles.GetContextUsageColor(contextPct)
 
 	// Context label with value
-	contextVal := formatNumber(contextSize)
-	contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, formatNumber(int64(maxContext)))
+	contextVal := render.Number(contextSize)
+	contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, render.Number(int64(maxContext)))
 
 	if noColor {
-		sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n", formatContextProgressBar(contextSize, freeSpace, maxContext, true), contextVal, contextMeta))
-		sb.WriteString(fmt.Sprintf("           Free: %s (%.1f%%)\n", formatNumber(freeSpace), freePct))
+		sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n", render.ContextBar(contextSize, freeSpace, maxContext, true), contextVal, contextMeta))
+		sb.WriteString(fmt.Sprintf("           Free: %s (%.1f%%)\n", render.Number(freeSpace), freePct))
 	} else {
 		// Progress bar with context info
 		coloredMeta := lipgloss.NewStyle().Foreground(usageColor).Render(contextMeta)
 		sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n",
-			formatContextProgressBar(contextSize, freeSpace, maxContext, false),
+			render.ContextBar(contextSize, freeSpace, maxContext, false),
 			contextVal, coloredMeta))
 
 		// Free space info
-		freeVal := formatNumber(freeSpace)
+		freeVal := render.Number(freeSpace)
 		freeValWithPct := fmt.Sprintf("%s (%.1f%%)", freeVal, freePct)
 		freeStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(fmt.Sprintf("Free: %s", freeValWithPct))
 		sb.WriteString(fmt.Sprintf("           %s\n", freeStyled))
@@ -1151,39 +1120,16 @@ func renderContextSection(analysis *models.SessionAnalysis, noColor bool) string
 	return sb.String()
 }
 
-// getPrimaryModel returns the dominant model for an agent (by highest cost)
-// Returns the display name (e.g., "Opus 4.5") or "-" if no model data
-func getPrimaryModel(costByModel map[string]models.CostBreakdown) string {
-	var maxModel string
-	var maxCost float64
-	for model, cost := range costByModel {
-		if cost.TotalCost > maxCost {
-			maxCost = cost.TotalCost
-			maxModel = model
-		}
-	}
-	if maxModel == "" {
-		return "-"
-	}
-	return pricing.GetModelDisplayName(maxModel)
-}
-
 // formatCostByModelContent renders cost by model rows (content only, no header)
 func formatCostByModelContent(analysis *models.SessionAnalysis, noColor bool) string {
 	var sb strings.Builder
 
-	// Sort model IDs for deterministic output
-	modelIDs := make([]string, 0, len(analysis.CostByModel))
-	for modelID := range analysis.CostByModel {
-		modelIDs = append(modelIDs, modelID)
-	}
-	sort.Strings(modelIDs)
-
-	for _, modelID := range modelIDs {
+	// Order by cost descending (canonical COST BY MODEL ordering, audit DUP-2)
+	for _, modelID := range render.OrderModelsByCost(analysis.CostByModel) {
 		cost := analysis.CostByModel[modelID]
 		modelName := pricing.GetModelDisplayName(modelID)
 		if noColor {
-			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelName, formatCost(cost.TotalCost)))
+			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelName, render.Cost(cost.TotalCost)))
 		} else {
 			// Color by model tier
 			modelColor := styles.GetModelColor(modelName)
@@ -1210,7 +1156,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 	// Format: 2(indent) + 40(label) + 3(spaces) + cost = 45 chars before cost
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	if noColor {
-		sb.WriteString(fmt.Sprintf("  %-40s   %s\n", "Parent session", formatCost(analysis.ParentCost.TotalCost)))
+		sb.WriteString(fmt.Sprintf("  %-40s   %s\n", "Parent session", render.Cost(analysis.ParentCost.TotalCost)))
 	} else {
 		paddedLabel := fmt.Sprintf("%-40s", "Parent session")
 		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedLabel, formatCostStyled(analysis.ParentCost.TotalCost, 11, noColor)))
@@ -1227,7 +1173,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 		}
 
 		// Get primary model for this agent
-		modelName := getPrimaryModel(agent.CostByModel)
+		modelName := render.PrimaryModel(agent.CostByModel)
 
 		// Format message count with singular/plural
 		msgStr := fmt.Sprintf("%d msgs", agent.MessageCount)
@@ -1239,7 +1185,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 			marker := fmt.Sprintf("[A%d]", agentNum)
 			idStr := fmt.Sprintf("(%s)", shortID)
 			sb.WriteString(fmt.Sprintf("  %-5s %-11s %-10s %8s      %s\n",
-				marker, modelName, idStr, msgStr, formatCost(agent.TotalCost.TotalCost)))
+				marker, modelName, idStr, msgStr, render.Cost(agent.TotalCost.TotalCost)))
 		} else {
 			// Color agent marker (use %-5s to handle [A10] etc)
 			agentColor := styles.GetAgentColor(fmt.Sprintf("%d", agentNum))
@@ -1263,7 +1209,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 	// Agents subtotal in bold green (matches TotalValueStyle for visual hierarchy)
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	if noColor {
-		sb.WriteString(fmt.Sprintf("  %-40s   %s\n", "Agents subtotal", formatCost(analysis.AgentsCost.TotalCost)))
+		sb.WriteString(fmt.Sprintf("  %-40s   %s\n", "Agents subtotal", render.Cost(analysis.AgentsCost.TotalCost)))
 	} else {
 		paddedSubtotal := fmt.Sprintf("%-40s", "Agents subtotal")
 		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedSubtotal, formatCostStyledBoldGreen(analysis.AgentsCost.TotalCost, 11, noColor)))
@@ -1279,9 +1225,9 @@ func formatInsightsSectionContent(insights *models.MessageInsights, noColor bool
 	// First message
 	if insights.FirstMessage != nil {
 		first := insights.FirstMessage
-		componentLabel := formatCostComponentLabel(first.MainCostComponent)
+		componentLabel := render.CostComponentLabel(first.MainCostComponent)
 		timestamp := dimStyle.Render(fmt.Sprintf("(%s)", first.Timestamp.Format("15:04:05")))
-		componentInfo := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, formatCost(first.MainCostValue)))
+		componentInfo := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, render.Cost(first.MainCostValue)))
 
 		if noColor {
 			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
@@ -1289,7 +1235,7 @@ func formatInsightsSectionContent(insights *models.MessageInsights, noColor bool
 				formatCostStyled(first.Cost, 10, noColor),
 				first.Timestamp.Format("15:04:05"),
 				componentLabel,
-				formatCost(first.MainCostValue)))
+				render.Cost(first.MainCostValue)))
 		} else {
 			sb.WriteString(fmt.Sprintf("  %-10s %s  %s  %s\n",
 				"First",
@@ -1302,9 +1248,9 @@ func formatInsightsSectionContent(insights *models.MessageInsights, noColor bool
 	// Last message
 	if insights.LastMessage != nil {
 		last := insights.LastMessage
-		componentLabel := formatCostComponentLabel(last.MainCostComponent)
+		componentLabel := render.CostComponentLabel(last.MainCostComponent)
 		timestamp := dimStyle.Render(fmt.Sprintf("(%s)", last.Timestamp.Format("15:04:05")))
-		componentInfo := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, formatCost(last.MainCostValue)))
+		componentInfo := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, render.Cost(last.MainCostValue)))
 
 		if noColor {
 			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
@@ -1312,7 +1258,7 @@ func formatInsightsSectionContent(insights *models.MessageInsights, noColor bool
 				formatCostStyled(last.Cost, 10, noColor),
 				last.Timestamp.Format("15:04:05"),
 				componentLabel,
-				formatCost(last.MainCostValue)))
+				render.Cost(last.MainCostValue)))
 		} else {
 			sb.WriteString(fmt.Sprintf("  %-10s %s  %s  %s\n",
 				"Last",
@@ -1383,56 +1329,19 @@ func formatInsightsSectionContent(insights *models.MessageInsights, noColor bool
 	return sb.String()
 }
 
-// formatCostStyledGreen returns a cost string with green styling for savings
-func formatCostStyledGreen(cost float64, width int, noColor bool) string {
-	full := fmt.Sprintf("$%.6f", cost)
-	plainLen := len(full)
-
-	padding := ""
-	if width > plainLen {
-		padding = strings.Repeat(" ", width-plainLen)
-	}
-
-	if noColor {
-		return padding + full
-	}
-
-	// Split into main ($X.XX) and extra (XXXX) parts
-	dotIdx := strings.Index(full, ".")
-	if dotIdx == -1 || len(full) <= dotIdx+3 {
-		return padding + savingsValueStyle.Render(full)
-	}
-
-	main := full[:dotIdx+3]
-	extra := full[dotIdx+3:]
-
-	return padding + savingsValueStyle.Render(main) + dimStyle.Render(extra)
+// Cost-styling adapters: the static formatter never highlights live changes,
+// so it wraps the canonical 4-arg render helpers with highlighted=false. The
+// rendering logic itself lives once in internal/render (audit DUP-1/DUP-2).
+func formatCostStyled(cost float64, width int, noColor bool) string {
+	return render.CostStyled(cost, width, false, noColor)
 }
 
-// formatCostStyledBoldGreen returns a cost string in bold green (for totals/subtotals)
+func formatCostStyledGreen(cost float64, width int, noColor bool) string {
+	return render.CostStyledGreen(cost, width, false, noColor)
+}
+
 func formatCostStyledBoldGreen(cost float64, width int, noColor bool) string {
-	full := fmt.Sprintf("$%.6f", cost)
-	plainLen := len(full)
-
-	padding := ""
-	if width > plainLen {
-		padding = strings.Repeat(" ", width-plainLen)
-	}
-
-	if noColor {
-		return padding + full
-	}
-
-	// Split into main ($X.XX) and extra (XXXX) parts
-	dotIdx := strings.Index(full, ".")
-	if dotIdx == -1 || len(full) <= dotIdx+3 {
-		return padding + styles.TotalValueStyle.Render(full)
-	}
-
-	main := full[:dotIdx+3]
-	extra := full[dotIdx+3:]
-
-	return padding + styles.TotalValueStyle.Render(main) + dimStyle.Render(extra)
+	return render.CostStyledBoldGreen(cost, width, false, noColor)
 }
 
 // FormatSessionListTable formats a list of sessions as a table
@@ -1545,136 +1454,5 @@ func FormatSessionListTable(entries []models.SessionEntry, noColor bool) string 
 	return sb.String()
 }
 
-// Helper functions
-
-func formatCost(cost float64) string {
-	// Plain format with 6 decimal places
-	return fmt.Sprintf("$%.6f", cost)
-}
-
-// formatCostStyled returns a cost string with extra precision (after 2 decimals) dimmed
-func formatCostStyled(cost float64, width int, noColor bool) string {
-	// Format to 6 decimal places: "$123.456789"
-	full := fmt.Sprintf("$%.6f", cost)
-	plainLen := len(full)
-
-	// Calculate padding needed
-	padding := ""
-	if width > plainLen {
-		padding = strings.Repeat(" ", width-plainLen)
-	}
-
-	if noColor {
-		return padding + full
-	}
-
-	// Split into main ($X.XX) and extra (XXXX) parts
-	dotIdx := strings.Index(full, ".")
-	if dotIdx == -1 || len(full) <= dotIdx+3 {
-		return padding + full
-	}
-
-	main := full[:dotIdx+3]  // "$123.45"
-	extra := full[dotIdx+3:] // "6789"
-
-	return padding + main + styles.DimStyle.Render(extra)
-}
-
-func formatNumber(n int64) string {
-	if n >= 1000000 {
-		return fmt.Sprintf("%.2fM", float64(n)/1000000)
-	}
-	if n >= 1000 {
-		return fmt.Sprintf("%.1fK", float64(n)/1000)
-	}
-	return fmt.Sprintf("%d", n)
-}
-
-func formatDuration(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	}
-	if d < time.Hour {
-		return fmt.Sprintf("%dm %ds", int(d.Minutes()), int(d.Seconds())%60)
-	}
-	return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
-}
-
-func truncateID(id string) string {
-	if len(id) <= 40 {
-		return id
-	}
-	return id[:37] + "..."
-}
-
-// formatCostComponentLabel returns a human-readable label for a cost component
-func formatCostComponentLabel(component string) string {
-	switch component {
-	case "input":
-		return "input"
-	case "output":
-		return "output"
-	case "cache_write_5m":
-		return "cache_write"
-	case "cache_write_1h":
-		return "cache_write"
-	case "cache_read":
-		return "cache_read"
-	default:
-		return component
-	}
-}
-
-// formatContextProgressBar creates a visual progress bar showing context usage
-// Bar segments: used (█), free (░), buffer (▒)
-// Total width: 40 characters (TUI uses barWidth=38 for narrower panel)
-func formatContextProgressBar(contextSize, freeSpace int64, maxContext int, noColor bool) string {
-	const barWidth = 40
-
-	if maxContext == 0 {
-		return strings.Repeat("░", barWidth)
-	}
-
-	// Calculate proportions
-	usedRatio := float64(contextSize) / float64(maxContext)
-	freeRatio := float64(freeSpace) / float64(maxContext)
-
-	// Convert to bar segments
-	usedChars := int(usedRatio * float64(barWidth))
-	freeChars := int(freeRatio * float64(barWidth))
-
-	// Adjust for rounding to hit exactly barWidth
-	total := usedChars + freeChars
-	if total < barWidth {
-		freeChars += barWidth - total
-	} else if total > barWidth {
-		if freeChars > 0 {
-			freeChars -= total - barWidth
-		} else if usedChars > 0 {
-			usedChars -= total - barWidth
-		}
-	}
-
-	// Guard against negative values from rounding adjustments
-	usedChars = max(0, usedChars)
-	freeChars = max(0, freeChars)
-	if total := usedChars + freeChars; total < barWidth {
-		freeChars += barWidth - total
-	}
-
-	usedStr := strings.Repeat("█", usedChars)
-	freeStr := strings.Repeat("░", freeChars)
-
-	if noColor {
-		return "[" + usedStr + freeStr + "]"
-	}
-
-	// Get usage color based on percentage - only the used portion is colored
-	usagePct := usedRatio * 100
-	usageColor := styles.GetContextUsageColor(usagePct)
-
-	usedStyled := lipgloss.NewStyle().Foreground(usageColor).Render(usedStr)
-	freeStyled := lipgloss.NewStyle().Foreground(styles.ContextFreeColor).Render(freeStr)
-
-	return "[" + usedStyled + freeStyled + "]"
-}
+// Pure formatting/number/duration/section helpers now live in internal/render
+// (audit DUP-1). Cost-styling adapters are defined above.

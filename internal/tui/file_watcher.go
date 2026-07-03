@@ -2,8 +2,11 @@ package tui
 
 import (
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -87,4 +90,104 @@ func awaitSessionFileChange(watcher *fsnotify.Watcher, done chan struct{}, sessi
 			return false, err
 		}
 	}
+}
+
+// --- Shared watcher lifecycle commands (audit finding TUI-5) -----------------
+//
+// The watch and breakdown TUIs run the same file/session-watching state
+// machine; only their error-message type differs. These helpers hold the
+// single copy of that machinery, parameterized by an onErr constructor so each
+// model keeps its own error message. They replace the previously duplicated
+// watchFile / waitForFileChange* / startSessionWatcher / waitForNewSession
+// pairs that had begun to drift between app.go and breakdown.go.
+
+// watchFileCmd creates the file watcher for sessionPath, returning a
+// watcherStartedMsg on success or onErr(err) on failure.
+func watchFileCmd(sessionPath string, onErr func(error) tea.Msg) tea.Msg {
+	watcher, err := newSessionFileWatcher(sessionPath)
+	if err != nil {
+		return onErr(err)
+	}
+	return watcherStartedMsg{watcher: watcher}
+}
+
+// waitForFileChangeCmd waits for the session file to change (or for shutdown).
+// It registers with wg before returning the command so the quit handler's
+// wg.Wait can never race an Add issued inside the goroutine (audit TUI-10).
+func waitForFileChangeCmd(wg *sync.WaitGroup, closing *atomic.Bool, watcher *fsnotify.Watcher, done chan struct{}, sessionPath string, onErr func(error) tea.Msg) tea.Cmd {
+	wg.Add(1)
+	return func() tea.Msg {
+		defer wg.Done()
+		if closing != nil && closing.Load() {
+			return nil
+		}
+		if watcher == nil || done == nil {
+			return nil
+		}
+
+		changed, err := awaitSessionFileChange(watcher, done, sessionPath)
+		if err != nil {
+			return onErr(err)
+		}
+		if !changed {
+			return nil
+		}
+		return fileChangedMsg{}
+	}
+}
+
+// startSessionWatcherCmd starts the auto-follow session watcher for the project.
+func startSessionWatcherCmd(projectDir, sessionID string, onErr func(error) tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		watcher := NewSessionWatcher(projectDir, sessionID)
+		if err := watcher.Start(); err != nil {
+			return onErr(err)
+		}
+		return sessionWatcherStartedMsg{watcher: watcher}
+	}
+}
+
+// waitForNewSessionCmd blocks until the session watcher reports a new session
+// (switch), a same-session restart, or shutdown. Returns a nil command when
+// there is no watcher. Registers with wg before returning (audit TUI-10).
+func waitForNewSessionCmd(wg *sync.WaitGroup, sw *SessionWatcher) tea.Cmd {
+	if sw == nil {
+		return nil
+	}
+	wg.Add(1)
+	return func() tea.Msg {
+		defer wg.Done()
+
+		path, id := sw.WaitForNewSession()
+		if path == "" {
+			return nil // Shutdown or error
+		}
+		if path == sessionRestartedPath {
+			// Session was updated externally, just restart waiting
+			return sessionWatcherRestartMsg{}
+		}
+		return sessionSwitchedMsg{
+			newSessionPath: path,
+			newSessionID:   id,
+		}
+	}
+}
+
+// shutdownWatchers performs the one-time teardown of the file and session
+// watchers, then waits for in-flight watcher goroutines to drain. Shared by
+// both models' quit handlers.
+func shutdownWatchers(once *sync.Once, closing *atomic.Bool, done chan struct{}, watcher *fsnotify.Watcher, sw *SessionWatcher, wg *sync.WaitGroup) {
+	once.Do(func() {
+		closing.Store(true)
+		if done != nil {
+			close(done)
+		}
+		if watcher != nil {
+			watcher.Close()
+		}
+		if sw != nil {
+			sw.Stop()
+		}
+	})
+	wg.Wait()
 }
