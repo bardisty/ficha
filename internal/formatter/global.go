@@ -12,10 +12,14 @@ import (
 	"github.com/bardisty/ccusage/internal/pricing"
 	"github.com/bardisty/ccusage/internal/styles"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // FormatGlobalTable formats global analysis as a styled table
 func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, topN int, showDetails bool) string {
+	if topN < 0 {
+		topN = 0
+	}
 	if noColor {
 		return formatGlobalTablePlain(analysis, topN, showDetails)
 	}
@@ -289,15 +293,28 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 
 	projects := analysis.Projects
 	displayCount := topN
-	if showDetails || topN >= len(projects) {
+	if displayCount < 0 {
+		displayCount = 0
+	}
+	if showDetails || displayCount >= len(projects) {
 		displayCount = len(projects)
 	}
 
-	// Calculate min/max for gradient
+	// Calculate min/max for gradient by scanning — projects may be re-sorted
+	// by any key (--sort-by), so positional first/last are not cost extremes
 	var minCost, maxCost float64
 	if len(projects) > 0 {
-		minCost = projects[len(projects)-1].TotalCost.TotalCost // Sorted desc, so last is min
-		maxCost = projects[0].TotalCost.TotalCost
+		minCost = projects[0].TotalCost.TotalCost
+		maxCost = minCost
+		for _, p := range projects[1:] {
+			c := p.TotalCost.TotalCost
+			if c < minCost {
+				minCost = c
+			}
+			if c > maxCost {
+				maxCost = c
+			}
+		}
 	}
 
 	contentWidth := 92
@@ -330,10 +347,7 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 		}
 
 		// Truncate project name with middle ellipsis if needed
-		name := p.DisplayName
-		if len(name) > projectWidth {
-			name = truncateMiddle(name, projectWidth)
-		}
+		name := truncateMiddle(p.DisplayName, projectWidth)
 
 		if noColor {
 			costStr := fmt.Sprintf("$%.2f", p.TotalCost.TotalCost)
@@ -395,17 +409,43 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 	return sb.String()
 }
 
-// truncateMiddle truncates a string in the middle, showing start...end
-func truncateMiddle(s string, maxLen int) string {
-	if len(s) <= maxLen {
+// truncateMiddle truncates a string in the middle, showing start...end.
+// Operates on runes and display width so multi-byte and wide (CJK) characters
+// are never split mid-character.
+func truncateMiddle(s string, maxWidth int) string {
+	if runewidth.StringWidth(s) <= maxWidth {
 		return s
 	}
-	// Reserve 3 chars for "..."
-	available := maxLen - 3
+	// Reserve 3 cells for "..."
+	available := maxWidth - 3
+	if available < 1 {
+		// No room for start...end; hard-truncate to width
+		return runewidth.Truncate(s, maxWidth, "")
+	}
 	// Split roughly 60/40 favoring the end (project name is usually more distinctive)
-	startLen := available * 2 / 5
-	endLen := available - startLen
-	return s[:startLen] + "..." + s[len(s)-endLen:]
+	startWidth := available * 2 / 5
+	endWidth := available - startWidth
+
+	runes := []rune(s)
+	start, w := 0, 0
+	for _, r := range runes {
+		rw := runewidth.RuneWidth(r)
+		if w+rw > startWidth {
+			break
+		}
+		w += rw
+		start++
+	}
+	end, w := len(runes), 0
+	for i := len(runes) - 1; i >= 0; i-- {
+		rw := runewidth.RuneWidth(runes[i])
+		if w+rw > endWidth {
+			break
+		}
+		w += rw
+		end--
+	}
+	return string(runes[:start]) + "..." + string(runes[end:])
 }
 
 // FormatGlobalJSON formats global analysis as JSON

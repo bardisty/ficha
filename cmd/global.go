@@ -30,6 +30,7 @@ Examples:
   ccusage global --top 20          Show top 20 projects
   ccusage global --sort-by name    Sort by project name
   ccusage global -f json           Output as JSON`,
+	Args: cobra.NoArgs,
 	RunE: runGlobal,
 }
 
@@ -48,6 +49,11 @@ func runGlobal(cmd *cobra.Command, args []string) error {
 	validSortValues := map[string]bool{"cost": true, "sessions": true, "name": true, "activity": true}
 	if !validSortValues[globalSortBy] {
 		return fmt.Errorf("invalid --sort-by value %q: must be one of cost, sessions, name, activity", globalSortBy)
+	}
+
+	// Validate --top (0 = show no project rows, just the summary)
+	if globalTopN < 0 {
+		return fmt.Errorf("invalid --top value %d: must be >= 0", globalTopN)
 	}
 
 	// Global command shows all projects — reject project-specific flags

@@ -74,8 +74,10 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 				}
 			}
 
-			// Extend time range if needed
-			if !agentAnalysis.StartTime.IsZero() && agentAnalysis.StartTime.Before(analysis.StartTime) {
+			// Extend time range if needed (parent StartTime may be zero when it
+			// has no valid timestamps — take the agent's rather than keep zero)
+			if !agentAnalysis.StartTime.IsZero() &&
+				(analysis.StartTime.IsZero() || agentAnalysis.StartTime.Before(analysis.StartTime)) {
 				analysis.StartTime = agentAnalysis.StartTime
 			}
 			if agentAnalysis.EndTime.After(analysis.EndTime) {
@@ -140,11 +142,29 @@ func AnalyzeAgent(agentPath string, includeMessages bool) (*models.AgentAnalysis
 	}
 
 	// Set time range
-	analysis.StartTime = messageAnalyses[0].Timestamp
-	analysis.EndTime = messageAnalyses[len(messageAnalyses)-1].Timestamp
+	analysis.StartTime, analysis.EndTime = timeRange(messageAnalyses)
 	analysis.Duration = models.Duration(analysis.EndTime.Sub(analysis.StartTime))
 
 	return analysis, nil
+}
+
+// timeRange returns the earliest and latest non-zero timestamps in messages.
+// Messages can be out of chronological order (resumed/interleaved sessions)
+// and missing timestamps unmarshal to the zero time.Time, so positional
+// first/last are unreliable. Both returns are zero if no valid timestamp exists.
+func timeRange(messages []models.MessageAnalysis) (start, end time.Time) {
+	for _, msg := range messages {
+		if msg.Timestamp.IsZero() {
+			continue
+		}
+		if start.IsZero() || msg.Timestamp.Before(start) {
+			start = msg.Timestamp
+		}
+		if end.IsZero() || msg.Timestamp.After(end) {
+			end = msg.Timestamp
+		}
+	}
+	return start, end
 }
 
 // AnalyzeSessionFromMessages analyzes already-parsed messages
@@ -200,8 +220,7 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 	analysis.TotalCost = totalCost
 
 	// Set time range
-	analysis.StartTime = messageAnalyses[0].Timestamp
-	analysis.EndTime = messageAnalyses[len(messageAnalyses)-1].Timestamp
+	analysis.StartTime, analysis.EndTime = timeRange(messageAnalyses)
 	analysis.Duration = models.Duration(analysis.EndTime.Sub(analysis.StartTime))
 
 	// Optionally include individual messages

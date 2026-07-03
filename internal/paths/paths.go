@@ -41,8 +41,12 @@ type ProjectMatch struct {
 	MatchInfo   string // Human-readable match info for logging
 }
 
-// GetClaudeConfigDir returns the path to the Claude config directory
+// GetClaudeConfigDir returns the path to the Claude config directory.
+// Honors CLAUDE_CONFIG_DIR (Claude Code's own override), falling back to ~/.claude.
 func GetClaudeConfigDir() (string, error) {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return dir, nil
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err

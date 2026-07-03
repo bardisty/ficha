@@ -14,13 +14,14 @@ const (
 	// required to classify a trend as increasing or decreasing (0.2 = 20%)
 	trendChangeThreshold = 0.2
 
-	// minMessagesForTrend is the minimum number of messages required
-	// to calculate meaningful cost trends
-	minMessagesForTrend = 5
-
 	// trendSampleSize is the number of messages at each end used to calculate
 	// early and late average costs for trend detection
 	trendSampleSize = 3
+
+	// minMessagesForTrend is the minimum number of messages required
+	// to calculate meaningful cost trends; 2*trendSampleSize keeps the
+	// early and late sample windows disjoint
+	minMessagesForTrend = 2 * trendSampleSize
 )
 
 // CalculateInsights computes insights from a slice of message analyses

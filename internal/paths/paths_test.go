@@ -350,3 +350,41 @@ func TestAmbiguousProjectError(t *testing.T) {
 		t.Error("error should suggest --project-dir flag")
 	}
 }
+
+// PARSE-4 regression: CLAUDE_CONFIG_DIR (Claude Code's own override) was ignored.
+func TestGetClaudeConfigDir_EnvOverride(t *testing.T) {
+	custom := filepath.Join(string(filepath.Separator), "custom", "claude-config")
+	t.Setenv("CLAUDE_CONFIG_DIR", custom)
+
+	dir, err := GetClaudeConfigDir()
+	if err != nil {
+		t.Fatalf("GetClaudeConfigDir failed: %v", err)
+	}
+	if dir != custom {
+		t.Errorf("got %q, want %q", dir, custom)
+	}
+
+	projectsDir, err := GetProjectsDir()
+	if err != nil {
+		t.Fatalf("GetProjectsDir failed: %v", err)
+	}
+	if want := filepath.Join(custom, "projects"); projectsDir != want {
+		t.Errorf("got %q, want %q", projectsDir, want)
+	}
+}
+
+func TestGetClaudeConfigDir_DefaultWithoutEnv(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	dir, err := GetClaudeConfigDir()
+	if err != nil {
+		t.Fatalf("GetClaudeConfigDir failed: %v", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir failed: %v", err)
+	}
+	if want := filepath.Join(home, ".claude"); dir != want {
+		t.Errorf("got %q, want %q", dir, want)
+	}
+}

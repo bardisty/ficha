@@ -304,6 +304,11 @@ func TestGetChartWidth(t *testing.T) {
 		{"wide terminal", 80, 68},       // 80-8=72 > 68, capped at 68
 		{"narrow terminal", 50, 42},     // 50-8=42 < 68, use 42
 		{"very narrow terminal", 10, 2}, // 10-8=2 < 68, use 2
+		// TUI-1 regression: width < 8 used to produce a negative chart width,
+		// panicking sparkline's canvas make()
+		{"width 8 clamps to 1", 8, 1},
+		{"width 7 clamps to 1", 7, 1},
+		{"width 1 clamps to 1", 1, 1},
 	}
 
 	for _, tt := range tests {

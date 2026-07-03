@@ -24,6 +24,7 @@ Examples:
   ccusage summary --details                Show per-session cost breakdown
   ccusage summary --details --expand-agents Show agent sub-sessions in tree view
   ccusage summary -f json                  Output as JSON`,
+	Args: cobra.NoArgs,
 	RunE: runSummary,
 }
 

@@ -1821,7 +1821,11 @@ func (m Model) getChartWidth() int {
 	// Leave room for y-axis labels (if we add them later)
 	maxWidth := 68
 	if m.width > 0 && m.width-8 < maxWidth {
-		return m.width - 8
+		w := m.width - 8
+		if w < 1 {
+			w = 1 // sparkline canvas does make() with this length; non-positive panics
+		}
+		return w
 	}
 	return maxWidth
 }

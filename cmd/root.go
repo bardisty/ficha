@@ -42,6 +42,10 @@ Examples:
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// version prints plain text and ignores --format entirely
+		if cmd.Name() == "version" {
+			return nil
+		}
 		// Validate format flag
 		if !validFormats[format] {
 			return fmt.Errorf("invalid format %q: must be one of table, json, csv", format)
