@@ -283,6 +283,54 @@ func TestAnalyzeSession_WithAgents(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSession_SkippedLines(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sessionID := "sess-skipped-lines"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+
+	// Parent: 1 valid message + 2 malformed lines
+	parentContent := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}
+not json at all
+{"type":"assistant","broken`
+
+	if err := os.WriteFile(sessionPath, []byte(parentContent), 0644); err != nil {
+		t.Fatalf("failed to write parent session: %v", err)
+	}
+
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatalf("failed to create subagents dir: %v", err)
+	}
+
+	// Agent: 1 valid message + 1 malformed line
+	agentContent := `{"type":"assistant","timestamp":"2024-01-15T10:30:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":500,"output_tokens":200}}}
+{malformed`
+
+	if err := os.WriteFile(filepath.Join(subagentsDir, "agent-abc123.jsonl"), []byte(agentContent), 0644); err != nil {
+		t.Fatalf("failed to write agent session: %v", err)
+	}
+
+	analysis, err := AnalyzeSession(sessionPath, sessionID, false)
+	if err != nil {
+		t.Fatalf("AnalyzeSession failed: %v", err)
+	}
+
+	if analysis.SkippedLines != 3 {
+		t.Errorf("SkippedLines: got %d, want 3 (2 parent + 1 agent)", analysis.SkippedLines)
+	}
+	if len(analysis.Agents) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(analysis.Agents))
+	}
+	if analysis.Agents[0].SkippedLines != 1 {
+		t.Errorf("agent SkippedLines: got %d, want 1", analysis.Agents[0].SkippedLines)
+	}
+	// Valid messages must still be counted despite skips
+	if analysis.MessageCount != 2 {
+		t.Errorf("MessageCount: got %d, want 2", analysis.MessageCount)
+	}
+}
+
 // --- 2C: TestAnalyzeMultipleSessions_Basic ---
 
 func TestAnalyzeMultipleSessions_Basic(t *testing.T) {

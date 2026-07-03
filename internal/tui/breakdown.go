@@ -24,14 +24,15 @@ type BreakdownModel struct {
 	sessionID   string
 	noColor     bool
 
-	messages    []models.BreakdownMessage
-	totalCost   float64
-	minCost     float64 // For cost gradient coloring
-	maxCost     float64 // For cost gradient coloring
-	insights    *models.MessageInsights
-	err         error
-	loading     bool
-	lastUpdated time.Time
+	messages     []models.BreakdownMessage
+	totalCost    float64
+	minCost      float64 // For cost gradient coloring
+	maxCost      float64 // For cost gradient coloring
+	insights     *models.MessageInsights
+	skippedLines int // JSONL lines skipped during parsing (malformed or oversized)
+	err          error
+	loading      bool
+	lastUpdated  time.Time
 
 	// Viewport for scrolling
 	viewport   viewport.Model
@@ -62,11 +63,12 @@ type BreakdownModel struct {
 // Breakdown-specific messages
 type (
 	breakdownMsgsMsg struct {
-		messages  []models.BreakdownMessage
-		totalCost float64
-		minCost   float64
-		maxCost   float64
-		insights  *models.MessageInsights
+		messages     []models.BreakdownMessage
+		totalCost    float64
+		minCost      float64
+		maxCost      float64
+		insights     *models.MessageInsights
+		skippedLines int
 	}
 	breakdownErrorMsg error
 )
@@ -206,6 +208,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.minCost = msg.minCost
 		m.maxCost = msg.maxCost
 		m.insights = msg.insights
+		m.skippedLines = msg.skippedLines
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.err = nil
@@ -257,6 +260,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.totalCost = 0
 		m.minCost = 0
 		m.maxCost = 0
+		m.skippedLines = 0
 		m.loading = true
 		m.newMsgIndices = make(map[int]time.Time)
 
@@ -398,9 +402,18 @@ func (m BreakdownModel) View() string {
 		sb.WriteString(costStyled)
 		sb.WriteString(sepStyle.Render(" │ "))
 		sb.WriteString(lightGray.Render(scrollPart))
+		// Surface parse warnings so an incomplete breakdown doesn't look complete
+		if m.skippedLines > 0 {
+			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
+			sb.WriteString(sepStyle.Render(" │ "))
+			sb.WriteString(warnStyle.Render(fmt.Sprintf("⚠ %d skipped line(s)", m.skippedLines)))
+		}
 	} else {
 		sb.WriteString(fmt.Sprintf("  Messages: %d │ Total: $%.6f │ Scroll: %s",
 			len(m.messages), m.totalCost, scrollMode))
+		if m.skippedLines > 0 {
+			sb.WriteString(fmt.Sprintf(" │ ! %d skipped line(s)", m.skippedLines))
+		}
 	}
 	sb.WriteString("\n")
 
@@ -713,7 +726,7 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	if m.closing != nil && m.closing.Load() {
 		return nil
 	}
-	messages, err := analyzer.GetBreakdownMessages(m.sessionPath, m.sessionID)
+	messages, skippedLines, err := analyzer.GetBreakdownMessages(m.sessionPath, m.sessionID)
 	if err != nil {
 		return breakdownErrorMsg(err)
 	}
@@ -750,11 +763,12 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	insights := analyzer.CalculateInsights(messageAnalyses)
 
 	return breakdownMsgsMsg{
-		messages:  messages,
-		totalCost: totalCost,
-		minCost:   minCost,
-		maxCost:   maxCost,
-		insights:  insights,
+		messages:     messages,
+		totalCost:    totalCost,
+		minCost:      minCost,
+		maxCost:      maxCost,
+		insights:     insights,
+		skippedLines: skippedLines,
 	}
 }
 

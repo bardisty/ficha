@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"bufio"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -117,81 +119,141 @@ also not json
 	}
 }
 
-func TestParseResultWarning(t *testing.T) {
-	tests := []struct {
-		name      string
-		result    ParseResult
-		wantEmpty bool
-		contains  string
-	}{
-		{
-			name:      "no skipped lines",
-			result:    ParseResult{SkippedLines: 0},
-			wantEmpty: true,
-		},
-		{
-			name:     "one skipped line",
-			result:   ParseResult{SkippedLines: 1, SkippedAt: []int{5}},
-			contains: "1 malformed line",
-		},
-		{
-			name:     "multiple skipped lines",
-			result:   ParseResult{SkippedLines: 3, SkippedAt: []int{2, 5, 8}},
-			contains: "3 malformed lines",
-		},
-		{
-			name:     "many skipped lines truncated",
-			result:   ParseResult{SkippedLines: 10, SkippedAt: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}},
-			contains: "and 5 more",
-		},
-	}
+// TestParseJSONLWithResult_OversizedLineMiddle is the PARSE-1 regression test:
+// a line over maxLineBytes in the MIDDLE of the file must be skipped alone —
+// every line after it must still be parsed. (bufio.Scanner aborted the whole
+// scan on ErrTooLong, silently dropping the rest of the file.)
+func TestParseJSONLWithResult_OversizedLineMiddle(t *testing.T) {
+	line1 := `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"id":"msg_1","model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":50}}}`
+	line3 := `{"type":"assistant","timestamp":"2024-01-01T12:01:00Z","message":{"id":"msg_2","model":"claude-opus-4-5","usage":{"input_tokens":200,"output_tokens":75}}}`
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			warning := tt.result.Warning()
-			if tt.wantEmpty && warning != "" {
-				t.Errorf("expected empty warning, got %q", warning)
-			}
-			if !tt.wantEmpty && !strings.Contains(warning, tt.contains) {
-				t.Errorf("warning %q does not contain %q", warning, tt.contains)
-			}
-		})
-	}
-}
+	var input strings.Builder
+	input.Grow(maxLineBytes + len(line1) + len(line3) + 16)
+	input.WriteString(line1)
+	input.WriteString("\n")
+	input.WriteString(strings.Repeat("x", maxLineBytes+1))
+	input.WriteString("\n")
+	input.WriteString(line3)
+	input.WriteString("\n")
 
-func TestParseJSONLWithResult_BufferOverflow(t *testing.T) {
-	// Build a reader with valid messages followed by an oversized line
-	validLine := `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":50}}}`
-	// Create a line that exceeds scannerMaxBufSize (10MB)
-	oversizedLine := strings.Repeat("x", 11*1024*1024)
-	input := validLine + "\n" + oversizedLine
-
-	result, err := ParseJSONLWithResult(strings.NewReader(input))
+	result, err := ParseJSONLWithResult(strings.NewReader(input.String()))
 	if err != nil {
-		t.Fatalf("expected no error (partial results), got: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Messages) != 1 {
-		t.Errorf("expected 1 message (partial result), got %d", len(result.Messages))
+	if len(result.Messages) != 2 {
+		t.Fatalf("expected 2 messages (lines after the oversized one must not be dropped), got %d", len(result.Messages))
+	}
+	if result.Messages[0].Message.ID != "msg_1" || result.Messages[1].Message.ID != "msg_2" {
+		t.Errorf("unexpected message ids: %s, %s", result.Messages[0].Message.ID, result.Messages[1].Message.ID)
 	}
 	if result.SkippedLines != 1 {
-		t.Errorf("expected 1 skipped line (overflow), got %d", result.SkippedLines)
+		t.Errorf("expected 1 skipped line, got %d", result.SkippedLines)
 	}
 	if len(result.SkippedAt) != 1 || result.SkippedAt[0] != 2 {
 		t.Errorf("expected SkippedAt=[2], got %v", result.SkippedAt)
 	}
 }
 
-func TestParseResultWarning_InconsistentState(t *testing.T) {
-	// Externally constructed ParseResult with SkippedLines=1 but empty SkippedAt
-	r := ParseResult{SkippedLines: 1, SkippedAt: []int{}}
-	warning := r.Warning()
-	if warning == "" {
-		t.Error("expected non-empty warning")
+// Lines between the old 10MB scanner cap and maxLineBytes (e.g. embedded
+// base64 images) must parse normally now.
+func TestParseJSONLWithResult_LargeLineWithinCap(t *testing.T) {
+	filler := strings.Repeat("a", 11*1024*1024) // >10MB of payload inside valid JSON
+	bigLine := `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","requestId":"req_1","message":{"id":"msg_big","model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":50}},"filler":"` + filler + `"}`
+
+	result, err := ParseJSONLWithResult(strings.NewReader(bigLine))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(warning, "1 malformed line skipped") {
-		t.Errorf("unexpected warning text: %q", warning)
+	if result.SkippedLines != 0 {
+		t.Errorf("expected 0 skipped lines, got %d", result.SkippedLines)
 	}
-	// The key test: this must not panic
+	if len(result.Messages) != 1 || result.Messages[0].Message.ID != "msg_big" {
+		t.Fatalf("expected the 11MB line to parse, got %d messages", len(result.Messages))
+	}
+}
+
+// readLine is exercised directly with a small cap so the skip-and-continue
+// logic gets thorough coverage without allocating >50MB per case.
+func TestReadLine(t *testing.T) {
+	const maxLen = 16
+	tests := []struct {
+		name  string
+		input string
+		// expected sequence of (line, oversized) results, in order
+		lines     []string
+		oversized []bool
+	}{
+		{
+			name:      "normal lines",
+			input:     "aaa\nbbb\n",
+			lines:     []string{"aaa", "bbb"},
+			oversized: []bool{false, false},
+		},
+		{
+			name:      "no trailing newline",
+			input:     "aaa\nbbb",
+			lines:     []string{"aaa", "bbb"},
+			oversized: []bool{false, false},
+		},
+		{
+			name:      "crlf stripped",
+			input:     "aaa\r\nbbb\r\n",
+			lines:     []string{"aaa", "bbb"},
+			oversized: []bool{false, false},
+		},
+		{
+			name:      "empty lines preserved",
+			input:     "\naaa\n\n",
+			lines:     []string{"", "aaa", ""},
+			oversized: []bool{false, false, false},
+		},
+		{
+			name:      "oversized line in middle",
+			input:     "aaa\n" + strings.Repeat("x", maxLen*3) + "\nbbb\n",
+			lines:     []string{"aaa", "", "bbb"},
+			oversized: []bool{false, true, false},
+		},
+		{
+			name:      "oversized line at EOF without newline",
+			input:     "aaa\n" + strings.Repeat("x", maxLen*3),
+			lines:     []string{"aaa", ""},
+			oversized: []bool{false, true},
+		},
+		{
+			name:      "consecutive oversized lines",
+			input:     strings.Repeat("x", maxLen*2) + "\n" + strings.Repeat("y", maxLen*2) + "\nccc\n",
+			lines:     []string{"", "", "ccc"},
+			oversized: []bool{true, true, false},
+		},
+		{
+			name:      "line exactly at cap",
+			input:     strings.Repeat("x", maxLen-1) + "\n", // maxLen-1 content + newline = maxLen bytes
+			lines:     []string{strings.Repeat("x", maxLen-1)},
+			oversized: []bool{false},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Small reader buffer forces the ErrBufferFull accumulation path
+			reader := bufio.NewReaderSize(strings.NewReader(tt.input), 16)
+			for i := range tt.lines {
+				line, oversized, err := readLine(reader, maxLen)
+				if err != nil {
+					t.Fatalf("line %d: unexpected error: %v", i+1, err)
+				}
+				if oversized != tt.oversized[i] {
+					t.Errorf("line %d: oversized = %v, want %v", i+1, oversized, tt.oversized[i])
+				}
+				if string(line) != tt.lines[i] {
+					t.Errorf("line %d: got %q, want %q", i+1, string(line), tt.lines[i])
+				}
+			}
+			if _, _, err := readLine(reader, maxLen); err != io.EOF {
+				t.Errorf("expected io.EOF after last line, got %v", err)
+			}
+		})
+	}
 }
 
 func TestExtractUsageReconcilesCacheCreation(t *testing.T) {

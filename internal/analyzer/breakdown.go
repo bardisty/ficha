@@ -11,15 +11,18 @@ import (
 
 // GetBreakdownMessages parses a session and returns all messages (parent + agents)
 // merged chronologically with sequential indices and agent IDs assigned.
-func GetBreakdownMessages(sessionPath, sessionID string) ([]models.BreakdownMessage, error) {
+// The int result counts JSONL lines skipped as malformed or oversized
+// (parent + agents) so callers can warn that the breakdown may be incomplete.
+func GetBreakdownMessages(sessionPath, sessionID string) ([]models.BreakdownMessage, int, error) {
 	// Parse parent session messages
-	messages, err := parser.ParseJSONLFile(sessionPath)
+	result, err := parser.ParseJSONLFileWithResult(sessionPath)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
+	skippedLines := result.SkippedLines
 
 	// Extract and calculate costs for parent messages
-	parentAnalyses := parser.ExtractUsageFromMessages(messages)
+	parentAnalyses := parser.ExtractUsageFromMessages(result.Messages)
 	for i := range parentAnalyses {
 		CalculateMessageCost(&parentAnalyses[i])
 	}
@@ -45,10 +48,11 @@ func GetBreakdownMessages(sessionPath, sessionID string) ([]models.BreakdownMess
 	agentIDMap := make(map[string]string) // agentPath -> display ID like "1", "2"
 
 	for _, agentPath := range agentPaths {
-		agentMessages, err := parser.ParseJSONLFile(agentPath)
+		agentResult, err := parser.ParseJSONLFileWithResult(agentPath)
 		if err != nil {
 			continue // Skip agents that fail to parse
 		}
+		skippedLines += agentResult.SkippedLines
 
 		// Assign a display ID for this agent
 		displayID := fmt.Sprintf("%d", agentNum)
@@ -56,7 +60,7 @@ func GetBreakdownMessages(sessionPath, sessionID string) ([]models.BreakdownMess
 		agentNum++
 
 		// Extract and calculate costs for agent messages
-		agentAnalyses := parser.ExtractUsageFromMessages(agentMessages)
+		agentAnalyses := parser.ExtractUsageFromMessages(agentResult.Messages)
 		for i := range agentAnalyses {
 			CalculateMessageCost(&agentAnalyses[i])
 		}
@@ -83,5 +87,5 @@ func GetBreakdownMessages(sessionPath, sessionID string) ([]models.BreakdownMess
 		allMessages[i].Index = i + 1
 	}
 
-	return allMessages, nil
+	return allMessages, skippedLines, nil
 }

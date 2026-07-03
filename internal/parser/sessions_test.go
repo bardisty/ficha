@@ -3,6 +3,7 @@ package parser
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -286,7 +287,7 @@ func TestMergeSessionSources(t *testing.T) {
 		{SessionID: "session-3", FullPath: "/path/session-3.jsonl", Modified: t1, MessageCount: 3}, // Orphan
 	}
 
-	merged, orphanCount := MergeSessionSources(index, diskSessions)
+	merged, orphanCount := MergeSessionSources(index, diskSessions, "/path")
 
 	if orphanCount != 1 {
 		t.Errorf("expected 1 orphan, got %d", orphanCount)
@@ -313,7 +314,7 @@ func TestMergeOrphanDetection(t *testing.T) {
 		{SessionID: "orphan-3"},
 	}
 
-	merged, orphanCount := MergeSessionSources(nil, diskSessions)
+	merged, orphanCount := MergeSessionSources(nil, diskSessions, "/path")
 
 	if orphanCount != 3 {
 		t.Errorf("expected 3 orphans, got %d", orphanCount)
@@ -338,7 +339,7 @@ func TestMergeIndexOnly(t *testing.T) {
 	// No files on disk
 	diskSessions := []models.SessionEntry{}
 
-	merged, orphanCount := MergeSessionSources(index, diskSessions)
+	merged, orphanCount := MergeSessionSources(index, diskSessions, "/path")
 
 	if orphanCount != 0 {
 		t.Errorf("expected 0 orphans (only index entries), got %d", orphanCount)
@@ -700,7 +701,7 @@ func TestMergeGhostSessionsFiltered(t *testing.T) {
 		{SessionID: "real-session", FullPath: realPath, Modified: t1, MessageCount: 1},
 	}
 
-	merged, orphanCount := MergeSessionSources(index, diskSessions)
+	merged, orphanCount := MergeSessionSources(index, diskSessions, tmpDir)
 
 	if orphanCount != 0 {
 		t.Errorf("expected 0 orphans, got %d", orphanCount)
@@ -729,7 +730,7 @@ func TestMergeFullPathFromDisk(t *testing.T) {
 		{SessionID: "session-1", FullPath: "/new/path/session-1.jsonl", Modified: t1, MessageCount: 5},
 	}
 
-	merged, _ := MergeSessionSources(index, diskSessions)
+	merged, _ := MergeSessionSources(index, diskSessions, "/new/path")
 
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged session, got %d", len(merged))
@@ -746,27 +747,135 @@ func TestMergeFullPathFromDisk(t *testing.T) {
 	}
 }
 
-func TestCountMessagesInFile_BufferOverflow(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "overflow-count-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
+func TestCountMessagesInFile_OversizedLineMiddle(t *testing.T) {
+	tmpDir := t.TempDir()
 
-	testFile := filepath.Join(tmpDir, "overflow.jsonl")
-	validLine := `{"type":"assistant","message":{"model":"test","usage":{}}}`
-	// Create oversized line exceeding 10MB scanner buffer
-	oversizedLine := `{"type":"assistant","message":{"model":"test","data":"` + string(make([]byte, 11*1024*1024)) + `"}}`
-	content := validLine + "\n" + oversizedLine
+	testFile := filepath.Join(tmpDir, "oversized.jsonl")
+	validLine1 := `{"type":"assistant","requestId":"r1","message":{"id":"m1","model":"test","usage":{}}}`
+	validLine2 := `{"type":"assistant","requestId":"r2","message":{"id":"m2","model":"test","usage":{}}}`
 
-	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+	// Oversized line in the middle: only that line is skipped; counting continues
+	var content strings.Builder
+	content.Grow(maxLineBytes + 256)
+	content.WriteString(validLine1)
+	content.WriteString("\n")
+	content.WriteString(strings.Repeat("x", maxLineBytes+1))
+	content.WriteString("\n")
+	content.WriteString(validLine2)
+	content.WriteString("\n")
+
+	if err := os.WriteFile(testFile, []byte(content.String()), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	count := countMessagesInFile(testFile)
-	// Should return partial count (1), not -1
-	if count != 1 {
-		t.Errorf("expected partial count 1, got %d", count)
+	if count != 2 {
+		t.Errorf("expected 2 (messages after the oversized line must still count), got %d", count)
+	}
+}
+
+func TestMergeIndexOnly_RebuildsFromDisk(t *testing.T) {
+	// PARSE-5: index-only entries must not keep stale counts or miss agents
+	tmpDir := t.TempDir()
+
+	sessionPath := filepath.Join(tmpDir, "idx-only.jsonl")
+	parentContent := `{"type":"assistant","requestId":"r1","message":{"id":"m1","model":"test","usage":{}}}
+{"type":"assistant","requestId":"r2","message":{"id":"m2","model":"test","usage":{}}}
+`
+	if err := os.WriteFile(sessionPath, []byte(parentContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	subagentsDir := filepath.Join(tmpDir, "idx-only", "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	agentContent := `{"type":"assistant","requestId":"r3","message":{"id":"m3","model":"test","usage":{}}}
+`
+	if err := os.WriteFile(filepath.Join(subagentsDir, "agent-a1.jsonl"), []byte(agentContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t1 := time.Date(2024, 1, 10, 12, 0, 0, 0, time.UTC)
+	index := &models.SessionsIndex{
+		Entries: []models.SessionEntry{
+			// Stale MessageCount (99) and no agent info in the index
+			{SessionID: "idx-only", FullPath: sessionPath, Created: t1, MessageCount: 99},
+		},
+	}
+
+	// Disk scan missed the session (e.g. created after the scan)
+	merged, orphanCount := MergeSessionSources(index, nil, tmpDir)
+
+	if orphanCount != 0 {
+		t.Errorf("expected 0 orphans, got %d", orphanCount)
+	}
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged session, got %d", len(merged))
+	}
+	e := merged[0]
+	if e.MessageCount != 3 {
+		t.Errorf("MessageCount: got %d, want 3 (2 parent + 1 agent, recounted from disk)", e.MessageCount)
+	}
+	if e.AgentCount != 1 || len(e.AgentPaths) != 1 {
+		t.Errorf("agent discovery not re-run: AgentCount=%d, AgentPaths=%v", e.AgentCount, e.AgentPaths)
+	}
+	if e.AgentMessageCount != 1 {
+		t.Errorf("AgentMessageCount: got %d, want 1", e.AgentMessageCount)
+	}
+	if !e.Created.Equal(t1) {
+		t.Errorf("Created should keep index metadata: got %v, want %v", e.Created, t1)
+	}
+	if e.Modified.IsZero() {
+		t.Error("Modified should be set from the file mtime")
+	}
+}
+
+func TestMergeIndexOnly_OutsideProjectDirDropped(t *testing.T) {
+	// PARSE-5: index FullPath is untrusted — entries pointing outside the
+	// project directory are dropped even if the file exists
+	projectDir := t.TempDir()
+	outsideDir := t.TempDir()
+
+	outsidePath := filepath.Join(outsideDir, "escaped.jsonl")
+	if err := os.WriteFile(outsidePath, []byte(`{"type":"assistant","message":{"model":"test","usage":{}}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	index := &models.SessionsIndex{
+		Entries: []models.SessionEntry{
+			{SessionID: "escaped", FullPath: outsidePath, Created: time.Now()},
+		},
+	}
+
+	merged, _ := MergeSessionSources(index, nil, projectDir)
+	if len(merged) != 0 {
+		t.Errorf("expected entry outside projectDir to be dropped, got %d entries", len(merged))
+	}
+}
+
+func TestPathWithinDir(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		dir  string
+		want bool
+	}{
+		{"file inside dir", "/proj/session.jsonl", "/proj", true},
+		{"file in subdir", "/proj/sub/agent.jsonl", "/proj", true},
+		{"file outside dir", "/other/session.jsonl", "/proj", false},
+		{"traversal escape", "/proj/../other/session.jsonl", "/proj", false},
+		{"sibling with shared prefix", "/proj-evil/session.jsonl", "/proj", false},
+		{"path equals dir", "/proj", "/proj", false},
+		{"empty path", "", "/proj", false},
+		{"empty dir", "/proj/session.jsonl", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pathWithinDir(tt.path, tt.dir); got != tt.want {
+				t.Errorf("pathWithinDir(%q, %q) = %v, want %v", tt.path, tt.dir, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -782,7 +891,7 @@ func TestMergeDuplicateSessionIDsInIndex(t *testing.T) {
 	diskSessions := []models.SessionEntry{
 		{SessionID: "dup-id", FullPath: "/path/first.jsonl", Modified: t1, MessageCount: 5},
 	}
-	merged, _ := MergeSessionSources(index, diskSessions)
+	merged, _ := MergeSessionSources(index, diskSessions, "/path")
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged session, got %d", len(merged))
 	}
@@ -790,7 +899,7 @@ func TestMergeDuplicateSessionIDsInIndex(t *testing.T) {
 
 func TestMergeBothNilAndEmpty(t *testing.T) {
 	// nil index + nil disk
-	merged1, orphans1 := MergeSessionSources(nil, nil)
+	merged1, orphans1 := MergeSessionSources(nil, nil, "/path")
 	if len(merged1) != 0 {
 		t.Errorf("nil+nil: expected 0 merged, got %d", len(merged1))
 	}
@@ -799,7 +908,7 @@ func TestMergeBothNilAndEmpty(t *testing.T) {
 	}
 
 	// nil index + empty disk
-	merged2, orphans2 := MergeSessionSources(nil, []models.SessionEntry{})
+	merged2, orphans2 := MergeSessionSources(nil, []models.SessionEntry{}, "/path")
 	if len(merged2) != 0 {
 		t.Errorf("nil+empty: expected 0 merged, got %d", len(merged2))
 	}

@@ -12,13 +12,13 @@ import (
 // AnalyzeSession analyzes a session JSONL file and returns the complete analysis
 func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) (*models.SessionAnalysis, error) {
 	// Parse the JSONL file
-	messages, err := parser.ParseJSONLFile(sessionPath)
+	result, err := parser.ParseJSONLFileWithResult(sessionPath)
 	if err != nil {
 		return nil, err
 	}
 
 	// Extract usage data from messages
-	messageAnalyses := parser.ExtractUsageFromMessages(messages)
+	messageAnalyses := parser.ExtractUsageFromMessages(result.Messages)
 
 	// Calculate costs for each message
 	for i := range messageAnalyses {
@@ -27,6 +27,7 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 
 	// Build the session analysis (parent session only)
 	analysis := buildSessionAnalysis(sessionID, sessionPath, messageAnalyses, includeMessages)
+	analysis.SkippedLines = result.SkippedLines
 
 	// Store parent cost and message count before adding agent data
 	analysis.ParentCost = analysis.TotalCost
@@ -61,6 +62,7 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 			analysis.TotalUsage.Add(agentAnalysis.TotalUsage)
 			analysis.MessageCount += agentAnalysis.MessageCount
 			analysis.AgentMessageCount += agentAnalysis.MessageCount
+			analysis.SkippedLines += agentAnalysis.SkippedLines
 
 			// Merge agent cost by model
 			for model, cost := range agentAnalysis.CostByModel {
@@ -96,13 +98,13 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 // AnalyzeAgent analyzes a single agent sub-session
 func AnalyzeAgent(agentPath string, includeMessages bool) (*models.AgentAnalysis, error) {
 	// Parse the JSONL file
-	messages, err := parser.ParseJSONLFile(agentPath)
+	result, err := parser.ParseJSONLFileWithResult(agentPath)
 	if err != nil {
 		return nil, err
 	}
 
 	// Extract usage data from messages
-	messageAnalyses := parser.ExtractUsageFromMessages(messages)
+	messageAnalyses := parser.ExtractUsageFromMessages(result.Messages)
 
 	// Calculate costs for each message
 	for i := range messageAnalyses {
@@ -116,6 +118,7 @@ func AnalyzeAgent(agentPath string, includeMessages bool) (*models.AgentAnalysis
 		FullPath:     agentPath,
 		MessageCount: len(messageAnalyses),
 		CostByModel:  make(map[string]models.CostBreakdown),
+		SkippedLines: result.SkippedLines,
 	}
 
 	if len(messageAnalyses) == 0 {
@@ -240,8 +243,9 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 			continue // Skip sessions that can't be parsed
 		}
 		successfulSessions++
-		// Also aggregate skipped agents from individual sessions
+		// Also aggregate skipped agents and lines from individual sessions
 		aggregate.SkippedAgents += sessionAnalysis.SkippedAgents
+		aggregate.SkippedLines += sessionAnalysis.SkippedLines
 
 		aggregate.MessageCount += sessionAnalysis.MessageCount
 		aggregate.ParentMessageCount += sessionAnalysis.ParentMessageCount

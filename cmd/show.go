@@ -50,10 +50,11 @@ func runShow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("analyzing session: %w", err)
 	}
 
-	// Warn about skipped agents
+	// Warn about skipped agents and skipped lines
 	if analysis.SkippedAgents > 0 {
 		fmt.Fprintf(os.Stderr, "Warning: %d agent sub-session(s) could not be parsed\n", analysis.SkippedAgents)
 	}
+	warnSkippedLines(analysis.SkippedLines)
 
 	// Warn about unknown models (using fallback pricing)
 	warnUnknownModels(analysis.CostByModel)

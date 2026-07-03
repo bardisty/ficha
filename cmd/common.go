@@ -49,7 +49,7 @@ func loadProjectSessionsWithDir() ([]models.SessionEntry, string, error) {
 	}
 
 	// Merge sources
-	sessions, orphanCount := parser.MergeSessionSources(index, diskSessions)
+	sessions, orphanCount := parser.MergeSessionSources(index, diskSessions, projDir)
 
 	if len(sessions) == 0 {
 		return nil, "", fmt.Errorf("no sessions found in %s", projDir)
@@ -143,6 +143,15 @@ func formatNoProjectError(projPath string, allProjects []models.ProjectInfo) err
 	}
 
 	return errors.New(sb.String())
+}
+
+// warnSkippedLines prints a stderr warning when JSONL lines were skipped
+// during parsing (malformed or oversized), so undercounted totals don't
+// look authoritative. Stderr keeps -f json/csv stdout clean.
+func warnSkippedLines(skippedLines int) {
+	if skippedLines > 0 {
+		fmt.Fprintf(os.Stderr, "Warning: %d unparseable line(s) skipped (malformed or oversized) — totals may be undercounted\n", skippedLines)
+	}
 }
 
 // warnUnknownModels prints a warning if any models have unknown pricing

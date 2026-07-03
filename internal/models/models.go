@@ -96,6 +96,7 @@ type AgentAnalysis struct {
 	StartTime    time.Time                `json:"start_time"`
 	EndTime      time.Time                `json:"end_time"`
 	Duration     Duration                 `json:"duration"`
+	SkippedLines int                      `json:"skipped_lines,omitempty"` // JSONL lines skipped (malformed or oversized)
 }
 
 // SessionAnalysis represents the complete analysis of a session
@@ -125,6 +126,7 @@ type SessionAnalysis struct {
 	AgentMessageCount  int                      `json:"agent_message_count"`        // Messages from all agents
 	SkippedAgents      int                      `json:"skipped_agents,omitempty"`   // Agents that failed to parse
 	SkippedSessions    int                      `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)
+	SkippedLines       int                      `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized), incl. agents
 	IsSummary          bool                     `json:"-"`                          // True for aggregate summaries
 	SessionCount       int                      `json:"-"`                          // Number of sessions in summary
 }

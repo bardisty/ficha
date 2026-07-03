@@ -134,7 +134,7 @@ func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error)
 	index, _ := parser.ParseSessionsIndex(indexPath) // Ignore error - index may not exist
 
 	// Merge sources
-	sessions, _ := parser.MergeSessionSources(index, diskSessions)
+	sessions, _ := parser.MergeSessionSources(index, diskSessions, project.FullPath)
 
 	if len(sessions) == 0 {
 		return &models.ProjectAnalysis{
