@@ -182,9 +182,9 @@ func TestCalculateInsights_SixMessages_StableTrend(t *testing.T) {
 	}
 }
 
-// CORE-3 regression: at exactly 5 messages the early [0,1,2] and late [2,3,4]
-// windows overlapped, double-counting the middle message. Trend now requires
-// 2*trendSampleSize messages so the windows are always disjoint.
+// At exactly 5 messages the early [0,1,2] and late [2,3,4] trend windows would
+// overlap on the middle message, so trend requires 2*trendSampleSize messages
+// to keep the windows disjoint; below that, no trend is computed.
 func TestCalculateInsights_FiveMessages_NoTrend(t *testing.T) {
 	now := time.Now()
 	messages := []models.MessageAnalysis{

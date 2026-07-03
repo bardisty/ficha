@@ -52,7 +52,7 @@ func TestGetModelPricing(t *testing.T) {
 		{"claude 3 sonnet", "claude-3-sonnet", 3.00, 15.00},
 		{"claude 3 haiku", "claude-3-haiku", 0.25, 1.25},
 		{"unknown model uses default", "unknown-model", 3.00, 15.00},
-		// Unlisted family versions must NOT inherit a shorter prefix's pricing (CORE-2):
+		// Unlisted family versions must NOT inherit a shorter prefix's pricing:
 		// claude-opus-4-9 is not Opus 4 ($15/$75) — it falls to default until cataloged
 		{"unlisted opus 4.9 uses default", "claude-opus-4-9", 3.00, 15.00},
 		{"unlisted opus 4.9 dated uses default", "claude-opus-4-9-20260101", 3.00, 15.00},
@@ -185,7 +185,7 @@ func TestNormalizeModelID(t *testing.T) {
 		{"claude-opus-4-0", "claude-opus-4-0"},
 		{"claude-sonnet-4-0", "claude-sonnet-4-0"},
 		// Short numeric segments are version bumps (different models), not
-		// variants of the prefix — they must not normalize to it (CORE-2)
+		// variants of the prefix — they must not normalize to it.
 		{"claude-opus-4-9", "claude-opus-4-9"},
 		{"claude-opus-4-9-20260101", "claude-opus-4-9-20260101"},
 		{"claude-opus-4-10-20260601", "claude-opus-4-10-20260601"},
@@ -257,7 +257,7 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-3-haiku-20240307", true},
 
 		// Unlisted family versions are unknown — a short numeric segment after
-		// a catalog prefix is a different model, not a variant of it (CORE-2)
+		// a catalog prefix is a different model, not a variant of it.
 		{"claude-opus-4-9", false},
 		{"claude-opus-4-9-20260101", false},
 		{"claude-opus-4-10-20260601", false},

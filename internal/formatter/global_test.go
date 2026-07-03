@@ -34,7 +34,7 @@ func globalAnalysisWithProjects(costs map[string]float64, order []string) *model
 	return analysis
 }
 
-// CLI-1 regression: negative topN used to index projects[-1] and panic.
+// A negative topN must be clamped, not used as a slice index (projects[-1] panics).
 func TestRenderProjectsTable_NegativeTopN(t *testing.T) {
 	analysis := globalAnalysisWithProjects(
 		map[string]float64{"alpha": 1.0, "beta": 2.0},
@@ -49,7 +49,7 @@ func TestRenderProjectsTable_NegativeTopN(t *testing.T) {
 		t.Errorf("negative topN should render no project rows, got:\n%s", out)
 	}
 
-	// Full table path clamps too (used to panic before reaching here)
+	// The full-table entry point clamps too, not just renderProjectsTable.
 	full := FormatGlobalTable(analysis, true, -1, false)
 	if !strings.Contains(full, "TOP PROJECTS (0)") {
 		t.Errorf("negative topN should clamp header count to 0, got:\n%s", full)
@@ -68,8 +68,9 @@ func TestRenderProjectsTable_TopNZero(t *testing.T) {
 	}
 }
 
-// CLI-5 regression: gradient bounds were taken positionally (first=max, last=min),
-// which inverts under --sort-by name|sessions|activity and neutralizes the gradient.
+// Gradient bounds must be scanned from the actual costs, not read positionally
+// (first=max, last=min): the caller re-sorts by name|sessions|activity, so
+// positional bounds invert and neutralize the gradient.
 func TestRenderProjectsTable_GradientIgnoresSortOrder(t *testing.T) {
 	r := lipgloss.DefaultRenderer()
 	origProfile := r.ColorProfile()
@@ -92,8 +93,8 @@ func TestRenderProjectsTable_GradientIgnoresSortOrder(t *testing.T) {
 	}
 }
 
-// CLI-12 regression: truncateMiddle used to byte-slice UTF-8, corrupting
-// multi-byte runes and measuring width in bytes.
+// truncateMiddle must cut on rune boundaries and measure display width, not
+// byte-slice UTF-8 (which corrupts multi-byte runes and miscounts width).
 func TestTruncateMiddle(t *testing.T) {
 	tests := []struct {
 		name     string

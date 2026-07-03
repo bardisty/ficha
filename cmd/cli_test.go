@@ -24,7 +24,8 @@ func executeCLI(t *testing.T, args ...string) (string, error) {
 	return buf.String(), err
 }
 
-// CLI-7 regression: these commands used to silently accept stray positional args.
+// These commands take no positional args; without cobra.NoArgs they silently
+// ignore stray ones instead of erroring.
 func TestSubcommandsRejectExtraArgs(t *testing.T) {
 	for _, name := range []string{"list", "summary", "global", "version"} {
 		t.Run(name, func(t *testing.T) {
@@ -39,7 +40,7 @@ func TestSubcommandsRejectExtraArgs(t *testing.T) {
 	}
 }
 
-// CLI-8 regression: rootCmd.Version was never set, so --version didn't exist.
+// cobra only registers a --version flag when rootCmd.Version is set.
 func TestVersionFlag(t *testing.T) {
 	out, err := executeCLI(t, "--version")
 	if err != nil {
@@ -51,7 +52,8 @@ func TestVersionFlag(t *testing.T) {
 	}
 }
 
-// CLI-8 regression: version ignored --format yet was rejected by format validation.
+// The version command prints plain text and is exempt from --format validation,
+// so an otherwise-invalid -f must not error.
 func TestVersionSubcommandIgnoresFormat(t *testing.T) {
 	out, err := executeCLI(t, "version", "-f", "xml")
 	if err != nil {
@@ -74,7 +76,8 @@ func TestInvalidFormatStillRejected(t *testing.T) {
 	}
 }
 
-// CLI-1 regression: global --top -1 used to panic in renderProjectsTable.
+// A negative --top must be rejected before it reaches renderProjectsTable,
+// where it would index projects[-1] and panic.
 func TestGlobalRejectsNegativeTop(t *testing.T) {
 	t.Cleanup(func() { globalTopN = 10 })
 	_, err := executeCLI(t, "global", "--top=-1")
