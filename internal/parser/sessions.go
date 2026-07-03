@@ -5,24 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bardisty/ccusage/internal/models"
 )
 
 const (
-	// scannerInitialBufSize is the initial buffer size for the scanner (64KB).
-	// This is large enough for most JSONL lines while being memory-efficient.
-	scannerInitialBufSize = 64 * 1024
-
-	// scannerMaxBufSize is the maximum buffer size for the scanner (10MB).
-	// Claude Code session files can have very long lines due to base64-encoded
-	// images and large tool outputs. 10MB handles sessions with large images.
-	scannerMaxBufSize = 10 * 1024 * 1024
-
 	// maxIndexFileSize is the maximum allowed size for sessions-index.json (10MB).
 	// This prevents memory exhaustion from corrupted or malicious index files.
 	maxIndexFileSize = 10 * 1024 * 1024
@@ -139,50 +132,60 @@ func DiscoverSessionsFromDisk(projectDir string) ([]models.SessionEntry, error) 
 			continue // Skip files we can't stat
 		}
 
-		// Count messages by reading first pass of file
-		// Treat -1 (error) as 0 for display purposes
-		parentMsgCount := countMessagesInFile(fullPath)
-		if parentMsgCount < 0 {
-			parentMsgCount = 0
-		}
-
-		// Discover agent sub-sessions (ignore errors - missing subagents dir is common)
-		agentPaths, err := DiscoverAgentSessions(projectDir, sessionID)
-		if err != nil {
-			// Log warning but continue - agent discovery failure shouldn't block session discovery
-			// Note: NotExist errors are already handled inside DiscoverAgentSessions
-			_ = err // Error intentionally ignored - subagent discovery is non-critical
-		}
-
-		// Count agent messages separately for display breakdown
-		// Treat -1 (error) as 0 for individual files
-		agentMsgCount := 0
-		for _, agentPath := range agentPaths {
-			count := countMessagesInFile(agentPath)
-			if count > 0 {
-				agentMsgCount += count
-			}
-		}
-
-		sessions = append(sessions, models.SessionEntry{
-			SessionID:         sessionID,
-			FullPath:          fullPath,
-			MessageCount:      parentMsgCount + agentMsgCount, // Total for consistency
-			Created:           info.ModTime(),                 // Best approximation
-			Modified:          info.ModTime(),
-			AgentPaths:        agentPaths,
-			AgentCount:        len(agentPaths),
-			AgentMessageCount: agentMsgCount,
-		})
+		sessions = append(sessions, buildDiskEntry(projectDir, sessionID, fullPath, info.ModTime()))
 	}
 
 	return sessions, nil
 }
 
-// MergeSessionSources combines index entries with disk-discovered sessions
-// Index entries take precedence for metadata (Created time, etc.)
-// Returns merged list and count of orphaned sessions found on disk
-func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.SessionEntry) ([]models.SessionEntry, int) {
+// buildDiskEntry builds a SessionEntry for a session file on disk, counting
+// its messages and discovering agent sub-sessions.
+func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time) models.SessionEntry {
+	// Count messages by reading first pass of file
+	// Treat -1 (error) as 0 for display purposes
+	parentMsgCount := countMessagesInFile(fullPath)
+	if parentMsgCount < 0 {
+		parentMsgCount = 0
+	}
+
+	// Discover agent sub-sessions (ignore errors - missing subagents dir is common)
+	agentPaths, err := DiscoverAgentSessions(projectDir, sessionID)
+	if err != nil {
+		// Log warning but continue - agent discovery failure shouldn't block session discovery
+		// Note: NotExist errors are already handled inside DiscoverAgentSessions
+		_ = err // Error intentionally ignored - subagent discovery is non-critical
+	}
+
+	// Count agent messages separately for display breakdown
+	// Treat -1 (error) as 0 for individual files
+	agentMsgCount := 0
+	for _, agentPath := range agentPaths {
+		count := countMessagesInFile(agentPath)
+		if count > 0 {
+			agentMsgCount += count
+		}
+	}
+
+	return models.SessionEntry{
+		SessionID:         sessionID,
+		FullPath:          fullPath,
+		MessageCount:      parentMsgCount + agentMsgCount, // Total for consistency
+		Created:           modTime,                        // Best approximation
+		Modified:          modTime,
+		AgentPaths:        agentPaths,
+		AgentCount:        len(agentPaths),
+		AgentMessageCount: agentMsgCount,
+	}
+}
+
+// MergeSessionSources combines index entries with disk-discovered sessions.
+// Index entries take precedence for metadata (Created time, etc.).
+// Index-only entries (present in the index but missed by the disk scan) are
+// kept only if their FullPath resolves inside projectDir and still exists;
+// their message counts and agent info are recomputed from disk because the
+// index may be stale. Returns merged list and count of orphaned sessions
+// found on disk.
+func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.SessionEntry, projectDir string) ([]models.SessionEntry, int) {
 	// Build map from index for fast lookup
 	indexMap := make(map[string]models.SessionEntry)
 	if index != nil {
@@ -221,14 +224,39 @@ func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.Sess
 		}
 	}
 
-	// Add index entries only if their files still exist on disk
+	// Add index-only entries whose files still exist inside projectDir. The
+	// index's FullPath is untrusted (may point outside the project) and its
+	// counts may be stale, so validate the path and rebuild from disk.
 	for _, e := range indexMap {
-		if _, err := os.Stat(e.FullPath); err == nil {
-			merged = append(merged, e)
+		if !pathWithinDir(e.FullPath, projectDir) {
+			continue
 		}
+		info, err := os.Stat(e.FullPath)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		rebuilt := buildDiskEntry(projectDir, e.SessionID, e.FullPath, info.ModTime())
+		// Index metadata still takes precedence, as in the matched branch above
+		rebuilt.Created = e.Created
+		rebuilt.ProjectPath = e.ProjectPath
+		merged = append(merged, rebuilt)
 	}
 
 	return merged, orphanCount
+}
+
+// pathWithinDir reports whether path resolves lexically inside dir. Symlinks
+// are not resolved — this guards against index entries that plainly point
+// outside the project directory, not against adversarial filesystems.
+func pathWithinDir(path, dir string) bool {
+	if path == "" || dir == "" {
+		return false
+	}
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // DiscoverAgentSessions finds agent-*.jsonl files in {sessionID}/subagents/
@@ -271,8 +299,9 @@ func ExtractAgentID(agentPath string) string {
 // countMessagesInFile counts distinct assistant messages in a JSONL file.
 // Streaming lines repeating the same message.id + requestId count once, so
 // the count matches the deduplicated analysis (see DeduplicateMessages).
-// Returns -1 on error (file access, I/O) to distinguish from empty files (0)
-// Returns partial count on buffer overflow (oversized lines are skipped)
+// Returns -1 on error (file access, I/O) to distinguish from empty files (0).
+// Oversized lines are skipped individually; counting continues after them,
+// matching ParseJSONLWithResult.
 func countMessagesInFile(path string) int {
 	file, err := os.Open(path)
 	if err != nil {
@@ -282,13 +311,17 @@ func countMessagesInFile(path string) int {
 
 	count := 0 // lines without a message id — never collapsed
 	seen := make(map[string]struct{})
-	scanner := bufio.NewScanner(file)
-	buf := make([]byte, 0, scannerInitialBufSize)
-	scanner.Buffer(buf, scannerMaxBufSize)
+	reader := bufio.NewReaderSize(file, readerBufSize)
 
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
+	for {
+		line, oversized, err := readLine(reader, maxLineBytes)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return -1 // I/O error
+		}
+		if oversized || len(line) == 0 {
 			continue
 		}
 		var msg struct {
@@ -305,12 +338,6 @@ func countMessagesInFile(path string) int {
 				seen[msg.Message.ID+":"+msg.RequestID] = struct{}{}
 			}
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		if errors.Is(err, bufio.ErrTooLong) {
-			return count + len(seen) // Return partial count for oversized lines
-		}
-		return -1 // I/O error
 	}
 	return count + len(seen)
 }

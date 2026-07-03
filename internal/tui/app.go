@@ -859,6 +859,16 @@ func (m Model) renderFooter() string {
 		footerLine = footerStyle.Render(fmt.Sprintf("Messages: %d  │  Duration: %s",
 			a.MessageCount, formatDuration(a.Duration.Duration())))
 	}
+
+	// Surface parse warnings so undercounted totals don't look authoritative
+	if a.SkippedLines > 0 {
+		if m.noColor {
+			footerLine += fmt.Sprintf("  │  ! %d skipped line(s)", a.SkippedLines)
+		} else {
+			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
+			footerLine += footerStyle.Render("  │  ") + warnStyle.Render(fmt.Sprintf("⚠ %d skipped line(s)", a.SkippedLines))
+		}
+	}
 	return footerLine
 }
 

@@ -2,58 +2,36 @@ package parser
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 
 	"github.com/bardisty/ccusage/internal/models"
 )
 
-// maxSkippedLineNumbers is the maximum number of skipped line numbers to track.
-// This prevents unbounded memory growth on extremely malformed files.
-const maxSkippedLineNumbers = 100
+const (
+	// maxSkippedLineNumbers is the maximum number of skipped line numbers to track.
+	// This prevents unbounded memory growth on extremely malformed files.
+	maxSkippedLineNumbers = 100
+
+	// readerBufSize is the bufio.Reader buffer size (64KB). Longer lines are
+	// accumulated chunk by chunk, so this only sets the read granularity.
+	readerBufSize = 64 * 1024
+
+	// maxLineBytes caps how many bytes of a single JSONL line are held in
+	// memory (50MB). Lines with embedded base64 images can exceed 10MB, so the
+	// cap is generous; a line over it is skipped (counted in ParseResult) and
+	// parsing continues with the next line.
+	maxLineBytes = 50 * 1024 * 1024
+)
 
 // ParseResult contains the parsed messages and any parse warnings
 type ParseResult struct {
 	Messages     []models.JSONLMessage
-	SkippedLines int   // Number of lines that failed to parse
+	SkippedLines int   // Number of lines skipped (malformed JSON or longer than maxLineBytes)
 	SkippedAt    []int // Line numbers of skipped lines (1-indexed, capped at maxSkippedLineNumbers)
-}
-
-// Warning returns a warning message if any lines were skipped, empty string otherwise
-func (r ParseResult) Warning() string {
-	if r.SkippedLines == 0 {
-		return ""
-	}
-	if r.SkippedLines == 1 {
-		if len(r.SkippedAt) > 0 {
-			return fmt.Sprintf("warning: 1 malformed line skipped (line %d)", r.SkippedAt[0])
-		}
-		return "warning: 1 malformed line skipped"
-	}
-	// Show first few line numbers if there are many
-	if len(r.SkippedAt) > 5 {
-		return fmt.Sprintf("warning: %d malformed lines skipped (lines %v and %d more)",
-			r.SkippedLines, r.SkippedAt[:5], r.SkippedLines-5)
-	}
-	return fmt.Sprintf("warning: %d malformed lines skipped (lines %v)", r.SkippedLines, r.SkippedAt)
-}
-
-// ParseJSONLFile parses a session JSONL file and returns assistant messages with usage data
-func ParseJSONLFile(path string) ([]models.JSONLMessage, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	result, err := ParseJSONLWithResult(file)
-	if err != nil {
-		return nil, err
-	}
-	return result.Messages, nil
 }
 
 // ParseJSONLFileWithResult parses a session JSONL file and returns detailed results
@@ -79,16 +57,27 @@ func ParseJSONL(r io.Reader) ([]models.JSONLMessage, error) {
 // ParseJSONLWithResult parses JSONL content and returns detailed results including skipped lines
 func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 	result := &ParseResult{}
-	scanner := bufio.NewScanner(r)
-
-	// Increase buffer size for large lines (constants defined in sessions.go)
-	buf := make([]byte, 0, scannerInitialBufSize)
-	scanner.Buffer(buf, scannerMaxBufSize)
+	reader := bufio.NewReaderSize(r, readerBufSize)
 
 	lineNum := 0
-	for scanner.Scan() {
+	for {
+		line, oversized, err := readLine(reader, maxLineBytes)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
 		lineNum++
-		line := scanner.Bytes()
+
+		if oversized {
+			// Skip just this line and keep parsing the rest of the file
+			result.SkippedLines++
+			if len(result.SkippedAt) < maxSkippedLineNumbers {
+				result.SkippedAt = append(result.SkippedAt, lineNum)
+			}
+			continue
+		}
 		if len(line) == 0 {
 			continue
 		}
@@ -109,21 +98,52 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		if errors.Is(err, bufio.ErrTooLong) {
-			// Return partial results — one oversized line shouldn't destroy the session
-			result.SkippedLines++
-			if len(result.SkippedAt) < maxSkippedLineNumbers {
-				result.SkippedAt = append(result.SkippedAt, lineNum+1)
-			}
-			result.Messages = DeduplicateMessages(result.Messages)
-			return result, nil
-		}
-		return nil, err
-	}
-
 	result.Messages = DeduplicateMessages(result.Messages)
 	return result, nil
+}
+
+// readLine reads the next line from r, without the trailing newline. A line
+// longer than maxLen is discarded through to its newline and reported with
+// oversized=true so the caller can count it and continue with the next line
+// (bufio.Scanner cannot do this: ErrTooLong aborts the whole scan).
+// err is io.EOF only when no line remains.
+func readLine(r *bufio.Reader, maxLen int) (line []byte, oversized bool, err error) {
+	var buf []byte
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if !oversized && len(buf)+len(chunk) > maxLen {
+			oversized = true
+			buf = nil
+		}
+		if !oversized {
+			buf = append(buf, chunk...)
+		}
+		switch {
+		case err == nil: // reached the newline
+			if oversized {
+				return nil, true, nil
+			}
+			return trimLineEnding(buf), false, nil
+		case errors.Is(err, bufio.ErrBufferFull): // line continues past the buffer
+			continue
+		case errors.Is(err, io.EOF):
+			if oversized {
+				return nil, true, nil
+			}
+			if len(buf) == 0 {
+				return nil, false, io.EOF
+			}
+			return trimLineEnding(buf), false, nil // final line without newline
+		default:
+			return nil, false, err
+		}
+	}
+}
+
+// trimLineEnding strips a trailing "\n" or "\r\n".
+func trimLineEnding(line []byte) []byte {
+	line = bytes.TrimSuffix(line, []byte("\n"))
+	return bytes.TrimSuffix(line, []byte("\r"))
 }
 
 // dedupKey identifies the API response a JSONL line belongs to, so streaming

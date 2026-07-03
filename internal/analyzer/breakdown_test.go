@@ -27,7 +27,7 @@ func TestGetBreakdownMessages(t *testing.T) {
 	}
 
 	// Get breakdown messages
-	messages, err := GetBreakdownMessages(sessionPath, sessionID)
+	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
@@ -57,6 +57,47 @@ func TestGetBreakdownMessages(t *testing.T) {
 		if messages[i].Timestamp.Before(messages[i-1].Timestamp) {
 			t.Error("messages should be in chronological order")
 		}
+	}
+}
+
+func TestGetBreakdownMessages_SkippedLines(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sessionID := "skipped-session"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+
+	// 1 valid message + 1 malformed line in the parent
+	parentContent := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":50}}}
+{not json`
+
+	if err := os.WriteFile(sessionPath, []byte(parentContent), 0644); err != nil {
+		t.Fatalf("failed to write session file: %v", err)
+	}
+
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatalf("failed to create subagents dir: %v", err)
+	}
+
+	// 1 valid message + 2 malformed lines in the agent
+	agentContent := `{"type":"assistant","timestamp":"2024-01-15T10:30:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":50,"output_tokens":25}}}
+garbage
+{"broken`
+
+	if err := os.WriteFile(filepath.Join(subagentsDir, "agent-x1.jsonl"), []byte(agentContent), 0644); err != nil {
+		t.Fatalf("failed to write agent file: %v", err)
+	}
+
+	messages, skippedLines, err := GetBreakdownMessages(sessionPath, sessionID)
+	if err != nil {
+		t.Fatalf("GetBreakdownMessages failed: %v", err)
+	}
+
+	if skippedLines != 3 {
+		t.Errorf("skippedLines: got %d, want 3 (1 parent + 2 agent)", skippedLines)
+	}
+	if len(messages) != 2 {
+		t.Errorf("expected 2 messages, got %d", len(messages))
 	}
 }
 
@@ -94,7 +135,7 @@ func TestGetBreakdownMessages_WithAgents(t *testing.T) {
 	}
 
 	// Get breakdown messages
-	messages, err := GetBreakdownMessages(sessionPath, sessionID)
+	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
@@ -140,7 +181,7 @@ func TestGetBreakdownMessages_EmptySession(t *testing.T) {
 		t.Fatalf("failed to write session file: %v", err)
 	}
 
-	messages, err := GetBreakdownMessages(sessionPath, sessionID)
+	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
@@ -167,7 +208,7 @@ func TestGetBreakdownMessages_CostCalculation(t *testing.T) {
 		t.Fatalf("failed to write session file: %v", err)
 	}
 
-	messages, err := GetBreakdownMessages(sessionPath, sessionID)
+	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
@@ -231,7 +272,7 @@ func TestGetBreakdownMessages_ChronologicalMerge(t *testing.T) {
 		t.Fatalf("failed to write agent file: %v", err)
 	}
 
-	messages, err := GetBreakdownMessages(sessionPath, sessionID)
+	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
