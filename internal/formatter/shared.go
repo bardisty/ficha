@@ -1,0 +1,248 @@
+package formatter
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ccusage/internal/pricing"
+	"github.com/bardisty/ccusage/internal/render"
+	"github.com/bardisty/ccusage/internal/styles"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Local aliases for frequently used styles
+var (
+	savingsLabelStyle  = styles.SavingsLabelStyle
+	footerStyle        = styles.FooterStyle
+	heroCostStyle      = styles.HeroCostStyle
+	sectionHeaderStyle = styles.SectionHeaderStyle
+	panelBorderStyle   = styles.PanelBorderStyle
+	dimStyle           = styles.DimStyle
+	headerStyle        = styles.HeaderStyle
+)
+
+// renderHeaderPanel renders the mainframe-style header panel
+// Format:
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Session: xxx  │  Duration: Xh Ym                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool) string {
+	var sb strings.Builder
+
+	if width < 40 {
+		width = 76
+	}
+
+	innerWidth := width - 6 // 2 for borders, 2 for left padding, 2 for right padding
+
+	// Detect summary vs show mode
+	isSummary := analysis.IsSummary
+
+	// Build content parts - use consistent format for both plain and styled
+	var titlePart string
+	var sessionCount int
+	var sessionWord string
+	if isSummary {
+		sessionCount = analysis.SessionCount
+		sessionWord = "sessions"
+		if sessionCount == 1 {
+			sessionWord = "session"
+		}
+		titlePart = fmt.Sprintf("Summary: %d %s", sessionCount, sessionWord)
+	} else {
+		titlePart = fmt.Sprintf("Session: %s", render.TruncateID(analysis.SessionID, 40))
+	}
+
+	// Summaries aggregate many sessions and can span days, so they use the
+	// day-aware format; a single session stays in hours.
+	durationValue := render.Duration(analysis.Duration.Duration())
+	if isSummary {
+		durationValue = render.DurationLong(analysis.Duration.Duration())
+	}
+	durationPart := fmt.Sprintf("Duration: %s", durationValue)
+
+	// Calculate content length
+	sep := styles.BoxVerticalSep
+	content := fmt.Sprintf("%s  %s  %s", titlePart, sep, durationPart)
+	contentLen := len(titlePart) + 2 + 1 + 2 + len(durationPart)
+	padding := innerWidth - contentLen
+	if padding < 0 {
+		padding = 0
+	}
+
+	if noColor {
+		// Top border
+		sb.WriteString(styles.BoxTopLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxTopRight)
+		sb.WriteString("\n")
+
+		// Content line
+		sb.WriteString(styles.BoxVertical)
+		sb.WriteString("  ")
+		sb.WriteString(content)
+		sb.WriteString(strings.Repeat(" ", padding))
+		sb.WriteString("  ")
+		sb.WriteString(styles.BoxVertical)
+		sb.WriteString("\n")
+
+		// Bottom border
+		sb.WriteString(styles.BoxBottomLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxBottomRight)
+	} else {
+		// Build styled content - matches plain text format
+		var titleStyled string
+		if isSummary {
+			titleStyled = fmt.Sprintf("%s %d %s",
+				sectionHeaderStyle.Render("Summary:"),
+				sessionCount, sessionWord)
+		} else {
+			titleStyled = fmt.Sprintf("%s %s",
+				sectionHeaderStyle.Render("Session:"),
+				render.TruncateID(analysis.SessionID, 40))
+		}
+
+		durationStyled := fmt.Sprintf("Duration: %s", durationValue)
+		sepStyled := panelBorderStyle.Render(sep)
+
+		// Top border
+		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
+		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
+		sb.WriteString(panelBorderStyle.Render(styles.BoxTopRight))
+		sb.WriteString("\n")
+
+		// Content line
+		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
+		sb.WriteString("  ")
+		sb.WriteString(titleStyled)
+		sb.WriteString("  ")
+		sb.WriteString(sepStyled)
+		sb.WriteString("  ")
+		sb.WriteString(durationStyled)
+		sb.WriteString(strings.Repeat(" ", padding))
+		sb.WriteString("  ")
+		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
+		sb.WriteString("\n")
+
+		// Bottom border
+		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomLeft))
+		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
+		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomRight))
+	}
+
+	return sb.String()
+}
+
+// renderHeroCost renders the total cost integrated into a section header
+// Format: ─────────────────────[ $12.665834 TOTAL ]─────────────────────
+func renderHeroCost(cost float64, width int, noColor bool) string {
+	costFull := fmt.Sprintf("$%.6f", cost)
+	costStr := costFull + " TOTAL"
+	bracketedCost := "[ " + costStr + " ]"
+	costLen := len(bracketedCost)
+	sideLen := (width - costLen) / 2
+	if sideLen < 0 {
+		sideLen = 0
+	}
+	rightLen := width - sideLen - costLen
+	if rightLen < 0 {
+		rightLen = 0
+	}
+
+	leftLine := strings.Repeat(styles.LineHorizontal, sideLen)
+	rightLine := strings.Repeat(styles.LineHorizontal, rightLen)
+
+	if noColor {
+		return leftLine + bracketedCost + rightLine
+	}
+
+	// Cost with dimmed trailing decimals
+	var costStyled string
+	dotIdx := strings.Index(costFull, ".")
+	if dotIdx != -1 && len(costFull) > dotIdx+3 {
+		mainPart := costFull[:dotIdx+3]  // "$12.66"
+		extraPart := costFull[dotIdx+3:] // "5834"
+		costStyled = heroCostStyle.Render(mainPart) + dimStyle.Render(extraPart) + heroCostStyle.Render(" TOTAL")
+	} else {
+		costStyled = heroCostStyle.Render(costStr)
+	}
+
+	return dimStyle.Render(leftLine) + "[ " + costStyled + " ]" + dimStyle.Render(rightLine)
+}
+
+// renderUnifiedCostRow renders a single row with cost and token info combined
+// Format: "  Label          $0.371042     53.9K tokens"
+func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor lipgloss.Color, extra string, noColor bool) string {
+	// Format label with optional color
+	var labelStr string
+	if !noColor && labelColor != "" {
+		labelStyled := lipgloss.NewStyle().Foreground(labelColor)
+		labelStr = labelStyled.Render(fmt.Sprintf("%-14s", label))
+	} else {
+		labelStr = fmt.Sprintf("%-14s", label)
+	}
+
+	// Format cost (11 chars width)
+	costStr := formatCostStyled(cost, 11, noColor)
+
+	// Format tokens
+	tokenStr := fmt.Sprintf("%12s", render.Number(tokens))
+
+	// Add extra info (like TTL)
+	extraStr := ""
+	if extra != "" {
+		if !noColor {
+			extraStr = "  " + dimStyle.Render(extra)
+		} else {
+			extraStr = "  " + extra
+		}
+	}
+
+	return fmt.Sprintf("  %s %s  %s tokens%s\n", labelStr, costStr, tokenStr, extraStr)
+}
+
+// renderUnifiedCostRowPlain renders a cost row in plain text mode
+func renderUnifiedCostRowPlain(label string, cost float64, tokens int64, extra string) string {
+	extraStr := ""
+	if extra != "" {
+		extraStr = "  " + extra
+	}
+	return fmt.Sprintf("  %-14s %11s  %12s tokens%s\n", label, render.Cost(cost), render.Number(tokens), extraStr)
+}
+
+// formatCostByModelContent renders cost by model rows (content only, no header)
+func formatCostByModelContent(analysis *models.SessionAnalysis, noColor bool) string {
+	var sb strings.Builder
+
+	// Highest-cost model first.
+	for _, modelID := range render.OrderModelsByCost(analysis.CostByModel) {
+		cost := analysis.CostByModel[modelID]
+		modelName := pricing.GetModelDisplayName(modelID)
+		if noColor {
+			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelName, render.Cost(cost.TotalCost)))
+		} else {
+			// Color by model tier
+			modelColor := styles.GetModelColor(modelName)
+			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-12s", modelName))
+			sb.WriteString(fmt.Sprintf("    %s %s\n", modelStyled, formatCostStyled(cost.TotalCost, 12, noColor)))
+		}
+	}
+
+	return sb.String()
+}
+
+// The static formatter never highlights changed values, so these wrappers pin
+// render's highlighted parameter to false.
+func formatCostStyled(cost float64, width int, noColor bool) string {
+	return render.CostStyled(cost, width, false, noColor)
+}
+
+func formatCostStyledGreen(cost float64, width int, noColor bool) string {
+	return render.CostStyledGreen(cost, width, false, noColor)
+}
+
+func formatCostStyledBoldGreen(cost float64, width int, noColor bool) string {
+	return render.CostStyledBoldGreen(cost, width, false, noColor)
+}
