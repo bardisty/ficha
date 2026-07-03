@@ -146,6 +146,10 @@ func AnalyzeAgent(agentPath string, includeMessages bool) (*models.AgentAnalysis
 
 // AnalyzeSessionFromMessages analyzes already-parsed messages
 func AnalyzeSessionFromMessages(sessionID string, sessionPath string, messages []models.JSONLMessage, includeMessages bool) *models.SessionAnalysis {
+	// Collapse repeated streaming lines — messages may come from sources that
+	// bypass ParseJSONLWithResult's dedup (no-op when already deduplicated)
+	messages = parser.DeduplicateMessages(messages)
+
 	// Extract usage data from messages
 	messageAnalyses := parser.ExtractUsageFromMessages(messages)
 

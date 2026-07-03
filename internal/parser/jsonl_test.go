@@ -246,3 +246,109 @@ func TestExtractUsageFromMessages(t *testing.T) {
 		t.Errorf("Timestamp: got %v, want %v", a.Timestamp, expectedTime)
 	}
 }
+
+// === Deduplication Tests ===
+
+// TestParseJSONLDeduplicatesStreamingLines mirrors real Claude Code session
+// files: the same assistant message (same message.id + requestId) is written
+// once per streaming chunk with output_tokens growing across lines. Only the
+// last line carries the final billed usage.
+func TestParseJSONLDeduplicatesStreamingLines(t *testing.T) {
+	input := `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","requestId":"req_A","message":{"id":"msg_A","model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":5,"cache_creation_input_tokens":800,"cache_read_input_tokens":9000}}}
+{"type":"assistant","timestamp":"2024-01-01T12:00:02Z","requestId":"req_A","message":{"id":"msg_A","model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":120,"cache_creation_input_tokens":800,"cache_read_input_tokens":9000}}}
+{"type":"assistant","timestamp":"2024-01-01T12:00:05Z","requestId":"req_A","message":{"id":"msg_A","model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":394,"cache_creation_input_tokens":800,"cache_read_input_tokens":9000}}}
+{"type":"assistant","timestamp":"2024-01-01T12:01:00Z","requestId":"req_B","message":{"id":"msg_B","model":"claude-opus-4-5","usage":{"input_tokens":50,"output_tokens":10}}}`
+
+	messages, err := ParseJSONL(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(messages) != 2 {
+		t.Fatalf("message count: got %d, want 2 (4 lines, 2 distinct message ids)", len(messages))
+	}
+
+	// First message keeps its position but carries the LAST line's usage
+	first := messages[0]
+	if first.Message.ID != "msg_A" {
+		t.Errorf("messages[0].ID: got %s, want msg_A", first.Message.ID)
+	}
+	if first.Message.Usage.OutputTokens != 394 {
+		t.Errorf("messages[0].OutputTokens: got %d, want 394 (final streaming line)", first.Message.Usage.OutputTokens)
+	}
+	expectedTime := time.Date(2024, 1, 1, 12, 0, 5, 0, time.UTC)
+	if !first.Timestamp.Equal(expectedTime) {
+		t.Errorf("messages[0].Timestamp: got %v, want %v (last line's timestamp)", first.Timestamp, expectedTime)
+	}
+
+	if messages[1].Message.ID != "msg_B" {
+		t.Errorf("messages[1].ID: got %s, want msg_B", messages[1].Message.ID)
+	}
+}
+
+func TestParseJSONLDedupKeyHandling(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		expectedCount int
+	}{
+		{
+			name: "missing message id never collapses",
+			input: `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"model":"claude-opus-4-5","usage":{"output_tokens":10}}}
+{"type":"assistant","timestamp":"2024-01-01T12:01:00Z","message":{"model":"claude-opus-4-5","usage":{"output_tokens":20}}}
+{"type":"assistant","timestamp":"2024-01-01T12:02:00Z","message":{"model":"claude-opus-4-5","usage":{"output_tokens":30}}}`,
+			expectedCount: 3,
+		},
+		{
+			name: "empty message id never collapses",
+			input: `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"id":"","model":"claude-opus-4-5","usage":{"output_tokens":10}}}
+{"type":"assistant","timestamp":"2024-01-01T12:01:00Z","message":{"id":"","model":"claude-opus-4-5","usage":{"output_tokens":20}}}`,
+			expectedCount: 2,
+		},
+		{
+			name: "same id different requestId kept separate",
+			input: `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","requestId":"req_A","message":{"id":"msg_A","model":"claude-opus-4-5","usage":{"output_tokens":10}}}
+{"type":"assistant","timestamp":"2024-01-01T12:01:00Z","requestId":"req_B","message":{"id":"msg_A","model":"claude-opus-4-5","usage":{"output_tokens":20}}}`,
+			expectedCount: 2,
+		},
+		{
+			name: "same id missing requestId still collapses",
+			input: `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"id":"msg_A","model":"claude-opus-4-5","usage":{"output_tokens":10}}}
+{"type":"assistant","timestamp":"2024-01-01T12:01:00Z","message":{"id":"msg_A","model":"claude-opus-4-5","usage":{"output_tokens":20}}}`,
+			expectedCount: 1,
+		},
+		{
+			name: "interleaved duplicates collapse to first-seen order",
+			input: `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","requestId":"req_A","message":{"id":"msg_A","model":"claude-opus-4-5","usage":{"output_tokens":5}}}
+{"type":"assistant","timestamp":"2024-01-01T12:00:01Z","requestId":"req_B","message":{"id":"msg_B","model":"claude-opus-4-5","usage":{"output_tokens":7}}}
+{"type":"assistant","timestamp":"2024-01-01T12:00:02Z","requestId":"req_A","message":{"id":"msg_A","model":"claude-opus-4-5","usage":{"output_tokens":50}}}`,
+			expectedCount: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			messages, err := ParseJSONL(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(messages) != tt.expectedCount {
+				t.Errorf("message count: got %d, want %d", len(messages), tt.expectedCount)
+			}
+		})
+	}
+}
+
+func TestDeduplicateMessagesPassthrough(t *testing.T) {
+	if got := DeduplicateMessages(nil); got != nil {
+		t.Errorf("nil input: got %v, want nil", got)
+	}
+
+	single, err := ParseJSONL(strings.NewReader(`{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"id":"msg_A","model":"claude-opus-4-5","usage":{"output_tokens":10}}}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := DeduplicateMessages(single); len(got) != 1 {
+		t.Errorf("single message: got %d messages, want 1", len(got))
+	}
+}

@@ -116,12 +116,54 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 			if len(result.SkippedAt) < maxSkippedLineNumbers {
 				result.SkippedAt = append(result.SkippedAt, lineNum+1)
 			}
+			result.Messages = DeduplicateMessages(result.Messages)
 			return result, nil
 		}
 		return nil, err
 	}
 
+	result.Messages = DeduplicateMessages(result.Messages)
 	return result, nil
+}
+
+// dedupKey identifies the API response a JSONL line belongs to, so streaming
+// lines of the same response can be collapsed. Returns "" for lines without a
+// message id — those must never be collapsed together.
+func dedupKey(msg models.JSONLMessage) string {
+	if msg.Message == nil || msg.Message.ID == "" {
+		return ""
+	}
+	return msg.Message.ID + ":" + msg.RequestID
+}
+
+// DeduplicateMessages collapses repeated streaming lines of the same API
+// response (same message.id + requestId). Claude Code writes an assistant
+// message once per streaming chunk with usage that grows across lines; only
+// the last line carries the final billed usage, so the last occurrence wins.
+// Order follows first appearance. Lines without a message id are kept as-is.
+func DeduplicateMessages(messages []models.JSONLMessage) []models.JSONLMessage {
+	if len(messages) < 2 {
+		return messages
+	}
+
+	deduped := make([]models.JSONLMessage, 0, len(messages))
+	seenIdx := make(map[string]int)
+
+	for _, msg := range messages {
+		key := dedupKey(msg)
+		if key == "" {
+			deduped = append(deduped, msg)
+			continue
+		}
+		if idx, ok := seenIdx[key]; ok {
+			deduped[idx] = msg
+			continue
+		}
+		seenIdx[key] = len(deduped)
+		deduped = append(deduped, msg)
+	}
+
+	return deduped
 }
 
 // ExtractUsageFromMessages extracts token usage data from parsed messages

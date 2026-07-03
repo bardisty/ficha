@@ -830,3 +830,25 @@ func TestCountMessagesInFile_NullMessage(t *testing.T) {
 		t.Errorf("expected 1 (only non-null message), got %d", count)
 	}
 }
+
+func TestCountMessagesInFile_DeduplicatesStreamingLines(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	testFile := filepath.Join(tmpDir, "test.jsonl")
+	// msg_A streamed across 3 lines, msg_B once, plus 2 lines without ids
+	content := `{"type":"assistant","requestId":"req_A","message":{"id":"msg_A","model":"test","usage":{"output_tokens":5}}}
+{"type":"assistant","requestId":"req_A","message":{"id":"msg_A","model":"test","usage":{"output_tokens":120}}}
+{"type":"assistant","requestId":"req_A","message":{"id":"msg_A","model":"test","usage":{"output_tokens":394}}}
+{"type":"assistant","requestId":"req_B","message":{"id":"msg_B","model":"test","usage":{"output_tokens":10}}}
+{"type":"assistant","message":{"model":"test"}}
+{"type":"assistant","message":{"model":"test"}}`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	count := countMessagesInFile(testFile)
+	if count != 4 {
+		t.Errorf("expected 4 (2 distinct ids + 2 id-less lines), got %d", count)
+	}
+}

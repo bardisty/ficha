@@ -410,3 +410,89 @@ func TestAnalyzeMultipleSessions_MixedSuccess(t *testing.T) {
 		t.Error("CostByModel missing claude-sonnet-4-5")
 	}
 }
+
+// TestAnalyzeSession_DeduplicatesStreamingLines verifies end-to-end that
+// streamed duplicate lines (same message.id + requestId, growing usage) are
+// billed once at the final line's usage. Without dedup this session would
+// count 4 messages and sum output 5+120+394+10 = 529.
+func TestAnalyzeSession_DeduplicatesStreamingLines(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sessionID := "sess-dedup"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+
+	content := strings.Join([]string{
+		`{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","requestId":"req_A","message":{"id":"msg_A","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":5}}}`,
+		`{"type":"assistant","timestamp":"2024-01-15T10:00:02Z","requestId":"req_A","message":{"id":"msg_A","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":120}}}`,
+		`{"type":"assistant","timestamp":"2024-01-15T10:00:05Z","requestId":"req_A","message":{"id":"msg_A","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":394}}}`,
+		`{"type":"assistant","timestamp":"2024-01-15T10:10:00Z","requestId":"req_B","message":{"id":"msg_B","model":"claude-sonnet-4-5","usage":{"input_tokens":500,"output_tokens":10}}}`,
+	}, "\n")
+
+	if err := os.WriteFile(sessionPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write session file: %v", err)
+	}
+
+	analysis, err := AnalyzeSession(sessionPath, sessionID, false)
+	if err != nil {
+		t.Fatalf("AnalyzeSession failed: %v", err)
+	}
+
+	if analysis.MessageCount != 2 {
+		t.Errorf("MessageCount: got %d, want 2 (4 lines, 2 distinct message ids)", analysis.MessageCount)
+	}
+	if analysis.TotalUsage.InputTokens != 1500 {
+		t.Errorf("InputTokens: got %d, want 1500", analysis.TotalUsage.InputTokens)
+	}
+	if analysis.TotalUsage.OutputTokens != 404 {
+		t.Errorf("OutputTokens: got %d, want 404 (394 final + 10, not 529 summed)", analysis.TotalUsage.OutputTokens)
+	}
+
+	// claude-sonnet-4-5: $3/M input, $15/M output
+	// (1500/1e6)*3 + (404/1e6)*15 = 0.0045 + 0.00606 = 0.01056
+	if !almostEqual(analysis.TotalCost.TotalCost, 0.01056, 0.0001) {
+		t.Errorf("TotalCost: got %f, want 0.01056", analysis.TotalCost.TotalCost)
+	}
+
+	// EndTime comes from msg_B; StartTime from msg_A's last streaming line
+	expectedStart := time.Date(2024, 1, 15, 10, 0, 5, 0, time.UTC)
+	if !analysis.StartTime.Equal(expectedStart) {
+		t.Errorf("StartTime: got %v, want %v", analysis.StartTime, expectedStart)
+	}
+}
+
+// TestAnalyzeSessionFromMessages_Deduplicates covers the pre-parsed entry
+// point, which must dedup independently of ParseJSONLWithResult.
+func TestAnalyzeSessionFromMessages_Deduplicates(t *testing.T) {
+	ts := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	jsonlMessages := []models.JSONLMessage{
+		{
+			Type:      "assistant",
+			Timestamp: ts,
+			RequestID: "req_A",
+			Message: &models.AssistantMessage{
+				ID:    "msg_A",
+				Model: "claude-sonnet-4-5",
+				Usage: models.TokenUsage{InputTokens: 1000, OutputTokens: 5},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: ts.Add(3 * time.Second),
+			RequestID: "req_A",
+			Message: &models.AssistantMessage{
+				ID:    "msg_A",
+				Model: "claude-sonnet-4-5",
+				Usage: models.TokenUsage{InputTokens: 1000, OutputTokens: 500},
+			},
+		},
+	}
+
+	analysis := AnalyzeSessionFromMessages("test-session", "/path", jsonlMessages, false)
+
+	if analysis.MessageCount != 1 {
+		t.Errorf("MessageCount: got %d, want 1", analysis.MessageCount)
+	}
+	if analysis.TotalUsage.OutputTokens != 500 {
+		t.Errorf("OutputTokens: got %d, want 500 (last occurrence)", analysis.TotalUsage.OutputTokens)
+	}
+}
