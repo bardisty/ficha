@@ -3,7 +3,7 @@ package tui
 import (
 	"time"
 
-	"github.com/bardisty/ccusage/internal/analyzer"
+	"github.com/bardisty/ficha/internal/analyzer"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/fsnotify/fsnotify"
 )

@@ -3,10 +3,10 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/bardisty/ccusage/internal/analyzer"
-	"github.com/bardisty/ccusage/internal/formatter"
-	"github.com/bardisty/ccusage/internal/models"
-	"github.com/bardisty/ccusage/internal/tui"
+	"github.com/bardisty/ficha/internal/analyzer"
+	"github.com/bardisty/ficha/internal/formatter"
+	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
@@ -20,11 +20,11 @@ func newShowCmd(cfg *config) *cobra.Command {
 If no session ID is provided, shows the most recent session.
 
 Examples:
-  ccusage show                    Show latest session
-  ccusage show abc123             Show specific session
-  ccusage show --live             Watch latest session in real-time
-  ccusage show -f json            Output as JSON
-  ccusage show -f csv --messages  Per-message rows as CSV`,
+  ficha show                    Show latest session
+  ficha show abc123             Show specific session
+  ficha show --live             Watch latest session in real-time
+  ficha show -f json            Output as JSON
+  ficha show -f csv --messages  Per-message rows as CSV`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runShow(cfg, args, cfg.live)

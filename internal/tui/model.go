@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/NimbleMarkets/ntcharts/sparkline"
-	"github.com/bardisty/ccusage/internal/analyzer"
-	"github.com/bardisty/ccusage/internal/models"
-	"github.com/bardisty/ccusage/internal/styles"
+	"github.com/bardisty/ficha/internal/analyzer"
+	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"

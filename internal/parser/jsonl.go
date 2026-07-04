@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 )
 
 const (

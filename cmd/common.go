@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bardisty/ccusage/internal/models"
-	"github.com/bardisty/ccusage/internal/parser"
-	"github.com/bardisty/ccusage/internal/paths"
-	"github.com/bardisty/ccusage/internal/pricing"
+	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/parser"
+	"github.com/bardisty/ficha/internal/paths"
+	"github.com/bardisty/ficha/internal/pricing"
 )
 
 // ErrSessionNotFound is returned when a specific session ID cannot be matched

@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/bardisty/ccusage/internal/analyzer"
-	"github.com/bardisty/ccusage/internal/formatter"
+	"github.com/bardisty/ficha/internal/analyzer"
+	"github.com/bardisty/ficha/internal/formatter"
 	"github.com/spf13/cobra"
 )
 
@@ -20,10 +20,10 @@ This calculates the total cost and token usage across all sessions.
 per-session breakdown, --expand-agents adds each session's agent sub-sessions.
 
 Examples:
-  ccusage summary                           Show aggregate stats
-  ccusage summary --details                 Show per-session cost breakdown
-  ccusage summary --details --expand-agents Include agent sub-sessions
-  ccusage summary --details -f json         Per-session records as JSON`,
+  ficha summary                           Show aggregate stats
+  ficha summary --details                 Show per-session cost breakdown
+  ficha summary --details --expand-agents Include agent sub-sessions
+  ficha summary --details -f json         Per-session records as JSON`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSummary(cfg)

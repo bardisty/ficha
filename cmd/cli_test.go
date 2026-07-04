@@ -42,7 +42,7 @@ func TestVersionFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--version failed: %v", err)
 	}
-	want := "ccusage " + Version + "\n"
+	want := "ficha " + Version + "\n"
 	if out != want {
 		t.Errorf("got %q, want %q", out, want)
 	}
@@ -55,7 +55,7 @@ func TestVersionSubcommandIgnoresFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version -f xml should not error (format is ignored): %v", err)
 	}
-	want := "ccusage " + Version + "\n"
+	want := "ficha " + Version + "\n"
 	if out != want {
 		t.Errorf("got %q, want %q", out, want)
 	}

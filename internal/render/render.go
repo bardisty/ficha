@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bardisty/ccusage/internal/models"
-	"github.com/bardisty/ccusage/internal/pricing"
-	"github.com/bardisty/ccusage/internal/styles"
+	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/pricing"
+	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/lipgloss"
 )
 

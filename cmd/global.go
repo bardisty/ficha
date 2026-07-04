@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/bardisty/ccusage/internal/analyzer"
-	"github.com/bardisty/ccusage/internal/formatter"
-	"github.com/bardisty/ccusage/internal/parser"
+	"github.com/bardisty/ficha/internal/analyzer"
+	"github.com/bardisty/ficha/internal/formatter"
+	"github.com/bardisty/ficha/internal/parser"
 	"github.com/spf13/cobra"
 )
 
@@ -21,11 +21,11 @@ json/csv always export every project; --top and --details only shape the table
 (filter downstream with jq/head if you need a subset).
 
 Examples:
-  ccusage global                   Show global stats (top 10 projects)
-  ccusage global --details         Show all projects with cumulative column
-  ccusage global --top 20          Show top 20 projects
-  ccusage global --sort-by name    Sort by project name
-  ccusage global -f json           Output every project as JSON`,
+  ficha global                   Show global stats (top 10 projects)
+  ficha global --details         Show all projects with cumulative column
+  ficha global --top 20          Show top 20 projects
+  ficha global --sort-by name    Sort by project name
+  ficha global -f json           Output every project as JSON`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGlobal(cfg)

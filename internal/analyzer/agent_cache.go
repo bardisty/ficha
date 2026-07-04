@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bardisty/ccusage/internal/models"
-	"github.com/bardisty/ccusage/internal/parser"
+	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/parser"
 )
 
 // AgentParseCache memoizes parsed, cost-annotated agent sub-session messages

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 )
 
 func TestPathToProjectDir(t *testing.T) {
@@ -85,7 +85,7 @@ func TestGetSessionsIndexPath(t *testing.T) {
 
 func TestFindProjectDir(t *testing.T) {
 	// Create temp directory structure
-	tempDir, err := os.MkdirTemp("", "ccusage-test-*")
+	tempDir, err := os.MkdirTemp("", "ficha-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestFindProjectDir(t *testing.T) {
 
 func TestResolveProjectDir(t *testing.T) {
 	// Create temp directory structure
-	tempDir, err := os.MkdirTemp("", "ccusage-test-resolve-*")
+	tempDir, err := os.MkdirTemp("", "ficha-test-resolve-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}

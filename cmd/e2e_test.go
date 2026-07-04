@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 )
 
 // End-to-end tests drive the full parser→analyzer→formatter pipeline through a

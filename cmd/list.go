@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/bardisty/ccusage/internal/formatter"
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/formatter"
+	"github.com/bardisty/ficha/internal/models"
 	"github.com/spf13/cobra"
 )
 
@@ -18,9 +18,9 @@ func newListCmd(cfg *config) *cobra.Command {
 Sessions are sorted by modification time (most recent first).
 
 Examples:
-  ccusage list                    List all sessions
-  ccusage list -f json            Output as JSON
-  ccusage list -f csv             Output as CSV`,
+  ficha list                    List all sessions
+  ficha list -f json            Output as JSON
+  ficha list -f csv             Output as CSV`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runList(cfg)

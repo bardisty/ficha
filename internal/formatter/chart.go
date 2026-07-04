@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/NimbleMarkets/ntcharts/sparkline"
-	"github.com/bardisty/ccusage/internal/styles"
+	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/lipgloss"
 )
 

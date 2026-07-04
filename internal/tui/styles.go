@@ -1,6 +1,6 @@
 package tui
 
-import "github.com/bardisty/ccusage/internal/styles"
+import "github.com/bardisty/ficha/internal/styles"
 
 // Local aliases for frequently used styles
 var (

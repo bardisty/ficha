@@ -15,7 +15,7 @@ func newVersionCmd() *cobra.Command {
 		Short: "Print version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintf(cmd.OutOrStdout(), "ccusage %s\n", Version)
+			fmt.Fprintf(cmd.OutOrStdout(), "ficha %s\n", Version)
 			return nil
 		},
 	}

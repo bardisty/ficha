@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/bardisty/ccusage/internal/tui"
+	"github.com/bardisty/ficha/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
@@ -14,7 +14,7 @@ func newBreakdownCmd(cfg *config) *cobra.Command {
 		Short: "Show live per-message cost breakdown",
 		Long: `Show a live, scrollable per-message cost table for a Claude Code session.
 
-Run this alongside 'ccusage watch' in a separate terminal for detailed
+Run this alongside 'ficha watch' in a separate terminal for detailed
 cost visibility during Claude Code sessions.
 
 Features:
@@ -25,9 +25,9 @@ Features:
   - New rows highlighted briefly when they appear
 
 Examples:
-  ccusage breakdown              Show breakdown and auto-follow latest session
-  ccusage breakdown --no-follow  Show breakdown for latest, don't auto-follow
-  ccusage breakdown abc123       Show breakdown for specific session (pinned)`,
+  ficha breakdown              Show breakdown and auto-follow latest session
+  ficha breakdown --no-follow  Show breakdown for latest, don't auto-follow
+  ficha breakdown abc123       Show breakdown for specific session (pinned)`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runBreakdown(cfg, args)

@@ -3,7 +3,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 )
 
 func TestIsDriveRoot(t *testing.T) {

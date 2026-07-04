@@ -16,12 +16,12 @@ Do not agree just to be agreeable. Honest disagreement is more valuable than fal
 
 ## Project Overview
 
-ccusage is a Go CLI tool that analyzes Claude Code sessions and calculates API costs based on Anthropic's pricing model. It reads session data from `~/.claude/projects/` directories and provides cost breakdowns by model, including prompt caching economics.
+ficha is a Go CLI tool that analyzes Claude Code sessions and calculates API costs based on Anthropic's pricing model. It reads session data from `~/.claude/projects/` directories and provides cost breakdowns by model, including prompt caching economics.
 
 ## Build and Test Commands
 
 ```bash
-make build          # Build for current platform (output: bin/ccusage)
+make build          # Build for current platform (output: bin/ficha)
 make test           # Run all tests
 make test-coverage  # Run tests with coverage report
 make install        # Install to $GOPATH/bin

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bardisty/ccusage/internal/models"
-	"github.com/bardisty/ccusage/internal/render"
+	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 )
 
 // csvTimeFormat matches the timestamp layout used by the other CSV formatters.

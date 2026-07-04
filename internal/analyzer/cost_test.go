@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 )
 
 func almostEqual(a, b, tolerance float64) bool {
