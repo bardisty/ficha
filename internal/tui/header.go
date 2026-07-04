@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bardisty/ccusage/internal/render"
-	"github.com/bardisty/ccusage/internal/styles"
+	"github.com/bardisty/ficha/internal/render"
+	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/lipgloss"
 )
 

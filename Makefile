@@ -1,7 +1,7 @@
 .PHONY: build build-linux build-windows build-all clean test install lint fmt vet check update-golden
 
 # Binary name
-BINARY=ccusage
+BINARY=ficha
 
 # Build directories
 BIN_DIR=bin
@@ -17,7 +17,7 @@ GOMOD=$(GOCMD) mod
 VERSION=$(shell cat VERSION 2>/dev/null || echo "dev")
 
 # Build flags
-LDFLAGS=-ldflags "-s -w -X github.com/bardisty/ccusage/cmd.Version=$(VERSION)"
+LDFLAGS=-ldflags "-s -w -X github.com/bardisty/ficha/cmd.Version=$(VERSION)"
 
 # Default target
 all: build

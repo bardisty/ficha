@@ -1,4 +1,4 @@
-module github.com/bardisty/ccusage
+module github.com/bardisty/ficha
 
 go 1.25.6
 

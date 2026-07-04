@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bardisty/ccusage/internal/analyzer"
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/analyzer"
+	"github.com/bardisty/ficha/internal/models"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -255,7 +255,7 @@ func goldenGlobalAnalysis() *models.GlobalAnalysis {
 	return &models.GlobalAnalysis{
 		Projects: []models.ProjectAnalysis{
 			{
-				ProjectInfo:  models.ProjectInfo{DisplayName: "ccusage"},
+				ProjectInfo:  models.ProjectInfo{DisplayName: "example"},
 				TotalCost:    models.CostBreakdown{TotalCost: 123.45},
 				SessionCount: 42,
 				MessageCount: 2400,

@@ -1,7 +1,7 @@
 package analyzer
 
 import (
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 )
 
 // Insight calculation thresholds

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/bardisty/ccusage/internal/models"
-	"github.com/bardisty/ccusage/internal/parser"
+	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/parser"
 )
 
 // AnalyzeSession analyzes a session JSONL file and returns the complete analysis.

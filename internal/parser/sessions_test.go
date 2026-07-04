@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 )
 
 func TestDiscoverSessionsFromDisk(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 )
 
 const (

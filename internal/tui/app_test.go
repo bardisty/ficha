@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"

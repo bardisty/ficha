@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 )
 
 // nonAlphanumericRegex matches any character that isn't alphanumeric or dash

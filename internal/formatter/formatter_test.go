@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )

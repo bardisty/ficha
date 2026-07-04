@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bardisty/ccusage/internal/models"
-	"github.com/bardisty/ccusage/internal/styles"
+	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 // FormatSessionListTable formats a list of sessions as a table

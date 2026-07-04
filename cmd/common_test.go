@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 )
 
 func TestFindSessionByPartialID(t *testing.T) {

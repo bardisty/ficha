@@ -5,9 +5,9 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/bardisty/ccusage/internal/models"
-	"github.com/bardisty/ccusage/internal/parser"
-	"github.com/bardisty/ccusage/internal/paths"
+	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/parser"
+	"github.com/bardisty/ficha/internal/paths"
 )
 
 // projectResult holds the result of analyzing a single project

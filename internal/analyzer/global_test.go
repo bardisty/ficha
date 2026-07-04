@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bardisty/ccusage/internal/models"
+	"github.com/bardisty/ficha/internal/models"
 )
 
 // --- 1A: TestSortProjectsBy ---

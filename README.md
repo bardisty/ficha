@@ -1,29 +1,29 @@
-# ccusage
+# ficha
 
 ```
 ╔══════════════════════════════════════════════════════════════════════╗
-║                              ccusage                                 ║
+║                                ficha                                 ║
 ║           Track your Claude Code API costs in real-time              ║
 ╚══════════════════════════════════════════════════════════════════════╝
 
 ─── QUICKSTART ────────────────────────────────────────────────────────
 
-  Install:    go install github.com/bardisty/ccusage@latest
+  Install:    go install github.com/bardisty/ficha@latest
 
-  Usage:      ccusage              View current session costs
-              ccusage watch        Live monitoring (auto-follows)
+  Usage:      ficha              View current session costs
+              ficha watch        Live monitoring (auto-follows)
 
 ─── COMMANDS ──────────────────────────────────────────────────────────
 
   Command              Description
   ───────────────────  ───────────────────────────────────────────────
-  ccusage [show]       Show latest (or specified) session costs
-  ccusage watch        Live monitoring with auto-follow
-  ccusage breakdown    Per-message cost table (scrollable)
-  ccusage list         List all sessions
-  ccusage summary      Total costs across all sessions
-  ccusage global       Aggregated stats across ALL projects
-  ccusage version      Print version information
+  ficha [show]       Show latest (or specified) session costs
+  ficha watch        Live monitoring with auto-follow
+  ficha breakdown    Per-message cost table (scrollable)
+  ficha list         List all sessions
+  ficha summary      Total costs across all sessions
+  ficha global       Aggregated stats across ALL projects
+  ficha version      Print version information
 
 ─── FLAGS ─────────────────────────────────────────────────────────────
 
@@ -46,13 +46,13 @@
 
 ─── EXAMPLES ──────────────────────────────────────────────────────────
 
-  ccusage show abc123           View session by partial ID
-  ccusage watch abc123          Watch specific session (pinned)
-  ccusage -f json > out.json    Export to JSON
-  ccusage summary -d -f csv     Per-session rows as CSV
-  ccusage global --top 5        Top 5 projects by cost
-  ccusage show -f csv --messages Per-message rows as CSV
-  ccusage list -p /path/to/dir  List sessions for different project
+  ficha show abc123           View session by partial ID
+  ficha watch abc123          Watch specific session (pinned)
+  ficha -f json > out.json    Export to JSON
+  ficha summary -d -f csv     Per-session rows as CSV
+  ficha global --top 5        Top 5 projects by cost
+  ficha show -f csv --messages Per-message rows as CSV
+  ficha list -p /path/to/dir  List sessions for different project
 
 ─── MACHINE OUTPUT (json / csv) ───────────────────────────────────────
 

@@ -20,18 +20,18 @@ func newRootCmd() *cobra.Command {
 	cfg := &config{}
 
 	rootCmd := &cobra.Command{
-		Use:   "ccusage",
+		Use:   "ficha",
 		Short: "Claude Code Usage Analyzer",
-		Long: `ccusage - Claude Code Usage Analyzer
+		Long: `ficha - Claude Code Usage Analyzer
 
 Analyzes Claude Code sessions and calculates API costs based on Anthropic pricing.
 
 Examples:
-  ccusage                    Show cost breakdown for latest session
-  ccusage show abc123        Show cost breakdown for specific session
-  ccusage list               List all sessions for current project
-  ccusage summary            Show aggregate stats across all sessions
-  ccusage --live             Watch session in real-time`,
+  ficha                    Show cost breakdown for latest session
+  ficha show abc123        Show cost breakdown for specific session
+  ficha list               List all sessions for current project
+  ficha summary            Show aggregate stats across all sessions
+  ficha --live             Watch session in real-time`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       Version,
@@ -67,7 +67,7 @@ Examples:
 			return runShow(cfg, args, cfg.live)
 		},
 	}
-	rootCmd.SetVersionTemplate("ccusage {{.Version}}\n")
+	rootCmd.SetVersionTemplate("ficha {{.Version}}\n")
 
 	// Global flags
 	rootCmd.PersistentFlags().StringVarP(&cfg.projectPath, "project", "p", "", "Project directory (default: current directory)")
