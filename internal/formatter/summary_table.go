@@ -287,7 +287,7 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 
 			// Render agent tree rows if this session has agents
 			if sd.analysis != nil && sd.analysis.HasAgents && len(sd.analysis.Agents) > 0 {
-				sb.WriteString(renderAgentTreeRows(sd.analysis.Agents, noColor))
+				sb.WriteString(renderAgentTreeRows(sd.analysis, noColor))
 			}
 		} else {
 			// Default view: AGENTS before COST (groups metadata, then costs)
@@ -390,8 +390,10 @@ func formatAgentsColumn(analysis *models.SessionAnalysis, noColor bool) string {
 // Tree connectors: ├─ for all but last, └─ for final agent
 // Compact format: "    ├─ [A1] Haiku 4.5  45 msgs  $0.18"
 // Follows RFC brutalist principle: remove the unnecessary (no agent ID - it's noise)
-func renderAgentTreeRows(agents []models.AgentAnalysis, noColor bool) string {
+// Workflow agents get a dim group-header line before each run's first agent.
+func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool) string {
 	var sb strings.Builder
+	agents := analysis.Agents
 
 	// Tree connector characters
 	var branchChar, lastBranchChar string
@@ -403,7 +405,19 @@ func renderAgentTreeRows(agents []models.AgentAnalysis, noColor bool) string {
 		lastBranchChar = "└─"
 	}
 
+	prevWorkflow := ""
 	for i, agent := range agents {
+		if agent.WorkflowID != prevWorkflow {
+			prevWorkflow = agent.WorkflowID
+			if agent.WorkflowID != "" {
+				label := render.WorkflowLabel(analysis.WorkflowByID(agent.WorkflowID))
+				if noColor {
+					sb.WriteString(fmt.Sprintf("       -- %s\n", label))
+				} else {
+					sb.WriteString("       " + dimStyle.Render("── "+label) + "\n")
+				}
+			}
+		}
 		agentNum := i + 1
 		isLast := i == len(agents)-1
 

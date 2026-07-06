@@ -476,3 +476,123 @@ func TestGoldenSummaryDetailsColor(t *testing.T) {
 	analysis, results := summaryDetailsAnalysis(t, entries)
 	checkGolden(t, "summary_details_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, false))
 }
+
+// --- golden tests: workflow agent grouping ---
+
+// goldenShowWorkflowAnalysis extends goldenShowAnalysis with a workflow run:
+// two workflow agents (different models) after the regular agents, plus run
+// metadata, exercising the dim group-header line in the agent section.
+func goldenShowWorkflowAnalysis() *models.SessionAnalysis {
+	a := goldenShowAnalysis()
+	a.Agents = append(a.Agents,
+		models.AgentAnalysis{
+			AgentID:      "w1a2b3c4d5e6",
+			WorkflowID:   "wf_2e7850b6-b19",
+			MessageCount: 21,
+			TotalCost:    models.CostBreakdown{TotalCost: 1.10},
+			CostByModel: map[string]models.CostBreakdown{
+				"claude-opus-4-8": {TotalCost: 1.10},
+			},
+			StartTime: goldenTime(11, 5, 0),
+			EndTime:   goldenTime(11, 15, 0),
+			Duration:  models.Duration(10 * time.Minute),
+		},
+		models.AgentAnalysis{
+			AgentID:      "w6e5d4c3b2a1",
+			WorkflowID:   "wf_2e7850b6-b19",
+			MessageCount: 1,
+			TotalCost:    models.CostBreakdown{TotalCost: 0.55},
+			CostByModel: map[string]models.CostBreakdown{
+				"claude-sonnet-5": {TotalCost: 0.55},
+			},
+			StartTime: goldenTime(11, 10, 0),
+			EndTime:   goldenTime(11, 20, 0),
+			Duration:  models.Duration(10 * time.Minute),
+		},
+	)
+	a.AgentCount = 4
+	a.AgentMessageCount += 22
+	a.MessageCount += 22
+	a.AgentsCost.TotalCost += 1.65
+	a.TotalCost.TotalCost += 1.65
+	opus := a.CostByModel["claude-opus-4-8"]
+	opus.TotalCost += 1.10
+	a.CostByModel["claude-opus-4-8"] = opus
+	sonnet := a.CostByModel["claude-sonnet-5"]
+	sonnet.TotalCost += 0.55
+	a.CostByModel["claude-sonnet-5"] = sonnet
+	a.Workflows = []models.WorkflowMeta{
+		{RunID: "wf_2e7850b6-b19", Name: "audit-codebase", Status: "completed"},
+	}
+	a.WorkflowCount = 1
+	return a
+}
+
+func TestGoldenSessionTableShowWorkflows(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	checkGolden(t, "session_table_show_workflows", FormatSessionTable(goldenShowWorkflowAnalysis(), true))
+}
+
+func TestGoldenSessionTableShowWorkflowsColor(t *testing.T) {
+	forceProfile(t, termenv.ANSI256)
+	checkGolden(t, "session_table_show_workflows_color", FormatSessionTable(goldenShowWorkflowAnalysis(), false))
+}
+
+const goldenWfSessionID = "dddd4444-5555-6666-7777-888899990000"
+
+// summaryWorkflowFixture builds a project with one session that has a regular
+// agent plus a workflow run (two agents + metadata), for the expand-agents tree.
+func summaryWorkflowFixture(t *testing.T) []models.SessionEntry {
+	t.Helper()
+	dir := t.TempDir()
+
+	writeFixture := func(rel, content string) string {
+		t.Helper()
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+		return path
+	}
+
+	msg := func(ts, id, model string, in, out int64) string {
+		return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"requestId":"req_%s","message":{"id":%q,"model":%q,"usage":{"input_tokens":%d,"output_tokens":%d}}}`,
+			ts, id, id, model, in, out)
+	}
+
+	sessionPath := writeFixture(goldenWfSessionID+".jsonl", strings.Join([]string{
+		msg("2026-01-20T09:00:00Z", "p1", "claude-opus-4-8", 1000, 500),
+	}, "\n")+"\n")
+
+	writeFixture(filepath.Join(goldenWfSessionID, "subagents", "agent-reg1.jsonl"),
+		msg("2026-01-20T09:05:00Z", "r1", "claude-haiku-4-5", 2000, 1000)+"\n")
+
+	wfRun := filepath.Join(goldenWfSessionID, "subagents", "workflows", "wf_golden-run")
+	writeFixture(filepath.Join(wfRun, "agent-wf1.jsonl"),
+		msg("2026-01-20T09:10:00Z", "w1", "claude-opus-4-8", 3000, 1500)+"\n")
+	writeFixture(filepath.Join(wfRun, "agent-wf2.jsonl"),
+		msg("2026-01-20T09:12:00Z", "w2", "claude-sonnet-5", 4000, 2000)+"\n")
+	writeFixture(filepath.Join(wfRun, "journal.jsonl"), `{"type":"started","key":"v2:x","agentId":"wf1"}`+"\n")
+
+	writeFixture(filepath.Join(goldenWfSessionID, "workflows", "wf_golden-run.json"),
+		`{"runId":"wf_golden-run","workflowName":"audit-codebase","status":"completed","script":"export const meta = {}"}`)
+
+	return []models.SessionEntry{
+		{
+			SessionID: goldenWfSessionID,
+			FullPath:  sessionPath,
+			Created:   time.Date(2026, 1, 20, 9, 0, 0, 0, time.UTC),
+			Modified:  time.Date(2026, 1, 20, 9, 30, 0, 0, time.UTC),
+		},
+	}
+}
+
+func TestGoldenSummaryDetailsExpandWorkflows(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	entries := summaryWorkflowFixture(t)
+	analysis, results := summaryDetailsAnalysis(t, entries)
+	checkGolden(t, "summary_details_expand_workflows", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true))
+}

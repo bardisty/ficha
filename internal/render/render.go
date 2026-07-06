@@ -79,6 +79,28 @@ func TruncateID(id string, maxLen int) string {
 	return id[:maxLen]
 }
 
+// WorkflowLabel returns the group-header label shown above a workflow run's
+// agents, e.g. "workflow: audit-codebase (completed)". Falls back to the run
+// ID when metadata was unreadable. Long labels truncate with an ellipsis so
+// the line stays within the agent-section row width.
+func WorkflowLabel(meta models.WorkflowMeta) string {
+	const maxLen = 48
+
+	name := meta.Name
+	if name == "" {
+		name = meta.RunID
+	}
+	label := "workflow: " + name
+	if meta.Status != "" {
+		label += " (" + meta.Status + ")"
+	}
+
+	if r := []rune(label); len(r) > maxLen {
+		label = string(r[:maxLen-1]) + "…"
+	}
+	return label
+}
+
 // CacheTokensByTTL returns the 5-minute and 1-hour cache-write token counts.
 // Falls back to treating all cache-creation tokens as 5m when the detailed
 // per-TTL breakdown is unavailable.

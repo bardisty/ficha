@@ -35,7 +35,10 @@
     Parent session                               $7.900000                                          
     [A1]  Haiku 4.5   (a1b2c3d)   12 msgs        $0.420000                                          
     [A2]  Sonnet 5    (f6e5d4c)     1 msg        $1.580000                                          
-    Agents subtotal                              $2.000000                                          
+    -- workflow: audit-codebase (completed)                                                         
+    [A3]  Opus 4.8    (w1a2b3c)   21 msgs        $1.100000                                          
+    [A4]  Sonnet 5    (w6e5d4c)     1 msg        $0.550000                                          
+    Agents subtotal                              $3.650000                                          
                                                                                                     
   ----------------------------[ MESSAGE INSIGHTS ]----------------------------                      
                                                                                                     
@@ -43,9 +46,6 @@
     Last       $0.520000  (11:29:55)  cache_read: $0.310000                                         
     Peak       $1.870000  (10:42:13)  ! 4.6x avg cost                                               
     Trend      $0.28/msg -> $0.55/msg  ▲ increasing                                                 
-                                                                                                    
-                                                                                                    
-                                                                                                    
                                                                                                     
                                                                                                     
                                                                                                     

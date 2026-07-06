@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -61,6 +62,10 @@ type BreakdownModel struct {
 	sessionWatcher *SessionWatcher // Watches for new session files
 	switchNotifyAt time.Time       // When session switch notification started
 
+	// Last subagent-tree fingerprint; the poll reloads when it changes
+	// (fsnotify never sees subagent/workflow writes — see subagentPollCmd)
+	subagentSig string
+
 	width  int
 	height int
 }
@@ -102,6 +107,7 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 		projectDir:    projectDir,
 		followMode:    followMode,
 		agentCache:    analyzer.NewAgentParseCache(),
+		subagentSig:   subagentTreeSignature(filepath.Dir(sessionPath), sessionID),
 	}
 }
 
@@ -112,6 +118,7 @@ func (m BreakdownModel) Init() tea.Cmd {
 		m.loadBreakdown,
 		func() tea.Msg { return m.watchFile() },
 		tickCmd(),
+		subagentPollCmd(),
 	}
 
 	// Start session watcher if follow mode is enabled
@@ -259,6 +266,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.newMsgIndices = make(map[int]time.Time)
 		// Drop the previous session's cached agent parses
 		m.agentCache = analyzer.NewAgentParseCache()
+		// Fingerprint the new session's subagent tree; the pending reload
+		// covers anything already on disk
+		m.subagentSig = subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
 
 		// Stop old file watcher, will be restarted by watchFile
 		if m.watcher != nil {
@@ -291,6 +301,15 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetContent(clipToWidth(m.renderTableContent(), m.width))
 		}
 		return m, tickCmd()
+
+	case subagentPollMsg:
+		sig := subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
+		if sig != m.subagentSig {
+			m.subagentSig = sig
+			m.loading = true
+			return m, tea.Batch(m.loadBreakdownCmd(), subagentPollCmd())
+		}
+		return m, subagentPollCmd()
 	}
 
 	return m, tea.Batch(cmds...)

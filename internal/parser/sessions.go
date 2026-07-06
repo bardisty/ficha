@@ -201,6 +201,9 @@ func pathWithinDir(path, dir string) bool {
 }
 
 // DiscoverAgentSessions finds agent-*.jsonl files in {sessionID}/subagents/
+// and, for workflow runs, in {sessionID}/subagents/workflows/{runID}/.
+// Regular agents come first, then workflow runs alphabetically. The name
+// filter excludes each run's journal.jsonl and agent-*.meta.json files.
 func DiscoverAgentSessions(projectDir, sessionID string) ([]string, error) {
 	subagentsDir := filepath.Join(projectDir, sessionID, "subagents")
 
@@ -212,18 +215,41 @@ func DiscoverAgentSessions(projectDir, sessionID string) ([]string, error) {
 		return nil, err
 	}
 
-	var agentPaths []string
+	agentPaths := collectAgentFiles(subagentsDir, entries)
+
+	workflowsDir := filepath.Join(subagentsDir, "workflows")
+	runDirs, err := os.ReadDir(workflowsDir)
+	if err != nil {
+		return agentPaths, nil // No workflows directory - not an error
+	}
+	for _, run := range runDirs {
+		if !run.IsDir() {
+			continue
+		}
+		runDir := filepath.Join(workflowsDir, run.Name())
+		runEntries, err := os.ReadDir(runDir)
+		if err != nil {
+			continue // Unreadable run dir - skip, like unreadable agents
+		}
+		agentPaths = append(agentPaths, collectAgentFiles(runDir, runEntries)...)
+	}
+
+	return agentPaths, nil
+}
+
+// collectAgentFiles returns full paths of agent-*.jsonl files among entries.
+func collectAgentFiles(dir string, entries []os.DirEntry) []string {
+	var paths []string
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
 		if strings.HasPrefix(name, "agent-") && strings.HasSuffix(name, ".jsonl") {
-			agentPaths = append(agentPaths, filepath.Join(subagentsDir, name))
+			paths = append(paths, filepath.Join(dir, name))
 		}
 	}
-
-	return agentPaths, nil
+	return paths
 }
 
 // ExtractAgentID extracts the agent ID from an agent file path
@@ -235,6 +261,49 @@ func ExtractAgentID(agentPath string) string {
 		return strings.TrimSuffix(strings.TrimPrefix(base, "agent-"), ".jsonl")
 	}
 	return base
+}
+
+// ExtractWorkflowRunID returns the workflow run ID for agent paths under
+// subagents/workflows/{runID}/, or "" for regular subagent paths.
+func ExtractWorkflowRunID(agentPath string) string {
+	runDir := filepath.Dir(agentPath)
+	parent := filepath.Dir(runDir)
+	if filepath.Base(parent) == "workflows" && filepath.Base(filepath.Dir(parent)) == "subagents" {
+		return filepath.Base(runDir)
+	}
+	return ""
+}
+
+// ParseWorkflowMeta reads {projectDir}/{sessionID}/workflows/{runID}.json for
+// display metadata. Missing, oversized, or malformed files yield a runID-only
+// result with ok=false — orphan run dirs still analyze and display.
+func ParseWorkflowMeta(projectDir, sessionID, runID string) (models.WorkflowMeta, bool) {
+	meta := models.WorkflowMeta{RunID: runID}
+
+	path := filepath.Join(projectDir, sessionID, "workflows", runID+".json")
+	info, err := os.Stat(path)
+	if err != nil || info.Size() > maxIndexFileSize {
+		return meta, false
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return meta, false
+	}
+
+	// The file also carries the full script text and logs; decode only what
+	// display needs.
+	var raw struct {
+		WorkflowName string `json:"workflowName"`
+		Status       string `json:"status"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return meta, false
+	}
+
+	meta.Name = raw.WorkflowName
+	meta.Status = raw.Status
+	return meta, true
 }
 
 // countMessagesInFile counts distinct assistant messages in a JSONL file.

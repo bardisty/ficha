@@ -98,7 +98,7 @@ func TestFormatSessionCSV(t *testing.T) {
 		"session_id", "input_cost", "output_cost", "cache_write_5m_cost",
 		"cache_write_1h_cost", "cache_read_cost", "total_cost", "cache_savings",
 		"message_count", "duration_seconds", "agent_count", "agent_message_count",
-		"parent_cost", "agents_cost",
+		"parent_cost", "agents_cost", "workflow_count",
 	}
 	header := records[0]
 	if len(header) != len(expectedHeader) {

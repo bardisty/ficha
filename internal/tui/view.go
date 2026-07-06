@@ -374,7 +374,21 @@ func (m Model) renderAgentBreakdownContent() string {
 	// Format: 4(indent) + 5(marker) + 1 + 11(model) + 1 + 10(id) + 1 + 8(msgs) + 6(spaces) + cost
 	//       = 4 + 37 + 6 = 47 chars before cost (aligned with parent)
 	// Uses plain white costs - model tier colors already provide cost hierarchy
+	// Workflow agents are grouped after regular agents; a dim header line marks
+	// each run's start. [AN] numbering stays continuous across groups.
+	prevWorkflow := ""
 	for i, agent := range a.Agents {
+		if agent.WorkflowID != prevWorkflow {
+			prevWorkflow = agent.WorkflowID
+			if agent.WorkflowID != "" {
+				label := render.WorkflowLabel(a.WorkflowByID(agent.WorkflowID))
+				if m.noColor {
+					sb.WriteString(fmt.Sprintf("    -- %s\n", label))
+				} else {
+					sb.WriteString("    " + dimStyle.Render("── "+label) + "\n")
+				}
+			}
+		}
 		agentNum := fmt.Sprintf("%d", i+1)
 		agentHighlighted := m.isHighlighted("agent_" + agent.AgentID)
 		costStr := render.CostStyled(agent.TotalCost.TotalCost, 11, agentHighlighted, m.noColor)

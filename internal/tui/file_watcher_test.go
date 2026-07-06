@@ -142,3 +142,67 @@ func TestAwaitSessionFileChange_IgnoresSiblingFiles(t *testing.T) {
 		t.Fatal("timed out waiting for shutdown to unblock the waiter")
 	}
 }
+
+func TestSubagentTreeSignature(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess-sig"
+
+	// No subagents dir at all
+	if sig := subagentTreeSignature(tmpDir, sessionID); sig != "" {
+		t.Errorf("expected empty signature for missing dirs, got %q", sig)
+	}
+
+	// Regular agent file appears
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	agentPath := filepath.Join(subagentsDir, "agent-a1.jsonl")
+	if err := os.WriteFile(agentPath, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	sig1 := subagentTreeSignature(tmpDir, sessionID)
+	if sig1 == "" {
+		t.Fatal("expected non-empty signature after agent file created")
+	}
+
+	// Stable when nothing changes
+	if sig := subagentTreeSignature(tmpDir, sessionID); sig != sig1 {
+		t.Error("signature changed with no filesystem changes")
+	}
+
+	// Append to the agent file (size change; mtime may have coarse
+	// granularity on some filesystems, size alone must flip the signature)
+	if err := os.WriteFile(agentPath, []byte("{}\n{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	sig2 := subagentTreeSignature(tmpDir, sessionID)
+	if sig2 == sig1 {
+		t.Error("signature unchanged after file append")
+	}
+
+	// New workflow run dir with an agent file
+	runDir := filepath.Join(subagentsDir, "workflows", "wf_run-1")
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "agent-w1.jsonl"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	sig3 := subagentTreeSignature(tmpDir, sessionID)
+	if sig3 == sig2 {
+		t.Error("signature unchanged after workflow agent file created")
+	}
+
+	// Workflow metadata write (status flip without transcript writes)
+	wfDir := filepath.Join(tmpDir, sessionID, "workflows")
+	if err := os.MkdirAll(wfDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "wf_run-1.json"), []byte(`{"status":"completed"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if sig := subagentTreeSignature(tmpDir, sessionID); sig == sig3 {
+		t.Error("signature unchanged after workflow metadata write")
+	}
+}

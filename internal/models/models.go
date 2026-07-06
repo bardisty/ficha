@@ -89,6 +89,7 @@ type MessageAnalysis struct {
 type AgentAnalysis struct {
 	AgentID      string                   `json:"agent_id"`
 	FullPath     string                   `json:"full_path"`
+	WorkflowID   string                   `json:"workflow_id,omitempty"` // Workflow run ID; "" for regular subagents
 	MessageCount int                      `json:"message_count"`
 	TotalUsage   TokenUsage               `json:"total_usage"`
 	TotalCost    CostBreakdown            `json:"total_cost"`
@@ -97,6 +98,15 @@ type AgentAnalysis struct {
 	EndTime      time.Time                `json:"end_time"`
 	Duration     Duration                 `json:"duration"`
 	SkippedLines int                      `json:"skipped_lines,omitempty"` // JSONL lines skipped (malformed or oversized)
+}
+
+// WorkflowMeta identifies a workflow run whose agents appear in a session's
+// Agents list. Display metadata only — costs are aggregated per-agent, never
+// per-workflow, so there is a single source of aggregation truth.
+type WorkflowMeta struct {
+	RunID  string `json:"run_id"`
+	Name   string `json:"name,omitempty"`   // workflowName from wf_*.json; "" if unreadable
+	Status string `json:"status,omitempty"` // e.g. "completed"; "" if unreadable
 }
 
 // SessionAnalysis represents the complete analysis of a session
@@ -122,6 +132,8 @@ type SessionAnalysis struct {
 	AgentsCost         CostBreakdown            `json:"agents_cost"`          // Sum of agent costs
 	HasAgents          bool                     `json:"has_agents"`
 	AgentCount         int                      `json:"agent_count"`
+	Workflows          []WorkflowMeta           `json:"workflows,omitempty"`        // Workflow runs with agents in this session
+	WorkflowCount      int                      `json:"workflow_count,omitempty"`   // Distinct workflow runs
 	ParentMessageCount int                      `json:"parent_message_count"`       // Messages from parent session only
 	AgentMessageCount  int                      `json:"agent_message_count"`        // Messages from all agents
 	SkippedAgents      int                      `json:"skipped_agents,omitempty"`   // Agents that failed to parse
@@ -129,6 +141,18 @@ type SessionAnalysis struct {
 	SkippedLines       int                      `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized), incl. agents
 	IsSummary          bool                     `json:"-"`                          // True for aggregate summaries
 	SessionCount       int                      `json:"-"`                          // Number of sessions in summary
+}
+
+// WorkflowByID returns the metadata for a workflow run in this session, or a
+// runID-only fallback when the run isn't in the list (shouldn't happen for
+// IDs taken from this session's own agents).
+func (s *SessionAnalysis) WorkflowByID(runID string) WorkflowMeta {
+	for _, wf := range s.Workflows {
+		if wf.RunID == runID {
+			return wf
+		}
+	}
+	return WorkflowMeta{RunID: runID}
 }
 
 // SessionResult pairs a session entry with its computed analysis. Analysis is

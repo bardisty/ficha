@@ -69,6 +69,8 @@ Sessions are stored in `~/.claude/projects/{encoded-path}/`:
 - `sessions-index.json`: Session metadata index
 - `{session-id}.jsonl`: Message history files
 - Agent sub-sessions in `{session-id}/subagents/agent-*.jsonl`
+- Workflow agent sub-sessions in `{session-id}/subagents/workflows/{wf-runId}/agent-*.jsonl` (same JSONL schema; each run dir also holds a `journal.jsonl` with no usage data)
+- Workflow run metadata in `{session-id}/workflows/{wf-runId}.json` (workflowName, status; also carries the full script — only name/status are parsed)
 
 ### Cost Calculation
 
