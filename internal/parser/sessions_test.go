@@ -880,3 +880,160 @@ func TestCountMessagesInFile_DeduplicatesStreamingLines(t *testing.T) {
 		t.Errorf("expected 4 (2 distinct ids + 2 id-less lines), got %d", count)
 	}
 }
+
+// writeWorkflowRun creates a workflow run dir with the given agent files plus
+// the non-agent files a real run contains (journal, agent meta).
+func writeWorkflowRun(t *testing.T, subagentsDir, runID string, agentFiles ...string) {
+	t.Helper()
+	runDir := filepath.Join(subagentsDir, "workflows", runID)
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range agentFiles {
+		if err := os.WriteFile(filepath.Join(runDir, f), []byte("{}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	extras := map[string]string{
+		"journal.jsonl":     `{"type":"started","key":"v2:abc","agentId":"x"}`,
+		"agent-x.meta.json": `{"agentType":"general-purpose","spawnDepth":1}`,
+	}
+	for name, content := range extras {
+		if err := os.WriteFile(filepath.Join(runDir, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestDiscoverAgentSessions_WithWorkflows(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "session-wf"
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, f := range []string{"agent-r1.jsonl", "agent-r2.jsonl"} {
+		if err := os.WriteFile(filepath.Join(subagentsDir, f), []byte("{}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeWorkflowRun(t, subagentsDir, "wf_run-a", "agent-w1.jsonl", "agent-w2.jsonl")
+	writeWorkflowRun(t, subagentsDir, "wf_run-b", "agent-w3.jsonl")
+
+	paths, err := DiscoverAgentSessions(tmpDir, sessionID)
+	if err != nil {
+		t.Fatalf("DiscoverAgentSessions returned error: %v", err)
+	}
+
+	var bases []string
+	for _, p := range paths {
+		bases = append(bases, filepath.Base(p))
+	}
+	want := []string{"agent-r1.jsonl", "agent-r2.jsonl", "agent-w1.jsonl", "agent-w2.jsonl", "agent-w3.jsonl"}
+	if len(bases) != len(want) {
+		t.Fatalf("expected %d agent paths (regular first, then runs alphabetically), got %d: %v", len(want), len(bases), bases)
+	}
+	for i, w := range want {
+		if bases[i] != w {
+			t.Errorf("path %d: expected %s, got %s", i, w, bases[i])
+		}
+	}
+}
+
+func TestDiscoverAgentSessions_WorkflowsOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "session-wf-only"
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeWorkflowRun(t, subagentsDir, "wf_solo", "agent-w1.jsonl")
+
+	paths, err := DiscoverAgentSessions(tmpDir, sessionID)
+	if err != nil {
+		t.Fatalf("DiscoverAgentSessions returned error: %v", err)
+	}
+	if len(paths) != 1 || filepath.Base(paths[0]) != "agent-w1.jsonl" {
+		t.Errorf("expected only agent-w1.jsonl, got %v", paths)
+	}
+}
+
+func TestExtractWorkflowRunID(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "workflow agent path",
+			path: filepath.Join("proj", "sess", "subagents", "workflows", "wf_abc-123", "agent-x.jsonl"),
+			want: "wf_abc-123",
+		},
+		{
+			name: "regular subagent path",
+			path: filepath.Join("proj", "sess", "subagents", "agent-x.jsonl"),
+			want: "",
+		},
+		{
+			name: "workflows dir without subagents parent",
+			path: filepath.Join("proj", "sess", "workflows", "wf_abc", "agent-x.jsonl"),
+			want: "",
+		},
+		{
+			name: "bare filename",
+			path: "agent-x.jsonl",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ExtractWorkflowRunID(tt.path); got != tt.want {
+				t.Errorf("ExtractWorkflowRunID(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseWorkflowMeta(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "session-meta"
+	wfDir := filepath.Join(tmpDir, sessionID, "workflows")
+	if err := os.MkdirAll(wfDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	valid := `{"runId":"wf_ok","workflowName":"audit-codebase","status":"completed","script":"` +
+		strings.Repeat("x", 4096) + `","agentCount":9,"totalTokens":638238}`
+	if err := os.WriteFile(filepath.Join(wfDir, "wf_ok.json"), []byte(valid), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "wf_bad.json"), []byte("{not json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	meta, ok := ParseWorkflowMeta(tmpDir, sessionID, "wf_ok")
+	if !ok {
+		t.Error("expected ok=true for valid metadata file")
+	}
+	if meta.RunID != "wf_ok" || meta.Name != "audit-codebase" || meta.Status != "completed" {
+		t.Errorf("unexpected meta: %+v", meta)
+	}
+
+	meta, ok = ParseWorkflowMeta(tmpDir, sessionID, "wf_missing")
+	if ok {
+		t.Error("expected ok=false for missing metadata file")
+	}
+	if meta.RunID != "wf_missing" || meta.Name != "" || meta.Status != "" {
+		t.Errorf("expected runID-only fallback, got %+v", meta)
+	}
+
+	meta, ok = ParseWorkflowMeta(tmpDir, sessionID, "wf_bad")
+	if ok {
+		t.Error("expected ok=false for corrupt metadata file")
+	}
+	if meta.RunID != "wf_bad" {
+		t.Errorf("expected runID-only fallback, got %+v", meta)
+	}
+}

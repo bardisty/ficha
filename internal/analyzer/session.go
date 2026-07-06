@@ -61,6 +61,7 @@ func AnalyzeSessionWithCache(sessionPath string, sessionID string, includeMessag
 				skippedAgents++
 				continue // Skip agents that can't be parsed
 			}
+			agentAnalysis.WorkflowID = parser.ExtractWorkflowRunID(agentPath)
 
 			analysis.Agents = append(analysis.Agents, *agentAnalysis)
 
@@ -95,6 +96,18 @@ func AnalyzeSessionWithCache(sessionPath string, sessionID string, includeMessag
 
 		// Track skipped agents count for caller visibility
 		analysis.SkippedAgents = skippedAgents
+
+		// Collect workflow run metadata in first-seen agent order
+		seenRuns := make(map[string]bool)
+		for _, agent := range analysis.Agents {
+			if agent.WorkflowID == "" || seenRuns[agent.WorkflowID] {
+				continue
+			}
+			seenRuns[agent.WorkflowID] = true
+			meta, _ := parser.ParseWorkflowMeta(projectDir, sessionID, agent.WorkflowID)
+			analysis.Workflows = append(analysis.Workflows, meta)
+		}
+		analysis.WorkflowCount = len(analysis.Workflows)
 
 		// Recalculate duration after including agents
 		if !analysis.StartTime.IsZero() && !analysis.EndTime.IsZero() {

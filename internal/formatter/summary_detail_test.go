@@ -13,7 +13,7 @@ import (
 // sampleSummaryResults returns three results: two that parsed (sess-02 modified
 // earlier than sess-01, so modified-order sorting reverses input order) and one
 // that failed (nil Analysis, must be dropped from machine output). sess-01 owns
-// a single agent sub-session so --expand-agents has something to emit.
+// a regular agent plus a workflow agent so --expand-agents has both row kinds.
 func sampleSummaryResults() []models.SessionResult {
 	return []models.SessionResult{
 		{
@@ -25,7 +25,7 @@ func sampleSummaryResults() []models.SessionResult {
 				SessionID:    "sess-01",
 				MessageCount: 10,
 				HasAgents:    true,
-				AgentCount:   1,
+				AgentCount:   2,
 				TotalCost: models.CostBreakdown{
 					InputCost: 1.0, OutputCost: 2.0, TotalCost: 5.0, CacheSavings: 0.5,
 				},
@@ -45,7 +45,20 @@ func sampleSummaryResults() []models.SessionResult {
 							"claude-haiku-4-5": {TotalCost: 1.0},
 						},
 					},
+					{
+						AgentID:      "agent-w",
+						WorkflowID:   "wf_run-1",
+						MessageCount: 2,
+						TotalCost:    models.CostBreakdown{InputCost: 0.1, OutputCost: 0.4, TotalCost: 0.5},
+						CostByModel: map[string]models.CostBreakdown{
+							"claude-haiku-4-5": {TotalCost: 0.5},
+						},
+					},
 				},
+				Workflows: []models.WorkflowMeta{
+					{RunID: "wf_run-1", Name: "audit-codebase", Status: "completed"},
+				},
+				WorkflowCount: 1,
 			},
 		},
 		{
@@ -123,16 +136,22 @@ func TestFormatSummaryDetailJSON_Expand(t *testing.T) {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
 
-	// sess-01 is second in modified order and owns the agent.
+	// sess-01 is second in modified order and owns the agents.
 	sess01 := detail.Sessions[1]
 	if sess01.SessionID != "sess-01" {
 		t.Fatalf("expected sess-01 at index 1, got %q", sess01.SessionID)
 	}
-	if len(sess01.Agents) != 1 {
-		t.Fatalf("expected 1 nested agent with --expand-agents, got %d", len(sess01.Agents))
+	if len(sess01.Agents) != 2 {
+		t.Fatalf("expected 2 nested agents with --expand-agents, got %d", len(sess01.Agents))
 	}
 	if sess01.Agents[0].AgentID != "agent-x" {
 		t.Errorf("agent_id: got %q, want agent-x", sess01.Agents[0].AgentID)
+	}
+	if sess01.Agents[1].WorkflowID != "wf_run-1" {
+		t.Errorf("workflow agent WorkflowID: got %q, want wf_run-1", sess01.Agents[1].WorkflowID)
+	}
+	if len(sess01.Workflows) != 1 || sess01.Workflows[0].Name != "audit-codebase" {
+		t.Errorf("workflows metadata: got %+v", sess01.Workflows)
 	}
 }
 
@@ -155,7 +174,7 @@ func TestFormatSummaryDetailCSV_NoExpand(t *testing.T) {
 		"row_type", "session_id", "agent_id", "modified", "model",
 		"message_count", "agent_count", "input_cost", "output_cost",
 		"cache_write_5m_cost", "cache_write_1h_cost", "cache_read_cost",
-		"total_cost", "cache_savings", "cumulative_cost",
+		"total_cost", "cache_savings", "cumulative_cost", "workflow_id",
 	}
 	if len(records[0]) != len(wantHeader) {
 		t.Fatalf("header columns: got %d, want %d", len(records[0]), len(wantHeader))
@@ -178,13 +197,13 @@ func TestFormatSummaryDetailCSV_NoExpand(t *testing.T) {
 		t.Errorf("row1 cumulative_cost: got %q, want 2.000000", r1[14])
 	}
 
-	// Row 2: sess-01, agent_count 1, cumulative = 2.0 + 5.0 = 7.0
+	// Row 2: sess-01, agent_count 2, cumulative = 2.0 + 5.0 = 7.0
 	r2 := records[2]
 	if r2[1] != "sess-01" {
 		t.Errorf("row2 session_id: got %q, want sess-01", r2[1])
 	}
-	if r2[6] != "1" {
-		t.Errorf("row2 agent_count: got %q, want 1", r2[6])
+	if r2[6] != "2" {
+		t.Errorf("row2 agent_count: got %q, want 2", r2[6])
 	}
 	if r2[4] != "claude-opus-4-8" {
 		t.Errorf("row2 model (parent primary): got %q, want claude-opus-4-8", r2[4])
@@ -205,9 +224,9 @@ func TestFormatSummaryDetailCSV_Expand(t *testing.T) {
 		t.Fatalf("output is not valid CSV: %v", err)
 	}
 
-	// header + session sess-02 + session sess-01 + agent row for sess-01
-	if len(records) != 4 {
-		t.Fatalf("rows: got %d, want 4 (header + 2 sessions + 1 agent)", len(records))
+	// header + session sess-02 + session sess-01 + 2 agent rows for sess-01
+	if len(records) != 5 {
+		t.Fatalf("rows: got %d, want 5 (header + 2 sessions + 2 agents)", len(records))
 	}
 
 	agent := records[3]
@@ -233,6 +252,19 @@ func TestFormatSummaryDetailCSV_Expand(t *testing.T) {
 	// agent_count is a session-row concept; empty on agent rows.
 	if agent[6] != "" {
 		t.Errorf("agent agent_count: got %q, want empty", agent[6])
+	}
+	// Regular agents carry no workflow_id.
+	if agent[15] != "" {
+		t.Errorf("regular agent workflow_id: got %q, want empty", agent[15])
+	}
+
+	// Workflow agent row carries its run ID.
+	wfAgent := records[4]
+	if wfAgent[0] != "agent" || wfAgent[2] != "2" {
+		t.Errorf("workflow agent row_type/agent_id: got %q/%q, want agent/2", wfAgent[0], wfAgent[2])
+	}
+	if wfAgent[15] != "wf_run-1" {
+		t.Errorf("workflow agent workflow_id: got %q, want wf_run-1", wfAgent[15])
 	}
 }
 

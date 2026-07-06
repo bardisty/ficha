@@ -36,6 +36,7 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		"agent_message_count",
 		"parent_cost",
 		"agents_cost",
+		"workflow_count",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing CSV header: %w", err)
@@ -57,6 +58,7 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		fmt.Sprintf("%d", analysis.AgentMessageCount),
 		fmt.Sprintf("%.6f", analysis.ParentCost.TotalCost),
 		fmt.Sprintf("%.6f", analysis.AgentsCost.TotalCost),
+		fmt.Sprintf("%d", analysis.WorkflowCount),
 	}
 	if err := w.Write(row); err != nil {
 		return "", fmt.Errorf("writing CSV row: %w", err)

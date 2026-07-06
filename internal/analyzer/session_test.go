@@ -687,3 +687,144 @@ func TestAnalyzeAgent_OutOfOrderTimestamps(t *testing.T) {
 		t.Errorf("Duration: got %v, want 1h (was negative before fix)", analysis.Duration.Duration())
 	}
 }
+
+func TestAnalyzeSession_WithWorkflowAgents(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sessionID := "sess-with-workflows"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+
+	// Parent: 1000 input, 500 output on sonnet-4-5 → 0.003 + 0.0075 = 0.0105
+	parentContent := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`
+	if err := os.WriteFile(sessionPath, []byte(parentContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	runDir := filepath.Join(subagentsDir, "workflows", "wf_run-1")
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Regular agent: 500 input, 200 output on sonnet-4-5 → 0.0015 + 0.003 = 0.0045
+	regularContent := `{"type":"assistant","timestamp":"2024-01-15T10:10:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":500,"output_tokens":200}}}`
+	if err := os.WriteFile(filepath.Join(subagentsDir, "agent-reg1.jsonl"), []byte(regularContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two workflow agents on different models
+	wfAgent1 := `{"type":"assistant","timestamp":"2024-01-15T10:20:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":100}}}`
+	wfAgent2 := `{"type":"assistant","timestamp":"2024-01-15T10:40:00Z","message":{"model":"claude-opus-4-1","usage":{"input_tokens":1000,"output_tokens":100}}}`
+	if err := os.WriteFile(filepath.Join(runDir, "agent-wf1.jsonl"), []byte(wfAgent1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "agent-wf2.jsonl"), []byte(wfAgent2), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Journal must be ignored
+	if err := os.WriteFile(filepath.Join(runDir, "journal.jsonl"), []byte(`{"type":"started","key":"v2:x","agentId":"wf1"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Workflow run metadata
+	wfMetaDir := filepath.Join(tmpDir, sessionID, "workflows")
+	if err := os.MkdirAll(wfMetaDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	wfMeta := `{"runId":"wf_run-1","workflowName":"audit-codebase","status":"completed","script":"export const meta = {}"}`
+	if err := os.WriteFile(filepath.Join(wfMetaDir, "wf_run-1.json"), []byte(wfMeta), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	analysis, err := AnalyzeSession(sessionPath, sessionID, false)
+	if err != nil {
+		t.Fatalf("AnalyzeSession failed: %v", err)
+	}
+
+	if analysis.AgentCount != 3 {
+		t.Errorf("AgentCount: got %d, want 3 (1 regular + 2 workflow)", analysis.AgentCount)
+	}
+	if analysis.MessageCount != 4 {
+		t.Errorf("MessageCount: got %d, want 4", analysis.MessageCount)
+	}
+
+	// Cost invariant: total == parent + agents
+	sum := analysis.ParentCost.TotalCost + analysis.AgentsCost.TotalCost
+	if !almostEqual(analysis.TotalCost.TotalCost, sum, 1e-9) {
+		t.Errorf("TotalCost (%f) != ParentCost + AgentsCost (%f)", analysis.TotalCost.TotalCost, sum)
+	}
+
+	// WorkflowID tags: regular agent untagged, workflow agents tagged
+	tags := make(map[string]string)
+	for _, a := range analysis.Agents {
+		tags[a.AgentID] = a.WorkflowID
+	}
+	if tags["reg1"] != "" {
+		t.Errorf("regular agent WorkflowID: got %q, want empty", tags["reg1"])
+	}
+	if tags["wf1"] != "wf_run-1" || tags["wf2"] != "wf_run-1" {
+		t.Errorf("workflow agent tags: got wf1=%q wf2=%q, want wf_run-1", tags["wf1"], tags["wf2"])
+	}
+
+	// Workflow metadata
+	if analysis.WorkflowCount != 1 || len(analysis.Workflows) != 1 {
+		t.Fatalf("WorkflowCount: got %d (metas %d), want 1", analysis.WorkflowCount, len(analysis.Workflows))
+	}
+	wf := analysis.Workflows[0]
+	if wf.RunID != "wf_run-1" || wf.Name != "audit-codebase" || wf.Status != "completed" {
+		t.Errorf("workflow meta: got %+v", wf)
+	}
+
+	// Both workflow models merged into CostByModel
+	if _, ok := analysis.CostByModel["claude-opus-4-1"]; !ok {
+		t.Error("CostByModel missing workflow agent model claude-opus-4-1")
+	}
+	if _, ok := analysis.CostByModel["claude-sonnet-4-5"]; !ok {
+		t.Error("CostByModel missing claude-sonnet-4-5")
+	}
+
+	// Time range extended by the latest workflow agent (10:40)
+	expectedEnd := time.Date(2024, 1, 15, 10, 40, 0, 0, time.UTC)
+	if !analysis.EndTime.Equal(expectedEnd) {
+		t.Errorf("EndTime: got %v, want %v", analysis.EndTime, expectedEnd)
+	}
+}
+
+func TestAnalyzeSession_WorkflowOrphanRun(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sessionID := "sess-wf-orphan"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+	parentContent := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`
+	if err := os.WriteFile(sessionPath, []byte(parentContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Workflow agent dir WITHOUT a matching workflows/{runID}.json
+	runDir := filepath.Join(tmpDir, sessionID, "subagents", "workflows", "wf_orphan")
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	wfAgent := `{"type":"assistant","timestamp":"2024-01-15T10:20:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":500,"output_tokens":200}}}`
+	if err := os.WriteFile(filepath.Join(runDir, "agent-w1.jsonl"), []byte(wfAgent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	analysis, err := AnalyzeSession(sessionPath, sessionID, false)
+	if err != nil {
+		t.Fatalf("AnalyzeSession failed: %v", err)
+	}
+
+	if analysis.AgentCount != 1 {
+		t.Errorf("AgentCount: got %d, want 1 (orphan run still analyzed)", analysis.AgentCount)
+	}
+	if analysis.AgentsCost.TotalCost <= 0 {
+		t.Error("orphan workflow agent cost should be counted")
+	}
+	if analysis.WorkflowCount != 1 || len(analysis.Workflows) != 1 {
+		t.Fatalf("WorkflowCount: got %d, want 1", analysis.WorkflowCount)
+	}
+	if wf := analysis.Workflows[0]; wf.RunID != "wf_orphan" || wf.Name != "" || wf.Status != "" {
+		t.Errorf("expected runID-only fallback meta, got %+v", wf)
+	}
+}

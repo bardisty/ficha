@@ -1,7 +1,12 @@
 package tui
 
 import (
+	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -90,6 +95,63 @@ func awaitSessionFileChange(watcher *fsnotify.Watcher, done chan struct{}, sessi
 			return false, err
 		}
 	}
+}
+
+// subagentPollInterval paces the fallback poll that catches subagent and
+// workflow transcript writes. The fsnotify watch covers only the parent
+// session file's directory (inotify is non-recursive), and during a workflow
+// run the parent file can go silent for many minutes while agent files under
+// {sessionID}/subagents/workflows/ accumulate tokens — without the poll those
+// costs would surface only on the next parent-file write.
+const subagentPollInterval = 2 * time.Second
+
+// subagentPollMsg signals a subagent-tree poll tick.
+type subagentPollMsg time.Time
+
+// subagentPollCmd schedules the next subagent-tree poll tick.
+func subagentPollCmd() tea.Cmd {
+	return tea.Tick(subagentPollInterval, func(t time.Time) tea.Msg {
+		return subagentPollMsg(t)
+	})
+}
+
+// subagentTreeSignature fingerprints the session's subagent tree (recursive,
+// covering workflow run dirs) plus the top-level workflow metadata files, so
+// the poll detects changes with stats only — no file reads. Missing dirs and
+// stat errors contribute nothing; a session without subagents yields "".
+func subagentTreeSignature(projectDir, sessionID string) string {
+	var parts []string
+
+	addFile := func(path string, info fs.FileInfo) {
+		parts = append(parts, fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().UnixNano()))
+	}
+
+	sessionDir := filepath.Join(projectDir, sessionID)
+	_ = filepath.WalkDir(filepath.Join(sessionDir, "subagents"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil //nolint:nilerr // unreadable entries just drop out of the signature
+		}
+		if info, err := d.Info(); err == nil {
+			addFile(path, info)
+		}
+		return nil
+	})
+
+	// Workflow run metadata: catches status flips (running → completed)
+	// without any transcript write.
+	if entries, err := os.ReadDir(filepath.Join(sessionDir, "workflows")); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+				continue
+			}
+			if info, err := e.Info(); err == nil {
+				addFile(e.Name(), info)
+			}
+		}
+	}
+
+	sort.Strings(parts)
+	return strings.Join(parts, "\n")
 }
 
 // The watch and breakdown models run the same file/session-watching state

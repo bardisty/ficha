@@ -109,6 +109,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 		"total_cost",
 		"cache_savings",
 		"cumulative_cost",
+		"workflow_id",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing summary detail CSV header: %w", err)
@@ -135,6 +136,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 			fmt.Sprintf("%.6f", a.TotalCost.TotalCost),
 			fmt.Sprintf("%.6f", a.TotalCost.CacheSavings),
 			fmt.Sprintf("%.6f", cumulative),
+			"",
 		}
 		if err := w.Write(sessionRow); err != nil {
 			return "", fmt.Errorf("writing summary detail session row: %w", err)
@@ -160,6 +162,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 				fmt.Sprintf("%.6f", agent.TotalCost.TotalCost),
 				fmt.Sprintf("%.6f", agent.TotalCost.CacheSavings),
 				"",
+				agent.WorkflowID,
 			}
 			if err := w.Write(agentRow); err != nil {
 				return "", fmt.Errorf("writing summary detail agent row: %w", err)

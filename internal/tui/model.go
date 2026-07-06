@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -77,6 +78,10 @@ type Model struct {
 	costHistory      []float64       // Rolling window of per-message costs
 	lastMessageCount int             // Track message count to detect new messages
 
+	// Last subagent-tree fingerprint; the poll reloads when it changes
+	// (fsnotify never sees subagent/workflow writes — see subagentPollCmd)
+	subagentSig string
+
 	width  int
 	height int
 }
@@ -125,6 +130,7 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 		costChart:   chart,
 		costHistory: make([]float64, 0),
 		agentCache:  analyzer.NewAgentParseCache(),
+		subagentSig: subagentTreeSignature(filepath.Dir(sessionPath), sessionID),
 	}
 }
 
@@ -277,6 +283,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.deltaCount = 0
 		// Drop the previous session's cached agent parses
 		m.agentCache = analyzer.NewAgentParseCache()
+		// Fingerprint the new session's subagent tree; the pending reload
+		// covers anything already on disk
+		m.subagentSig = subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
 
 		// Reset cost chart for new session
 		m.costHistory = make([]float64, 0)
@@ -313,6 +322,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Continue the animation tick for highlight fade
 		return m, tickCmd()
+
+	case subagentPollMsg:
+		sig := subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
+		if sig != m.subagentSig {
+			m.subagentSig = sig
+			m.loading = true
+			return m, tea.Batch(m.loadAnalysis, subagentPollCmd())
+		}
+		return m, subagentPollCmd()
 	}
 
 	return m, nil

@@ -305,3 +305,44 @@ func TestGetBreakdownMessages_ChronologicalMerge(t *testing.T) {
 		}
 	}
 }
+
+func TestGetBreakdownMessages_WithWorkflowAgents(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sessionID := "test-session-wf"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+
+	runDir := filepath.Join(tmpDir, sessionID, "subagents", "workflows", "wf_run-1")
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	parentContent := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":50}}}
+{"type":"assistant","timestamp":"2024-01-15T10:10:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":200,"output_tokens":100}}}`
+	if err := os.WriteFile(sessionPath, []byte(parentContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Workflow agent message between the two parent messages
+	wfContent := `{"type":"assistant","timestamp":"2024-01-15T10:05:00Z","message":{"model":"claude-opus-4-1","usage":{"input_tokens":50,"output_tokens":25}}}`
+	if err := os.WriteFile(filepath.Join(runDir, "agent-w1.jsonl"), []byte(wfContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
+	if err != nil {
+		t.Fatalf("GetBreakdownMessages failed: %v", err)
+	}
+
+	if len(messages) != 3 {
+		t.Fatalf("expected 3 messages (2 parent + 1 workflow agent), got %d", len(messages))
+	}
+
+	// Chronological merge: parent, workflow agent, parent
+	expectedOrder := []string{"", "1", ""}
+	for i, msg := range messages {
+		if msg.AgentID != expectedOrder[i] {
+			t.Errorf("message %d: expected AgentID %q, got %q", i, expectedOrder[i], msg.AgentID)
+		}
+	}
+}

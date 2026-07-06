@@ -66,6 +66,20 @@ func setupE2EFixture(t *testing.T) string {
 	write(filepath.Join(e2eProjDir, e2eBetaID, "subagents", "agent-g1.jsonl"), lines(
 		e2eMsg("2026-02-02T09:05:00Z", "s1", "claude-sonnet-5", 2000, 1200, 5000, 0, 0),
 	))
+	// A workflow run under beta: one agent transcript plus the non-agent files
+	// discovery must skip (journal, meta), and the run metadata with a large
+	// script field the parser must ignore.
+	wfRun := filepath.Join(e2eProjDir, e2eBetaID, "subagents", "workflows", "wf_e2e-run1")
+	write(filepath.Join(wfRun, "agent-w1.jsonl"), lines(
+		e2eMsg("2026-02-02T09:07:00Z", "w1", "claude-sonnet-5", 3000, 1500, 0, 0, 0),
+	))
+	write(filepath.Join(wfRun, "agent-w1.meta.json"), `{"agentType":"general-purpose","spawnDepth":1}`)
+	write(filepath.Join(wfRun, "journal.jsonl"), lines(
+		`{"type":"started","key":"v2:abc","agentId":"w1"}`,
+		`{"type":"result","key":"v2:abc","agentId":"w1","result":{"ok":true}}`,
+	))
+	write(filepath.Join(e2eProjDir, e2eBetaID, "workflows", "wf_e2e-run1.json"),
+		`{"runId":"wf_e2e-run1","workflowName":"e2e-flow","status":"completed","script":"`+strings.Repeat("x", 8192)+`"}`)
 	write(filepath.Join(e2eOtherDir, e2eGammaID+".jsonl"), lines(
 		e2eMsg("2026-02-03T12:00:00Z", "c1", "claude-opus-4-8", 100, 200, 0, 0, 0),
 	))
@@ -141,6 +155,53 @@ func TestE2ECommands(t *testing.T) {
 				}
 				if records[1][0] != e2eAlphaID {
 					t.Errorf("session_id: got %q, want %q", records[1][0], e2eAlphaID)
+				}
+			},
+		},
+		{
+			name: "show table groups workflow agents under a header",
+			args: []string{"show", projFlag, e2eBetaID},
+			check: func(t *testing.T, out string) {
+				mustContainAll(t, out, "AGENT SUB-SESSIONS", "workflow: e2e-flow (completed)", "[A2]")
+			},
+		},
+		{
+			name: "show json carries workflow fields",
+			args: []string{"show", projFlag, e2eBetaID, "-f", "json"},
+			check: func(t *testing.T, out string) {
+				var a models.SessionAnalysis
+				mustJSON(t, out, &a)
+				if a.AgentCount != 2 {
+					t.Errorf("agent_count = %d, want 2 (regular + workflow)", a.AgentCount)
+				}
+				if a.WorkflowCount != 1 || len(a.Workflows) != 1 {
+					t.Fatalf("workflow_count = %d (metas %d), want 1", a.WorkflowCount, len(a.Workflows))
+				}
+				if wf := a.Workflows[0]; wf.RunID != "wf_e2e-run1" || wf.Name != "e2e-flow" || wf.Status != "completed" {
+					t.Errorf("workflow meta: got %+v", wf)
+				}
+				sum := a.ParentCost.TotalCost + a.AgentsCost.TotalCost
+				if diff := a.TotalCost.TotalCost - sum; diff > 1e-9 || diff < -1e-9 {
+					t.Errorf("total_cost %v != parent + agents %v", a.TotalCost.TotalCost, sum)
+				}
+			},
+		},
+		{
+			name: "show csv includes workflow_count",
+			args: []string{"show", projFlag, e2eBetaID, "-f", "csv"},
+			check: func(t *testing.T, out string) {
+				records := mustCSV(t, out)
+				col := -1
+				for i, c := range records[0] {
+					if c == "workflow_count" {
+						col = i
+					}
+				}
+				if col == -1 {
+					t.Fatal("workflow_count column missing from header")
+				}
+				if records[1][col] != "1" {
+					t.Errorf("workflow_count: got %q, want 1", records[1][col])
 				}
 			},
 		},
@@ -277,12 +338,25 @@ func TestE2ECommands(t *testing.T) {
 			check: func(t *testing.T, out string) {
 				var d models.SummaryDetail
 				mustJSON(t, out, &d)
-				total := 0
+				total, wfTagged := 0, 0
 				for _, s := range d.Sessions {
 					total += len(s.Agents)
+					for _, a := range s.Agents {
+						if a.WorkflowID == "wf_e2e-run1" {
+							wfTagged++
+						}
+					}
+					if s.SessionID == e2eBetaID {
+						if len(s.Workflows) != 1 || s.Workflows[0].Name != "e2e-flow" || s.Workflows[0].Status != "completed" {
+							t.Errorf("beta workflows metadata: got %+v", s.Workflows)
+						}
+					}
 				}
-				if total != 1 { // beta has exactly one agent sub-session
-					t.Errorf("nested agents across sessions: got %d, want 1", total)
+				if total != 2 { // beta has one regular + one workflow agent
+					t.Errorf("nested agents across sessions: got %d, want 2", total)
+				}
+				if wfTagged != 1 {
+					t.Errorf("workflow-tagged agents: got %d, want 1", wfTagged)
 				}
 			},
 		},
@@ -309,17 +383,30 @@ func TestE2ECommands(t *testing.T) {
 			args: []string{"summary", projFlag, "--details", "--expand-agents", "-f", "csv"},
 			check: func(t *testing.T, out string) {
 				records := mustCSV(t, out)
-				if len(records) != 4 { // header + 2 sessions + 1 agent
-					t.Fatalf("rows: got %d, want 4 (header + 2 sessions + 1 agent)", len(records))
+				if len(records) != 5 { // header + 2 sessions + 2 agents (1 regular + 1 workflow)
+					t.Fatalf("rows: got %d, want 5 (header + 2 sessions + 2 agents)", len(records))
 				}
-				agentRows := 0
-				for _, r := range records[1:] {
-					if r[0] == "agent" {
-						agentRows++
+				wfCol := -1
+				for i, col := range records[0] {
+					if col == "workflow_id" {
+						wfCol = i
 					}
 				}
-				if agentRows != 1 {
-					t.Errorf("agent rows: got %d, want 1", agentRows)
+				if wfCol == -1 {
+					t.Fatal("workflow_id column missing from header")
+				}
+				agentRows, wfRows := 0, 0
+				for _, r := range records[1:] {
+					if r[0] != "agent" {
+						continue
+					}
+					agentRows++
+					if r[wfCol] == "wf_e2e-run1" {
+						wfRows++
+					}
+				}
+				if agentRows != 2 || wfRows != 1 {
+					t.Errorf("agent rows: got %d (workflow-tagged %d), want 2 (1)", agentRows, wfRows)
 				}
 			},
 		},

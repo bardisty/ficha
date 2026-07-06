@@ -15,6 +15,7 @@ func (m Model) Init() tea.Cmd {
 		m.loadAnalysis,
 		func() tea.Msg { return m.watchFile() },
 		tickCmd(),
+		subagentPollCmd(),
 	}
 
 	// Start session watcher if follow mode is enabled

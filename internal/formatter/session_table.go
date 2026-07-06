@@ -190,7 +190,21 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 	// Each agent with [AN] Model (ID) msgs cost format
 	// Format: 2(indent) + 5(marker) + 1 + 11(model) + 1 + 10(id) + 1 + 8(msgs) + 6(spaces) + cost
 	//       = 2 + 37 + 6 = 45 chars before cost (aligned with parent)
+	// Workflow agents are grouped after regular agents; a dim header line marks
+	// each run's start. [AN] numbering stays continuous across groups.
+	prevWorkflow := ""
 	for i, agent := range analysis.Agents {
+		if agent.WorkflowID != prevWorkflow {
+			prevWorkflow = agent.WorkflowID
+			if agent.WorkflowID != "" {
+				label := render.WorkflowLabel(analysis.WorkflowByID(agent.WorkflowID))
+				if noColor {
+					sb.WriteString(fmt.Sprintf("  -- %s\n", label))
+				} else {
+					sb.WriteString("  " + dimStyle.Render("── "+label) + "\n")
+				}
+			}
+		}
 		agentNum := i + 1
 		shortID := agent.AgentID
 		if len(shortID) > 7 {

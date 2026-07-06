@@ -138,14 +138,33 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 				TotalCost:    models.CostBreakdown{TotalCost: 1.58},
 				CostByModel:  map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 1.58}},
 			},
+			// Workflow agents: exercise the dim group-header line
+			{
+				AgentID:      "w1a2b3c4d5e6",
+				WorkflowID:   "wf_2e7850b6-b19",
+				MessageCount: 21,
+				TotalCost:    models.CostBreakdown{TotalCost: 1.10},
+				CostByModel:  map[string]models.CostBreakdown{"claude-opus-4-8": {TotalCost: 1.10}},
+			},
+			{
+				AgentID:      "w6e5d4c3b2a1",
+				WorkflowID:   "wf_2e7850b6-b19",
+				MessageCount: 1,
+				TotalCost:    models.CostBreakdown{TotalCost: 0.55},
+				CostByModel:  map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 0.55}},
+			},
 		},
 		ParentCost:         models.CostBreakdown{TotalCost: 7.90},
 		ParentCostByModel:  map[string]models.CostBreakdown{"claude-opus-4-8": {TotalCost: 7.90}},
-		AgentsCost:         models.CostBreakdown{TotalCost: 2.00},
+		AgentsCost:         models.CostBreakdown{TotalCost: 3.65},
 		HasAgents:          true,
-		AgentCount:         2,
+		AgentCount:         4,
 		ParentMessageCount: 24,
-		AgentMessageCount:  13,
+		AgentMessageCount:  35,
+		Workflows: []models.WorkflowMeta{
+			{RunID: "wf_2e7850b6-b19", Name: "audit-codebase", Status: "completed"},
+		},
+		WorkflowCount: 1,
 		Insights: &models.MessageInsights{
 			FirstMessage: &models.MessageSnapshot{
 				Index: 1, Timestamp: goldenTime(10, 0, 5),

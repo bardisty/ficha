@@ -76,4 +76,8 @@
   Reads session files from ~/.claude/projects/ and calculates costs
   using Anthropic's pricing. Tracks prompt caching savings (cache
   reads cost 90% less than regular input tokens).
+
+  Agent sub-sessions are included: both regular subagents and Claude
+  Code Workflow agents (grouped by workflow run, with the run's name
+  and status from its metadata).
 ```
