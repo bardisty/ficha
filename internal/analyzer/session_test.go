@@ -828,3 +828,160 @@ func TestAnalyzeSession_WorkflowOrphanRun(t *testing.T) {
 		t.Errorf("expected runID-only fallback meta, got %+v", wf)
 	}
 }
+
+// --- Cross-file dedup: fork/branch copies the transcript into a new session file ---
+
+// Fork fixture: the original session holds m1+m2; the fork file holds cloned
+// copies of m1+m2 (same message.id:requestId, same usage) plus novel m3.
+// Costs (claude-sonnet-4-5): m1 = 0.0105, m2 = 0.0045, m3 = 0.021.
+const (
+	forkMsg1 = `{"type":"assistant","requestId":"req_1","timestamp":"2024-01-15T10:00:00Z","message":{"id":"msg_1","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`
+	forkMsg2 = `{"type":"assistant","requestId":"req_2","timestamp":"2024-01-15T10:10:00Z","message":{"id":"msg_2","model":"claude-sonnet-4-5","usage":{"input_tokens":500,"output_tokens":200}}}`
+	forkMsg3 = `{"type":"assistant","requestId":"req_3","timestamp":"2024-01-16T09:00:00Z","message":{"id":"msg_3","model":"claude-sonnet-4-5","usage":{"input_tokens":2000,"output_tokens":1000}}}`
+)
+
+func TestAnalyzeMultipleSessions_CrossFileDedup(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	originalPath := filepath.Join(tmpDir, "original.jsonl")
+	writeJSONLFile(t, originalPath, []string{forkMsg1, forkMsg2})
+
+	forkPath := filepath.Join(tmpDir, "fork.jsonl")
+	writeJSONLFile(t, forkPath, []string{forkMsg1, forkMsg2, forkMsg3})
+
+	// Fork first in input order but with a later mtime: attribution must
+	// follow mtime (original keeps the shared history), results input order.
+	entries := []models.SessionEntry{
+		{SessionID: "fork", FullPath: forkPath, Modified: time.Date(2024, 1, 16, 9, 0, 0, 0, time.UTC)},
+		{SessionID: "original", FullPath: originalPath, Modified: time.Date(2024, 1, 15, 10, 10, 0, 0, time.UTC)},
+	}
+
+	aggregate, results, err := AnalyzeMultipleSessions(entries)
+	if err != nil {
+		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
+	}
+
+	// Aggregate counts each API response once: m1 + m2 + m3
+	if aggregate.MessageCount != 3 {
+		t.Errorf("aggregate MessageCount: got %d, want 3", aggregate.MessageCount)
+	}
+	if !almostEqual(aggregate.TotalCost.TotalCost, 0.036, 0.0001) {
+		t.Errorf("aggregate TotalCost: got %f, want 0.036", aggregate.TotalCost.TotalCost)
+	}
+	if aggregate.TotalUsage.InputTokens != 3500 {
+		t.Errorf("aggregate InputTokens: got %d, want 3500", aggregate.TotalUsage.InputTokens)
+	}
+	if aggregate.TotalUsage.OutputTokens != 1700 {
+		t.Errorf("aggregate OutputTokens: got %d, want 1700", aggregate.TotalUsage.OutputTokens)
+	}
+
+	// Results stay in input order; the fork keeps only its novel message, the
+	// original keeps the shared history — rows sum to the aggregate.
+	if len(results) != 2 {
+		t.Fatalf("results: got %d, want 2", len(results))
+	}
+	fork, original := results[0], results[1]
+	if fork.Entry.SessionID != "fork" || original.Entry.SessionID != "original" {
+		t.Fatalf("results out of input order: %q, %q", fork.Entry.SessionID, original.Entry.SessionID)
+	}
+	if fork.Analysis.MessageCount != 1 {
+		t.Errorf("fork MessageCount: got %d, want 1", fork.Analysis.MessageCount)
+	}
+	if !almostEqual(fork.Analysis.TotalCost.TotalCost, 0.021, 0.0001) {
+		t.Errorf("fork TotalCost: got %f, want 0.021", fork.Analysis.TotalCost.TotalCost)
+	}
+	if original.Analysis.MessageCount != 2 {
+		t.Errorf("original MessageCount: got %d, want 2", original.Analysis.MessageCount)
+	}
+	if !almostEqual(original.Analysis.TotalCost.TotalCost, 0.015, 0.0001) {
+		t.Errorf("original TotalCost: got %f, want 0.015", original.Analysis.TotalCost.TotalCost)
+	}
+}
+
+// Standalone single-session analysis (show/watch/breakdown) stays file-local:
+// a forked session still reports its full transcript, inherited history included.
+func TestAnalyzeSession_ForkFileStaysFileLocal(t *testing.T) {
+	tmpDir := t.TempDir()
+	forkPath := filepath.Join(tmpDir, "fork.jsonl")
+	writeJSONLFile(t, forkPath, []string{forkMsg1, forkMsg2, forkMsg3})
+
+	analysis, err := AnalyzeSession(forkPath, "fork", false)
+	if err != nil {
+		t.Fatalf("AnalyzeSession failed: %v", err)
+	}
+	if analysis.MessageCount != 3 {
+		t.Errorf("MessageCount: got %d, want 3", analysis.MessageCount)
+	}
+	if !almostEqual(analysis.TotalCost.TotalCost, 0.036, 0.0001) {
+		t.Errorf("TotalCost: got %f, want 0.036", analysis.TotalCost.TotalCost)
+	}
+}
+
+// Lines without a message id have no identity — identical content in two
+// files must never be collapsed by the cross-file dedup.
+func TestAnalyzeMultipleSessions_CrossFileDedup_KeepsUnidentifiedLines(t *testing.T) {
+	tmpDir := t.TempDir()
+	line := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`
+
+	pathA := filepath.Join(tmpDir, "a.jsonl")
+	writeJSONLFile(t, pathA, []string{line})
+	pathB := filepath.Join(tmpDir, "b.jsonl")
+	writeJSONLFile(t, pathB, []string{line})
+
+	entries := []models.SessionEntry{
+		{SessionID: "a", FullPath: pathA, Modified: time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)},
+		{SessionID: "b", FullPath: pathB, Modified: time.Date(2024, 1, 15, 11, 0, 0, 0, time.UTC)},
+	}
+
+	aggregate, _, err := AnalyzeMultipleSessions(entries)
+	if err != nil {
+		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
+	}
+	if aggregate.MessageCount != 2 {
+		t.Errorf("MessageCount: got %d, want 2 (no-id lines must not dedup)", aggregate.MessageCount)
+	}
+	if !almostEqual(aggregate.TotalCost.TotalCost, 0.021, 0.0001) {
+		t.Errorf("TotalCost: got %f, want 0.021", aggregate.TotalCost.TotalCost)
+	}
+}
+
+// Agent sub-session files are outside the cross-file dedup set (fork clones
+// only the parent transcript): an agent message sharing a key with another
+// session's parent stays counted, file-local.
+func TestAnalyzeMultipleSessions_AgentFilesStayFileLocal(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	pathA := filepath.Join(tmpDir, "sess-a.jsonl")
+	writeJSONLFile(t, pathA, []string{forkMsg1})
+
+	pathB := filepath.Join(tmpDir, "sess-b.jsonl")
+	writeJSONLFile(t, pathB, []string{forkMsg3})
+	agentDir := filepath.Join(tmpDir, "sess-b", "subagents")
+	if err := os.MkdirAll(agentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Same message.id:requestId as sess-a's parent message
+	writeJSONLFile(t, filepath.Join(agentDir, "agent-x.jsonl"), []string{forkMsg1})
+
+	entries := []models.SessionEntry{
+		{SessionID: "sess-a", FullPath: pathA, Modified: time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)},
+		{SessionID: "sess-b", FullPath: pathB, Modified: time.Date(2024, 1, 16, 9, 0, 0, 0, time.UTC)},
+	}
+
+	aggregate, results, err := AnalyzeMultipleSessions(entries)
+	if err != nil {
+		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
+	}
+
+	// 1 (sess-a parent) + 1 (sess-b parent) + 1 (sess-b agent, not deduped)
+	if aggregate.MessageCount != 3 {
+		t.Errorf("aggregate MessageCount: got %d, want 3", aggregate.MessageCount)
+	}
+	// m1 twice (parent + agent) + m3 once = 0.0105*2 + 0.021
+	if !almostEqual(aggregate.TotalCost.TotalCost, 0.042, 0.0001) {
+		t.Errorf("aggregate TotalCost: got %f, want 0.042", aggregate.TotalCost.TotalCost)
+	}
+	if results[1].Analysis.AgentMessageCount != 1 {
+		t.Errorf("sess-b AgentMessageCount: got %d, want 1", results[1].Analysis.AgentMessageCount)
+	}
+}
