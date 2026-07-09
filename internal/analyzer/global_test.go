@@ -285,3 +285,58 @@ func TestAnalyzeAllProjects_ErrorProject(t *testing.T) {
 		t.Errorf("SessionCount: got %d, want 1", result.SessionCount)
 	}
 }
+
+// Cross-file dedup scope: within a project the fork-copied transcript is
+// counted once, but the seen set is per project — the same key in another
+// project is counted there too (forks never cross project directories, and a
+// project-local set keeps the parallel workers lock-free).
+func TestAnalyzeAllProjects_CrossFileDedupPerProject(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	proj1Dir := filepath.Join(tmpDir, "project-1")
+	proj2Dir := filepath.Join(tmpDir, "project-2")
+	for _, dir := range []string{proj1Dir, proj2Dir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Project 1: original (m1) + fork carrying a copy of m1 plus novel m3.
+	// Deduped project total: 0.0105 + 0.021 = 0.0315
+	writeJSONLFile(t, filepath.Join(proj1Dir, "original.jsonl"), []string{forkMsg1})
+	writeJSONLFile(t, filepath.Join(proj1Dir, "fork.jsonl"), []string{forkMsg1, forkMsg3})
+
+	// Project 2: reuses m1's key — counted independently (per-project scope)
+	writeJSONLFile(t, filepath.Join(proj2Dir, "sess.jsonl"), []string{forkMsg1})
+
+	projects := []models.ProjectInfo{
+		{EncodedPath: "project-1", FullPath: proj1Dir, DisplayName: "project-1"},
+		{EncodedPath: "project-2", FullPath: proj2Dir, DisplayName: "project-2"},
+	}
+
+	global, err := AnalyzeAllProjects(projects)
+	if err != nil {
+		t.Fatalf("AnalyzeAllProjects failed: %v", err)
+	}
+
+	// m1 + m3 (project 1, deduped) + m1 again (project 2)
+	if global.MessageCount != 3 {
+		t.Errorf("MessageCount: got %d, want 3", global.MessageCount)
+	}
+	if !almostEqual(global.TotalCost.TotalCost, 0.042, 0.0001) {
+		t.Errorf("TotalCost: got %f, want 0.042", global.TotalCost.TotalCost)
+	}
+
+	for _, p := range global.Projects {
+		switch p.DisplayName {
+		case "project-1":
+			if !almostEqual(p.TotalCost.TotalCost, 0.0315, 0.0001) {
+				t.Errorf("project-1 TotalCost: got %f, want 0.0315 (fork copy deduped)", p.TotalCost.TotalCost)
+			}
+		case "project-2":
+			if !almostEqual(p.TotalCost.TotalCost, 0.0105, 0.0001) {
+				t.Errorf("project-2 TotalCost: got %f, want 0.0105", p.TotalCost.TotalCost)
+			}
+		}
+	}
+}

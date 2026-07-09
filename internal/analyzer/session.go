@@ -3,6 +3,7 @@ package analyzer
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -19,14 +20,31 @@ func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) 
 // in live views); only agent sub-sessions are served from the cache when
 // unchanged. A nil cache parses every agent, matching AnalyzeSession.
 func AnalyzeSessionWithCache(sessionPath string, sessionID string, includeMessages bool, cache *AgentParseCache) (*models.SessionAnalysis, error) {
+	return analyzeSessionExcludingSeen(sessionPath, sessionID, includeMessages, cache, nil)
+}
+
+// analyzeSessionExcludingSeen is AnalyzeSessionWithCache with an optional
+// cross-file dedup set. When seen is non-nil, parent messages whose
+// message.id:requestId was already kept from an earlier file are excluded
+// from this session's totals (fork/branch copies the prior transcript into a
+// new session file — see ExcludeSeenMessages); the keys this session keeps
+// are added to seen. Only parent-file messages participate: agent sub-session
+// files are never cloned by fork, so they stay file-local. A nil seen keeps
+// the session fully file-local.
+func analyzeSessionExcludingSeen(sessionPath string, sessionID string, includeMessages bool, cache *AgentParseCache, seen map[string]struct{}) (*models.SessionAnalysis, error) {
 	// Parse the JSONL file
 	result, err := parser.ParseJSONLFileWithResult(sessionPath)
 	if err != nil {
 		return nil, err
 	}
 
+	messages := result.Messages
+	if seen != nil {
+		messages = parser.ExcludeSeenMessages(messages, seen)
+	}
+
 	// Extract usage data from messages
-	messageAnalyses := parser.ExtractUsageFromMessages(result.Messages)
+	messageAnalyses := parser.ExtractUsageFromMessages(messages)
 
 	// Calculate costs for each message
 	for i := range messageAnalyses {
@@ -264,6 +282,14 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 // result whose Analysis is nil failed to parse. Returning the per-session
 // analyses lets the summary detail view render its breakdown without
 // re-parsing every file (the aggregate already parsed them once).
+//
+// Sessions share a cross-file dedup set: fork/branch flows copy the prior
+// transcript (billed assistant lines included) into a new session file, and
+// summing file-local totals would bill those responses once per file. Files
+// are processed in ascending mtime order so shared history is attributed to
+// the earliest file (the original session); later copies are excluded from
+// both the aggregate and their session's result, so per-session results sum
+// to the aggregate. Standalone single-session views stay file-local.
 func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnalysis, []models.SessionResult, error) {
 	if len(entries) == 0 {
 		return nil, nil, fmt.Errorf("no sessions to analyze")
@@ -274,21 +300,33 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 		CostByModel: make(map[string]models.CostBreakdown),
 	}
 
-	results := make([]models.SessionResult, 0, len(entries))
+	results := make([]models.SessionResult, len(entries))
 	var firstTime, lastTime time.Time
 	firstTimeSet := false
 	skippedSessions := 0
 	successfulSessions := 0
+	seen := make(map[string]struct{})
 
-	for _, entry := range entries {
-		sessionAnalysis, err := AnalyzeSession(entry.FullPath, entry.SessionID, false)
+	// Analyze in ascending mtime order (ties keep input order) so duplicate
+	// attribution is deterministic; results stay in input order.
+	order := make([]int, len(entries))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		return entries[order[a]].Modified.Before(entries[order[b]].Modified)
+	})
+
+	for _, idx := range order {
+		entry := entries[idx]
+		sessionAnalysis, err := analyzeSessionExcludingSeen(entry.FullPath, entry.SessionID, false, nil, seen)
 		if err != nil {
 			skippedSessions++
-			results = append(results, models.SessionResult{Entry: entry, Analysis: nil})
+			results[idx] = models.SessionResult{Entry: entry, Analysis: nil}
 			continue // Skip sessions that can't be parsed
 		}
 		successfulSessions++
-		results = append(results, models.SessionResult{Entry: entry, Analysis: sessionAnalysis})
+		results[idx] = models.SessionResult{Entry: entry, Analysis: sessionAnalysis}
 		// Also aggregate skipped agents and lines from individual sessions
 		aggregate.SkippedAgents += sessionAnalysis.SkippedAgents
 		aggregate.SkippedLines += sessionAnalysis.SkippedLines

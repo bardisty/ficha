@@ -145,7 +145,10 @@ func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error)
 	}
 
 	// Analyze all sessions (the per-session results are only needed by the
-	// summary detail view, not the global rollup)
+	// summary detail view, not the global rollup). Cross-file dedup of
+	// fork-copied transcripts happens inside AnalyzeMultipleSessions, scoped
+	// per project: forks never land in another project's directory, and a
+	// project-local seen set keeps the parallel project workers lock-free.
 	aggregate, _, err := AnalyzeMultipleSessions(sessions)
 	if err != nil {
 		return nil, err

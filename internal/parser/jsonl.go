@@ -186,6 +186,30 @@ func DeduplicateMessages(messages []models.JSONLMessage) []models.JSONLMessage {
 	return deduped
 }
 
+// ExcludeSeenMessages drops messages whose dedup key (message.id:requestId)
+// is already recorded in seen — the same API response was kept from an
+// earlier file — and records the keys of the messages it keeps. Claude Code's
+// fork/branch flows clone the prior transcript (assistant lines included,
+// with billed usage) into a new session file, so without a cross-file seen
+// set aggregates bill those responses once per file. Messages without a
+// message id are always kept: an empty key identifies nothing.
+func ExcludeSeenMessages(messages []models.JSONLMessage, seen map[string]struct{}) []models.JSONLMessage {
+	kept := make([]models.JSONLMessage, 0, len(messages))
+	for _, msg := range messages {
+		key := dedupKey(msg)
+		if key == "" {
+			kept = append(kept, msg)
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		kept = append(kept, msg)
+	}
+	return kept
+}
+
 // ExtractUsageFromMessages extracts token usage data from parsed messages
 func ExtractUsageFromMessages(messages []models.JSONLMessage) []models.MessageAnalysis {
 	var analyses []models.MessageAnalysis
