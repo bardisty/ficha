@@ -64,7 +64,7 @@ const MAP_SCHEMA = {
       required: ['name', 'files', 'rationale', 'riskTier'],
       properties: {
         name: { type: 'string', description: 'short kebab-case unit name, e.g. parser-dedup' },
-        idPrefix: { type: 'string', description: 'SUGGESTED short uppercase finding-id prefix, e.g. PARSE (JS may uniquify)' },
+        idPrefix: { type: 'string', description: 'SUGGESTED uppercase finding-id prefix, 2-6 chars, a meaningful abbreviation (becomes IDs like PARSE-01; longer suggestions get chopped mid-word — pick the abbreviation yourself)' },
         files: { type: 'array', items: { type: 'string' }, description: 'key repo-relative source files this unit covers (verify they exist)' },
         rationale: { type: 'string', description: 'why this unit is risk-relevant for the dimension' },
         riskTier: { type: 'string', enum: ['high', 'medium', 'low'] },

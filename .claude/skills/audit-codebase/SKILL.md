@@ -32,9 +32,9 @@ Call the **Workflow** tool:
 It returns `{ audit, summary }`. (Runs in the background; you are notified on completion. Watch live progress with `/workflows`.)
 
 ## Phase 3 — Write the report
-Create the output dir, then write (byte-faithful — do NOT let an agent re-serialize the JSON):
-- `{outputDir}/audit.json`   = `JSON.stringify(result.audit, null, 2)`
-- `{outputDir}/summary.json` = `JSON.stringify(result.summary, null, 2)`
+The completion notification truncates — use the task's output file. It is an ENVELOPE: the workflow's return value sits under `.result`, so extract `.result.audit` / `.result.summary`. Create the output dir, then write byte-faithfully via a node one-liner (do NOT let an agent re-serialize the JSON):
+- `{outputDir}/audit.json`   = `JSON.stringify(envelope.result.audit, null, 2)`
+- `{outputDir}/summary.json` = `JSON.stringify(envelope.result.summary, null, 2)`
 
 ## Phase 4 — Relay
 Terse summary to the user:
