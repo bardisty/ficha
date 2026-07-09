@@ -1,6 +1,6 @@
 bin/
 ficha
-.claude/
+.claude/settings.local.json
 agent-outputs/
 references/
 .claudeignore
