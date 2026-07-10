@@ -48,7 +48,7 @@ var modelCatalog = []ModelInfo{
 	{ID: "claude-opus-4-1", DisplayName: "Opus 4.1", InputRate: 15.00, OutputRate: 75.00, MaxContextTokens: 200000},
 	// "claude-opus-4-0" / "claude-sonnet-4-0" are the official aliases for
 	// Opus 4 / Sonnet 4; listed explicitly because their "-0" suffix would
-	// otherwise be rejected as a version segment by normalizeModelID
+	// otherwise be rejected as a version segment by NormalizeModelID
 	{ID: "claude-opus-4-0", DisplayName: "Opus 4", InputRate: 15.00, OutputRate: 75.00, MaxContextTokens: 200000},
 	{ID: "claude-opus-4", DisplayName: "Opus 4", InputRate: 15.00, OutputRate: 75.00, MaxContextTokens: 200000},
 	// Sonnet 4.x
@@ -191,9 +191,17 @@ func matchCatalogPrefix(modelID string) (string, bool) {
 	return "", false
 }
 
-// normalizeModelID resolves a model ID to its canonical catalog ID, returning
-// modelID unchanged when the catalog does not know it.
-func normalizeModelID(modelID string) string {
+// NormalizeModelID resolves a model ID to its canonical catalog ID, returning
+// modelID unchanged when the catalog does not know it. Aggregation keys on this
+// so dated snapshots of one model ("claude-sonnet-4-5-20250929" and
+// "-20251119") collapse to the single row they render as; an unknown ID keeps
+// its raw form so nothing ficha cannot price is silently merged.
+//
+// The 1M-context marker is part of the decoration this strips, so
+// "claude-opus-4-8[1m]" and "claude-opus-4-8" share a key. Their rates are
+// identical (long-context premium pricing is unmodeled — see the catalog
+// comments), so only the beta attribution is lost, not any cost.
+func NormalizeModelID(modelID string) string {
 	id, _, _ := canonicalModelID(modelID)
 	return id
 }

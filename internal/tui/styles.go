@@ -2,6 +2,22 @@ package tui
 
 import "github.com/bardisty/ficha/internal/styles"
 
+// unknownModelMarker tags a model whose cost came from the fallback pricing
+// table rather than the catalog. show/summary/global say so on stderr; a TUI
+// owns the screen, so the marker plus the footnote below is its only channel.
+// One ASCII cell in both modes, so the fixed-width MODEL columns stay aligned.
+const unknownModelMarker = "*"
+
+// unknownModelFootnote explains unknownModelMarker in a footer, mode-aware on
+// the warning glyph like the skipped-lines warning beside it.
+func unknownModelFootnote(noColor bool) string {
+	glyph := "⚠"
+	if noColor {
+		glyph = "!"
+	}
+	return glyph + " " + unknownModelMarker + " = fallback pricing"
+}
+
 // Local aliases for frequently used styles
 var (
 	headerStyle        = styles.HeaderStyle

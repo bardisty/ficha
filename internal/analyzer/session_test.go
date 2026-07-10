@@ -133,6 +133,95 @@ func TestAnalyzeSessionFromMessages(t *testing.T) {
 	}
 }
 
+// assistantMsg builds a one-message JSONL entry billed to model.
+func assistantMsg(model string, inputTokens int64) models.JSONLMessage {
+	return models.JSONLMessage{
+		Type:      "assistant",
+		Timestamp: time.Now(),
+		Message: &models.AssistantMessage{
+			Model: model,
+			Usage: models.TokenUsage{InputTokens: inputTokens},
+		},
+	}
+}
+
+// CostByModel keys on the canonical catalog ID, so every dated snapshot and
+// provider spelling of one model shares a row. Keying on the raw ID split one
+// model's cost across rows: the COST BY MODEL section printed the same display
+// name twice, and PrimaryModel could crown a model that cost less in total.
+func TestCostByModelKeysAreNormalized(t *testing.T) {
+	// Two dated snapshots of Sonnet 4.5 ($3/M in) at $3.00 each, against one
+	// Opus 4.5 ($5/M in) at $5.00. Split, Opus wins each row; merged, Sonnet
+	// leads $6.00 to $5.00.
+	analysis := AnalyzeSessionFromMessages("s", "/p", []models.JSONLMessage{
+		assistantMsg("claude-sonnet-4-5-20250929", 1_000_000),
+		assistantMsg("claude-sonnet-4-5-20251119", 1_000_000),
+		assistantMsg("claude-opus-4-5", 1_000_000),
+	}, false)
+
+	want := map[string]float64{
+		"claude-sonnet-4-5": 6.00,
+		"claude-opus-4-5":   5.00,
+	}
+	if len(analysis.CostByModel) != len(want) {
+		t.Fatalf("CostByModel has %d keys (%v), want %d", len(analysis.CostByModel), analysis.CostByModel, len(want))
+	}
+	for model, wantCost := range want {
+		got, ok := analysis.CostByModel[model]
+		if !ok {
+			t.Fatalf("CostByModel missing key %q, got %v", model, analysis.CostByModel)
+		}
+		if !almostEqual(got.TotalCost, wantCost, 0.0001) {
+			t.Errorf("CostByModel[%q].TotalCost = %f, want %f", model, got.TotalCost, wantCost)
+		}
+	}
+
+	// Per-message rows keep the raw ID: normalization is an aggregation concern.
+	if analysis.LastMessageModel != "claude-opus-4-5" {
+		t.Errorf("LastMessageModel = %q, want the raw ID", analysis.LastMessageModel)
+	}
+}
+
+// Decorated spellings of one model (Vertex '@date', Bedrock profile+version,
+// the 1M-context beta marker) all resolve to the same catalog row, so they must
+// not each open a CostByModel key. Unknown models keep their raw ID — nothing
+// ficha cannot price is silently merged into a row it can.
+func TestCostByModelMergesDecoratedIDsAndKeepsUnknownRaw(t *testing.T) {
+	analysis := AnalyzeSessionFromMessages("s", "/p", []models.JSONLMessage{
+		assistantMsg("claude-opus-4-8", 1_000_000),
+		assistantMsg("claude-opus-4-8[1m]", 1_000_000),
+		assistantMsg("claude-opus-4-8@20251101", 1_000_000),
+		assistantMsg("us.anthropic.claude-opus-4-8-20251101-v1:0", 1_000_000),
+		assistantMsg("claude-opus-4-9", 1_000_000),     // unknown family version
+		assistantMsg("claude-opus-4-9", 1_000_000),     // ... aggregates with itself
+		assistantMsg("claude-opus-4-9[2m]", 1_000_000), // unrecognized decorator (D16): its own row
+	}, false)
+
+	// 4 × Opus 4.8 @ $5/M = $20.00 in one row.
+	opus48, ok := analysis.CostByModel["claude-opus-4-8"]
+	if !ok {
+		t.Fatalf("CostByModel missing claude-opus-4-8, got %v", analysis.CostByModel)
+	}
+	if !almostEqual(opus48.TotalCost, 20.00, 0.0001) {
+		t.Errorf("claude-opus-4-8 TotalCost = %f, want 20.00 (all four spellings merged)", opus48.TotalCost)
+	}
+
+	// 2 × unknown @ the $3/M default = $6.00, still under the raw ID.
+	unknown, ok := analysis.CostByModel["claude-opus-4-9"]
+	if !ok {
+		t.Fatalf("CostByModel missing claude-opus-4-9, got %v", analysis.CostByModel)
+	}
+	if !almostEqual(unknown.TotalCost, 6.00, 0.0001) {
+		t.Errorf("claude-opus-4-9 TotalCost = %f, want 6.00", unknown.TotalCost)
+	}
+	if _, ok := analysis.CostByModel["claude-opus-4-9[2m]"]; !ok {
+		t.Errorf("an unrecognized decorator must keep its own raw key, got %v", analysis.CostByModel)
+	}
+	if len(analysis.CostByModel) != 3 {
+		t.Errorf("CostByModel has %d keys (%v), want 3", len(analysis.CostByModel), analysis.CostByModel)
+	}
+}
+
 // --- 2A: TestAnalyzeSession_Basic ---
 
 func TestAnalyzeSession_Basic(t *testing.T) {

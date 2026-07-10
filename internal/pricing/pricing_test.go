@@ -284,7 +284,7 @@ func TestNormalizeModelID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			result := normalizeModelID(tt.input)
+			result := NormalizeModelID(tt.input)
 			if result != tt.expected {
 				t.Errorf("got %s, want %s", result, tt.expected)
 			}
@@ -484,8 +484,8 @@ func TestModelCatalogIntegrity(t *testing.T) {
 		if !IsKnownModel(m.ID) {
 			t.Errorf("IsKnownModel(%q) = false for catalog entry", m.ID)
 		}
-		if got := normalizeModelID(m.ID); got != m.ID {
-			t.Errorf("normalizeModelID(%q) = %q, want identity", m.ID, got)
+		if got := NormalizeModelID(m.ID); got != m.ID {
+			t.Errorf("NormalizeModelID(%q) = %q, want identity", m.ID, got)
 		}
 	}
 }

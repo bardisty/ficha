@@ -8,6 +8,7 @@ import (
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
+	"github.com/bardisty/ficha/internal/pricing"
 )
 
 // AnalyzeSession analyzes a session JSONL file and returns the complete analysis.
@@ -171,11 +172,12 @@ func analyzeAgentWithCache(agentPath string, cache *AgentParseCache) (*models.Ag
 		analysis.TotalCost.Add(msg.Cost)
 
 		// Track cost by model
-		if existing, ok := analysis.CostByModel[msg.Model]; ok {
+		model := pricing.NormalizeModelID(msg.Model)
+		if existing, ok := analysis.CostByModel[model]; ok {
 			existing.Add(msg.Cost)
-			analysis.CostByModel[msg.Model] = existing
+			analysis.CostByModel[model] = existing
 		} else {
-			analysis.CostByModel[msg.Model] = msg.Cost
+			analysis.CostByModel[model] = msg.Cost
 		}
 	}
 
@@ -246,11 +248,12 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 		totalCost.Add(msg.Cost)
 
 		// Track cost by model
-		if existing, ok := analysis.CostByModel[msg.Model]; ok {
+		model := pricing.NormalizeModelID(msg.Model)
+		if existing, ok := analysis.CostByModel[model]; ok {
 			existing.Add(msg.Cost)
-			analysis.CostByModel[msg.Model] = existing
+			analysis.CostByModel[model] = existing
 		} else {
-			analysis.CostByModel[msg.Model] = msg.Cost
+			analysis.CostByModel[model] = msg.Cost
 		}
 	}
 

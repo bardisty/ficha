@@ -213,6 +213,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 
 		// Get primary model for this agent
 		modelName := render.PrimaryModel(agent.CostByModel)
+		modelLabel := render.ClampModel(modelName, 11)
 
 		// Format message count with singular/plural
 		msgStr := fmt.Sprintf("%d msgs", agent.MessageCount)
@@ -224,7 +225,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 			marker := fmt.Sprintf("[A%d]", agentNum)
 			idStr := fmt.Sprintf("(%s)", shortID)
 			sb.WriteString(fmt.Sprintf("  %-5s %-11s %-10s %8s      %s\n",
-				marker, modelName, idStr, msgStr, render.Cost(agent.TotalCost.TotalCost)))
+				marker, modelLabel, idStr, msgStr, render.Cost(agent.TotalCost.TotalCost)))
 		} else {
 			// Color agent marker (use %-5s to handle [A10] etc)
 			agentColor := styles.GetAgentColor(fmt.Sprintf("%d", agentNum))
@@ -232,7 +233,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 
 			// Color model name by tier
 			modelColor := styles.GetModelColor(modelName)
-			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelName))
+			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
 
 			// Dim the ID and message count
 			idStyled := dimStyle.Render(fmt.Sprintf("%-10s", fmt.Sprintf("(%s)", shortID)))

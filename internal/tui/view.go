@@ -314,7 +314,28 @@ func (m Model) renderFooter() string {
 			footerLine += footerStyle.Render("  "+sep+"  ") + warnStyle.Render(fmt.Sprintf("⚠ %d skipped line(s)", a.SkippedLines))
 		}
 	}
+
+	// Explain the COST BY MODEL asterisk: those rows are fallback-priced
+	if hasUnknownModel(a.CostByModel) {
+		if m.noColor {
+			footerLine += fmt.Sprintf("  %s  %s", sep, unknownModelFootnote(true))
+		} else {
+			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
+			footerLine += footerStyle.Render("  "+sep+"  ") + warnStyle.Render(unknownModelFootnote(false))
+		}
+	}
 	return footerLine
+}
+
+// hasUnknownModel reports whether any model in a cost-by-model map was priced
+// from the fallback table.
+func hasUnknownModel(costByModel map[string]models.CostBreakdown) bool {
+	for modelID := range costByModel {
+		if !pricing.IsKnownModel(modelID) {
+			return true
+		}
+	}
+	return false
 }
 
 // renderCostByModelContent renders just the cost by model content (no header)
@@ -327,14 +348,22 @@ func (m Model) renderCostByModelContent() string {
 		modelName := pricing.GetModelDisplayName(modelID)
 		highlighted := m.isHighlighted("model_" + modelID)
 
+		// The TUI has no stderr to warn on (it owns the screen), so an unpriced
+		// model is flagged inline; renderFooter explains the marker. Clamp
+		// before appending so the marker survives a long raw ID.
+		modelLabel := render.ClampModel(modelName, 12)
+		if !pricing.IsKnownModel(modelID) {
+			modelLabel = render.ClampModel(modelName, 11) + unknownModelMarker
+		}
+
 		// Apply model color to the label (reduced padding from 18 to 12)
 		var labelStr string
 		if !m.noColor {
 			modelColor := styles.GetModelColor(modelName)
 			labelStyle := lipgloss.NewStyle().Foreground(modelColor)
-			labelStr = labelStyle.Render(fmt.Sprintf("%-12s", modelName))
+			labelStr = labelStyle.Render(fmt.Sprintf("%-12s", modelLabel))
 		} else {
-			labelStr = fmt.Sprintf("%-12s", modelName)
+			labelStr = fmt.Sprintf("%-12s", modelLabel)
 		}
 
 		// Plain white costs - model tier colors already provide cost hierarchy
@@ -400,6 +429,7 @@ func (m Model) renderAgentBreakdownContent() string {
 
 		// Get primary model for this agent
 		modelName := render.PrimaryModel(agent.CostByModel)
+		modelLabel := render.ClampModel(modelName, 11)
 
 		// Format message count with singular/plural
 		msgStr := fmt.Sprintf("%d msgs", agent.MessageCount)
@@ -414,7 +444,7 @@ func (m Model) renderAgentBreakdownContent() string {
 
 			// Color model name by tier
 			modelColor := styles.GetModelColor(modelName)
-			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelName))
+			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
 
 			// Dim the ID and message count
 			idStyled := dimStyle.Render(fmt.Sprintf("%-10s", fmt.Sprintf("(%s)", shortID)))
@@ -426,7 +456,7 @@ func (m Model) renderAgentBreakdownContent() string {
 			marker := fmt.Sprintf("[A%d]", i+1)
 			idStr := fmt.Sprintf("(%s)", shortID)
 			sb.WriteString(fmt.Sprintf("    %-5s %-11s %-10s %8s      %s\n",
-				marker, modelName, idStr, msgStr, costStr))
+				marker, modelLabel, idStr, msgStr, costStr))
 		}
 	}
 

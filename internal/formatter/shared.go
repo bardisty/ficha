@@ -257,12 +257,13 @@ func formatCostByModelContent(analysis *models.SessionAnalysis, noColor bool) st
 	for _, modelID := range render.OrderModelsByCost(analysis.CostByModel) {
 		cost := analysis.CostByModel[modelID]
 		modelName := pricing.GetModelDisplayName(modelID)
+		modelLabel := render.ClampModel(modelName, 12)
 		if noColor {
-			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelName, render.Cost(cost.TotalCost)))
+			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelLabel, render.Cost(cost.TotalCost)))
 		} else {
 			// Color by model tier
 			modelColor := styles.GetModelColor(modelName)
-			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-12s", modelName))
+			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-12s", modelLabel))
 			sb.WriteString(fmt.Sprintf("    %s %s\n", modelStyled, formatCostStyled(cost.TotalCost, 12, noColor)))
 		}
 	}
