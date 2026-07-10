@@ -19,11 +19,6 @@ type MessageScope int
 const (
 	// NoMessages omits the per-message list entirely.
 	NoMessages MessageScope = iota
-	// ParentMessages keeps the parent transcript's messages in file order.
-	// The live TUI's cost chart pushes only the newly appended tail, so it
-	// needs a list whose existing prefix never shifts — agent messages, which
-	// appear mid-list as sub-sessions are discovered, would corrupt it.
-	ParentMessages
 	// AllMessages keeps the parent transcript's messages followed by each agent
 	// sub-session's, tagged with MessageAnalysis.AgentID. Message costs then sum
 	// to SessionAnalysis.TotalCost.

@@ -1,7 +1,6 @@
 package analyzer
 
 import (
-	"fmt"
 	"path/filepath"
 	"sort"
 
@@ -23,7 +22,8 @@ type BreakdownResult struct {
 }
 
 // GetBreakdownMessages parses a session and returns all messages (parent + agents)
-// merged chronologically with sequential indices and agent IDs assigned.
+// merged chronologically with sequential indices, each agent message tagged with
+// its real agent ID (parser.ExtractAgentID).
 func GetBreakdownMessages(sessionPath, sessionID string) (*BreakdownResult, error) {
 	return GetBreakdownMessagesWithCache(sessionPath, sessionID, nil)
 }
@@ -67,10 +67,6 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 	projectDir := filepath.Dir(sessionPath)
 	agentPaths, skippedAgents := parser.DiscoverAgentSessions(projectDir, sessionID)
 
-	// Track agents with simple sequential numbering
-	agentNum := 1
-	agentIDMap := make(map[string]string) // agentPath -> display ID like "1", "2"
-
 	for _, agentPath := range agentPaths {
 		agentAnalyses, agentSkipped, err := loadAgentMessages(agentPath, cache)
 		if err != nil {
@@ -79,10 +75,9 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		}
 		skippedLines += agentSkipped
 
-		// Assign a display ID for this agent
-		displayID := fmt.Sprintf("%d", agentNum)
-		agentIDMap[agentPath] = displayID
-		agentNum++
+		// Same key space as AgentAnalysis.AgentID, so a marker in the TUI can
+		// be cross-referenced against the machine outputs
+		displayID := parser.ExtractAgentID(agentPath)
 
 		// Convert agent messages to breakdown format (already cost-annotated by
 		// loadAgentMessages)
@@ -100,8 +95,9 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		}
 	}
 
-	// Sort all messages by timestamp
-	sort.Slice(allMessages, func(i, j int) bool {
+	// Sort all messages by timestamp; stable so equal timestamps keep the
+	// deterministic append order (parent rows, then agents in discovery order)
+	sort.SliceStable(allMessages, func(i, j int) bool {
 		return allMessages[i].Timestamp.Before(allMessages[j].Timestamp)
 	})
 

@@ -1177,7 +1177,6 @@ func TestAnalyzeMultipleSessions_AggregatesWorkflowCount(t *testing.T) {
 
 // AllMessages appends each agent's messages after the parent block, tagged with
 // the agent ID, so per-message rows sum to the session total.
-// ParentMessages keeps the list parent-only for the live cost chart.
 func TestAnalyzeSession_MessageScope(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionPath := filepath.Join(tmpDir, "sess.jsonl")
@@ -1191,21 +1190,6 @@ func TestAnalyzeSession_MessageScope(t *testing.T) {
 		}
 		if len(analysis.Messages) != 0 {
 			t.Errorf("Messages: got %d, want 0", len(analysis.Messages))
-		}
-	})
-
-	t.Run("ParentMessages", func(t *testing.T) {
-		analysis, err := AnalyzeSession(sessionPath, "sess", ParentMessages)
-		if err != nil {
-			t.Fatalf("AnalyzeSession: %v", err)
-		}
-		if len(analysis.Messages) != 2 {
-			t.Fatalf("Messages: got %d, want 2 (parent only)", len(analysis.Messages))
-		}
-		for i, msg := range analysis.Messages {
-			if msg.AgentID != "" {
-				t.Errorf("Messages[%d].AgentID: got %q, want empty", i, msg.AgentID)
-			}
 		}
 	})
 
@@ -1239,9 +1223,8 @@ func TestAnalyzeSession_MessageScope(t *testing.T) {
 // The parse cache hands back its own slice; tagging agent messages must not
 // write an AgentID into the cached entry, and must not alias the cached
 // Usage.CacheCreation pointer (MessageAnalysis copies shallowly). The exported
-// analysis is checked against the cache directly — asserting on a later
-// ParentMessages pass would pass vacuously, since that scope never emits agent
-// rows at all.
+// analysis is checked against the cache directly — asserting on a later pass
+// that omits agent rows would pass vacuously.
 func TestAnalyzeSession_AllMessagesDoesNotMutateCache(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionPath := filepath.Join(tmpDir, "sess.jsonl")

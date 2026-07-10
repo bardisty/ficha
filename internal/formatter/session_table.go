@@ -209,10 +209,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 			}
 		}
 		agentNum := i + 1
-		shortID := agent.AgentID
-		if len(shortID) > 7 {
-			shortID = shortID[:7]
-		}
+		shortID := render.ShortAgentID(agent.AgentID)
 
 		// Get primary model for this agent
 		modelName := render.PrimaryModel(agent.CostByModel)

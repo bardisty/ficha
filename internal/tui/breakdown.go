@@ -619,10 +619,11 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevC
 	// Get trend indicator
 	trendSymbol, trendDirection := getRowTrendIndicator(msg.Cost.TotalCost, prevCost, isFirst)
 
-	// Agent marker at the end
+	// Agent marker at the end: the real agent ID, abbreviated. No fixed-width
+	// padding — nothing renders after it and the viewport pads every line.
 	agentMarker := ""
 	if msg.AgentID != "" {
-		agentMarker = fmt.Sprintf("[A%s]", msg.AgentID)
+		agentMarker = "[A" + render.ShortAgentID(msg.AgentID) + "]"
 	}
 
 	if m.noColor {

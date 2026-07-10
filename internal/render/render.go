@@ -139,6 +139,16 @@ func ClampModel(label string, width int) string {
 	return string(r[:width-1]) + "…"
 }
 
+// ShortAgentID abbreviates an agent ID to at most 7 bytes for display. Byte
+// truncation is deliberate: agent IDs come from agent-<id>.jsonl filenames and
+// are ASCII, so bytes == columns and no rune can be split.
+func ShortAgentID(id string) string {
+	if len(id) > 7 {
+		return id[:7]
+	}
+	return id
+}
+
 // PrimaryModel returns the display name of the dominant model (by highest
 // cost) in a cost-by-model map, or "-" when there is no model data. Ties break
 // by ID ascending, matching OrderModelsByCost — without it Go's randomized map

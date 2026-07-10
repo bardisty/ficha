@@ -11,15 +11,26 @@ func TestGetAgentColor(t *testing.T) {
 		agentID  string
 		expected lipgloss.Color
 	}{
-		{"", SecondaryColor},        // Empty returns secondary
-		{"1", AgentColors[0]},       // A1 = pink
-		{"2", AgentColors[1]},       // A2 = orange
-		{"3", AgentColors[2]},       // A3 = yellow
-		{"4", AgentColors[3]},       // A4 = blue
-		{"5", AgentColors[4]},       // A5 = cyan
-		{"6", AgentColors[0]},       // A6 = wraps to pink
-		{"10", AgentColors[4]},      // A10 = wraps to cyan
-		{"invalid", AgentColors[0]}, // Non-numeric defaults to 1
+		{"", SecondaryColor},   // Empty returns secondary
+		{"1", AgentColors[0]},  // A1 = pink
+		{"2", AgentColors[1]},  // A2 = orange
+		{"3", AgentColors[2]},  // A3 = yellow
+		{"4", AgentColors[3]},  // A4 = blue
+		{"5", AgentColors[4]},  // A5 = cyan
+		{"6", AgentColors[0]},  // A6 = wraps to pink
+		{"10", AgentColors[4]}, // A10 = wraps to cyan
+		// Non-numeric IDs hash (FNV-1a % len). Expectations are pinned
+		// per-ID because with 5 palette entries "distinct IDs get distinct
+		// colors" is not an invariant — only stability is.
+		{"invalid", AgentColors[0]},
+		{"abc123", AgentColors[3]},
+		{"g7h8i9j0k1l2", AgentColors[2]}, // the breakdown golden's fixture ID
+		// Digit-prefixed hex must take the hash path, not parse as ordinal 3
+		// (which would be AgentColors[2])
+		{"3f2a1b", AgentColors[0]},
+		// Atoi succeeds but ordinals start at 1, so "0" hashes too
+		// (ordinal arithmetic on it would index AgentColors[-1])
+		{"0", AgentColors[3]},
 	}
 
 	for _, tt := range tests {
@@ -30,6 +41,7 @@ func TestGetAgentColor(t *testing.T) {
 			}
 		})
 	}
+
 }
 
 func TestGetModelColor(t *testing.T) {

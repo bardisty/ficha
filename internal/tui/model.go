@@ -2,6 +2,7 @@ package tui
 
 import (
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -74,9 +75,8 @@ type Model struct {
 	switchNotifyAt time.Time       // When session switch notification started
 
 	// Cost trend chart
-	costChart        sparkline.Model // Sparkline chart for cost trend
-	costHistory      []float64       // Rolling window of per-message costs
-	lastMessageCount int             // Track message count to detect new messages
+	costChart   sparkline.Model // Sparkline chart for cost trend
+	costHistory []float64       // Rolling window of per-message costs (parent + agents, chronological)
 
 	// Last subagent-tree fingerprint; the poll reloads when it changes
 	// (fsnotify never sees subagent/workflow writes — see subagentPollCmd)
@@ -289,7 +289,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Reset cost chart for new session
 		m.costHistory = make([]float64, 0)
-		m.lastMessageCount = 0
 		chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
 		m.costChart = sparkline.New(m.getChartWidth(), chartHeight, sparkline.WithStyle(chartStyle))
 
@@ -517,50 +516,52 @@ func (m Model) getChartWidth() int {
 	return maxWidth
 }
 
-// updateCostChart updates the sparkline chart with cost data from analysis
+// mergedCostHistory extracts per-message costs in chronological order, keeping
+// at most max entries from the end. The analyzer emits messages as parent
+// block then agent blocks (its documented order — never sorted in place here),
+// so a stable sort both interleaves agent spend where it happened and keeps
+// that order deterministic when timestamps tie.
+func mergedCostHistory(msgs []models.MessageAnalysis, max int) []float64 {
+	type point struct {
+		ts   time.Time
+		cost float64
+	}
+	points := make([]point, len(msgs))
+	for i, msg := range msgs {
+		points[i] = point{ts: msg.Timestamp, cost: msg.Cost.TotalCost}
+	}
+	sort.SliceStable(points, func(i, j int) bool {
+		return points[i].ts.Before(points[j].ts)
+	})
+	if len(points) > max {
+		points = points[len(points)-max:]
+	}
+	history := make([]float64, len(points))
+	for i, p := range points {
+		history[i] = p.cost
+	}
+	return history
+}
+
+// updateCostChart rebuilds the sparkline from the analysis on every reload.
+// A full rebuild (rather than pushing the new tail) is what lets the list
+// carry agent messages, whose timestamps land mid-list; reloads only happen
+// on real file changes, and the rebuild is far cheaper than the re-parse
+// that precedes it.
 func (m *Model) updateCostChart() {
-	if m.analysis == nil || m.analysis.Messages == nil {
+	if m.analysis == nil {
 		return
 	}
 
-	// Check if we have new messages
-	currentMessageCount := len(m.analysis.Messages)
-	if currentMessageCount <= m.lastMessageCount {
-		return // No new messages
-	}
+	m.costHistory = mergedCostHistory(m.analysis.Messages, maxCostHistorySize)
 
-	// Extract costs from new messages
-	for i := m.lastMessageCount; i < currentMessageCount; i++ {
-		cost := m.analysis.Messages[i].Cost.TotalCost
-		m.costHistory = append(m.costHistory, cost)
-	}
+	chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
+	m.costChart = sparkline.New(m.getChartWidth(), chartHeight, sparkline.WithStyle(chartStyle))
+	m.costChart.PushAll(m.costHistory)
 
-	// Cap history size to prevent unbounded growth
-	trimmed := false
-	if len(m.costHistory) > maxCostHistorySize {
-		m.costHistory = m.costHistory[len(m.costHistory)-maxCostHistorySize:]
-		trimmed = true
-	}
-
-	// If trimmed, rebuild chart from scratch; otherwise push incrementally
-	if trimmed {
-		// Recreate chart and repopulate with trimmed window
-		chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
-		m.costChart = sparkline.New(m.getChartWidth(), chartHeight, sparkline.WithStyle(chartStyle))
-		m.costChart.PushAll(m.costHistory)
-	} else {
-		// Push only new values for efficiency
-		for i := m.lastMessageCount; i < currentMessageCount; i++ {
-			m.costChart.Push(m.analysis.Messages[i].Cost.TotalCost)
-		}
-	}
-
-	// Redraw the chart with updated data
 	if !m.noColor {
 		m.costChart.DrawBraille()
 	} else {
 		m.costChart.Draw()
 	}
-
-	m.lastMessageCount = currentMessageCount
 }

@@ -149,7 +149,7 @@ func TestGetBreakdownMessages_WithAgents(t *testing.T) {
 	}
 
 	// Verify chronological ordering (agent message should be in the middle)
-	expectedOrder := []string{"", "1", ""} // parent, agent, parent
+	expectedOrder := []string{"", "abc123", ""} // parent, agent, parent
 	for i, msg := range messages {
 		if msg.AgentID != expectedOrder[i] {
 			t.Errorf("message %d: expected AgentID %q, got %q", i, expectedOrder[i], msg.AgentID)
@@ -163,9 +163,9 @@ func TestGetBreakdownMessages_WithAgents(t *testing.T) {
 		}
 	}
 
-	// Verify agent message has proper AgentID
-	if messages[1].AgentID != "1" {
-		t.Errorf("agent message should have AgentID '1', got %q", messages[1].AgentID)
+	// Verify the agent message carries the real ID from its filename
+	if messages[1].AgentID != "abc123" {
+		t.Errorf("agent message should have AgentID 'abc123', got %q", messages[1].AgentID)
 	}
 }
 
@@ -304,10 +304,66 @@ func TestGetBreakdownMessages_ChronologicalMerge(t *testing.T) {
 	}
 
 	// Verify alternating pattern: parent(10:00), agent(10:10), parent(10:20), agent(10:30), parent(10:40)
-	expectedAgentIDs := []string{"", "1", "", "1", ""}
+	expectedAgentIDs := []string{"", "test", "", "test", ""}
 	for i, msg := range messages {
 		if msg.AgentID != expectedAgentIDs[i] {
 			t.Errorf("message %d: expected AgentID %q, got %q", i, expectedAgentIDs[i], msg.AgentID)
+		}
+	}
+}
+
+// Equal timestamps must keep the append order (parent rows, then agents in
+// discovery order) — the sort is stable, so the merged view is deterministic
+// even when a burst of messages shares one timestamp.
+func TestGetBreakdownMessages_StableOrderForEqualTimestamps(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sessionID := "equal-ts"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatalf("failed to create subagents dir: %v", err)
+	}
+
+	// Every message carries the identical timestamp
+	line := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":50}}}`
+	lines := func(n int) string {
+		s := line
+		for i := 1; i < n; i++ {
+			s += "\n" + line
+		}
+		return s
+	}
+
+	if err := os.WriteFile(sessionPath, []byte(lines(8)), 0644); err != nil {
+		t.Fatalf("failed to write session file: %v", err)
+	}
+	for _, name := range []string{"agent-aaa.jsonl", "agent-bbb.jsonl"} {
+		if err := os.WriteFile(filepath.Join(subagentsDir, name), []byte(lines(8)), 0644); err != nil {
+			t.Fatalf("failed to write agent file: %v", err)
+		}
+	}
+
+	var want []string
+	for _, id := range []string{"", "aaa", "bbb"} {
+		for i := 0; i < 8; i++ {
+			want = append(want, id)
+		}
+	}
+
+	for run := 0; run < 2; run++ {
+		result, err := GetBreakdownMessages(sessionPath, sessionID)
+		if err != nil {
+			t.Fatalf("GetBreakdownMessages failed: %v", err)
+		}
+		if len(result.Messages) != len(want) {
+			t.Fatalf("run %d: expected %d messages, got %d", run, len(want), len(result.Messages))
+		}
+		for i, msg := range result.Messages {
+			if msg.AgentID != want[i] {
+				t.Errorf("run %d, message %d: expected AgentID %q, got %q", run, i, want[i], msg.AgentID)
+			}
 		}
 	}
 }
@@ -346,7 +402,7 @@ func TestGetBreakdownMessages_WithWorkflowAgents(t *testing.T) {
 	}
 
 	// Chronological merge: parent, workflow agent, parent
-	expectedOrder := []string{"", "1", ""}
+	expectedOrder := []string{"", "w1", ""}
 	for i, msg := range messages {
 		if msg.AgentID != expectedOrder[i] {
 			t.Errorf("message %d: expected AgentID %q, got %q", i, expectedOrder[i], msg.AgentID)

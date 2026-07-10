@@ -397,7 +397,7 @@ func (i *MessageInsights) TrendDescription() string {
 // combining parent and agent messages with sequential indexing
 type BreakdownMessage struct {
 	Index     int           // 1-based sequential index across all messages
-	AgentID   string        // Empty for parent session, "1", "2", etc. for agents
+	AgentID   string        // Real agent ID from agent-<id>.jsonl (same key space as AgentAnalysis.AgentID); empty for parent session
 	Timestamp time.Time     // Message timestamp
 	Model     string        // Model used for this message
 	Usage     TokenUsage    // Token usage for this message

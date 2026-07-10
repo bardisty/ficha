@@ -422,10 +422,7 @@ func (m Model) renderAgentBreakdownContent() string {
 		agentHighlighted := m.isHighlighted("agent_" + agent.AgentID)
 		costStr := render.CostStyled(agent.TotalCost.TotalCost, 11, agentHighlighted, m.noColor)
 
-		shortID := agent.AgentID
-		if len(shortID) > 7 {
-			shortID = shortID[:7]
-		}
+		shortID := render.ShortAgentID(agent.AgentID)
 
 		// Get primary model for this agent
 		modelName := render.PrimaryModel(agent.CostByModel)

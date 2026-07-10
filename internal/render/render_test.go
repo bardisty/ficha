@@ -132,6 +132,24 @@ func TestTruncateID(t *testing.T) {
 	}
 }
 
+func TestShortAgentID(t *testing.T) {
+	tests := []struct {
+		id   string
+		want string
+	}{
+		{"", ""},
+		{"w1", "w1"},
+		{"exact77", "exact77"},                 // exactly 7 stays whole
+		{"g7h8i9j0k1l2", "g7h8i9j"},            // 12-char hash cut to 7
+		{"550e8400-e29b-41d4-a716", "550e840"}, // UUID-shaped
+	}
+	for _, tt := range tests {
+		if got := ShortAgentID(tt.id); got != tt.want {
+			t.Errorf("ShortAgentID(%q) = %q, want %q", tt.id, got, tt.want)
+		}
+	}
+}
+
 func TestClampModel(t *testing.T) {
 	tests := []struct {
 		label string

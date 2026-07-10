@@ -170,7 +170,7 @@ func TestBreakdownModel_RenderRow_WithAgent(t *testing.T) {
 
 	msg := models.BreakdownMessage{
 		Index:     10,
-		AgentID:   "1",
+		AgentID:   "g7h8i9j0k1l2", // real 12-char ID — marker shows the first 7
 		Timestamp: time.Date(2024, 1, 15, 14, 30, 45, 0, time.UTC),
 		Model:     "claude-haiku-4-5",
 		Usage: models.TokenUsage{
@@ -184,13 +184,20 @@ func TestBreakdownModel_RenderRow_WithAgent(t *testing.T) {
 
 	row := m.renderRow(msg, false, 0.05, false) // prevCost=0.05, isFirst=false
 
-	// Check agent marker is present
-	if !strings.Contains(row, "[A1]") {
-		t.Error("row should contain agent marker [A1]")
+	// Check agent marker shows the truncated real ID
+	if !strings.Contains(row, "[Ag7h8i9j]") {
+		t.Errorf("row should contain agent marker [Ag7h8i9j], got %q", row)
 	}
 	// Check model name is present (agent using Haiku)
 	if !strings.Contains(row, "Haiku 4.5") {
 		t.Error("row should contain model name 'Haiku 4.5'")
+	}
+
+	// A short ID is shown whole
+	msg.AgentID = "w1"
+	row = m.renderRow(msg, false, 0.05, false)
+	if !strings.Contains(row, "[Aw1]") {
+		t.Errorf("row should contain agent marker [Aw1], got %q", row)
 	}
 }
 
