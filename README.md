@@ -82,6 +82,19 @@
                        listed (there the count is a lower bound)
     skipped_lines      JSONL lines rejected as malformed or oversized
 
+  Costs that could not be computed exactly are counted the same way. A
+  message whose cache-write tokens carry no TTL attribution (sessions
+  from before the cache_creation breakdown existed) is priced at the 5m
+  write rate — the cheapest tier, so its cost is a lower-bound estimate.
+  estimated_cost_messages counts them (json omitted when zero, csv
+  column, stderr warning); zero means every cost is exact.
+
+  Token usage is exported in one reconciled form: whenever write tokens
+  exist, usage carries a cache_creation object whose 5m + 1h buckets sum
+  exactly to cache_creation_input_tokens, and negative counts from
+  corrupt lines are clamped to zero before costs and totals alike — the
+  tokens you see are always the tokens that were billed.
+
   Counts describe only what the totals cover. session_count is the
   sessions that were analyzed, agent_count the agents that were: add
   the matching skipped_* to recover what was on disk. list and show

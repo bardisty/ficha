@@ -84,6 +84,7 @@ func AnalyzeAllProjects(projects []models.ProjectInfo) (*models.GlobalAnalysis, 
 		global.SkippedSessions += analysis.SkippedSessions
 		global.SkippedAgents += analysis.SkippedAgents
 		global.SkippedLines += analysis.SkippedLines
+		global.EstimatedCostMessages += analysis.EstimatedCostMessages
 		global.TotalCost.Add(analysis.TotalCost)
 		global.TotalUsage.Add(analysis.TotalUsage)
 
@@ -161,15 +162,16 @@ func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error)
 	// aggregate could cost — a discovered-but-unparseable session belongs in
 	// SkippedSessions, not in a count sitting next to a total that omits it.
 	analysis := &models.ProjectAnalysis{
-		ProjectInfo:     project,
-		TotalCost:       aggregate.TotalCost,
-		TotalUsage:      aggregate.TotalUsage,
-		CostByModel:     aggregate.CostByModel,
-		SessionCount:    len(sessions) - aggregate.SkippedSessions,
-		MessageCount:    aggregate.MessageCount,
-		SkippedSessions: aggregate.SkippedSessions,
-		SkippedAgents:   aggregate.SkippedAgents,
-		SkippedLines:    aggregate.SkippedLines,
+		ProjectInfo:           project,
+		TotalCost:             aggregate.TotalCost,
+		TotalUsage:            aggregate.TotalUsage,
+		CostByModel:           aggregate.CostByModel,
+		SessionCount:          len(sessions) - aggregate.SkippedSessions,
+		MessageCount:          aggregate.MessageCount,
+		SkippedSessions:       aggregate.SkippedSessions,
+		SkippedAgents:         aggregate.SkippedAgents,
+		SkippedLines:          aggregate.SkippedLines,
+		EstimatedCostMessages: aggregate.EstimatedCostMessages,
 	}
 
 	// Activity span comes from message timestamps, as it does on every other

@@ -59,6 +59,7 @@ func runSummary(cfg *config) error {
 	warnSkippedSessions(cfg.stderr, analysis.SkippedSessions)
 	warnSkippedAgents(cfg.stderr, analysis.SkippedAgents)
 	warnSkippedLines(cfg.stderr, analysis.SkippedLines)
+	warnEstimatedCosts(cfg.stderr, analysis.EstimatedCostMessages)
 
 	// Warn about unknown models (using fallback pricing)
 	warnUnknownModels(cfg.stderr, analysis.CostByModel)

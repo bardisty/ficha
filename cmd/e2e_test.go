@@ -901,3 +901,62 @@ func TestE2EListShowCountParity(t *testing.T) {
 		t.Errorf("list should warn on stderr about the skipped line, got: %q", listErr)
 	}
 }
+
+// TestE2EEstimatedCostSurface pins COST-04/D14: a session whose cache-write
+// tokens carry no TTL detail (the older format) must say so — the json export
+// carries estimated_cost_messages and stderr warns — while fully detailed
+// data reports nothing, so exact totals never look approximate.
+func TestE2EEstimatedCostSurface(t *testing.T) {
+	root := t.TempDir()
+	projDir := filepath.Join(root, "projects", "-home-test-estimated")
+	sessionID := "44444444-aaaa-bbbb-cccc-000000000000"
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// One old-format line (flat count only) + one detailed line.
+	content := `{"type":"assistant","timestamp":"2026-02-01T10:00:00Z","requestId":"r1","message":{"id":"m1","model":"claude-opus-4-8","usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":800}}}` + "\n" +
+		e2eMsg("2026-02-01T10:05:00Z", "m2", "claude-opus-4-8", 200, 100, 300, 400, 0) + "\n"
+	if err := os.WriteFile(filepath.Join(projDir, sessionID+".jsonl"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+
+	stdout, stderr, err := executeCLISplit(t, "show", "--project-dir=-home-test-estimated", sessionID, "-f", "json")
+	if err != nil {
+		t.Fatalf("show: %v\nstderr: %s", err, stderr)
+	}
+	var a models.SessionAnalysis
+	mustJSON(t, stdout, &a)
+	if a.EstimatedCostMessages != 1 {
+		t.Errorf("estimated_cost_messages: got %d, want 1", a.EstimatedCostMessages)
+	}
+	if !strings.Contains(stderr, "1 message(s) lack cache-write TTL detail") {
+		t.Errorf("stderr missing the estimated-pricing warning, got: %q", stderr)
+	}
+	// The reconciled representation reaches the export: every write token is
+	// TTL-attributed, buckets summing to the flat count.
+	if a.TotalUsage.CacheCreation == nil {
+		t.Fatalf("total_usage.cache_creation missing from reconciled export")
+	}
+	sum := a.TotalUsage.CacheCreation.Ephemeral5mInputTokens + a.TotalUsage.CacheCreation.Ephemeral1hInputTokens
+	if sum != a.TotalUsage.CacheCreationInputTokens {
+		t.Errorf("exported buckets sum %d != flat %d", sum, a.TotalUsage.CacheCreationInputTokens)
+	}
+
+	// A fully detailed session must not carry the field or the warning.
+	exactID := "55555555-aaaa-bbbb-cccc-000000000000"
+	exact := e2eMsg("2026-02-01T10:00:00Z", "e1", "claude-opus-4-8", 1000, 500, 300, 400, 0) + "\n"
+	if err := os.WriteFile(filepath.Join(projDir, exactID+".jsonl"), []byte(exact), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err = executeCLISplit(t, "show", "--project-dir=-home-test-estimated", exactID, "-f", "json")
+	if err != nil {
+		t.Fatalf("show exact: %v", err)
+	}
+	if strings.Contains(stdout, "estimated_cost_messages") {
+		t.Errorf("exact session exported estimated_cost_messages: %s", stdout)
+	}
+	if strings.Contains(stderr, "cache-write TTL") {
+		t.Errorf("exact session warned about estimated pricing: %q", stderr)
+	}
+}

@@ -143,6 +143,7 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope Mes
 			analysis.MessageCount += agentAnalysis.MessageCount
 			analysis.AgentMessageCount += agentAnalysis.MessageCount
 			analysis.SkippedLines += agentAnalysis.SkippedLines
+			analysis.EstimatedCostMessages += agentAnalysis.EstimatedCostMessages
 
 			// Merge agent cost by model
 			mergeCostByModel(analysis.CostByModel, agentAnalysis.CostByModel)
@@ -220,6 +221,9 @@ func analyzeAgentWithCache(agentPath string, cache *AgentParseCache) (*models.Ag
 		analysis.TotalUsage.Add(msg.Usage)
 		analysis.TotalCost.Add(msg.Cost)
 		addCost(analysis.CostByModel, pricing.NormalizeModelID(msg.Model), msg.Cost)
+		if msg.EstimatedCost {
+			analysis.EstimatedCostMessages++
+		}
 	}
 
 	// Set time range
@@ -290,6 +294,9 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 		totalUsage.Add(msg.Usage)
 		totalCost.Add(msg.Cost)
 		addCost(analysis.CostByModel, pricing.NormalizeModelID(msg.Model), msg.Cost)
+		if msg.EstimatedCost {
+			analysis.EstimatedCostMessages++
+		}
 	}
 
 	analysis.TotalUsage = totalUsage
@@ -377,6 +384,7 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 		// Also aggregate skipped agents and lines from individual sessions
 		aggregate.SkippedAgents += sessionAnalysis.SkippedAgents
 		aggregate.SkippedLines += sessionAnalysis.SkippedLines
+		aggregate.EstimatedCostMessages += sessionAnalysis.EstimatedCostMessages
 
 		aggregate.MessageCount += sessionAnalysis.MessageCount
 		aggregate.ParentMessageCount += sessionAnalysis.ParentMessageCount

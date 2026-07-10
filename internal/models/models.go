@@ -66,6 +66,36 @@ type CacheCreation struct {
 	Ephemeral1hInputTokens int64 `json:"ephemeral_1h_input_tokens"`
 }
 
+// Sanitized returns a copy with negative token counts clamped to zero, so a
+// corrupt line can't drag aggregates or costs negative. The CacheCreation
+// pointer is always deep-copied, so the result is safe to mutate without
+// touching the receiver's.
+func (t TokenUsage) Sanitized() TokenUsage {
+	if t.InputTokens < 0 {
+		t.InputTokens = 0
+	}
+	if t.OutputTokens < 0 {
+		t.OutputTokens = 0
+	}
+	if t.CacheCreationInputTokens < 0 {
+		t.CacheCreationInputTokens = 0
+	}
+	if t.CacheReadInputTokens < 0 {
+		t.CacheReadInputTokens = 0
+	}
+	if t.CacheCreation != nil {
+		cc := *t.CacheCreation
+		t.CacheCreation = &cc
+		if t.CacheCreation.Ephemeral5mInputTokens < 0 {
+			t.CacheCreation.Ephemeral5mInputTokens = 0
+		}
+		if t.CacheCreation.Ephemeral1hInputTokens < 0 {
+			t.CacheCreation.Ephemeral1hInputTokens = 0
+		}
+	}
+	return t
+}
+
 // CostBreakdown represents the calculated costs for a token usage
 type CostBreakdown struct {
 	InputCost        float64 `json:"input_cost"`
@@ -86,6 +116,12 @@ type MessageAnalysis struct {
 	Model     string        `json:"model"`
 	Usage     TokenUsage    `json:"usage"`
 	Cost      CostBreakdown `json:"cost"`
+	// EstimatedCost marks a message whose cache-write tokens were not fully
+	// TTL-attributed by the session data (no cache_creation detail, or a flat
+	// count its buckets don't cover); the remainder was priced at the 5m rate,
+	// the cheapest write tier, so its cost is a lower-bound estimate. Surfaced
+	// only as the aggregate EstimatedCostMessages counters, not per message.
+	EstimatedCost bool `json:"-"`
 }
 
 // AgentAnalysis represents the analysis of a single agent sub-session
@@ -101,6 +137,8 @@ type AgentAnalysis struct {
 	EndTime      time.Time                `json:"end_time"`
 	Duration     Duration                 `json:"duration"`
 	SkippedLines int                      `json:"skipped_lines,omitempty"` // JSONL lines skipped (malformed or oversized)
+	// Messages whose cache-write cost is a 5m-rate estimate (see MessageAnalysis.EstimatedCost)
+	EstimatedCostMessages int `json:"estimated_cost_messages,omitempty"`
 }
 
 // WorkflowMeta identifies a workflow run whose agents appear in a session's
@@ -148,8 +186,12 @@ type SessionAnalysis struct {
 	SkippedAgents      int                      `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read (parse failure, or an unreadable agent directory)
 	SkippedSessions    int                      `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)
 	SkippedLines       int                      `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized), incl. agents
-	IsSummary          bool                     `json:"-"`                          // True for aggregate summaries
-	SessionCount       int                      `json:"-"`                          // Number of sessions in summary
+	// Messages (incl. agents) whose cache-write cost is a 5m-rate estimate
+	// because the session data didn't attribute every write token to a TTL
+	// (see MessageAnalysis.EstimatedCost). Zero means all costs are exact.
+	EstimatedCostMessages int  `json:"estimated_cost_messages,omitempty"`
+	IsSummary             bool `json:"-"` // True for aggregate summaries
+	SessionCount          int  `json:"-"` // Number of sessions in summary
 }
 
 // WorkflowByID returns the metadata for a workflow run in this session, or a
@@ -237,7 +279,13 @@ func (t TokenUsage) ContextWindowSize() int64 {
 	return t.InputTokens + cacheWriteTokens + t.CacheReadInputTokens
 }
 
-// Add aggregates token usage from another TokenUsage
+// Add aggregates token usage from another TokenUsage.
+//
+// Add assumes reconciled inputs (parser.ExtractUsageFromMessages): when write
+// tokens exist, CacheCreation is non-nil and its buckets sum to
+// CacheCreationInputTokens. A hand-built usage that violates that (flat count
+// without buckets, mixed with detailed ones) aggregates a flat total its
+// buckets don't cover, and per-TTL displays will disagree with the flat field.
 func (t *TokenUsage) Add(other TokenUsage) {
 	t.InputTokens += other.InputTokens
 	t.OutputTokens += other.OutputTokens
@@ -387,6 +435,8 @@ type ProjectAnalysis struct {
 	SkippedSessions int `json:"skipped_sessions,omitempty"` // Sessions that failed to parse
 	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
 	SkippedLines    int `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized)
+	// Messages whose cache-write cost is a 5m-rate estimate (see SessionAnalysis)
+	EstimatedCostMessages int `json:"estimated_cost_messages,omitempty"`
 }
 
 // GlobalAnalysis represents aggregated stats across all projects
@@ -401,10 +451,12 @@ type GlobalAnalysis struct {
 	SkippedProjects int                      `json:"skipped_projects"`
 	// Skipped inputs summed over the analyzed projects. A skipped project
 	// contributes only to SkippedProjects — nothing inside it was counted.
-	SkippedSessions int       `json:"skipped_sessions,omitempty"` // Sessions that failed to parse
-	SkippedAgents   int       `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
-	SkippedLines    int       `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized)
-	FirstActive     time.Time `json:"first_active"`
-	LastActive      time.Time `json:"last_active"`
-	Duration        Duration  `json:"duration"`
+	SkippedSessions int `json:"skipped_sessions,omitempty"` // Sessions that failed to parse
+	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
+	SkippedLines    int `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized)
+	// Messages whose cache-write cost is a 5m-rate estimate (see SessionAnalysis)
+	EstimatedCostMessages int       `json:"estimated_cost_messages,omitempty"`
+	FirstActive           time.Time `json:"first_active"`
+	LastActive            time.Time `json:"last_active"`
+	Duration              Duration  `json:"duration"`
 }

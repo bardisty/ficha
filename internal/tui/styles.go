@@ -23,12 +23,14 @@ func unknownModelFootnote(noColor bool) string {
 	return glyph + " " + unknownModelMarker + " = fallback pricing"
 }
 
-// skippedFootnote reports the inputs a TUI's totals could not account for,
-// returning "" when there were none. Agents and lines share one footer segment
+// accountingFootnote reports what a TUI's totals could not account for
+// exactly — skipped inputs (missing from the totals) and estimated costs
+// (included, but priced on the 5m cache-write assumption) — returning ""
+// when there is nothing to report. All counts share one footer segment
 // rather than claiming a separator each: the footer is a single line, and it
 // already carries the fallback-pricing footnote.
-func skippedFootnote(skippedAgents, skippedLines int, noColor bool) string {
-	if skippedAgents == 0 && skippedLines == 0 {
+func accountingFootnote(skippedAgents, skippedLines, estimatedCosts int, noColor bool) string {
+	if skippedAgents == 0 && skippedLines == 0 && estimatedCosts == 0 {
 		return ""
 	}
 	glyph := "⚠"
@@ -41,6 +43,9 @@ func skippedFootnote(skippedAgents, skippedLines int, noColor bool) string {
 	}
 	if skippedLines > 0 {
 		parts = append(parts, fmt.Sprintf("%d skipped line(s)", skippedLines))
+	}
+	if estimatedCosts > 0 {
+		parts = append(parts, fmt.Sprintf("%d estimated cost(s)", estimatedCosts))
 	}
 	return glyph + " " + strings.Join(parts, ", ")
 }

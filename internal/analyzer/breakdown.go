@@ -17,6 +17,9 @@ type BreakdownResult struct {
 	Messages      []models.BreakdownMessage
 	SkippedLines  int // JSONL lines skipped as malformed or oversized (parent + agents)
 	SkippedAgents int // Agent sub-sessions that could not be read
+	// Messages whose cache-write cost is a 5m-rate estimate (parent + agents;
+	// see models.MessageAnalysis.EstimatedCost)
+	EstimatedCostMessages int
 }
 
 // GetBreakdownMessages parses a session and returns all messages (parent + agents)
@@ -44,7 +47,11 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 
 	// Convert parent messages to breakdown format
 	var allMessages []models.BreakdownMessage
+	estimatedCostMessages := 0
 	for _, msg := range parentAnalyses {
+		if msg.EstimatedCost {
+			estimatedCostMessages++
+		}
 		allMessages = append(allMessages, models.BreakdownMessage{
 			AgentID:   "", // Empty for parent session
 			Timestamp: msg.Timestamp,
@@ -80,6 +87,9 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		// Convert agent messages to breakdown format (already cost-annotated by
 		// loadAgentMessages)
 		for _, msg := range agentAnalyses {
+			if msg.EstimatedCost {
+				estimatedCostMessages++
+			}
 			allMessages = append(allMessages, models.BreakdownMessage{
 				AgentID:   displayID,
 				Timestamp: msg.Timestamp,
@@ -101,8 +111,9 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 	}
 
 	return &BreakdownResult{
-		Messages:      allMessages,
-		SkippedLines:  skippedLines,
-		SkippedAgents: skippedAgents,
+		Messages:              allMessages,
+		SkippedLines:          skippedLines,
+		SkippedAgents:         skippedAgents,
+		EstimatedCostMessages: estimatedCostMessages,
 	}, nil
 }

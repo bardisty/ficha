@@ -7,8 +7,11 @@ import (
 
 // CalculateCost calculates the cost breakdown for a token usage with a specific model
 func CalculateCost(usage models.TokenUsage, modelID string) models.CostBreakdown {
-	// Validate token counts - clamp negatives to zero to prevent invalid costs
-	usage = sanitizeTokenUsage(usage)
+	// Validate token counts - clamp negatives to zero to prevent invalid costs.
+	// Parser-derived usages arrive already sanitized and reconciled
+	// (parser.ExtractUsageFromMessages); this repeat is a no-op there and a
+	// safety net for hand-built usages.
+	usage = usage.Sanitized()
 
 	modelPricing := pricing.GetModelPricing(modelID)
 
@@ -30,8 +33,10 @@ func CalculateCost(usage models.TokenUsage, modelID string) models.CostBreakdown
 	} else {
 		// Fallback: assume all cache creation tokens are 5m TTL (1.25x multiplier).
 		// This may slightly underestimate costs if 1h TTL tokens (2.0x multiplier)
-		// were actually used. The detailed CacheCreation breakdown is only available
-		// in newer Claude Code session formats; older sessions lack this detail.
+		// were actually used. Parser-derived usages never reach this branch —
+		// reconcileUsage materializes CacheCreation (folding unattributed write
+		// tokens into the 5m bucket, counted in EstimatedCostMessages) — so it
+		// only serves hand-built usages, where it applies the same assumption.
 		cacheWrite5mCost = float64(usage.CacheCreationInputTokens) / 1_000_000 *
 			pricing.GetCacheWrite5mRate(modelPricing)
 	}
@@ -84,31 +89,4 @@ func AggregateUsage(usages []models.TokenUsage) models.TokenUsage {
 	}
 
 	return total
-}
-
-// sanitizeTokenUsage clamps negative token counts to zero
-func sanitizeTokenUsage(usage models.TokenUsage) models.TokenUsage {
-	if usage.InputTokens < 0 {
-		usage.InputTokens = 0
-	}
-	if usage.OutputTokens < 0 {
-		usage.OutputTokens = 0
-	}
-	if usage.CacheCreationInputTokens < 0 {
-		usage.CacheCreationInputTokens = 0
-	}
-	if usage.CacheReadInputTokens < 0 {
-		usage.CacheReadInputTokens = 0
-	}
-	if usage.CacheCreation != nil {
-		cc := *usage.CacheCreation
-		usage.CacheCreation = &cc
-		if usage.CacheCreation.Ephemeral5mInputTokens < 0 {
-			usage.CacheCreation.Ephemeral5mInputTokens = 0
-		}
-		if usage.CacheCreation.Ephemeral1hInputTokens < 0 {
-			usage.CacheCreation.Ephemeral1hInputTokens = 0
-		}
-	}
-	return usage
 }

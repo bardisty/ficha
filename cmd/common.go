@@ -179,6 +179,16 @@ func warnSkippedAgents(w io.Writer, skippedAgents int) {
 	}
 }
 
+// warnEstimatedCosts prints a stderr warning when some messages' cache-write
+// tokens carried no TTL attribution and were priced at the 5m rate — the
+// cheapest write tier, so the affected totals are lower-bound estimates
+// rather than exact.
+func warnEstimatedCosts(w io.Writer, estimatedCostMessages int) {
+	if estimatedCostMessages > 0 {
+		fmt.Fprintf(w, "Warning: %d message(s) lack cache-write TTL detail; their write cost assumes the 5m rate and may be underestimated\n", estimatedCostMessages)
+	}
+}
+
 // warnUnknownModels prints a warning if any models have unknown pricing
 func warnUnknownModels(w io.Writer, costByModel map[string]models.CostBreakdown) {
 	var unknownModels []string

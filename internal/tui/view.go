@@ -306,7 +306,7 @@ func (m Model) renderFooter() string {
 	}
 
 	// Surface parse warnings so undercounted totals don't look authoritative
-	if note := skippedFootnote(a.SkippedAgents, a.SkippedLines, m.noColor); note != "" {
+	if note := accountingFootnote(a.SkippedAgents, a.SkippedLines, a.EstimatedCostMessages, m.noColor); note != "" {
 		if m.noColor {
 			footerLine += fmt.Sprintf("  %s  %s", sep, note)
 		} else {
