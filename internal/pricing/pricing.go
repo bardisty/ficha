@@ -1,6 +1,7 @@
 package pricing
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -96,75 +97,163 @@ var defaultPricing = ModelPricing{
 	MaxContextTokens: 200000,
 }
 
-// GetModelPricing returns the pricing for a model ID
-// Uses pattern matching to handle versioned model IDs like "claude-opus-4-5-20251101"
+// longContextMarker is the suffix Claude Code appends to a model ID when the
+// 1M-context beta is active, e.g. "claude-opus-4-8[1m]".
+const longContextMarker = "[1m]"
+
+// longContextTokens is the window size the 1M-context beta unlocks. Requests
+// above the base window are billed at premium long-context rates, which this
+// tool does not model — only the window size is adjusted.
+const longContextTokens = 1000000
+
+// Amazon Bedrock wraps the vendor-neutral ID in an inference-profile prefix and
+// a version suffix: "us.anthropic.claude-opus-4-5-20251101-v1:0". Stripping both
+// leaves an ID the catalog prefixes can match.
+var (
+	bedrockPrefixRe = regexp.MustCompile(`^([a-z0-9-]+\.)?anthropic\.`)
+	bedrockSuffixRe = regexp.MustCompile(`-v\d+:\d+$`)
+)
+
+// GetModelPricing returns the pricing for a model ID, resolving versioned,
+// provider-decorated, and 1M-context-beta IDs onto their catalog row.
 func GetModelPricing(modelID string) ModelPricing {
-	// First try exact match
-	if pricing, ok := modelPricing[modelID]; ok {
-		return pricing
-	}
+	id, longContext, known := canonicalModelID(modelID)
 
-	// Try pattern matching by removing date suffix
-	// e.g., "claude-opus-4-5-20251101" -> "claude-opus-4-5"
-	normalized := normalizeModelID(modelID)
-	if pricing, ok := modelPricing[normalized]; ok {
-		return pricing
+	pricing := defaultPricing
+	if known {
+		pricing = modelPricing[id]
 	}
-
-	// Return default pricing
-	return defaultPricing
+	if longContext && pricing.MaxContextTokens < longContextTokens {
+		pricing.MaxContextTokens = longContextTokens
+	}
+	return pricing
 }
 
-// normalizeModelID resolves a versioned model ID (e.g. "claude-opus-4-5-20251101")
+// canonicalModelID resolves a raw model ID onto the catalog. It reports the
+// catalog ID (or modelID unchanged when nothing matches), whether the
+// 1M-context beta marker was present, and whether the catalog knows the model.
+func canonicalModelID(modelID string) (id string, longContext, known bool) {
+	base, longContext := stripDecorations(modelID)
+
+	if _, ok := modelPricing[base]; ok {
+		return base, longContext, true
+	}
+	if pattern, ok := matchCatalogPrefix(base); ok {
+		return pattern, longContext, true
+	}
+	return modelID, longContext, false
+}
+
+// stripDecorations removes provider-specific and beta decoration so that the
+// vendor-neutral catalog prefixes can match:
+//
+//	"us.anthropic.claude-opus-4-5-20251101-v1:0" -> "claude-opus-4-5-20251101"
+//	"claude-opus-4-8[1m]"                        -> "claude-opus-4-8", longContext
+//
+// Vertex IDs ("claude-opus-4-5@20251101") need no stripping — isBoundary treats
+// '@' as a segment delimiter, so the date suffix is matched like a '-' one.
+func stripDecorations(modelID string) (base string, longContext bool) {
+	base = modelID
+	if trimmed, ok := strings.CutSuffix(base, longContextMarker); ok {
+		base, longContext = trimmed, true
+	}
+	// Only Bedrock IDs carry a '.' (profile prefix) or ':' (version suffix).
+	// GetModelPricing runs once per message, so skip the regexes otherwise.
+	if strings.IndexByte(base, '.') >= 0 {
+		base = bedrockPrefixRe.ReplaceAllString(base, "")
+	}
+	if strings.IndexByte(base, ':') >= 0 {
+		base = bedrockSuffixRe.ReplaceAllString(base, "")
+	}
+	return base, longContext
+}
+
+// matchCatalogPrefix resolves a stripped model ID (e.g. "claude-opus-4-5-20251101")
 // to its canonical catalog ID. A prefix match only counts when the suffix is a
 // date or alias variant of the same model — a short numeric segment right after
 // the prefix ("claude-opus-4-9") denotes a different model in the family and
 // must not inherit the prefix's pricing.
-func normalizeModelID(modelID string) string {
+func matchCatalogPrefix(modelID string) (string, bool) {
 	for _, pattern := range prefixPatterns {
 		if !strings.HasPrefix(modelID, pattern) {
 			continue
 		}
 		rest := modelID[len(pattern):]
 		if rest == "" {
-			return pattern
+			return pattern, true
 		}
-		if rest[0] != '-' || isVersionSegment(firstSegment(rest[1:])) {
+		if !isBoundary(rest[0]) || isVersionSegment(firstSegment(rest[1:])) {
 			continue
 		}
-		return pattern
+		return pattern, true
 	}
 
-	return modelID
+	return "", false
 }
 
-// firstSegment returns s up to (excluding) the first '-'.
+// normalizeModelID resolves a model ID to its canonical catalog ID, returning
+// modelID unchanged when the catalog does not know it.
+func normalizeModelID(modelID string) string {
+	id, _, _ := canonicalModelID(modelID)
+	return id
+}
+
+// isBoundary reports whether b separates a model ID's canonical prefix from its
+// suffix: Anthropic delimits with '-', Vertex with '@'. A bracket marker is not
+// a boundary — stripDecorations removes the one marker we understand ("[1m]"),
+// so anything still bracketed here is an unrecognized decoration and must not
+// resolve to a catalog row.
+func isBoundary(b byte) bool {
+	return b == '-' || b == '@'
+}
+
+// firstSegment returns s up to (excluding) the first boundary byte.
 func firstSegment(s string) string {
-	seg, _, _ := strings.Cut(s, "-")
-	return seg
+	for i := 0; i < len(s); i++ {
+		if isBoundary(s[i]) {
+			return s[:i]
+		}
+	}
+	return s
 }
 
-// isVersionSegment reports whether seg looks like a model version number
-// (1-7 digits, e.g. the "9" in "claude-opus-4-9") as opposed to a date
-// ("20250514", 8 digits) or a named alias ("latest").
+// isVersionSegment reports whether seg names a different model in the prefix's
+// family rather than a date or alias variant of it. A leading digit means a
+// version bump (the "9" in "claude-opus-4-9") unless the whole segment is an
+// 8-digit release date; named aliases ("latest", the "v2" in
+// "claude-3-5-sonnet-v2-20241022") start with a letter.
+//
+// A segment carrying an unrecognized decorator ("8[2m]") keeps its leading
+// digit and so reads as a version bump. That is deliberate: an ID whose suffix
+// form this code does not understand falls back to default pricing and an
+// unknown-model warning, rather than silently inheriting a shorter prefix's
+// rates — the failure mode that made "claude-opus-4-5@20251101" bill at Opus 4.
 func isVersionSegment(seg string) bool {
-	if len(seg) == 0 || len(seg) >= 8 {
+	if len(seg) == 0 || !isDigit(seg[0]) {
+		return false
+	}
+	return !isDateSegment(seg)
+}
+
+// isDateSegment reports whether seg is an 8-digit release date ("20250514").
+func isDateSegment(seg string) bool {
+	if len(seg) != 8 {
 		return false
 	}
 	for i := 0; i < len(seg); i++ {
-		if seg[i] < '0' || seg[i] > '9' {
+		if !isDigit(seg[i]) {
 			return false
 		}
 	}
 	return true
 }
 
+func isDigit(b byte) bool { return b >= '0' && b <= '9' }
+
 // GetModelDisplayName returns a human-readable name for a model ID
 func GetModelDisplayName(modelID string) string {
-	normalized := normalizeModelID(modelID)
-
-	if name, ok := displayNames[normalized]; ok {
-		return name
+	if id, _, known := canonicalModelID(modelID); known {
+		return displayNames[id]
 	}
 
 	return modelID
@@ -205,10 +294,6 @@ func GetContextPercentage(pricing ModelPricing, currentUsage int64) float64 {
 // IsKnownModel returns true if the model ID is recognized
 // (i.e., has explicit pricing rather than falling back to defaults)
 func IsKnownModel(modelID string) bool {
-	if _, ok := modelPricing[modelID]; ok {
-		return true
-	}
-	normalized := normalizeModelID(modelID)
-	_, ok := modelPricing[normalized]
-	return ok
+	_, _, known := canonicalModelID(modelID)
+	return known
 }
