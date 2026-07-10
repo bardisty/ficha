@@ -71,6 +71,30 @@
   Sessions that fail to parse are omitted from detail output and
   reported on stderr (stdout stays clean for piping).
 
+  Agent spend is never hidden from a machine format. Every export that
+  carries a total also carries the split that adds up to it:
+
+    parent_cost + agents_cost = total_cost
+
+  This holds for one session (show) and for the summary aggregate, which
+  reports agent_count, workflow_count and has_agents across all sessions
+  (the per-agent records themselves live under summary --details).
+
+  show --messages likewise emits agent rows, not just the parent
+  transcript, so the rows sum to the session's total_cost. An agent_id
+  column (json: agent_id, omitted on parent records) says where each row
+  came from and joins to the agents[] array:
+
+    agent_id  timestamp             model            total_cost
+              2026-02-02T09:00:00Z  claude-opus-4-8    0.031500   ─┐
+              2026-02-02T09:10:00Z  claude-opus-4-8    0.004200    ├─ parent
+    g1        2026-02-02T09:05:00Z  claude-sonnet-5    0.012000   ─┤
+    w1        2026-02-02T09:07:00Z  claude-sonnet-5    0.009000   ─┘ agents
+
+  Parent rows come first, then one block per agent in discovery order
+  (regular subagents, then workflow runs). Sort by timestamp for a
+  chronological view — or use `ficha breakdown`, which does it for you.
+
   cost_by_model keys are canonical model IDs: every dated snapshot and
   provider spelling of one model shares a key, so summing by key needs
   no normalization on your side.

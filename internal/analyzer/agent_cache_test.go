@@ -50,7 +50,7 @@ func TestAgentParseCache_ServesUnchangedAgent(t *testing.T) {
 
 	cache := NewAgentParseCache()
 
-	first, err := AnalyzeSessionWithCache(sessionPath, sessionID, false, cache)
+	first, err := AnalyzeSessionWithCache(sessionPath, sessionID, NoMessages, cache)
 	if err != nil {
 		t.Fatalf("first analyze: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestAgentParseCache_ServesUnchangedAgent(t *testing.T) {
 
 	// Same mtime + size => cache hit => still the stale content-A cost, proving
 	// the agent was not re-parsed.
-	second, err := AnalyzeSessionWithCache(sessionPath, sessionID, false, cache)
+	second, err := AnalyzeSessionWithCache(sessionPath, sessionID, NoMessages, cache)
 	if err != nil {
 		t.Fatalf("second analyze: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestAgentParseCache_ServesUnchangedAgent(t *testing.T) {
 	if err := os.Chtimes(agentPath, newer, newer); err != nil {
 		t.Fatal(err)
 	}
-	third, err := AnalyzeSessionWithCache(sessionPath, sessionID, false, cache)
+	third, err := AnalyzeSessionWithCache(sessionPath, sessionID, NoMessages, cache)
 	if err != nil {
 		t.Fatalf("third analyze: %v", err)
 	}
@@ -108,11 +108,11 @@ func TestAgentParseCache_NilMatchesUncached(t *testing.T) {
 	sessionID := "cache-nil"
 	sessionPath, _ := writeCacheFixture(t, dir, sessionID, agentLine(500))
 
-	uncached, err := AnalyzeSession(sessionPath, sessionID, false)
+	uncached, err := AnalyzeSession(sessionPath, sessionID, NoMessages)
 	if err != nil {
 		t.Fatalf("AnalyzeSession: %v", err)
 	}
-	nilCache, err := AnalyzeSessionWithCache(sessionPath, sessionID, false, nil)
+	nilCache, err := AnalyzeSessionWithCache(sessionPath, sessionID, NoMessages, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeSessionWithCache(nil): %v", err)
 	}
@@ -135,7 +135,7 @@ func TestAgentParseCache_ConcurrentUse(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := AnalyzeSessionWithCache(sessionPath, sessionID, false, cache); err != nil {
+			if _, err := AnalyzeSessionWithCache(sessionPath, sessionID, NoMessages, cache); err != nil {
 				t.Errorf("concurrent analyze failed: %v", err)
 			}
 		}()

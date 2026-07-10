@@ -79,6 +79,9 @@ type CostBreakdown struct {
 
 // MessageAnalysis represents analysis of a single message
 type MessageAnalysis struct {
+	// AgentID names the agent sub-session a message came from, joining to
+	// AgentAnalysis.AgentID. Empty means the parent session's own transcript.
+	AgentID   string        `json:"agent_id,omitempty"`
 	Timestamp time.Time     `json:"timestamp"`
 	Model     string        `json:"model"`
 	Usage     TokenUsage    `json:"usage"`

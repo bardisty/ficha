@@ -72,13 +72,16 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 	return sb.String(), nil
 }
 
-// formatMessagesCSV formats individual messages as CSV
+// formatMessagesCSV formats individual messages as CSV. Parent rows come first
+// (agent_id empty), then one block per agent sub-session; total_cost sums across
+// every row to the session total. Model IDs are raw, not canonicalized.
 func formatMessagesCSV(messages []models.MessageAnalysis) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
 
 	// Write header
 	header := []string{
+		"agent_id",
 		"timestamp",
 		"model",
 		"input_tokens",
@@ -99,6 +102,7 @@ func formatMessagesCSV(messages []models.MessageAnalysis) (string, error) {
 	// Write message rows
 	for _, msg := range messages {
 		row := []string{
+			msg.AgentID,
 			msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
 			msg.Model,
 			fmt.Sprintf("%d", msg.Usage.InputTokens),

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -210,11 +212,84 @@ func TestE2ECommands(t *testing.T) {
 			args: []string{"show", projFlag, e2eAlphaID, "-f", "csv", "--messages"},
 			check: func(t *testing.T, out string) {
 				records := mustCSV(t, out)
-				if records[0][0] != "timestamp" {
-					t.Errorf("header col 0: got %q, want timestamp (per-message table)", records[0][0])
+				if records[0][0] != "agent_id" {
+					t.Errorf("header col 0: got %q, want agent_id (per-message table)", records[0][0])
 				}
 				if len(records) != 3 { // header + 2 messages (alpha has two)
 					t.Fatalf("show csv --messages: got %d rows, want 3 (header + 2 messages)", len(records))
+				}
+				for i, r := range records[1:] {
+					if r[0] != "" {
+						t.Errorf("row %d agent_id: got %q, want empty (alpha has no agents)", i, r[0])
+					}
+				}
+			},
+		},
+		{
+			// AGENT-02: agent rows carry an agent_id and the whole table sums to
+			// the session total that `show -f csv` reports.
+			name: "show csv --messages includes agent rows summing to the session total",
+			args: []string{"show", projFlag, e2eBetaID, "-f", "csv", "--messages"},
+			check: func(t *testing.T, out string) {
+				records := mustCSV(t, out)
+				if len(records) != 5 { // header + 2 parent + 1 agent + 1 workflow agent
+					t.Fatalf("rows: got %d, want 5 (header + 2 parent + 2 agent)", len(records))
+				}
+				agentCol := slices.Index(records[0], "agent_id")
+				costCol := slices.Index(records[0], "total_cost")
+				if agentCol == -1 || costCol == -1 {
+					t.Fatalf("agent_id/total_cost missing from header %v", records[0])
+				}
+
+				var sum float64
+				gotAgents := make([]string, 0, 4)
+				for _, r := range records[1:] {
+					gotAgents = append(gotAgents, r[agentCol])
+					c, err := strconv.ParseFloat(r[costCol], 64)
+					if err != nil {
+						t.Fatalf("total_cost %q: %v", r[costCol], err)
+					}
+					sum += c
+				}
+				wantAgents := []string{"", "", "g1", "w1"}
+				if !slices.Equal(gotAgents, wantAgents) {
+					t.Errorf("agent_id column: got %v, want %v", gotAgents, wantAgents)
+				}
+
+				// Same analysis, session granularity — the two must agree.
+				total := betaSessionTotalCost(t)
+				// Rows print at 6dp, so tolerate the rounding of 4 of them.
+				if diff := sum - total; diff > 5e-6 || diff < -5e-6 {
+					t.Errorf("sum of message total_cost %v != session total_cost %v", sum, total)
+				}
+			},
+		},
+		{
+			name: "show json --messages tags agent messages",
+			args: []string{"show", projFlag, e2eBetaID, "-f", "json", "--messages"},
+			check: func(t *testing.T, out string) {
+				var a models.SessionAnalysis
+				mustJSON(t, out, &a)
+				if len(a.Messages) != 4 {
+					t.Fatalf("messages: got %d, want 4 (2 parent + 2 agent)", len(a.Messages))
+				}
+				var sum float64
+				byAgent := map[string]int{}
+				for _, m := range a.Messages {
+					sum += m.Cost.TotalCost
+					byAgent[m.AgentID]++
+				}
+				if byAgent[""] != 2 || byAgent["g1"] != 1 || byAgent["w1"] != 1 {
+					t.Errorf("agent_id distribution: got %v, want 2 parent + g1 + w1", byAgent)
+				}
+				if diff := sum - a.TotalCost.TotalCost; diff > 1e-9 || diff < -1e-9 {
+					t.Errorf("sum of message costs %v != total_cost %v", sum, a.TotalCost.TotalCost)
+				}
+				// messages[].agent_id joins to agents[].agent_id
+				for _, ag := range a.Agents {
+					if byAgent[ag.AgentID] == 0 {
+						t.Errorf("agent %q has no messages in the export", ag.AgentID)
+					}
 				}
 			},
 		},
@@ -309,6 +384,52 @@ func TestE2ECommands(t *testing.T) {
 				}
 				if a.MessageCount <= 0 {
 					t.Errorf("message_count = %d, want > 0", a.MessageCount)
+				}
+				// AGENT-01: the aggregate carries the same partition a session does.
+				if !a.HasAgents || a.AgentCount != 2 || a.WorkflowCount != 1 {
+					t.Errorf("partition: has_agents=%v agent_count=%d workflow_count=%d, want true/2/1",
+						a.HasAgents, a.AgentCount, a.WorkflowCount)
+				}
+				if a.AgentsCost.TotalCost <= 0 || a.ParentCost.TotalCost <= 0 {
+					t.Errorf("parent_cost=%v agents_cost=%v, want both > 0", a.ParentCost.TotalCost, a.AgentsCost.TotalCost)
+				}
+				sum := a.ParentCost.TotalCost + a.AgentsCost.TotalCost
+				if diff := a.TotalCost.TotalCost - sum; diff > 1e-9 || diff < -1e-9 {
+					t.Errorf("total_cost %v != parent + agents %v", a.TotalCost.TotalCost, sum)
+				}
+				if len(a.ParentCostByModel) == 0 {
+					t.Error("parent_cost_by_model is empty")
+				}
+				// Nested per-agent records stay on the per-session results.
+				if len(a.Agents) != 0 {
+					t.Errorf("aggregate agents: got %d, want 0", len(a.Agents))
+				}
+			},
+		},
+		{
+			name: "summary csv carries the agent partition",
+			args: []string{"summary", projFlag, "-f", "csv"},
+			check: func(t *testing.T, out string) {
+				records := mustCSV(t, out)
+				if len(records) != 2 {
+					t.Fatalf("rows: got %d, want 2 (header + aggregate)", len(records))
+				}
+				col := func(name string) string {
+					i := slices.Index(records[0], name)
+					if i == -1 {
+						t.Fatalf("column %q missing from header %v", name, records[0])
+					}
+					return records[1][i]
+				}
+				if col("agent_count") != "2" || col("workflow_count") != "1" {
+					t.Errorf("agent_count=%q workflow_count=%q, want 2/1", col("agent_count"), col("workflow_count"))
+				}
+				parent, agents, total := mustFloat(t, col("parent_cost")), mustFloat(t, col("agents_cost")), mustFloat(t, col("total_cost"))
+				if agents <= 0 {
+					t.Errorf("agents_cost = %v, want > 0", agents)
+				}
+				if diff := total - (parent + agents); diff > 5e-6 || diff < -5e-6 {
+					t.Errorf("total_cost %v != parent_cost + agents_cost %v", total, parent+agents)
 				}
 			},
 		},
@@ -597,4 +718,30 @@ func mustCSV(t *testing.T, s string) [][]string {
 		t.Fatalf("output is not valid CSV: %v\n---\n%s\n---", err, s)
 	}
 	return records
+}
+
+// mustFloat parses a CSV cost cell.
+func mustFloat(t *testing.T, s string) float64 {
+	t.Helper()
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		t.Fatalf("parse %q as float: %v", s, err)
+	}
+	return v
+}
+
+// betaSessionTotalCost reads the beta session's total from `show -f csv`, the
+// session-granularity view of the same analysis `--messages` breaks out.
+func betaSessionTotalCost(t *testing.T) float64 {
+	t.Helper()
+	out, _, err := executeCLISplit(t, "show", projFlag, e2eBetaID, "-f", "csv")
+	if err != nil {
+		t.Fatalf("show -f csv: %v", err)
+	}
+	records := mustCSV(t, out)
+	i := slices.Index(records[0], "total_cost")
+	if i == -1 {
+		t.Fatalf("total_cost missing from header %v", records[0])
+	}
+	return mustFloat(t, records[1][i])
 }

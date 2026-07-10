@@ -73,8 +73,11 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	sb.WriteString("\n\n")
 	sb.WriteString(formatCostByModelContent(analysis, noColor))
 
-	// Agent breakdown (shown when agents exist)
-	if analysis.HasAgents {
+	// Agent breakdown (shown when agents exist). The summary aggregate sets
+	// HasAgents/AgentsCost without collecting the per-agent records, and every
+	// line of this section is per-agent, so require them (same guard as the
+	// summary detail table).
+	if analysis.HasAgents && len(analysis.Agents) > 0 {
 		sb.WriteString("\n")
 		sb.WriteString(render.SectionHeader("AGENT SUB-SESSIONS", sectionWidth, noColor))
 		sb.WriteString("\n\n")

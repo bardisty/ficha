@@ -4,6 +4,8 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"math"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -189,7 +191,7 @@ func TestFormatSessionCSV_WithMessages(t *testing.T) {
 
 	// Verify messages header
 	expectedMsgHeader := []string{
-		"timestamp", "model", "input_tokens", "output_tokens",
+		"agent_id", "timestamp", "model", "input_tokens", "output_tokens",
 		"cache_write_tokens", "cache_read_tokens",
 		"input_cost", "output_cost", "cache_write_5m_cost",
 		"cache_write_1h_cost", "cache_read_cost", "total_cost",
@@ -213,41 +215,75 @@ func TestFormatSessionCSV_WithMessages(t *testing.T) {
 	}
 
 	msgData := msgRecords[1]
-	if msgData[0] != "2024-01-01T10:05:00Z" {
-		t.Errorf("timestamp (col 0): got %q, want %q", msgData[0], "2024-01-01T10:05:00Z")
+	for name, want := range map[string]string{
+		"agent_id":            "", // parent row
+		"timestamp":           "2024-01-01T10:05:00Z",
+		"model":               "claude-sonnet-4-20250514",
+		"input_tokens":        "500",
+		"output_tokens":       "200",
+		"cache_write_tokens":  "0",
+		"cache_read_tokens":   "0",
+		"input_cost":          "0.001500",
+		"output_cost":         "0.003000",
+		"cache_write_5m_cost": "0.000000",
+		"cache_write_1h_cost": "0.000000",
+		"cache_read_cost":     "0.000000",
+		"total_cost":          "0.004500",
+	} {
+		col := slices.Index(msgHeader, name)
+		if col == -1 {
+			t.Fatalf("column %q missing from messages header", name)
+		}
+		if msgData[col] != want {
+			t.Errorf("%s: got %q, want %q", name, msgData[col], want)
+		}
 	}
-	if msgData[1] != "claude-sonnet-4-20250514" {
-		t.Errorf("model (col 1): got %q, want %q", msgData[1], "claude-sonnet-4-20250514")
+}
+
+// TestFormatSessionCSV_AgentMessageRows pins the agent discriminator: agent rows
+// carry their agent_id, parent rows leave it empty, and every row is part of the
+// same table so total_cost sums across all of them.
+func TestFormatSessionCSV_AgentMessageRows(t *testing.T) {
+	analysis := sampleAnalysis()
+	analysis.Messages = []models.MessageAnalysis{
+		{Timestamp: time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC), Model: "claude-opus-4-8", Cost: models.CostBreakdown{TotalCost: 0.01}},
+		{AgentID: "g1", Timestamp: time.Date(2024, 1, 1, 10, 1, 0, 0, time.UTC), Model: "claude-sonnet-5", Cost: models.CostBreakdown{TotalCost: 0.02}},
+		{AgentID: "w1", Timestamp: time.Date(2024, 1, 1, 10, 2, 0, 0, time.UTC), Model: "claude-sonnet-5", Cost: models.CostBreakdown{TotalCost: 0.03}},
 	}
-	if msgData[2] != "500" {
-		t.Errorf("input_tokens (col 2): got %q, want %q", msgData[2], "500")
+
+	output, err := FormatSessionCSV(analysis, true)
+	if err != nil {
+		t.Fatalf("FormatSessionCSV with messages returned error: %v", err)
 	}
-	if msgData[3] != "200" {
-		t.Errorf("output_tokens (col 3): got %q, want %q", msgData[3], "200")
+	records, err := csv.NewReader(strings.NewReader(output)).ReadAll()
+	if err != nil {
+		t.Fatalf("Failed to parse messages CSV: %v", err)
 	}
-	if msgData[4] != "0" {
-		t.Errorf("cache_write_tokens (col 4): got %q, want %q", msgData[4], "0")
+	if len(records) != 4 {
+		t.Fatalf("rows: got %d, want 4 (header + 3 messages)", len(records))
 	}
-	if msgData[5] != "0" {
-		t.Errorf("cache_read_tokens (col 5): got %q, want %q", msgData[5], "0")
+
+	agentCol := slices.Index(records[0], "agent_id")
+	costCol := slices.Index(records[0], "total_cost")
+	if agentCol == -1 || costCol == -1 {
+		t.Fatalf("agent_id/total_cost missing from header %v", records[0])
 	}
-	if msgData[6] != "0.001500" {
-		t.Errorf("input_cost (col 6): got %q, want %q", msgData[6], "0.001500")
+
+	wantAgents := []string{"", "g1", "w1"}
+	var sum float64
+	for i, want := range wantAgents {
+		row := records[i+1]
+		if row[agentCol] != want {
+			t.Errorf("row %d agent_id: got %q, want %q", i, row[agentCol], want)
+		}
+		cost, err := strconv.ParseFloat(row[costCol], 64)
+		if err != nil {
+			t.Fatalf("row %d total_cost %q: %v", i, row[costCol], err)
+		}
+		sum += cost
 	}
-	if msgData[7] != "0.003000" {
-		t.Errorf("output_cost (col 7): got %q, want %q", msgData[7], "0.003000")
-	}
-	if msgData[8] != "0.000000" {
-		t.Errorf("cache_write_5m_cost (col 8): got %q, want %q", msgData[8], "0.000000")
-	}
-	if msgData[9] != "0.000000" {
-		t.Errorf("cache_write_1h_cost (col 9): got %q, want %q", msgData[9], "0.000000")
-	}
-	if msgData[10] != "0.000000" {
-		t.Errorf("cache_read_cost (col 10): got %q, want %q", msgData[10], "0.000000")
-	}
-	if msgData[11] != "0.004500" {
-		t.Errorf("total_cost (col 11): got %q, want %q", msgData[11], "0.004500")
+	if !almostEqual(sum, 0.06, 1e-9) {
+		t.Errorf("sum of row total_cost: got %f, want 0.06", sum)
 	}
 }
 
