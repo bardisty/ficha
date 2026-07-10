@@ -422,7 +422,6 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool) string 
 				}
 			}
 		}
-		agentNum := i + 1
 		isLast := i == len(agents)-1
 
 		// Tree connector
@@ -443,18 +442,20 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool) string 
 			msgStr = "1 msg"
 		}
 
-		agentLabel := fmt.Sprintf("[A%d]", agentNum)
+		// [A<id>] carries the abbreviated real agent ID (%-10s fits [A1234567]),
+		// matching the breakdown TUI's scheme
+		agentLabel := "[A" + render.ShortAgentID(agent.AgentID) + "]"
 
-		// Format: "       ├─ [A1] Haiku 4.5  45 msgs  $0.18"
+		// Format: "       ├─ [Aa1b2c3d] Haiku 4.5  45 msgs  $0.18"
 		// 7-space indent aligns tree connector under SESSION column
 		if noColor {
 			costStr := fmt.Sprintf("$%.2f", agent.TotalCost.TotalCost)
-			sb.WriteString(fmt.Sprintf("       %s %s %-10s %8s  %s\n",
+			sb.WriteString(fmt.Sprintf("       %s %-10s %-10s %8s  %s\n",
 				connector, agentLabel, modelLabel, msgStr, costStr))
 		} else {
-			// Color agent marker using GetAgentColor
-			agentColor := styles.GetAgentColor(fmt.Sprintf("%d", agentNum))
-			labelStyled := lipgloss.NewStyle().Foreground(agentColor).Render(agentLabel)
+			// Color the marker by hashing the full agent ID (matches breakdown)
+			agentColor := styles.GetAgentColor(agent.AgentID)
+			labelStyled := lipgloss.NewStyle().Foreground(agentColor).Render(fmt.Sprintf("%-10s", agentLabel))
 
 			// Color model name by tier
 			modelColor := styles.GetModelColor(modelName)

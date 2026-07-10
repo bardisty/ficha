@@ -190,13 +190,14 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedLabel, formatCostStyled(analysis.ParentCost.TotalCost, 11, noColor)))
 	}
 
-	// Each agent with [AN] Model (ID) msgs cost format
-	// Format: 2(indent) + 5(marker) + 1 + 11(model) + 1 + 10(id) + 1 + 8(msgs) + 6(spaces) + cost
-	//       = 2 + 37 + 6 = 45 chars before cost (aligned with parent)
+	// Each agent with [A<id>] Model msgs cost format — the marker carries the
+	// abbreviated real agent ID, matching the breakdown TUI's scheme.
+	// Format: 2(indent) + 10(marker) + 1 + 11(model) + 1 + 8(msgs) + 12(spaces) + cost
+	//       = 2 + 31 + 12 = 45 chars before cost (aligned with parent)
 	// Workflow agents are grouped after regular agents; a dim header line marks
-	// each run's start. [AN] numbering stays continuous across groups.
+	// each run's start.
 	prevWorkflow := ""
-	for i, agent := range analysis.Agents {
+	for _, agent := range analysis.Agents {
 		if agent.WorkflowID != prevWorkflow {
 			prevWorkflow = agent.WorkflowID
 			if agent.WorkflowID != "" {
@@ -208,8 +209,8 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 				}
 			}
 		}
-		agentNum := i + 1
-		shortID := render.ShortAgentID(agent.AgentID)
+		// [A<id>] carries the abbreviated real agent ID (%-10s fits [A1234567])
+		marker := "[A" + render.ShortAgentID(agent.AgentID) + "]"
 
 		// Get primary model for this agent
 		modelName := render.PrimaryModel(agent.CostByModel)
@@ -222,27 +223,24 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 		}
 
 		if noColor {
-			marker := fmt.Sprintf("[A%d]", agentNum)
-			idStr := fmt.Sprintf("(%s)", shortID)
-			sb.WriteString(fmt.Sprintf("  %-5s %-11s %-10s %8s      %s\n",
-				marker, modelLabel, idStr, msgStr, render.Cost(agent.TotalCost.TotalCost)))
+			sb.WriteString(fmt.Sprintf("  %-10s %-11s %8s            %s\n",
+				marker, modelLabel, msgStr, render.Cost(agent.TotalCost.TotalCost)))
 		} else {
-			// Color agent marker (use %-5s to handle [A10] etc)
-			agentColor := styles.GetAgentColor(fmt.Sprintf("%d", agentNum))
-			markerStyled := lipgloss.NewStyle().Foreground(agentColor).Render(fmt.Sprintf("%-5s", fmt.Sprintf("[A%d]", agentNum)))
+			// Color the marker by hashing the full agent ID (matches breakdown)
+			agentColor := styles.GetAgentColor(agent.AgentID)
+			markerStyled := lipgloss.NewStyle().Foreground(agentColor).Render(fmt.Sprintf("%-10s", marker))
 
 			// Color model name by tier
 			modelColor := styles.GetModelColor(modelName)
 			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
 
-			// Dim the ID and message count
-			idStyled := dimStyle.Render(fmt.Sprintf("%-10s", fmt.Sprintf("(%s)", shortID)))
+			// Dim the message count
 			msgStyled := dimStyle.Render(fmt.Sprintf("%8s", msgStr))
 
 			costStr := formatCostStyled(agent.TotalCost.TotalCost, 11, noColor)
 
-			sb.WriteString(fmt.Sprintf("  %s %s %s %s      %s\n",
-				markerStyled, modelStyled, idStyled, msgStyled, costStr))
+			sb.WriteString(fmt.Sprintf("  %s %s %s            %s\n",
+				markerStyled, modelStyled, msgStyled, costStr))
 		}
 	}
 

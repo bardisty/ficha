@@ -23,8 +23,8 @@
 ---------------------------[ AGENT SUB-SESSIONS ]---------------------------
 
   Parent session                             $7.900000
-  [A1]  Haiku 4.5   (a1b2c3d)   12 msgs      $0.420000
-  [A2]  Sonnet 5    (f6e5d4c)     1 msg      $1.580000
+  [Aa1b2c3d] Haiku 4.5    12 msgs            $0.420000
+  [Af6e5d4c] Sonnet 5       1 msg            $1.580000
   Agents subtotal                            $2.000000
 
 ----------------------------[ MESSAGE INSIGHTS ]----------------------------

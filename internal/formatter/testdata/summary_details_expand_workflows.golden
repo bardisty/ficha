@@ -18,10 +18,10 @@
      # SESSION   MODIFIED      MODEL           COST  CUMULATIVE
   ------------------------------------------------------------------------
      1 dddd4444  20 JAN 09:30  Opus 4.8       $0.12       $0.12
-       +- [A1] Haiku 4.5     1 msg  $0.01
+       +- [Areg1]    Haiku 4.5     1 msg  $0.01
        -- workflow: audit-codebase (completed)
-       +- [A2] Opus 4.8      1 msg  $0.05
-       `- [A3] Sonnet 5      1 msg  $0.04
+       +- [Awf1]     Opus 4.8      1 msg  $0.05
+       `- [Awf2]     Sonnet 5      1 msg  $0.04
   ------------------------------------------------------------------------
   Sum (1 sessions):                                        $0.12
 
