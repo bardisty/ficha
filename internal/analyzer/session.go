@@ -11,17 +11,36 @@ import (
 	"github.com/bardisty/ficha/internal/pricing"
 )
 
+// MessageScope selects which per-message rows an analysis retains in
+// SessionAnalysis.Messages. Aggregate fields are unaffected — agent costs are
+// always rolled into the session totals regardless of scope.
+type MessageScope int
+
+const (
+	// NoMessages omits the per-message list entirely.
+	NoMessages MessageScope = iota
+	// ParentMessages keeps the parent transcript's messages in file order.
+	// The live TUI's cost chart pushes only the newly appended tail, so it
+	// needs a list whose existing prefix never shifts — agent messages, which
+	// appear mid-list as sub-sessions are discovered, would corrupt it.
+	ParentMessages
+	// AllMessages keeps the parent transcript's messages followed by each agent
+	// sub-session's, tagged with MessageAnalysis.AgentID. Message costs then sum
+	// to SessionAnalysis.TotalCost.
+	AllMessages
+)
+
 // AnalyzeSession analyzes a session JSONL file and returns the complete analysis.
-func AnalyzeSession(sessionPath string, sessionID string, includeMessages bool) (*models.SessionAnalysis, error) {
-	return AnalyzeSessionWithCache(sessionPath, sessionID, includeMessages, nil)
+func AnalyzeSession(sessionPath string, sessionID string, scope MessageScope) (*models.SessionAnalysis, error) {
+	return AnalyzeSessionWithCache(sessionPath, sessionID, scope, nil)
 }
 
 // AnalyzeSessionWithCache is AnalyzeSession with an optional agent-parse cache.
 // The parent session file is always re-parsed (it is the file being appended to
 // in live views); only agent sub-sessions are served from the cache when
 // unchanged. A nil cache parses every agent, matching AnalyzeSession.
-func AnalyzeSessionWithCache(sessionPath string, sessionID string, includeMessages bool, cache *AgentParseCache) (*models.SessionAnalysis, error) {
-	return analyzeSessionExcludingSeen(sessionPath, sessionID, includeMessages, cache, nil)
+func AnalyzeSessionWithCache(sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache) (*models.SessionAnalysis, error) {
+	return analyzeSessionExcludingSeen(sessionPath, sessionID, scope, cache, nil)
 }
 
 // analyzeSessionExcludingSeen is AnalyzeSessionWithCache with an optional
@@ -32,7 +51,7 @@ func AnalyzeSessionWithCache(sessionPath string, sessionID string, includeMessag
 // are added to seen. Only parent-file messages participate: agent sub-session
 // files are never cloned by fork, so they stay file-local. A nil seen keeps
 // the session fully file-local.
-func analyzeSessionExcludingSeen(sessionPath string, sessionID string, includeMessages bool, cache *AgentParseCache, seen map[string]struct{}) (*models.SessionAnalysis, error) {
+func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[string]struct{}) (*models.SessionAnalysis, error) {
 	// Parse the JSONL file
 	result, err := parser.ParseJSONLFileWithResult(sessionPath)
 	if err != nil {
@@ -53,7 +72,7 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, includeMe
 	}
 
 	// Build the session analysis (parent session only)
-	analysis := buildSessionAnalysis(sessionID, sessionPath, messageAnalyses, includeMessages)
+	analysis := buildSessionAnalysis(sessionID, sessionPath, messageAnalyses, scope != NoMessages)
 	analysis.SkippedLines = result.SkippedLines
 
 	// Store parent cost and message count before adding agent data
@@ -75,7 +94,7 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, includeMe
 		skippedAgents := 0
 
 		for _, agentPath := range agentPaths {
-			agentAnalysis, err := analyzeAgentWithCache(agentPath, cache)
+			agentAnalysis, agentMessages, err := analyzeAgentWithCache(agentPath, cache)
 			if err != nil {
 				skippedAgents++
 				continue // Skip agents that can't be parsed
@@ -83,6 +102,16 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, includeMe
 			agentAnalysis.WorkflowID = parser.ExtractWorkflowRunID(agentPath)
 
 			analysis.Agents = append(analysis.Agents, *agentAnalysis)
+
+			// Agent rows follow the parent block, each agent in discovery order
+			// (regular agents, then workflow runs alphabetically). Tag copies:
+			// agentMessages may be the parse cache's own slice.
+			if scope == AllMessages {
+				for _, msg := range agentMessages {
+					msg.AgentID = agentAnalysis.AgentID
+					analysis.Messages = append(analysis.Messages, msg)
+				}
+			}
 
 			// Roll up agent costs and messages
 			analysis.AgentsCost.Add(agentAnalysis.TotalCost)
@@ -141,15 +170,18 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, includeMe
 // for symmetry with AnalyzeSession but unused: AgentAnalysis carries aggregates
 // only, never the per-message list.
 func AnalyzeAgent(agentPath string, includeMessages bool) (*models.AgentAnalysis, error) {
-	return analyzeAgentWithCache(agentPath, nil)
+	analysis, _, err := analyzeAgentWithCache(agentPath, nil)
+	return analysis, err
 }
 
 // analyzeAgentWithCache builds an AgentAnalysis from an agent file, serving the
-// parse from cache when unchanged (nil cache always parses).
-func analyzeAgentWithCache(agentPath string, cache *AgentParseCache) (*models.AgentAnalysis, error) {
+// parse from cache when unchanged (nil cache always parses). The returned
+// messages back the caller's per-message list; they may alias the cache's
+// slice, so copy before mutating an element.
+func analyzeAgentWithCache(agentPath string, cache *AgentParseCache) (*models.AgentAnalysis, []models.MessageAnalysis, error) {
 	messageAnalyses, skippedLines, err := loadAgentMessages(agentPath, cache)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	agentID := parser.ExtractAgentID(agentPath)
@@ -163,7 +195,7 @@ func analyzeAgentWithCache(agentPath string, cache *AgentParseCache) (*models.Ag
 	}
 
 	if len(messageAnalyses) == 0 {
-		return analysis, nil
+		return analysis, messageAnalyses, nil
 	}
 
 	// Aggregate totals
@@ -185,7 +217,7 @@ func analyzeAgentWithCache(agentPath string, cache *AgentParseCache) (*models.Ag
 	analysis.StartTime, analysis.EndTime = timeRange(messageAnalyses)
 	analysis.Duration = models.Duration(analysis.EndTime.Sub(analysis.StartTime))
 
-	return analysis, nil
+	return analysis, messageAnalyses, nil
 }
 
 // timeRange returns the earliest and latest non-zero timestamps in messages.
@@ -293,14 +325,20 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 // the earliest file (the original session); later copies are excluded from
 // both the aggregate and their session's result, so per-session results sum
 // to the aggregate. Standalone single-session views stay file-local.
+//
+// The aggregate carries the parent/agent cost partition (ParentCost, AgentsCost,
+// AgentCount, ...) summed across sessions, but not the nested Agents/Workflows
+// records — those stay on the per-session results the summary detail view
+// renders. ParentCost + AgentsCost equals TotalCost, as it does per session.
 func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnalysis, []models.SessionResult, error) {
 	if len(entries) == 0 {
 		return nil, nil, fmt.Errorf("no sessions to analyze")
 	}
 
 	aggregate := &models.SessionAnalysis{
-		SessionID:   "aggregate",
-		CostByModel: make(map[string]models.CostBreakdown),
+		SessionID:         "aggregate",
+		CostByModel:       make(map[string]models.CostBreakdown),
+		ParentCostByModel: make(map[string]models.CostBreakdown),
 	}
 
 	results := make([]models.SessionResult, len(entries))
@@ -322,7 +360,7 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 
 	for _, idx := range order {
 		entry := entries[idx]
-		sessionAnalysis, err := analyzeSessionExcludingSeen(entry.FullPath, entry.SessionID, false, nil, seen)
+		sessionAnalysis, err := analyzeSessionExcludingSeen(entry.FullPath, entry.SessionID, NoMessages, nil, seen)
 		if err != nil {
 			skippedSessions++
 			results[idx] = models.SessionResult{Entry: entry, Analysis: nil}
@@ -340,6 +378,15 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 		aggregate.TotalUsage.Add(sessionAnalysis.TotalUsage)
 		aggregate.TotalCost.Add(sessionAnalysis.TotalCost)
 
+		// Parent/agent cost partition, mirroring the message-count fields
+		aggregate.ParentCost.Add(sessionAnalysis.ParentCost)
+		aggregate.AgentsCost.Add(sessionAnalysis.AgentsCost)
+		aggregate.AgentCount += sessionAnalysis.AgentCount
+		aggregate.WorkflowCount += sessionAnalysis.WorkflowCount
+		if sessionAnalysis.HasAgents {
+			aggregate.HasAgents = true
+		}
+
 		// Track cost by model
 		for model, cost := range sessionAnalysis.CostByModel {
 			if existing, ok := aggregate.CostByModel[model]; ok {
@@ -347,6 +394,14 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 				aggregate.CostByModel[model] = existing
 			} else {
 				aggregate.CostByModel[model] = cost
+			}
+		}
+		for model, cost := range sessionAnalysis.ParentCostByModel {
+			if existing, ok := aggregate.ParentCostByModel[model]; ok {
+				existing.Add(cost)
+				aggregate.ParentCostByModel[model] = existing
+			} else {
+				aggregate.ParentCostByModel[model] = cost
 			}
 		}
 

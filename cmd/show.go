@@ -31,7 +31,7 @@ Examples:
 		},
 	}
 
-	showCmd.Flags().BoolVar(&cfg.messages, "messages", false, "Output per-message rows/records instead of the session summary (json/csv only)")
+	showCmd.Flags().BoolVar(&cfg.messages, "messages", false, "Output per-message rows/records instead of the session summary, agent sub-sessions included and tagged with agent_id (json/csv only)")
 
 	return showCmd
 }
@@ -58,7 +58,11 @@ func runShow(cfg *config, args []string, live bool) error {
 	// which switches json/csv to per-message granularity; the table never renders
 	// the message list (insights are computed regardless), so it ignores the flag.
 	includeMessages := cfg.messages
-	analysis, err := analyzer.AnalyzeSession(session.FullPath, session.SessionID, includeMessages)
+	scope := analyzer.NoMessages
+	if includeMessages {
+		scope = analyzer.AllMessages
+	}
+	analysis, err := analyzer.AnalyzeSession(session.FullPath, session.SessionID, scope)
 	if err != nil {
 		return fmt.Errorf("analyzing session: %w", err)
 	}

@@ -250,7 +250,7 @@ func TestAnalyzeSession_Basic(t *testing.T) {
 		t.Fatalf("failed to write session file: %v", err)
 	}
 
-	analysis, err := AnalyzeSession(sessionPath, sessionID, false)
+	analysis, err := AnalyzeSession(sessionPath, sessionID, NoMessages)
 	if err != nil {
 		t.Fatalf("AnalyzeSession failed: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestAnalyzeSession_WithAgents(t *testing.T) {
 		t.Fatalf("failed to write agent session: %v", err)
 	}
 
-	analysis, err := AnalyzeSession(sessionPath, sessionID, false)
+	analysis, err := AnalyzeSession(sessionPath, sessionID, NoMessages)
 	if err != nil {
 		t.Fatalf("AnalyzeSession failed: %v", err)
 	}
@@ -400,7 +400,7 @@ not json at all
 		t.Fatalf("failed to write agent session: %v", err)
 	}
 
-	analysis, err := AnalyzeSession(sessionPath, sessionID, false)
+	analysis, err := AnalyzeSession(sessionPath, sessionID, NoMessages)
 	if err != nil {
 		t.Fatalf("AnalyzeSession failed: %v", err)
 	}
@@ -598,7 +598,7 @@ func TestAnalyzeSession_DeduplicatesStreamingLines(t *testing.T) {
 		t.Fatalf("failed to write session file: %v", err)
 	}
 
-	analysis, err := AnalyzeSession(sessionPath, sessionID, false)
+	analysis, err := AnalyzeSession(sessionPath, sessionID, NoMessages)
 	if err != nil {
 		t.Fatalf("AnalyzeSession failed: %v", err)
 	}
@@ -825,7 +825,7 @@ func TestAnalyzeSession_WithWorkflowAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	analysis, err := AnalyzeSession(sessionPath, sessionID, false)
+	analysis, err := AnalyzeSession(sessionPath, sessionID, NoMessages)
 	if err != nil {
 		t.Fatalf("AnalyzeSession failed: %v", err)
 	}
@@ -899,7 +899,7 @@ func TestAnalyzeSession_WorkflowOrphanRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	analysis, err := AnalyzeSession(sessionPath, sessionID, false)
+	analysis, err := AnalyzeSession(sessionPath, sessionID, NoMessages)
 	if err != nil {
 		t.Fatalf("AnalyzeSession failed: %v", err)
 	}
@@ -994,7 +994,7 @@ func TestAnalyzeSession_ForkFileStaysFileLocal(t *testing.T) {
 	forkPath := filepath.Join(tmpDir, "fork.jsonl")
 	writeJSONLFile(t, forkPath, []string{forkMsg1, forkMsg2, forkMsg3})
 
-	analysis, err := AnalyzeSession(forkPath, "fork", false)
+	analysis, err := AnalyzeSession(forkPath, "fork", NoMessages)
 	if err != nil {
 		t.Fatalf("AnalyzeSession failed: %v", err)
 	}
@@ -1072,5 +1072,188 @@ func TestAnalyzeMultipleSessions_AgentFilesStayFileLocal(t *testing.T) {
 	}
 	if results[1].Analysis.AgentMessageCount != 1 {
 		t.Errorf("sess-b AgentMessageCount: got %d, want 1", results[1].Analysis.AgentMessageCount)
+	}
+}
+
+// writeAgentSession writes an agent transcript for sessionID under projectDir.
+func writeAgentSession(t *testing.T, projectDir, sessionID, agentFile string, lines []string) {
+	t.Helper()
+	dir := filepath.Join(projectDir, sessionID, "subagents")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir subagents: %v", err)
+	}
+	writeJSONLFile(t, filepath.Join(dir, agentFile), lines)
+}
+
+// The summary aggregate must carry the same parent/agent partition each session
+// carries: machine formats serialize it whole, so a zeroed partition beside a
+// total that includes agent spend is a lie (AGENT-01).
+func TestAnalyzeMultipleSessions_AggregatesAgentPartition(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// sess-a: parent only. sess-b: parent + two agents.
+	pathA := filepath.Join(tmpDir, "sess-a.jsonl")
+	writeJSONLFile(t, pathA, []string{forkMsg1})
+
+	pathB := filepath.Join(tmpDir, "sess-b.jsonl")
+	writeJSONLFile(t, pathB, []string{forkMsg3})
+	writeAgentSession(t, tmpDir, "sess-b", "agent-x.jsonl", []string{forkMsg2})
+	writeAgentSession(t, tmpDir, "sess-b", "agent-y.jsonl", []string{forkMsg2})
+
+	entries := []models.SessionEntry{
+		{SessionID: "sess-a", FullPath: pathA, Modified: time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)},
+		{SessionID: "sess-b", FullPath: pathB, Modified: time.Date(2024, 1, 16, 9, 0, 0, 0, time.UTC)},
+	}
+
+	aggregate, results, err := AnalyzeMultipleSessions(entries)
+	if err != nil {
+		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
+	}
+
+	if !aggregate.HasAgents {
+		t.Error("aggregate HasAgents: got false, want true (sess-b owns agents)")
+	}
+	if aggregate.AgentCount != 2 {
+		t.Errorf("aggregate AgentCount: got %d, want 2", aggregate.AgentCount)
+	}
+
+	// The invariant machine consumers rely on: the partition covers the total.
+	if !almostEqual(aggregate.ParentCost.TotalCost+aggregate.AgentsCost.TotalCost,
+		aggregate.TotalCost.TotalCost, 1e-9) {
+		t.Errorf("ParentCost (%f) + AgentsCost (%f) != TotalCost (%f)",
+			aggregate.ParentCost.TotalCost, aggregate.AgentsCost.TotalCost, aggregate.TotalCost.TotalCost)
+	}
+
+	// And each half is the sum of its per-session halves.
+	var wantParent, wantAgents float64
+	for _, r := range results {
+		wantParent += r.Analysis.ParentCost.TotalCost
+		wantAgents += r.Analysis.AgentsCost.TotalCost
+	}
+	if !almostEqual(aggregate.ParentCost.TotalCost, wantParent, 1e-9) {
+		t.Errorf("aggregate ParentCost: got %f, want %f", aggregate.ParentCost.TotalCost, wantParent)
+	}
+	if !almostEqual(aggregate.AgentsCost.TotalCost, wantAgents, 1e-9) {
+		t.Errorf("aggregate AgentsCost: got %f, want %f", aggregate.AgentsCost.TotalCost, wantAgents)
+	}
+
+	// ParentCostByModel excludes agent spend, so it must be lighter than CostByModel
+	// for the model both share.
+	const model = "claude-sonnet-4-5"
+	if len(aggregate.ParentCostByModel) == 0 {
+		t.Fatal("aggregate ParentCostByModel is empty")
+	}
+	if aggregate.ParentCostByModel[model].TotalCost >= aggregate.CostByModel[model].TotalCost {
+		t.Errorf("ParentCostByModel[%s] (%f) should be below CostByModel[%s] (%f)",
+			model, aggregate.ParentCostByModel[model].TotalCost,
+			model, aggregate.CostByModel[model].TotalCost)
+	}
+}
+
+// A workflow run's agents contribute to the aggregate's WorkflowCount.
+func TestAnalyzeMultipleSessions_AggregatesWorkflowCount(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "sess.jsonl")
+	writeJSONLFile(t, path, []string{forkMsg1})
+
+	runDir := filepath.Join(tmpDir, "sess", "subagents", "workflows", "wf_run1")
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONLFile(t, filepath.Join(runDir, "agent-w1.jsonl"), []string{forkMsg2})
+
+	aggregate, _, err := AnalyzeMultipleSessions([]models.SessionEntry{
+		{SessionID: "sess", FullPath: path, Modified: time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
+	}
+	if aggregate.WorkflowCount != 1 {
+		t.Errorf("aggregate WorkflowCount: got %d, want 1", aggregate.WorkflowCount)
+	}
+}
+
+// AllMessages appends each agent's messages after the parent block, tagged with
+// the agent ID, so per-message rows sum to the session total (AGENT-02).
+// ParentMessages keeps the list parent-only for the live cost chart.
+func TestAnalyzeSession_MessageScope(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "sess.jsonl")
+	writeJSONLFile(t, sessionPath, []string{forkMsg1, forkMsg2})
+	writeAgentSession(t, tmpDir, "sess", "agent-x.jsonl", []string{forkMsg3})
+
+	t.Run("NoMessages", func(t *testing.T) {
+		analysis, err := AnalyzeSession(sessionPath, "sess", NoMessages)
+		if err != nil {
+			t.Fatalf("AnalyzeSession: %v", err)
+		}
+		if len(analysis.Messages) != 0 {
+			t.Errorf("Messages: got %d, want 0", len(analysis.Messages))
+		}
+	})
+
+	t.Run("ParentMessages", func(t *testing.T) {
+		analysis, err := AnalyzeSession(sessionPath, "sess", ParentMessages)
+		if err != nil {
+			t.Fatalf("AnalyzeSession: %v", err)
+		}
+		if len(analysis.Messages) != 2 {
+			t.Fatalf("Messages: got %d, want 2 (parent only)", len(analysis.Messages))
+		}
+		for i, msg := range analysis.Messages {
+			if msg.AgentID != "" {
+				t.Errorf("Messages[%d].AgentID: got %q, want empty", i, msg.AgentID)
+			}
+		}
+	})
+
+	t.Run("AllMessages", func(t *testing.T) {
+		analysis, err := AnalyzeSession(sessionPath, "sess", AllMessages)
+		if err != nil {
+			t.Fatalf("AnalyzeSession: %v", err)
+		}
+		if len(analysis.Messages) != 3 {
+			t.Fatalf("Messages: got %d, want 3 (2 parent + 1 agent)", len(analysis.Messages))
+		}
+		wantAgentIDs := []string{"", "", "x"}
+		var sum float64
+		for i, msg := range analysis.Messages {
+			if msg.AgentID != wantAgentIDs[i] {
+				t.Errorf("Messages[%d].AgentID: got %q, want %q", i, msg.AgentID, wantAgentIDs[i])
+			}
+			sum += msg.Cost.TotalCost
+		}
+		// The regression AGENT-02 names: rows must sum to the session total.
+		if !almostEqual(sum, analysis.TotalCost.TotalCost, 1e-9) {
+			t.Errorf("sum of message costs: got %f, want TotalCost %f", sum, analysis.TotalCost.TotalCost)
+		}
+		if analysis.Messages[2].AgentID != analysis.Agents[0].AgentID {
+			t.Errorf("agent message tag %q does not join to Agents[0].AgentID %q",
+				analysis.Messages[2].AgentID, analysis.Agents[0].AgentID)
+		}
+	})
+}
+
+// The parse cache hands back its own slice; tagging agent messages must not
+// write an AgentID into the cached entry (nor bleed across sessions).
+func TestAnalyzeSession_AllMessagesDoesNotMutateCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "sess.jsonl")
+	writeJSONLFile(t, sessionPath, []string{forkMsg1})
+	writeAgentSession(t, tmpDir, "sess", "agent-x.jsonl", []string{forkMsg2})
+
+	cache := NewAgentParseCache()
+	if _, err := AnalyzeSessionWithCache(sessionPath, "sess", AllMessages, cache); err != nil {
+		t.Fatalf("first AnalyzeSessionWithCache: %v", err)
+	}
+	// Second pass is served from the cache; a mutated entry would surface here.
+	second, err := AnalyzeSessionWithCache(sessionPath, "sess", ParentMessages, cache)
+	if err != nil {
+		t.Fatalf("second AnalyzeSessionWithCache: %v", err)
+	}
+	for i, msg := range second.Messages {
+		if msg.AgentID != "" {
+			t.Errorf("ParentMessages[%d].AgentID: got %q, want empty (cache was mutated)", i, msg.AgentID)
+		}
 	}
 }
