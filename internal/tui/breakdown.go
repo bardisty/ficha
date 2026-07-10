@@ -183,12 +183,12 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		footerHeight := 4 // Double-line separator(1) + stats(1) + single-line(1) + help(1)
 
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight)
+			m.viewport = viewport.New(msg.Width, viewportHeight(msg.Height, headerHeight, footerHeight))
 			m.viewport.YPosition = headerHeight
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - headerHeight - footerHeight
+			m.viewport.Height = viewportHeight(msg.Height, headerHeight, footerHeight)
 		}
 		m.width = msg.Width
 		m.height = msg.Height
