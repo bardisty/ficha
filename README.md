@@ -71,19 +71,20 @@
   Sessions that fail to parse are omitted from detail output and
   reported on stderr (stdout stays clean for piping).
 
-  Agent spend is never hidden from a machine format. Every export that
-  carries a total also carries the split that adds up to it:
+  Agent spend is never hidden. show and summary both carry the split
+  that adds up to the total they report:
 
     parent_cost + agents_cost = total_cost
 
-  This holds for one session (show) and for the summary aggregate, which
-  reports agent_count, workflow_count and has_agents across all sessions
-  (the per-agent records themselves live under summary --details).
+  On the summary aggregate that split spans every session, alongside
+  agent_count, workflow_count, has_agents and parent_cost_by_model; the
+  per-agent records themselves live under summary --details. (global
+  reports project totals only, with no parent/agent split.)
 
   show --messages likewise emits agent rows, not just the parent
   transcript, so the rows sum to the session's total_cost. An agent_id
   column (json: agent_id, omitted on parent records) says where each row
-  came from and joins to the agents[] array:
+  came from:
 
     agent_id  timestamp             model            total_cost
               2026-02-02T09:00:00Z  claude-opus-4-8    0.031500   ─┐
@@ -94,6 +95,16 @@
   Parent rows come first, then one block per agent in discovery order
   (regular subagents, then workflow runs). Sort by timestamp for a
   chronological view — or use `ficha breakdown`, which does it for you.
+
+  One agent_id key space throughout: the same ID joins these rows, the
+  json agents[] array, and summary --details --expand-agents rows.
+
+  Costs are floats, and csv prints six decimals. Reconcile a sum against
+  a total with a tolerance, never with ==.
+
+  A cell that would open as a spreadsheet formula (=, +, -, @) is
+  prefixed with an apostrophe in csv. No real model or agent ID starts
+  with one, so this only ever fires on a hostile transcript.
 
   cost_by_model keys are canonical model IDs: every dated snapshot and
   provider spelling of one model shares a key, so summing by key needs

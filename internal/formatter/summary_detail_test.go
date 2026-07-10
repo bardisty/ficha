@@ -236,8 +236,10 @@ func TestFormatSummaryDetailCSV_Expand(t *testing.T) {
 	if agent[1] != "sess-01" {
 		t.Errorf("agent session_id: got %q, want sess-01 (parent)", agent[1])
 	}
-	if agent[2] != "1" {
-		t.Errorf("agent_id: got %q, want 1", agent[2])
+	// agent_id is the agent's real ID, the same key show --messages and the
+	// json agents[] array use, so the exports join.
+	if agent[2] != "agent-x" {
+		t.Errorf("agent_id: got %q, want agent-x", agent[2])
 	}
 	if agent[4] != "claude-haiku-4-5" {
 		t.Errorf("agent model: got %q, want claude-haiku-4-5", agent[4])
@@ -260,8 +262,8 @@ func TestFormatSummaryDetailCSV_Expand(t *testing.T) {
 
 	// Workflow agent row carries its run ID.
 	wfAgent := records[4]
-	if wfAgent[0] != "agent" || wfAgent[2] != "2" {
-		t.Errorf("workflow agent row_type/agent_id: got %q/%q, want agent/2", wfAgent[0], wfAgent[2])
+	if wfAgent[0] != "agent" || wfAgent[2] != "agent-w" {
+		t.Errorf("workflow agent row_type/agent_id: got %q/%q, want agent/agent-w", wfAgent[0], wfAgent[2])
 	}
 	if wfAgent[15] != "wf_run-1" {
 		t.Errorf("workflow agent workflow_id: got %q, want wf_run-1", wfAgent[15])

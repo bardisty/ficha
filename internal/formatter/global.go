@@ -399,7 +399,7 @@ func FormatGlobalCSV(analysis *models.GlobalAnalysis) (string, error) {
 	// Write project rows
 	for _, p := range analysis.Projects {
 		row := []string{
-			p.DisplayName,
+			csvCell(p.DisplayName),
 			fmt.Sprintf("%d", p.SessionCount),
 			fmt.Sprintf("%d", p.MessageCount),
 			fmt.Sprintf("%.6f", p.TotalCost.InputCost),

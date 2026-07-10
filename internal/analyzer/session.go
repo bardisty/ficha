@@ -30,6 +30,22 @@ const (
 	AllMessages
 )
 
+// addCost accumulates cost under key. The zero CostBreakdown is Add's identity,
+// so a missing key needs no special case.
+func addCost(dst map[string]models.CostBreakdown, key string, cost models.CostBreakdown) {
+	existing := dst[key]
+	existing.Add(cost)
+	dst[key] = existing
+}
+
+// mergeCostByModel accumulates every entry of src into dst. Both must already be
+// keyed by pricing.NormalizeModelID.
+func mergeCostByModel(dst, src map[string]models.CostBreakdown) {
+	for model, cost := range src {
+		addCost(dst, model, cost)
+	}
+}
+
 // AnalyzeSession analyzes a session JSONL file and returns the complete analysis.
 func AnalyzeSession(sessionPath string, sessionID string, scope MessageScope) (*models.SessionAnalysis, error) {
 	return AnalyzeSessionWithCache(sessionPath, sessionID, scope, nil)
@@ -105,10 +121,15 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope Mes
 
 			// Agent rows follow the parent block, each agent in discovery order
 			// (regular agents, then workflow runs alphabetically). Tag copies:
-			// agentMessages may be the parse cache's own slice.
+			// agentMessages may be the parse cache's own slice, and the struct
+			// copy is shallow — Usage.CacheCreation is a pointer into it.
 			if scope == AllMessages {
 				for _, msg := range agentMessages {
 					msg.AgentID = agentAnalysis.AgentID
+					if msg.Usage.CacheCreation != nil {
+						cc := *msg.Usage.CacheCreation
+						msg.Usage.CacheCreation = &cc
+					}
 					analysis.Messages = append(analysis.Messages, msg)
 				}
 			}
@@ -122,14 +143,7 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope Mes
 			analysis.SkippedLines += agentAnalysis.SkippedLines
 
 			// Merge agent cost by model
-			for model, cost := range agentAnalysis.CostByModel {
-				if existing, ok := analysis.CostByModel[model]; ok {
-					existing.Add(cost)
-					analysis.CostByModel[model] = existing
-				} else {
-					analysis.CostByModel[model] = cost
-				}
-			}
+			mergeCostByModel(analysis.CostByModel, agentAnalysis.CostByModel)
 
 			// Extend time range if needed (parent StartTime may be zero when it
 			// has no valid timestamps — take the agent's rather than keep zero)
@@ -166,10 +180,9 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope Mes
 	return analysis, nil
 }
 
-// AnalyzeAgent analyzes a single agent sub-session. includeMessages is accepted
-// for symmetry with AnalyzeSession but unused: AgentAnalysis carries aggregates
-// only, never the per-message list.
-func AnalyzeAgent(agentPath string, includeMessages bool) (*models.AgentAnalysis, error) {
+// AnalyzeAgent analyzes a single agent sub-session. There is no message-scope
+// knob: AgentAnalysis carries aggregates only, never the per-message list.
+func AnalyzeAgent(agentPath string) (*models.AgentAnalysis, error) {
 	analysis, _, err := analyzeAgentWithCache(agentPath, nil)
 	return analysis, err
 }
@@ -202,15 +215,7 @@ func analyzeAgentWithCache(agentPath string, cache *AgentParseCache) (*models.Ag
 	for _, msg := range messageAnalyses {
 		analysis.TotalUsage.Add(msg.Usage)
 		analysis.TotalCost.Add(msg.Cost)
-
-		// Track cost by model
-		model := pricing.NormalizeModelID(msg.Model)
-		if existing, ok := analysis.CostByModel[model]; ok {
-			existing.Add(msg.Cost)
-			analysis.CostByModel[model] = existing
-		} else {
-			analysis.CostByModel[model] = msg.Cost
-		}
+		addCost(analysis.CostByModel, pricing.NormalizeModelID(msg.Model), msg.Cost)
 	}
 
 	// Set time range
@@ -239,7 +244,9 @@ func timeRange(messages []models.MessageAnalysis) (start, end time.Time) {
 	return start, end
 }
 
-// AnalyzeSessionFromMessages analyzes already-parsed messages
+// AnalyzeSessionFromMessages analyzes already-parsed messages. It discovers no
+// agent sub-sessions, so includeMessages retains the parent transcript only —
+// there is no AllMessages equivalent here.
 func AnalyzeSessionFromMessages(sessionID string, sessionPath string, messages []models.JSONLMessage, includeMessages bool) *models.SessionAnalysis {
 	// Collapse repeated streaming lines — messages may come from sources that
 	// bypass ParseJSONLWithResult's dedup (no-op when already deduplicated)
@@ -278,15 +285,7 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 	for _, msg := range messageAnalyses {
 		totalUsage.Add(msg.Usage)
 		totalCost.Add(msg.Cost)
-
-		// Track cost by model
-		model := pricing.NormalizeModelID(msg.Model)
-		if existing, ok := analysis.CostByModel[model]; ok {
-			existing.Add(msg.Cost)
-			analysis.CostByModel[model] = existing
-		} else {
-			analysis.CostByModel[model] = msg.Cost
-		}
+		addCost(analysis.CostByModel, pricing.NormalizeModelID(msg.Model), msg.Cost)
 	}
 
 	analysis.TotalUsage = totalUsage
@@ -329,7 +328,10 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 // The aggregate carries the parent/agent cost partition (ParentCost, AgentsCost,
 // AgentCount, ...) summed across sessions, but not the nested Agents/Workflows
 // records — those stay on the per-session results the summary detail view
-// renders. ParentCost + AgentsCost equals TotalCost, as it does per session.
+// renders. ParentCost + AgentsCost recovers TotalCost, as it does per session,
+// up to float rounding: the total accumulates ((parent + agent1) + agent2)
+// while the partition sums parent + (agent1 + agent2). Reconcile with a
+// tolerance, never with ==.
 func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnalysis, []models.SessionResult, error) {
 	if len(entries) == 0 {
 		return nil, nil, fmt.Errorf("no sessions to analyze")
@@ -388,22 +390,8 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 		}
 
 		// Track cost by model
-		for model, cost := range sessionAnalysis.CostByModel {
-			if existing, ok := aggregate.CostByModel[model]; ok {
-				existing.Add(cost)
-				aggregate.CostByModel[model] = existing
-			} else {
-				aggregate.CostByModel[model] = cost
-			}
-		}
-		for model, cost := range sessionAnalysis.ParentCostByModel {
-			if existing, ok := aggregate.ParentCostByModel[model]; ok {
-				existing.Add(cost)
-				aggregate.ParentCostByModel[model] = existing
-			} else {
-				aggregate.ParentCostByModel[model] = cost
-			}
-		}
+		mergeCostByModel(aggregate.CostByModel, sessionAnalysis.CostByModel)
+		mergeCostByModel(aggregate.ParentCostByModel, sessionAnalysis.ParentCostByModel)
 
 		// Update time range - skip sessions with zero times (no assistant messages)
 		if !sessionAnalysis.StartTime.IsZero() {
