@@ -32,6 +32,15 @@ func panelWidthFor(termWidth int) int {
 	return max(min(termWidth-2, defaultPanelWidth), minPanelWidth)
 }
 
+// viewportHeight returns the rows left for the scrollable viewport after the
+// fixed header and footer, clamped to at least 1: a terminal shorter than the
+// chrome (or one reporting 0 rows, as bare ptys do) must degrade to a
+// squeezed layout, not hand the viewport a negative height — its line math
+// panics on that.
+func viewportHeight(termHeight, headerHeight, footerHeight int) int {
+	return max(termHeight-headerHeight-footerHeight, 1)
+}
+
 // clipToWidth truncates every line of rendered output to the terminal width
 // (ANSI-aware) so overlong lines degrade by clipping instead of wrapping.
 // Applied to viewport content — the viewport soft-wraps overlong lines, which
