@@ -111,13 +111,40 @@ func CacheTokensByTTL(usage models.TokenUsage) (int64, int64) {
 	return usage.CacheCreationInputTokens, 0
 }
 
+// ClampModel fits a model label into width display columns, cutting with an
+// ellipsis when it must. Catalog display names top out at 10 columns and pass
+// through untouched; an unknown model falls back to its raw ID
+// ("claude-opus-4-9-20260101" is 24 columns) and would otherwise push every
+// field after the MODEL column out of alignment — fmt's "%-Ns" pads but never
+// truncates.
+//
+// Callers still pass the result through "%-Ns". That works because an uncut
+// label is pure ASCII (bytes == columns, so fmt pads it correctly) while a cut
+// one ends in a 3-byte, 1-column ellipsis (bytes > width, so fmt leaves the
+// already-exact width alone).
+func ClampModel(label string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	r := []rune(label)
+	if len(r) <= width {
+		return label
+	}
+	if width == 1 {
+		return "…"
+	}
+	return string(r[:width-1]) + "…"
+}
+
 // PrimaryModel returns the display name of the dominant model (by highest
-// cost) in a cost-by-model map, or "-" when there is no model data.
+// cost) in a cost-by-model map, or "-" when there is no model data. Ties break
+// by ID ascending, matching OrderModelsByCost — without it Go's randomized map
+// iteration would let equal-cost models swap the reported primary run to run.
 func PrimaryModel(costByModel map[string]models.CostBreakdown) string {
 	var maxModel string
 	var maxCost float64
 	for model, cost := range costByModel {
-		if cost.TotalCost > maxCost {
+		if cost.TotalCost > maxCost || (cost.TotalCost == maxCost && maxModel != "" && model < maxModel) {
 			maxCost = cost.TotalCost
 			maxModel = model
 		}

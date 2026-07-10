@@ -1,9 +1,11 @@
 package render
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/charmbracelet/lipgloss"
@@ -130,6 +132,54 @@ func TestTruncateID(t *testing.T) {
 	}
 }
 
+func TestClampModel(t *testing.T) {
+	tests := []struct {
+		label string
+		width int
+		want  string
+	}{
+		// Every catalog display name fits the narrowest MODEL column (10).
+		{"Opus 4.8", 10, "Opus 4.8"},
+		{"Sonnet 4.6", 10, "Sonnet 4.6"}, // exactly 10: the name that overflowed %-9s
+		{"Haiku 4.5", 10, "Haiku 4.5"},
+		// Unknown models fall back to their raw ID and must be cut to fit.
+		{"claude-opus-4-9-20260101", 10, "claude-op…"},
+		{"claude-opus-4-9-20260101", 12, "claude-opus…"},
+		{"us.anthropic.claude-opus-4-9-v1:0", 11, "us.anthrop…"},
+		// Degenerate widths yield no panic.
+		{"Opus 4.8", 1, "…"},
+		{"Opus 4.8", 0, ""},
+		{"Opus 4.8", -1, ""},
+		{"", 10, ""},
+	}
+	for _, tc := range tests {
+		got := ClampModel(tc.label, tc.width)
+		if got != tc.want {
+			t.Errorf("ClampModel(%q, %d) = %q, want %q", tc.label, tc.width, got, tc.want)
+		}
+		if w := utf8.RuneCountInString(got); tc.width > 0 && w > tc.width {
+			t.Errorf("ClampModel(%q, %d) = %q: %d columns, exceeds width", tc.label, tc.width, got, w)
+		}
+	}
+}
+
+// A clamped label must still be paddable by a "%-Ns" verb: when the cut inserts
+// a multi-byte ellipsis the byte length must reach width so fmt adds no padding,
+// and when it doesn't cut the label must stay pure ASCII so fmt pads correctly.
+func TestClampModelKeepsFixedWidthColumns(t *testing.T) {
+	const width = 10
+	for _, label := range []string{
+		"Opus 4.8", "Sonnet 4.6", "Sonnet 3.5", "Fable 5", "-",
+		"claude-opus-4-9-20260101", "<synthetic>",
+		"arn:aws:bedrock:us-east-1:123:inference-profile/us.anthropic.claude-opus-4-9",
+	} {
+		col := fmt.Sprintf("%-*s", width, ClampModel(label, width))
+		if got := lipgloss.Width(col); got != width {
+			t.Errorf("%q rendered %d columns in a %d-wide field: %q", label, got, width, col)
+		}
+	}
+}
+
 // Cost descending, ties broken by ID ascending for stable output.
 func TestOrderModelsByCost(t *testing.T) {
 	costByModel := map[string]models.CostBreakdown{
@@ -192,6 +242,23 @@ func TestPrimaryModel(t *testing.T) {
 				t.Errorf("PrimaryModel() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// Equal-cost models must resolve the same way every run — Go randomizes map
+// iteration, so a naive ">" comparison would let the reported primary flip.
+func TestPrimaryModelTieIsDeterministic(t *testing.T) {
+	tie := map[string]models.CostBreakdown{
+		"claude-opus-4-8":  {TotalCost: 1.0},
+		"claude-haiku-4-5": {TotalCost: 1.0},
+		"claude-sonnet-5":  {TotalCost: 1.0},
+	}
+	// Lowest ID ascending wins, matching OrderModelsByCost's tiebreak.
+	const want = "Haiku 4.5"
+	for range 50 {
+		if got := PrimaryModel(tie); got != want {
+			t.Fatalf("PrimaryModel() = %q, want %q (tie must break by ID ascending)", got, want)
+		}
 	}
 }
 

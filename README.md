@@ -71,6 +71,18 @@
   Sessions that fail to parse are omitted from detail output and
   reported on stderr (stdout stays clean for piping).
 
+  cost_by_model keys are canonical model IDs: every dated snapshot and
+  provider spelling of one model shares a key, so summing by key needs
+  no normalization on your side.
+
+    claude-sonnet-4-5-20250929  ─┐
+    claude-sonnet-4-5@20251119   ├─▶  claude-sonnet-4-5
+    ...claude-sonnet-4-5-v1:0   ─┘
+
+  A model ficha cannot price keeps its raw ID as the key, and is named
+  on stderr, so nothing unpriced is silently folded into a priced row.
+  Per-message rows (show --messages) keep the raw ID either way.
+
 ─── HOW IT WORKS ──────────────────────────────────────────────────────
 
   Reads session files from ~/.claude/projects/ and calculates costs

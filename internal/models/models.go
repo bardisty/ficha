@@ -93,7 +93,7 @@ type AgentAnalysis struct {
 	MessageCount int                      `json:"message_count"`
 	TotalUsage   TokenUsage               `json:"total_usage"`
 	TotalCost    CostBreakdown            `json:"total_cost"`
-	CostByModel  map[string]CostBreakdown `json:"cost_by_model"`
+	CostByModel  map[string]CostBreakdown `json:"cost_by_model"` // Keyed by pricing.NormalizeModelID (see SessionAnalysis.CostByModel)
 	StartTime    time.Time                `json:"start_time"`
 	EndTime      time.Time                `json:"end_time"`
 	Duration     Duration                 `json:"duration"`
@@ -111,17 +111,20 @@ type WorkflowMeta struct {
 
 // SessionAnalysis represents the complete analysis of a session
 type SessionAnalysis struct {
-	SessionID    string                   `json:"session_id"`
-	ProjectPath  string                   `json:"project_path"`
-	StartTime    time.Time                `json:"start_time"`
-	EndTime      time.Time                `json:"end_time"`
-	Duration     Duration                 `json:"duration"`
-	MessageCount int                      `json:"message_count"`
-	TotalUsage   TokenUsage               `json:"total_usage"`
-	TotalCost    CostBreakdown            `json:"total_cost"`
-	CostByModel  map[string]CostBreakdown `json:"cost_by_model"`
-	Messages     []MessageAnalysis        `json:"messages,omitempty"`
-	Insights     *MessageInsights         `json:"insights,omitempty"` // Cost insights (populated when messages available)
+	SessionID    string        `json:"session_id"`
+	ProjectPath  string        `json:"project_path"`
+	StartTime    time.Time     `json:"start_time"`
+	EndTime      time.Time     `json:"end_time"`
+	Duration     Duration      `json:"duration"`
+	MessageCount int           `json:"message_count"`
+	TotalUsage   TokenUsage    `json:"total_usage"`
+	TotalCost    CostBreakdown `json:"total_cost"`
+	// Keyed by pricing.NormalizeModelID, so every dated snapshot and provider
+	// spelling of one model shares a row; unknown IDs keep their raw form.
+	// MessageAnalysis.Model and LastMessageModel stay raw.
+	CostByModel map[string]CostBreakdown `json:"cost_by_model"`
+	Messages    []MessageAnalysis        `json:"messages,omitempty"`
+	Insights    *MessageInsights         `json:"insights,omitempty"` // Cost insights (populated when messages available)
 	// Last message usage for context window calculation (matches /context output)
 	LastMessageUsage TokenUsage `json:"last_message_usage"`
 	LastMessageModel string     `json:"last_message_model"` // Model used for last message (for context limit lookup)

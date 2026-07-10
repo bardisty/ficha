@@ -31,7 +31,8 @@ type BreakdownModel struct {
 	minCost      float64 // For cost gradient coloring
 	maxCost      float64 // For cost gradient coloring
 	insights     *models.MessageInsights
-	skippedLines int // JSONL lines skipped during parsing (malformed or oversized)
+	skippedLines int  // JSONL lines skipped during parsing (malformed or oversized)
+	hasUnknown   bool // Any message priced from the fallback table (marked in the rows)
 	err          error
 	loading      bool
 	lastUpdated  time.Time
@@ -79,6 +80,7 @@ type (
 		maxCost      float64
 		insights     *models.MessageInsights
 		skippedLines int
+		hasUnknown   bool
 	}
 	breakdownErrorMsg error
 )
@@ -210,6 +212,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.maxCost = msg.maxCost
 		m.insights = msg.insights
 		m.skippedLines = msg.skippedLines
+		m.hasUnknown = msg.hasUnknown
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.err = nil
@@ -437,11 +440,20 @@ func (m BreakdownModel) View() string {
 			sb.WriteString(sepStyle.Render(" │ "))
 			sb.WriteString(warnStyle.Render(fmt.Sprintf("⚠ %d skipped line(s)", m.skippedLines)))
 		}
+		// Explain the MODEL-column asterisk: those rows are fallback-priced
+		if m.hasUnknown {
+			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
+			sb.WriteString(sepStyle.Render(" │ "))
+			sb.WriteString(warnStyle.Render(unknownModelFootnote(false)))
+		}
 	} else {
 		sb.WriteString(fmt.Sprintf("  Messages: %d | Total: $%.6f | Scroll: %s",
 			len(m.messages), m.totalCost, scrollMode))
 		if m.skippedLines > 0 {
 			sb.WriteString(fmt.Sprintf(" | ! %d skipped line(s)", m.skippedLines))
+		}
+		if m.hasUnknown {
+			sb.WriteString(" | " + unknownModelFootnote(true))
 		}
 	}
 	sb.WriteString("\n")
@@ -582,7 +594,13 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevC
 	indexStr := fmt.Sprintf("%-5d", msg.Index)
 	timeStr := fmt.Sprintf("%-8s", msg.Timestamp.Format("15:04:05"))
 	modelName := pricing.GetModelDisplayName(msg.Model)
-	modelStr := fmt.Sprintf("%-10s", modelName)
+	// Flag fallback-priced rows inline; the footer explains the marker. Clamp
+	// first so a long raw ID can't push it out of the column (or off it).
+	modelLabel := render.ClampModel(modelName, 10)
+	if !pricing.IsKnownModel(msg.Model) {
+		modelLabel = render.ClampModel(modelName, 9) + unknownModelMarker
+	}
+	modelStr := fmt.Sprintf("%-10s", modelLabel)
 	// Cost: 6 decimal places, 10 char width (e.g., "$0.093528" = 9 chars)
 	costStr := fmt.Sprintf("%-10s", fmt.Sprintf("$%.6f", msg.Cost.TotalCost))
 	inStr := fmt.Sprintf("%6s", render.Number(msg.Usage.InputTokens))
@@ -677,9 +695,13 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	var totalCost float64
 	var minCost, maxCost float64
 	var messageAnalyses []models.MessageAnalysis
+	hasUnknown := false
 
 	for i, msg := range messages {
 		totalCost += msg.Cost.TotalCost
+		if !hasUnknown && !pricing.IsKnownModel(msg.Model) {
+			hasUnknown = true
+		}
 
 		// Track min/max for cost gradient
 		if i == 0 {
@@ -711,6 +733,7 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 		maxCost:      maxCost,
 		insights:     insights,
 		skippedLines: skippedLines,
+		hasUnknown:   hasUnknown,
 	}
 }
 

@@ -181,11 +181,12 @@ func formatGlobalCostByModel(costByModel map[string]models.CostBreakdown, noColo
 	for _, modelID := range render.OrderModelsByCost(costByModel) {
 		cost := costByModel[modelID]
 		modelName := pricing.GetModelDisplayName(modelID)
+		modelLabel := render.ClampModel(modelName, 12)
 		if noColor {
-			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelName, render.Cost(cost.TotalCost)))
+			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelLabel, render.Cost(cost.TotalCost)))
 		} else {
 			modelColor := styles.GetModelColor(modelName)
-			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-12s", modelName))
+			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-12s", modelLabel))
 			sb.WriteString(fmt.Sprintf("    %s %s\n", modelStyled, formatCostStyled(cost.TotalCost, 12, noColor)))
 		}
 	}

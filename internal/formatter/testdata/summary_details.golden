@@ -28,11 +28,11 @@
     min: $0.087  max: $0.159  (2 sessions)
     10 JAN                                                        12 JAN
 
-     # SESSION   MODIFIED      MODEL         AGENTS      COST CUMULATIVE
+     # SESSION   MODIFIED      MODEL          AGENTS      COST CUMULATIVE
   ------------------------------------------------------------------------
-     1 aaaa1111  10 JAN 12:00  Opus 4.8           -     $0.16      $0.16
-     2 bbbb2222  12 JAN 18:30  Haiku 4.5  1 [$0.05]     $0.09      $0.25
-     3 cccc3333  14 JAN 09:15  -                  -   (error)          -
+     1 aaaa1111  10 JAN 12:00  Opus 4.8            -     $0.16      $0.16
+     2 bbbb2222  12 JAN 18:30  Haiku 4.5   1 [$0.05]     $0.09      $0.25
+     3 cccc3333  14 JAN 09:15  -                   -   (error)          -
   ------------------------------------------------------------------------
   Sum (2 sessions):                                          $0.25
 
