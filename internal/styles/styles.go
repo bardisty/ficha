@@ -1,7 +1,8 @@
 package styles
 
 import (
-	"fmt"
+	"hash/fnv"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -165,17 +166,21 @@ var AgentColors = []lipgloss.Color{
 }
 
 // GetAgentColor returns a color for the given agent ID (cycles through palette).
-// Parses numeric agent IDs (e.g., "1", "2"); non-numeric IDs default to first color.
+// Ordinal IDs ("1", "2" — the [An] markers) walk the palette in order; any
+// other ID (real agent IDs like "a1b2c3d") hashes to a stable palette entry so
+// distinct agents usually get distinct colors. The numeric path requires the
+// WHOLE string to be a number — a digit-prefixed hash like "3f2a" must hash,
+// not masquerade as ordinal 3.
 func GetAgentColor(agentID string) lipgloss.Color {
 	if agentID == "" {
 		return SecondaryColor
 	}
-	var num int
-	_, _ = fmt.Sscanf(agentID, "%d", &num)
-	if num < 1 {
-		num = 1
+	if num, err := strconv.Atoi(agentID); err == nil && num >= 1 {
+		return AgentColors[(num-1)%len(AgentColors)]
 	}
-	return AgentColors[(num-1)%len(AgentColors)]
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(agentID))
+	return AgentColors[h.Sum32()%uint32(len(AgentColors))] //nolint:gosec // the palette length is a small positive constant
 }
 
 // GetModelColor returns the tier-appropriate color for a model name or ID.

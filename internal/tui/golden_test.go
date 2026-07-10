@@ -227,13 +227,16 @@ func goldenBreakdownMessages() []models.BreakdownMessage {
 			Usage: models.TokenUsage{InputTokens: 400, OutputTokens: 1500, CacheCreationInputTokens: 2000, CacheReadInputTokens: 30000},
 			Cost:  models.CostBreakdown{TotalCost: 0.52},
 		},
+		// Real 12-char agent ID: the marker truncates it to [Ag7h8i9j] and its
+		// color comes from the FNV hash path (index 2 — pinned in styles_test),
+		// not the ordinal palette walk.
 		{
-			Index: 3, AgentID: "1", Timestamp: goldenTime(10, 6, 0), Model: "claude-haiku-4-5",
+			Index: 3, AgentID: "g7h8i9j0k1l2", Timestamp: goldenTime(10, 6, 0), Model: "claude-haiku-4-5",
 			Usage: models.TokenUsage{InputTokens: 5000, OutputTokens: 2500, CacheCreationInputTokens: 10000},
 			Cost:  models.CostBreakdown{TotalCost: 0.04},
 		},
 		{
-			Index: 4, AgentID: "1", Timestamp: goldenTime(10, 8, 0), Model: "claude-haiku-4-5",
+			Index: 4, AgentID: "g7h8i9j0k1l2", Timestamp: goldenTime(10, 8, 0), Model: "claude-haiku-4-5",
 			Usage: models.TokenUsage{InputTokens: 300, OutputTokens: 900, CacheReadInputTokens: 15000},
 			Cost:  models.CostBreakdown{TotalCost: 0.01},
 		},
