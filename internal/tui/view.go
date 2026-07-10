@@ -306,12 +306,12 @@ func (m Model) renderFooter() string {
 	}
 
 	// Surface parse warnings so undercounted totals don't look authoritative
-	if a.SkippedLines > 0 {
+	if note := skippedFootnote(a.SkippedAgents, a.SkippedLines, m.noColor); note != "" {
 		if m.noColor {
-			footerLine += fmt.Sprintf("  %s  ! %d skipped line(s)", sep, a.SkippedLines)
+			footerLine += fmt.Sprintf("  %s  %s", sep, note)
 		} else {
 			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
-			footerLine += footerStyle.Render("  "+sep+"  ") + warnStyle.Render(fmt.Sprintf("⚠ %d skipped line(s)", a.SkippedLines))
+			footerLine += footerStyle.Render("  "+sep+"  ") + warnStyle.Render(note)
 		}
 	}
 

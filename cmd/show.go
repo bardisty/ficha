@@ -68,9 +68,7 @@ func runShow(cfg *config, args []string, live bool) error {
 	}
 
 	// Warn about skipped agents and skipped lines
-	if analysis.SkippedAgents > 0 {
-		fmt.Fprintf(cfg.stderr, "Warning: %d agent sub-session(s) could not be parsed\n", analysis.SkippedAgents)
-	}
+	warnSkippedAgents(cfg.stderr, analysis.SkippedAgents)
 	warnSkippedLines(cfg.stderr, analysis.SkippedLines)
 
 	// Warn about unknown models (using fallback pricing)

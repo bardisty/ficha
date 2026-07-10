@@ -74,10 +74,13 @@ func runGlobal(cfg *config) error {
 		return fmt.Errorf("analyzing projects: %w", err)
 	}
 
-	// Warn about skipped projects
+	// Warn about every input the totals could not account for
 	if analysis.SkippedProjects > 0 {
 		fmt.Fprintf(cfg.stderr, "Warning: %d project(s) could not be analyzed\n", analysis.SkippedProjects)
 	}
+	warnSkippedSessions(cfg.stderr, analysis.SkippedSessions)
+	warnSkippedAgents(cfg.stderr, analysis.SkippedAgents)
+	warnSkippedLines(cfg.stderr, analysis.SkippedLines)
 
 	// Warn about unknown models (using fallback pricing)
 	warnUnknownModels(cfg.stderr, analysis.CostByModel)

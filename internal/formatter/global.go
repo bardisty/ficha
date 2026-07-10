@@ -391,6 +391,9 @@ func FormatGlobalCSV(analysis *models.GlobalAnalysis) (string, error) {
 		"total_cost",
 		"cache_savings",
 		"last_active",
+		"skipped_sessions",
+		"skipped_agents",
+		"skipped_lines",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing CSV header: %w", err)
@@ -410,6 +413,9 @@ func FormatGlobalCSV(analysis *models.GlobalAnalysis) (string, error) {
 			fmt.Sprintf("%.6f", p.TotalCost.TotalCost),
 			fmt.Sprintf("%.6f", p.TotalCost.CacheSavings),
 			p.LastActive.Format("2006-01-02T15:04:05Z07:00"),
+			fmt.Sprintf("%d", p.SkippedSessions),
+			fmt.Sprintf("%d", p.SkippedAgents),
+			fmt.Sprintf("%d", p.SkippedLines),
 		}
 		if err := w.Write(row); err != nil {
 			return "", fmt.Errorf("writing CSV row: %w", err)

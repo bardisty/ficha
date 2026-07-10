@@ -340,3 +340,176 @@ func TestAnalyzeAllProjects_CrossFileDedupPerProject(t *testing.T) {
 		}
 	}
 }
+
+// AGENT-05: session_count used to count every discovered session while
+// total_cost/message_count excluded the ones that failed to parse, and the
+// aggregate's skip counters never reached ProjectAnalysis at all.
+func TestAnalyzeAllProjects_SkippedSessionAccounting(t *testing.T) {
+	tmpDir := t.TempDir()
+	projDir := filepath.Join(tmpDir, "proj")
+	if err := os.MkdirAll(projDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeJSONLFile(t, filepath.Join(projDir, "sess-ok.jsonl"), []string{
+		`{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`,
+		`{"type":"assistant","timestamp":"2024-01-15T10:05:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`,
+		`{"not":"an assistant line and not valid for the strict decode"`,
+	})
+
+	// A session file that cannot be opened: discovered, never costed.
+	badSession := filepath.Join(projDir, "sess-bad.jsonl")
+	writeJSONLFile(t, badSession, []string{
+		`{"type":"assistant","timestamp":"2024-01-15T11:00:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":9999,"output_tokens":9999}}}`,
+	})
+	if err := os.Chmod(badSession, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(badSession, 0644) })
+	if _, err := os.ReadFile(badSession); err == nil {
+		t.Skip("chmod 000 does not bar reads (running as root?)")
+	}
+
+	projects := []models.ProjectInfo{{
+		EncodedPath: "proj", FullPath: projDir,
+		OriginalPath: "/home/test/proj", DisplayName: "proj",
+	}}
+	result, err := AnalyzeAllProjects(projects)
+	if err != nil {
+		t.Fatalf("AnalyzeAllProjects: %v", err)
+	}
+
+	if len(result.Projects) != 1 {
+		t.Fatalf("Projects: got %d, want 1", len(result.Projects))
+	}
+	p := result.Projects[0]
+	// Exactly the sessions the totals cover — not the two on disk.
+	if p.SessionCount != 1 {
+		t.Errorf("project SessionCount: got %d, want 1 (parsed sessions only)", p.SessionCount)
+	}
+	if p.SkippedSessions != 1 {
+		t.Errorf("project SkippedSessions: got %d, want 1", p.SkippedSessions)
+	}
+	if p.SkippedLines != 1 {
+		t.Errorf("project SkippedLines: got %d, want 1", p.SkippedLines)
+	}
+	if p.MessageCount != 2 {
+		t.Errorf("project MessageCount: got %d, want 2", p.MessageCount)
+	}
+
+	// The global rollup carries them too, or `global` warns about nothing.
+	if result.SessionCount != 1 {
+		t.Errorf("global SessionCount: got %d, want 1", result.SessionCount)
+	}
+	if result.SkippedSessions != 1 {
+		t.Errorf("global SkippedSessions: got %d, want 1", result.SkippedSessions)
+	}
+	if result.SkippedLines != 1 {
+		t.Errorf("global SkippedLines: got %d, want 1", result.SkippedLines)
+	}
+}
+
+// An unreadable agent dir inside a project must reach the global rollup, where
+// it is the only sign that agent spend is missing from total_cost.
+func TestAnalyzeAllProjects_SkippedAgentsReachGlobal(t *testing.T) {
+	tmpDir := t.TempDir()
+	projDir := filepath.Join(tmpDir, "proj")
+	if err := os.MkdirAll(projDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONLFile(t, filepath.Join(projDir, "sess.jsonl"), []string{
+		`{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`,
+	})
+	subagentsDir := filepath.Join(projDir, "sess", "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONLFile(t, filepath.Join(subagentsDir, "agent-a.jsonl"), []string{
+		`{"type":"assistant","timestamp":"2024-01-15T10:02:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":500,"output_tokens":100}}}`,
+	})
+	makeUnreadableDir(t, subagentsDir)
+
+	projects := []models.ProjectInfo{{
+		EncodedPath: "proj", FullPath: projDir,
+		OriginalPath: "/home/test/proj", DisplayName: "proj",
+	}}
+	result, err := AnalyzeAllProjects(projects)
+	if err != nil {
+		t.Fatalf("AnalyzeAllProjects: %v", err)
+	}
+	if result.SkippedAgents != 1 {
+		t.Errorf("global SkippedAgents: got %d, want 1", result.SkippedAgents)
+	}
+	if result.Projects[0].SkippedAgents != 1 {
+		t.Errorf("project SkippedAgents: got %d, want 1", result.Projects[0].SkippedAgents)
+	}
+}
+
+// AGG-02: FirstActive/LastActive came from file mtimes (each file's LAST write),
+// so a single-session project spanned 0s and disagreed with `summary`.
+func TestAnalyzeAllProjects_ActivityFromMessageTimestamps(t *testing.T) {
+	tmpDir := t.TempDir()
+	projDir := filepath.Join(tmpDir, "proj")
+	if err := os.MkdirAll(projDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// One session spanning six hours.
+	writeJSONLFile(t, filepath.Join(projDir, "sess.jsonl"), []string{
+		`{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`,
+		`{"type":"assistant","timestamp":"2024-01-15T16:00:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`,
+	})
+
+	projects := []models.ProjectInfo{{
+		EncodedPath: "proj", FullPath: projDir,
+		OriginalPath: "/home/test/proj", DisplayName: "proj",
+	}}
+	result, err := AnalyzeAllProjects(projects)
+	if err != nil {
+		t.Fatalf("AnalyzeAllProjects: %v", err)
+	}
+
+	wantFirst := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	wantLast := time.Date(2024, 1, 15, 16, 0, 0, 0, time.UTC)
+	p := result.Projects[0]
+	if !p.FirstActive.Equal(wantFirst) {
+		t.Errorf("project FirstActive: got %v, want %v", p.FirstActive, wantFirst)
+	}
+	if !p.LastActive.Equal(wantLast) {
+		t.Errorf("project LastActive: got %v, want %v", p.LastActive, wantLast)
+	}
+	if got := result.Duration.Duration(); got != 6*time.Hour {
+		t.Errorf("global Duration: got %v, want 6h0m0s", got)
+	}
+}
+
+// With no usable message timestamp anywhere, mtimes remain the only signal.
+func TestAnalyzeAllProjects_ActivityFallsBackToMtimes(t *testing.T) {
+	tmpDir := t.TempDir()
+	projDir := filepath.Join(tmpDir, "proj")
+	if err := os.MkdirAll(projDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Assistant message with usage but no timestamp field.
+	sessPath := filepath.Join(projDir, "sess.jsonl")
+	writeJSONLFile(t, sessPath, []string{
+		`{"type":"assistant","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`,
+	})
+	mtime := time.Date(2024, 3, 1, 8, 30, 0, 0, time.UTC)
+	if err := os.Chtimes(sessPath, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+
+	projects := []models.ProjectInfo{{
+		EncodedPath: "proj", FullPath: projDir,
+		OriginalPath: "/home/test/proj", DisplayName: "proj",
+	}}
+	result, err := AnalyzeAllProjects(projects)
+	if err != nil {
+		t.Fatalf("AnalyzeAllProjects: %v", err)
+	}
+	p := result.Projects[0]
+	if !p.FirstActive.Equal(mtime) || !p.LastActive.Equal(mtime) {
+		t.Errorf("FirstActive=%v LastActive=%v, want both %v (mtime fallback)",
+			p.FirstActive, p.LastActive, mtime)
+	}
+}

@@ -238,14 +238,14 @@ func TestCountMessagesInFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	count := countMessagesInFile(testFile)
+	count, _ := countMessagesInFile(testFile)
 	if count != 3 {
 		t.Errorf("expected 3 assistant messages, got %d", count)
 	}
 }
 
 func TestCountMessagesInFileNotFound(t *testing.T) {
-	count := countMessagesInFile("/nonexistent/path/file.jsonl")
+	count, _ := countMessagesInFile("/nonexistent/path/file.jsonl")
 	if count != -1 {
 		t.Errorf("expected -1 for nonexistent file, got %d", count)
 	}
@@ -444,9 +444,9 @@ func TestDiscoverAgentSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	paths, err := DiscoverAgentSessions(tmpDir, sessionID)
-	if err != nil {
-		t.Fatalf("DiscoverAgentSessions returned error: %v", err)
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 0 {
+		t.Fatalf("DiscoverAgentSessions reported %d unreadable dir(s), want 0", unreadable)
 	}
 
 	if len(paths) != 3 {
@@ -488,9 +488,9 @@ func TestDiscoverAgentSessions_NoSubagentsDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	paths, err := DiscoverAgentSessions(tmpDir, sessionID)
-	if err != nil {
-		t.Fatalf("DiscoverAgentSessions should not error for missing subagents dir: %v", err)
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 0 {
+		t.Fatalf("DiscoverAgentSessions reported %d unreadable dir(s), want 0", unreadable)
 	}
 
 	if paths != nil && len(paths) != 0 {
@@ -513,9 +513,9 @@ func TestDiscoverAgentSessions_EmptySubagentsDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	paths, err := DiscoverAgentSessions(tmpDir, sessionID)
-	if err != nil {
-		t.Fatalf("DiscoverAgentSessions returned error: %v", err)
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 0 {
+		t.Fatalf("DiscoverAgentSessions reported %d unreadable dir(s), want 0", unreadable)
 	}
 
 	if len(paths) != 0 {
@@ -531,9 +531,9 @@ func TestDiscoverAgentSessions_SessionDirNotExist(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Session directory doesn't exist at all
-	paths, err := DiscoverAgentSessions(tmpDir, "nonexistent-session")
-	if err != nil {
-		t.Fatalf("DiscoverAgentSessions should not error for nonexistent session: %v", err)
+	paths, unreadable := DiscoverAgentSessions(tmpDir, "nonexistent-session")
+	if unreadable != 0 {
+		t.Fatalf("DiscoverAgentSessions reported %d unreadable dir(s), want 0", unreadable)
 	}
 
 	if paths != nil && len(paths) != 0 {
@@ -637,7 +637,7 @@ func TestCountMessagesInFile_OversizedLineMiddle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	count := countMessagesInFile(testFile)
+	count, _ := countMessagesInFile(testFile)
 	if count != 2 {
 		t.Errorf("expected 2 (messages after the oversized line must still count), got %d", count)
 	}
@@ -852,7 +852,7 @@ func TestCountMessagesInFile_NullMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	count := countMessagesInFile(testFile)
+	count, _ := countMessagesInFile(testFile)
 	// Only the second line has a non-null message
 	if count != 1 {
 		t.Errorf("expected 1 (only non-null message), got %d", count)
@@ -875,7 +875,7 @@ func TestCountMessagesInFile_DeduplicatesStreamingLines(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	count := countMessagesInFile(testFile)
+	count, _ := countMessagesInFile(testFile)
 	if count != 4 {
 		t.Errorf("expected 4 (2 distinct ids + 2 id-less lines), got %d", count)
 	}
@@ -921,9 +921,9 @@ func TestDiscoverAgentSessions_WithWorkflows(t *testing.T) {
 	writeWorkflowRun(t, subagentsDir, "wf_run-a", "agent-w1.jsonl", "agent-w2.jsonl")
 	writeWorkflowRun(t, subagentsDir, "wf_run-b", "agent-w3.jsonl")
 
-	paths, err := DiscoverAgentSessions(tmpDir, sessionID)
-	if err != nil {
-		t.Fatalf("DiscoverAgentSessions returned error: %v", err)
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 0 {
+		t.Fatalf("DiscoverAgentSessions reported %d unreadable dir(s), want 0", unreadable)
 	}
 
 	var bases []string
@@ -950,9 +950,9 @@ func TestDiscoverAgentSessions_WorkflowsOnly(t *testing.T) {
 	}
 	writeWorkflowRun(t, subagentsDir, "wf_solo", "agent-w1.jsonl")
 
-	paths, err := DiscoverAgentSessions(tmpDir, sessionID)
-	if err != nil {
-		t.Fatalf("DiscoverAgentSessions returned error: %v", err)
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 0 {
+		t.Fatalf("DiscoverAgentSessions reported %d unreadable dir(s), want 0", unreadable)
 	}
 	if len(paths) != 1 || filepath.Base(paths[0]) != "agent-w1.jsonl" {
 		t.Errorf("expected only agent-w1.jsonl, got %v", paths)
@@ -1035,5 +1035,320 @@ func TestParseWorkflowMeta(t *testing.T) {
 	}
 	if meta.RunID != "wf_bad" {
 		t.Errorf("expected runID-only fallback, got %+v", meta)
+	}
+}
+
+// === Skipped-input accounting (AGENT-04, DEDUP-01) ===
+
+// makeUnreadableDir strips every permission bit from dir and restores them when
+// the test ends. A chmod failure is fatal (the dir should exist); only an
+// environment where chmod 000 still permits reads — root, or a filesystem
+// without POSIX modes — skips the test.
+func makeUnreadableDir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.Chmod(dir, 0000); err != nil {
+		t.Fatalf("chmod 000 %s: %v", dir, err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+	if _, err := os.ReadDir(dir); err == nil {
+		t.Skip("chmod 000 does not bar directory reads (running as root?)")
+	}
+}
+
+// An unreadable subagents/ dir hides every agent in it. Reporting "no agents"
+// would understate the session's cost in silence, so discovery counts it.
+func TestDiscoverAgentSessions_UnreadableSubagentsDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subagentsDir, "agent-a.jsonl"), []byte("{}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	makeUnreadableDir(t, subagentsDir)
+
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 1 {
+		t.Errorf("unreadableDirs: got %d, want 1", unreadable)
+	}
+	if len(paths) != 0 {
+		t.Errorf("paths: got %v, want none (the dir could not be listed)", paths)
+	}
+}
+
+// subagents/ is a regular file (ENOTDIR, not NotExist) — also a real error.
+func TestDiscoverAgentSessions_SubagentsIsAFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	if err := os.MkdirAll(filepath.Join(tmpDir, sessionID), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, sessionID, "subagents"), []byte("not a dir"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 1 {
+		t.Errorf("unreadableDirs: got %d, want 1", unreadable)
+	}
+	if len(paths) != 0 {
+		t.Errorf("paths: got %v, want none", paths)
+	}
+}
+
+// An unreadable workflows/ dir must not be mistaken for "this session ran no
+// workflows" — the regular subagents beside it still resolve.
+func TestDiscoverAgentSessions_UnreadableWorkflowsDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	workflowsDir := filepath.Join(subagentsDir, "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subagentsDir, "agent-a.jsonl"), []byte("{}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	makeUnreadableDir(t, workflowsDir)
+
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 1 {
+		t.Errorf("unreadableDirs: got %d, want 1", unreadable)
+	}
+	if len(paths) != 1 || filepath.Base(paths[0]) != "agent-a.jsonl" {
+		t.Errorf("paths: got %v, want the regular subagent", paths)
+	}
+}
+
+// A single unreadable run dir counts once and leaves its siblings intact.
+func TestDiscoverAgentSessions_UnreadableWorkflowRunDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	writeWorkflowRun(t, subagentsDir, "wf_bad", "agent-w1.jsonl")
+	writeWorkflowRun(t, subagentsDir, "wf_ok", "agent-w2.jsonl")
+	makeUnreadableDir(t, filepath.Join(subagentsDir, "workflows", "wf_bad"))
+
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 1 {
+		t.Errorf("unreadableDirs: got %d, want 1", unreadable)
+	}
+	if len(paths) != 1 || filepath.Base(paths[0]) != "agent-w2.jsonl" {
+		t.Errorf("paths: got %v, want only the readable run's agent", paths)
+	}
+}
+
+// A missing subagents/ dir is the common case and must stay silent.
+func TestDiscoverAgentSessions_MissingDirIsNotUnreadable(t *testing.T) {
+	tmpDir := t.TempDir()
+	paths, unreadable := DiscoverAgentSessions(tmpDir, "no-such-session")
+	if unreadable != 0 {
+		t.Errorf("unreadableDirs: got %d, want 0", unreadable)
+	}
+	if len(paths) != 0 {
+		t.Errorf("paths: got %v, want none", paths)
+	}
+}
+
+// DEDUP-01: `list` counted lines the analysis parse rejects, because it decoded
+// a laxer struct. A line is now counted iff the analysis would keep it.
+func TestCountMessagesInFile_MatchesAnalysisParse(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.jsonl")
+	// Line 2's timestamp and line 3's token count both fail the strict decode
+	// of models.JSONLMessage; the old minimal struct accepted both.
+	content := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","requestId":"r1","message":{"id":"m1","usage":{"input_tokens":10}}}
+{"type":"assistant","timestamp":"not-a-time","requestId":"r2","message":{"id":"m2","usage":{"input_tokens":10}}}
+{"type":"assistant","timestamp":"2024-01-15T10:02:00Z","requestId":"r3","message":{"id":"m3","usage":{"input_tokens":"10"}}}
+`
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	count, skipped := countMessagesInFile(testFile)
+	if count != 1 {
+		t.Errorf("count: got %d, want 1 (only the well-formed line)", count)
+	}
+	if skipped != 2 {
+		t.Errorf("skippedLines: got %d, want 2", skipped)
+	}
+
+	result, err := ParseJSONLFileWithResult(testFile)
+	if err != nil {
+		t.Fatalf("ParseJSONLFileWithResult: %v", err)
+	}
+	if count != len(result.Messages) || skipped != result.SkippedLines {
+		t.Errorf("list count (%d msgs, %d skipped) disagrees with analysis parse (%d msgs, %d skipped)",
+			count, skipped, len(result.Messages), result.SkippedLines)
+	}
+}
+
+// buildDiskEntry surfaces both skip sources `list` can see: an unreadable agent
+// directory (found by discovery) and an unreadable agent file (found by the
+// message-count scan).
+func TestDiscoverSessionsFromDisk_SkippedAccounting(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	writeJSONL := func(path, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Parent: one good line, one malformed timestamp.
+	writeJSONL(filepath.Join(tmpDir, sessionID+".jsonl"),
+		`{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","requestId":"r1","message":{"id":"m1","usage":{"input_tokens":10}}}
+{"type":"assistant","timestamp":"not-a-time","requestId":"r2","message":{"id":"m2","usage":{"input_tokens":10}}}
+`)
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(filepath.Join(subagentsDir, "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	badAgent := filepath.Join(subagentsDir, "agent-bad.jsonl")
+	writeJSONL(badAgent, "{}\n")
+	if err := os.Chmod(badAgent, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(badAgent, 0644) })
+	if _, err := os.ReadFile(badAgent); err == nil {
+		t.Skip("chmod 000 does not bar reads (running as root?)")
+	}
+	makeUnreadableDir(t, filepath.Join(subagentsDir, "workflows"))
+
+	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
+	if err != nil {
+		t.Fatalf("DiscoverSessionsFromDisk: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("sessions: got %d, want 1", len(sessions))
+	}
+	s := sessions[0]
+	if s.MessageCount != 1 {
+		t.Errorf("MessageCount: got %d, want 1", s.MessageCount)
+	}
+	if s.SkippedLines != 1 {
+		t.Errorf("SkippedLines: got %d, want 1", s.SkippedLines)
+	}
+	// 1 unreadable workflows dir + 1 unreadable agent file
+	if s.SkippedAgents != 2 {
+		t.Errorf("SkippedAgents: got %d, want 2", s.SkippedAgents)
+	}
+	// The unreadable agent file is in SkippedAgents, so it must not also be in
+	// AgentCount — `list` and `show` would otherwise report different totals,
+	// and agent_count + skipped_agents would over-count what is on disk.
+	if s.AgentCount != 0 {
+		t.Errorf("AgentCount: got %d, want 0 (the only agent file was unreadable)", s.AgentCount)
+	}
+}
+
+// A readable agent beside an unreadable one still counts, so AgentCount and
+// SkippedAgents partition what discovery found.
+func TestDiscoverSessionsFromDisk_AgentCountExcludesUnreadable(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	line := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","requestId":"r1","message":{"id":"m1","usage":{"input_tokens":10}}}` + "\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, sessionID+".jsonl"), []byte(line), 0644); err != nil {
+		t.Fatal(err)
+	}
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subagentsDir, "agent-good.jsonl"), []byte(line), 0644); err != nil {
+		t.Fatal(err)
+	}
+	badAgent := filepath.Join(subagentsDir, "agent-bad.jsonl")
+	if err := os.WriteFile(badAgent, []byte(line), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(badAgent, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(badAgent, 0644) })
+	if _, err := os.ReadFile(badAgent); err == nil {
+		t.Skip("chmod 000 does not bar reads (running as root?)")
+	}
+
+	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
+	if err != nil {
+		t.Fatalf("DiscoverSessionsFromDisk: %v", err)
+	}
+	s := sessions[0]
+	if s.AgentCount != 1 || s.SkippedAgents != 1 {
+		t.Errorf("AgentCount=%d SkippedAgents=%d, want 1/1", s.AgentCount, s.SkippedAgents)
+	}
+	if s.MessageCount != 2 {
+		t.Errorf("MessageCount: got %d, want 2 (parent + the readable agent)", s.MessageCount)
+	}
+}
+
+// An unreadable parent transcript must not read as an empty session: `list`
+// shows a zero message count, and only SkippedSessions says why.
+func TestDiscoverSessionsFromDisk_UnreadableParentIsCounted(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessPath := filepath.Join(tmpDir, "sess.jsonl")
+	line := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","requestId":"r1","message":{"id":"m1","usage":{"input_tokens":10}}}` + "\n"
+	if err := os.WriteFile(sessPath, []byte(line), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sessPath, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(sessPath, 0644) })
+	if _, err := os.ReadFile(sessPath); err == nil {
+		t.Skip("chmod 000 does not bar reads (running as root?)")
+	}
+
+	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
+	if err != nil {
+		t.Fatalf("DiscoverSessionsFromDisk: %v", err)
+	}
+	s := sessions[0]
+	if s.SkippedSessions != 1 {
+		t.Errorf("SkippedSessions: got %d, want 1", s.SkippedSessions)
+	}
+	if s.MessageCount != 0 {
+		t.Errorf("MessageCount: got %d, want 0", s.MessageCount)
+	}
+}
+
+// readAgentDir is the single place discovery decides whether a directory hid
+// something. A run dir that vanished between the parent listing and its read
+// (the live TUIs rescan directories Claude Code is writing) hides nothing.
+func TestReadAgentDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	present := filepath.Join(tmpDir, "present")
+	if err := os.MkdirAll(present, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if entries, unreadable := readAgentDir(present); unreadable != 0 || len(entries) != 0 {
+		t.Errorf("readable empty dir: entries=%d unreadable=%d, want 0/0", len(entries), unreadable)
+	}
+
+	if entries, unreadable := readAgentDir(filepath.Join(tmpDir, "vanished")); unreadable != 0 || entries != nil {
+		t.Errorf("missing dir: entries=%v unreadable=%d, want nil/0", entries, unreadable)
+	}
+
+	barred := filepath.Join(tmpDir, "barred")
+	if err := os.MkdirAll(barred, 0755); err != nil {
+		t.Fatal(err)
+	}
+	makeUnreadableDir(t, barred)
+	if _, unreadable := readAgentDir(barred); unreadable != 1 {
+		t.Errorf("unreadable dir: unreadable=%d, want 1", unreadable)
+	}
+
+	notADir := filepath.Join(tmpDir, "file")
+	if err := os.WriteFile(notADir, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, unreadable := readAgentDir(notADir); unreadable != 1 {
+		t.Errorf("ENOTDIR: unreadable=%d, want 1", unreadable)
 	}
 }

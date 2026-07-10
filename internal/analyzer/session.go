@@ -100,19 +100,21 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope Mes
 		analysis.ParentCostByModel[model] = cost
 	}
 
-	// Discover and analyze agent sub-sessions
+	// Discover and analyze agent sub-sessions. An unreadable subagents/ or
+	// workflow-run directory hides agents we will never see, so it lands in
+	// SkippedAgents exactly as an unparseable agent file does — otherwise the
+	// missing spend looks like a session that simply had no agents.
 	projectDir := filepath.Dir(sessionPath)
-	agentPaths, _ := parser.DiscoverAgentSessions(projectDir, sessionID)
+	agentPaths, unreadableAgentDirs := parser.DiscoverAgentSessions(projectDir, sessionID)
+	analysis.SkippedAgents = unreadableAgentDirs
 
 	if len(agentPaths) > 0 {
 		analysis.HasAgents = true
-		analysis.AgentCount = len(agentPaths)
-		skippedAgents := 0
 
 		for _, agentPath := range agentPaths {
 			agentAnalysis, agentMessages, err := analyzeAgentWithCache(agentPath, cache)
 			if err != nil {
-				skippedAgents++
+				analysis.SkippedAgents++
 				continue // Skip agents that can't be parsed
 			}
 			agentAnalysis.WorkflowID = parser.ExtractWorkflowRunID(agentPath)
@@ -156,8 +158,10 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope Mes
 			}
 		}
 
-		// Track skipped agents count for caller visibility
-		analysis.SkippedAgents = skippedAgents
+		// Count the agents actually analyzed, so AgentCount describes the same
+		// set as Agents (and the rows every exporter derives from it). The
+		// agents discovery found but could not read are in SkippedAgents.
+		analysis.AgentCount = len(analysis.Agents)
 
 		// Collect workflow run metadata in first-seen agent order
 		seenRuns := make(map[string]bool)

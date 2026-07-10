@@ -12,6 +12,10 @@ import (
 // granularity rather than stacking: false emits a single session-summary row,
 // true emits one row per message. Either way the result is a single valid CSV
 // table (one header, uniform column count) so single-table parsers never choke.
+//
+// Both `show` (one session) and `summary` (the aggregate) render through here,
+// so the row carries skipped_sessions either way — always 0 for `show`, which
+// analyzed exactly one session and would have errored had it failed.
 func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (string, error) {
 	if includeMessages {
 		return formatMessagesCSV(analysis.Messages)
@@ -37,6 +41,9 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		"parent_cost",
 		"agents_cost",
 		"workflow_count",
+		"skipped_sessions",
+		"skipped_agents",
+		"skipped_lines",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing CSV header: %w", err)
@@ -59,6 +66,9 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		fmt.Sprintf("%.6f", analysis.ParentCost.TotalCost),
 		fmt.Sprintf("%.6f", analysis.AgentsCost.TotalCost),
 		fmt.Sprintf("%d", analysis.WorkflowCount),
+		fmt.Sprintf("%d", analysis.SkippedSessions),
+		fmt.Sprintf("%d", analysis.SkippedAgents),
+		fmt.Sprintf("%d", analysis.SkippedLines),
 	}
 	if err := w.Write(row); err != nil {
 		return "", fmt.Errorf("writing CSV row: %w", err)
@@ -142,6 +152,9 @@ func FormatSessionListCSV(entries []models.SessionEntry) (string, error) {
 		"modified",
 		"agent_count",
 		"agent_message_count",
+		"skipped_sessions",
+		"skipped_agents",
+		"skipped_lines",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing session list CSV header: %w", err)
@@ -157,6 +170,9 @@ func FormatSessionListCSV(entries []models.SessionEntry) (string, error) {
 			entry.Modified.Format("2006-01-02T15:04:05Z07:00"),
 			fmt.Sprintf("%d", entry.AgentCount),
 			fmt.Sprintf("%d", entry.AgentMessageCount),
+			fmt.Sprintf("%d", entry.SkippedSessions),
+			fmt.Sprintf("%d", entry.SkippedAgents),
+			fmt.Sprintf("%d", entry.SkippedLines),
 		}
 		if err := w.Write(row); err != nil {
 			return "", fmt.Errorf("writing session entry row: %w", err)

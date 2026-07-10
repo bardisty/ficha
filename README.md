@@ -71,6 +71,23 @@
   Sessions that fail to parse are omitted from detail output and
   reported on stderr (stdout stays clean for piping).
 
+  Every input ficha could not read is counted, never swallowed. Three
+  counters travel together on json (omitted when zero) and csv, and each
+  one also prints a stderr warning:
+
+    skipped_sessions   session files that failed to parse
+    skipped_agents     agent sub-sessions that could not be read —
+                       an unparseable transcript, or a whole subagents/
+                       or workflow-run directory that could not be
+                       listed (there the count is a lower bound)
+    skipped_lines      JSONL lines rejected as malformed or oversized
+
+  Counts describe only what the totals cover. session_count is the
+  sessions that were analyzed, agent_count the agents that were: add
+  the matching skipped_* to recover what was on disk. list and show
+  agree on message_count and agent_count for the same session, because
+  both derive them from the same parse.
+
   Agent spend is never hidden. show and summary both carry the split
   that adds up to the total they report:
 
@@ -80,6 +97,10 @@
   agent_count, workflow_count, has_agents and parent_cost_by_model; the
   per-agent records themselves live under summary --details. (global
   reports project totals only, with no parent/agent split.)
+
+  first_active / last_active are message timestamps on every surface, so
+  a project's span in global matches its span in summary. Only a project
+  whose messages carry no timestamp at all falls back to file mtimes.
 
   show --messages likewise emits agent rows, not just the parent
   transcript, so the rows sum to the session's total_cost. An agent_id

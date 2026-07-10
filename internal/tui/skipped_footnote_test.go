@@ -1,0 +1,116 @@
+package tui
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/bardisty/ficha/internal/models"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/muesli/termenv"
+)
+
+// The footer is one line and already carries the fallback-pricing footnote, so
+// agents and lines share a single segment rather than claiming a separator each.
+func TestSkippedFootnote(t *testing.T) {
+	tests := []struct {
+		name          string
+		agents, lines int
+		noColor       bool
+		want          string
+	}{
+		{"nothing skipped", 0, 0, true, ""},
+		{"lines only keeps the original wording", 0, 3, true, "! 3 skipped line(s)"},
+		{"lines only, color glyph", 0, 3, false, "⚠ 3 skipped line(s)"},
+		{"agents only", 2, 0, true, "! 2 skipped agent(s)"},
+		{"both share one segment", 2, 3, false, "⚠ 2 skipped agent(s), 3 skipped line(s)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := skippedFootnote(tt.agents, tt.lines, tt.noColor); got != tt.want {
+				t.Errorf("skippedFootnote(%d, %d, %v) = %q, want %q",
+					tt.agents, tt.lines, tt.noColor, got, tt.want)
+			}
+		})
+	}
+}
+
+// AGENT-07: an agent the breakdown could not read must show up in its footer.
+// The breakdown TUI owns the screen — stderr warnings never reach it.
+func TestBreakdownFooterShowsSkippedAgents(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	m := NewBreakdownModel("/fixture/sess.jsonl", "sess", true, "", false)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(BreakdownModel)
+	updated, _ = m.Update(breakdownMsgsMsg{
+		messages:      goldenBreakdownMessages(),
+		totalCost:     3.34,
+		insights:      &models.MessageInsights{MessageCount: 6},
+		skippedAgents: 2,
+		skippedLines:  3,
+	})
+	m = updated.(BreakdownModel)
+
+	view := m.View()
+	if !strings.Contains(view, "! 2 skipped agent(s), 3 skipped line(s)") {
+		t.Errorf("breakdown footer missing the combined skipped segment:\n%s", view)
+	}
+}
+
+// The watch footer follows the same contract from SessionAnalysis.
+func TestWatchFooterShowsSkippedAgents(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	m := NewModel("/fixture/sess.jsonl", "sess", false, true, "", false)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(Model)
+	updated, _ = m.Update(analysisMsg(&models.SessionAnalysis{
+		SessionID:     "sess",
+		CostByModel:   map[string]models.CostBreakdown{},
+		MessageCount:  4,
+		SkippedAgents: 1,
+		SkippedLines:  2,
+	}))
+	m = updated.(Model)
+
+	view := m.View()
+	if !strings.Contains(view, "! 1 skipped agent(s), 2 skipped line(s)") {
+		t.Errorf("watch footer missing the combined skipped segment:\n%s", view)
+	}
+}
+
+// loadBreakdown is the hop that carries the analyzer's counters into the TUI.
+// Asserting the footer from a hand-built breakdownMsgsMsg would leave this line
+// free to drop the count, so drive the real load against a real fixture.
+func TestLoadBreakdownCarriesSkippedAgents(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+	line := `{"type":"assistant","timestamp":"2026-02-01T10:00:00Z","requestId":"r1","message":{"id":"m1","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}` + "\n"
+	if err := os.WriteFile(sessionPath, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	subagents := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subagents, "agent-a.jsonl"), []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(subagents, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(subagents, 0o755) })
+	if _, err := os.ReadDir(subagents); err == nil {
+		t.Skip("chmod 000 does not bar directory reads (running as root?)")
+	}
+
+	m := NewBreakdownModel(sessionPath, sessionID, true, "", false)
+	msg, ok := m.loadBreakdown().(breakdownMsgsMsg)
+	if !ok {
+		t.Fatalf("loadBreakdown returned %T, want breakdownMsgsMsg", m.loadBreakdown())
+	}
+	if msg.skippedAgents != 1 {
+		t.Errorf("breakdownMsgsMsg.skippedAgents: got %d, want 1", msg.skippedAgents)
+	}
+}

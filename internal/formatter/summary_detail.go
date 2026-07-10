@@ -85,11 +85,13 @@ func FormatSummaryDetailJSON(summary *models.SessionAnalysis, results []models.S
 
 // FormatSummaryDetailCSV renders one row per session as a single flat table. A
 // row_type column discriminates "session" rows from the "agent" rows added when
-// expandAgents is set. Session rows carry the session total (message_count and
-// costs include agents); agent rows break out each agent — do not sum across
-// row types. cumulative_cost is the running session total in modified order and
-// is empty on agent rows. agent_id holds the agent's real ID — the same key
-// `show --messages` and the json agents[] array use, so the exports join.
+// expandAgents is set. Session rows carry the session total (message_count,
+// costs and skipped_lines include agents); agent rows break out each agent — do
+// not sum across row types. cumulative_cost is the running session total in
+// modified order and is empty on agent rows. agent_id holds the agent's real ID
+// — the same key `show --messages` and the json agents[] array use, so the
+// exports join. skipped_agents says how many agents a session row's agent_count
+// does not include, and is empty on agent rows.
 func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
@@ -111,6 +113,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 		"cache_savings",
 		"cumulative_cost",
 		"workflow_id",
+		"skipped_agents",
+		"skipped_lines",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing summary detail CSV header: %w", err)
@@ -138,6 +142,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 			fmt.Sprintf("%.6f", a.TotalCost.CacheSavings),
 			fmt.Sprintf("%.6f", cumulative),
 			"",
+			fmt.Sprintf("%d", a.SkippedAgents),
+			fmt.Sprintf("%d", a.SkippedLines),
 		}
 		if err := w.Write(sessionRow); err != nil {
 			return "", fmt.Errorf("writing summary detail session row: %w", err)
@@ -164,6 +170,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 				fmt.Sprintf("%.6f", agent.TotalCost.CacheSavings),
 				"",
 				csvCell(agent.WorkflowID),
+				"", // skipped_agents is a session-row concept
+				fmt.Sprintf("%d", agent.SkippedLines),
 			}
 			if err := w.Write(agentRow); err != nil {
 				return "", fmt.Errorf("writing summary detail agent row: %w", err)
