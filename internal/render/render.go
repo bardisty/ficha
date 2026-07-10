@@ -102,8 +102,11 @@ func WorkflowLabel(meta models.WorkflowMeta) string {
 }
 
 // CacheTokensByTTL returns the 5-minute and 1-hour cache-write token counts.
-// Falls back to treating all cache-creation tokens as 5m when the detailed
-// per-TTL breakdown is unavailable.
+// Parser-derived usages always carry the detailed breakdown, with buckets
+// summing to the flat count (parser.ExtractUsageFromMessages reconciles them),
+// so for those the two returns cover every billed write token. The fallback —
+// all cache-creation tokens as 5m — only serves hand-built usages, where it
+// applies the same assumption pricing does.
 func CacheTokensByTTL(usage models.TokenUsage) (int64, int64) {
 	if usage.CacheCreation != nil {
 		return usage.CacheCreation.Ephemeral5mInputTokens, usage.CacheCreation.Ephemeral1hInputTokens

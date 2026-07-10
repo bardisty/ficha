@@ -44,6 +44,7 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		"skipped_sessions",
 		"skipped_agents",
 		"skipped_lines",
+		"estimated_cost_messages",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing CSV header: %w", err)
@@ -69,6 +70,7 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		fmt.Sprintf("%d", analysis.SkippedSessions),
 		fmt.Sprintf("%d", analysis.SkippedAgents),
 		fmt.Sprintf("%d", analysis.SkippedLines),
+		fmt.Sprintf("%d", analysis.EstimatedCostMessages),
 	}
 	if err := w.Write(row); err != nil {
 		return "", fmt.Errorf("writing CSV row: %w", err)

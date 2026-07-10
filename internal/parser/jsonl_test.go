@@ -255,23 +255,125 @@ func TestReadLine(t *testing.T) {
 	}
 }
 
+// TestExtractUsageReconcilesCacheCreation pins the canonical form every
+// downstream consumer relies on: negatives clamped, and — whenever write
+// tokens exist — a non-nil CacheCreation whose buckets sum exactly to
+// CacheCreationInputTokens. estimated marks the shapes where write tokens
+// carried no TTL attribution and the 5m fallback assumption fired.
 func TestExtractUsageReconcilesCacheCreation(t *testing.T) {
-	// CacheCreation present but CacheCreationInputTokens is 0 in JSON
-	input := `{"type":"assistant","timestamp":"2024-01-15T10:30:00Z","message":{"model":"claude-opus-4-5","usage":{"input_tokens":1000,"output_tokens":500,"cache_creation":{"ephemeral_5m_input_tokens":300,"ephemeral_1h_input_tokens":400}}}}`
+	tests := []struct {
+		name          string
+		usageJSON     string
+		wantFlat      int64
+		want5m        int64
+		want1h        int64
+		wantDetail    bool // CacheCreation non-nil after reconciliation
+		wantEstimated bool
+	}{
+		{
+			name:      "detailed buckets win over a zero flat count",
+			usageJSON: `{"input_tokens":1000,"output_tokens":500,"cache_creation":{"ephemeral_5m_input_tokens":300,"ephemeral_1h_input_tokens":400}}`,
+			wantFlat:  700, want5m: 300, want1h: 400, wantDetail: true,
+		},
+		{
+			name:      "consistent detailed form is untouched",
+			usageJSON: `{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":700,"cache_creation":{"ephemeral_5m_input_tokens":300,"ephemeral_1h_input_tokens":400}}`,
+			wantFlat:  700, want5m: 300, want1h: 400, wantDetail: true,
+		},
+		{
+			name:      "flat-only older format folds into the 5m bucket",
+			usageJSON: `{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":800}`,
+			wantFlat:  800, want5m: 800, want1h: 0, wantDetail: true, wantEstimated: true,
+		},
+		{
+			// COST-03: a present-but-empty object must not zero out billed
+			// write tokens
+			name:      "empty cache_creation object keeps the flat count",
+			usageJSON: `{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":800,"cache_creation":{}}`,
+			wantFlat:  800, want5m: 800, want1h: 0, wantDetail: true, wantEstimated: true,
+		},
+		{
+			name:      "flat count exceeding the buckets bills the remainder at 5m",
+			usageJSON: `{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_5m_input_tokens":300,"ephemeral_1h_input_tokens":400}}`,
+			wantFlat:  1000, want5m: 600, want1h: 400, wantDetail: true, wantEstimated: true,
+		},
+		{
+			name:      "no write tokens stays detail-free",
+			usageJSON: `{"input_tokens":1000,"output_tokens":500}`,
+			wantFlat:  0, wantDetail: false,
+		},
+		{
+			// COST-02: clamping happens here, once, so cost and token
+			// aggregation see identical values
+			name:      "negative counts are clamped before reconciliation",
+			usageJSON: `{"input_tokens":1000,"output_tokens":-500000,"cache_creation_input_tokens":-300}`,
+			wantFlat:  0, wantDetail: false,
+		},
+		{
+			name:      "negative bucket clamps, flat remainder re-attributed at 5m",
+			usageJSON: `{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":800,"cache_creation":{"ephemeral_5m_input_tokens":-100,"ephemeral_1h_input_tokens":300}}`,
+			wantFlat:  800, want5m: 500, want1h: 300, wantDetail: true, wantEstimated: true,
+		},
+	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := `{"type":"assistant","timestamp":"2024-01-15T10:30:00Z","message":{"model":"claude-opus-4-5","usage":` + tt.usageJSON + `}}`
+			messages, err := ParseJSONL(strings.NewReader(input))
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+
+			analyses := ExtractUsageFromMessages(messages)
+			if len(analyses) != 1 {
+				t.Fatalf("expected 1 analysis, got %d", len(analyses))
+			}
+
+			u := analyses[0].Usage
+			if u.CacheCreationInputTokens != tt.wantFlat {
+				t.Errorf("CacheCreationInputTokens: got %d, want %d", u.CacheCreationInputTokens, tt.wantFlat)
+			}
+			if (u.CacheCreation != nil) != tt.wantDetail {
+				t.Fatalf("CacheCreation non-nil: got %v, want %v", u.CacheCreation != nil, tt.wantDetail)
+			}
+			if u.CacheCreation != nil {
+				if u.CacheCreation.Ephemeral5mInputTokens != tt.want5m {
+					t.Errorf("Ephemeral5mInputTokens: got %d, want %d", u.CacheCreation.Ephemeral5mInputTokens, tt.want5m)
+				}
+				if u.CacheCreation.Ephemeral1hInputTokens != tt.want1h {
+					t.Errorf("Ephemeral1hInputTokens: got %d, want %d", u.CacheCreation.Ephemeral1hInputTokens, tt.want1h)
+				}
+				if sum := u.CacheCreation.Ephemeral5mInputTokens + u.CacheCreation.Ephemeral1hInputTokens; sum != u.CacheCreationInputTokens {
+					t.Errorf("canonical invariant broken: buckets sum %d != flat %d", sum, u.CacheCreationInputTokens)
+				}
+			}
+			if analyses[0].EstimatedCost != tt.wantEstimated {
+				t.Errorf("EstimatedCost: got %v, want %v", analyses[0].EstimatedCost, tt.wantEstimated)
+			}
+			if u.InputTokens < 0 || u.OutputTokens < 0 || u.CacheCreationInputTokens < 0 || u.CacheReadInputTokens < 0 {
+				t.Errorf("negative token count survived reconciliation: %+v", u)
+			}
+		})
+	}
+}
+
+// Reconciliation must not write through to the JSONLMessage it reads — the
+// deep copy in Sanitized is what keeps the raw parse reusable.
+func TestExtractUsageDoesNotMutateRawMessages(t *testing.T) {
+	input := `{"type":"assistant","timestamp":"2024-01-15T10:30:00Z","message":{"model":"claude-opus-4-5","usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_5m_input_tokens":300,"ephemeral_1h_input_tokens":400}}}}`
 	messages, err := ParseJSONL(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
 
-	analyses := ExtractUsageFromMessages(messages)
-	if len(analyses) != 1 {
-		t.Fatalf("expected 1 analysis, got %d", len(analyses))
-	}
+	_ = ExtractUsageFromMessages(messages)
 
-	a := analyses[0]
-	if a.Usage.CacheCreationInputTokens != 700 {
-		t.Errorf("CacheCreationInputTokens: got %d, want 700 (reconciled from CacheCreation)", a.Usage.CacheCreationInputTokens)
+	raw := messages[0].Message.Usage
+	if raw.CacheCreation.Ephemeral5mInputTokens != 300 || raw.CacheCreation.Ephemeral1hInputTokens != 400 {
+		t.Errorf("raw CacheCreation mutated: %+v", *raw.CacheCreation)
+	}
+	if raw.CacheCreationInputTokens != 1000 {
+		t.Errorf("raw CacheCreationInputTokens mutated: got %d, want 1000", raw.CacheCreationInputTokens)
 	}
 }
 

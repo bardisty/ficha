@@ -67,9 +67,10 @@ func runShow(cfg *config, args []string, live bool) error {
 		return fmt.Errorf("analyzing session: %w", err)
 	}
 
-	// Warn about skipped agents and skipped lines
+	// Warn about skipped agents, skipped lines, and estimated pricing
 	warnSkippedAgents(cfg.stderr, analysis.SkippedAgents)
 	warnSkippedLines(cfg.stderr, analysis.SkippedLines)
+	warnEstimatedCosts(cfg.stderr, analysis.EstimatedCostMessages)
 
 	// Warn about unknown models (using fallback pricing)
 	warnUnknownModels(cfg.stderr, analysis.CostByModel)

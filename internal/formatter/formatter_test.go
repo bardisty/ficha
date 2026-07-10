@@ -102,6 +102,7 @@ func TestFormatSessionCSV(t *testing.T) {
 		"message_count", "duration_seconds", "agent_count", "agent_message_count",
 		"parent_cost", "agents_cost", "workflow_count",
 		"skipped_sessions", "skipped_agents", "skipped_lines",
+		"estimated_cost_messages",
 	}
 	header := records[0]
 	if len(header) != len(expectedHeader) {
@@ -662,15 +663,15 @@ func TestFormatGlobalCSV(t *testing.T) {
 		t.Fatalf("expected 3 rows (header + 2 data), got %d", len(records))
 	}
 
-	// Verify 14-column header
-	if len(records[0]) != 14 {
-		t.Fatalf("expected 14 columns, got %d", len(records[0]))
+	// Verify 15-column header
+	if len(records[0]) != 15 {
+		t.Fatalf("expected 15 columns, got %d", len(records[0]))
 	}
 	if records[0][0] != "project" {
 		t.Errorf("first header column: got %q, want %q", records[0][0], "project")
 	}
-	if records[0][13] != "skipped_lines" {
-		t.Errorf("last header column: got %q, want %q", records[0][13], "skipped_lines")
+	if records[0][14] != "estimated_cost_messages" {
+		t.Errorf("last header column: got %q, want %q", records[0][14], "estimated_cost_messages")
 	}
 
 	// Verify first data row

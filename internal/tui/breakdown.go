@@ -26,17 +26,18 @@ type BreakdownModel struct {
 	sessionID   string
 	noColor     bool
 
-	messages      []models.BreakdownMessage
-	totalCost     float64
-	minCost       float64 // For cost gradient coloring
-	maxCost       float64 // For cost gradient coloring
-	insights      *models.MessageInsights
-	skippedLines  int  // JSONL lines skipped during parsing (malformed or oversized)
-	skippedAgents int  // Agent sub-sessions that could not be read
-	hasUnknown    bool // Any message priced from the fallback table (marked in the rows)
-	err           error
-	loading       bool
-	lastUpdated   time.Time
+	messages       []models.BreakdownMessage
+	totalCost      float64
+	minCost        float64 // For cost gradient coloring
+	maxCost        float64 // For cost gradient coloring
+	insights       *models.MessageInsights
+	skippedLines   int  // JSONL lines skipped during parsing (malformed or oversized)
+	skippedAgents  int  // Agent sub-sessions that could not be read
+	estimatedCosts int  // Messages whose cache-write cost is a 5m-rate estimate
+	hasUnknown     bool // Any message priced from the fallback table (marked in the rows)
+	err            error
+	loading        bool
+	lastUpdated    time.Time
 
 	// agentCache memoizes agent sub-session parses so a reload triggered by a
 	// parent-file write doesn't re-parse every unchanged agent (see TUI-3).
@@ -75,14 +76,15 @@ type BreakdownModel struct {
 // Breakdown-specific messages
 type (
 	breakdownMsgsMsg struct {
-		messages      []models.BreakdownMessage
-		totalCost     float64
-		minCost       float64
-		maxCost       float64
-		insights      *models.MessageInsights
-		skippedLines  int
-		skippedAgents int
-		hasUnknown    bool
+		messages       []models.BreakdownMessage
+		totalCost      float64
+		minCost        float64
+		maxCost        float64
+		insights       *models.MessageInsights
+		skippedLines   int
+		skippedAgents  int
+		estimatedCosts int
+		hasUnknown     bool
 	}
 	breakdownErrorMsg error
 )
@@ -215,6 +217,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.insights = msg.insights
 		m.skippedLines = msg.skippedLines
 		m.skippedAgents = msg.skippedAgents
+		m.estimatedCosts = msg.estimatedCosts
 		m.hasUnknown = msg.hasUnknown
 		m.loading = false
 		m.lastUpdated = time.Now()
@@ -269,6 +272,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.maxCost = 0
 		m.skippedLines = 0
 		m.skippedAgents = 0
+		m.estimatedCosts = 0
 		m.loading = true
 		m.newMsgIndices = make(map[int]time.Time)
 		// Drop the previous session's cached agent parses
@@ -439,7 +443,7 @@ func (m BreakdownModel) View() string {
 		sb.WriteString(sepStyle.Render(" │ "))
 		sb.WriteString(lightGray.Render(scrollPart))
 		// Surface parse warnings so an incomplete breakdown doesn't look complete
-		if note := skippedFootnote(m.skippedAgents, m.skippedLines, false); note != "" {
+		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts, false); note != "" {
 			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
 			sb.WriteString(sepStyle.Render(" │ "))
 			sb.WriteString(warnStyle.Render(note))
@@ -453,7 +457,7 @@ func (m BreakdownModel) View() string {
 	} else {
 		sb.WriteString(fmt.Sprintf("  Messages: %d | Total: $%.6f | Scroll: %s",
 			len(m.messages), m.totalCost, scrollMode))
-		if note := skippedFootnote(m.skippedAgents, m.skippedLines, true); note != "" {
+		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts, true); note != "" {
 			sb.WriteString(" | " + note)
 		}
 		if m.hasUnknown {
@@ -732,14 +736,15 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	insights := analyzer.CalculateInsights(messageAnalyses)
 
 	return breakdownMsgsMsg{
-		messages:      messages,
-		totalCost:     totalCost,
-		minCost:       minCost,
-		maxCost:       maxCost,
-		insights:      insights,
-		skippedLines:  result.SkippedLines,
-		skippedAgents: result.SkippedAgents,
-		hasUnknown:    hasUnknown,
+		messages:       messages,
+		totalCost:      totalCost,
+		minCost:        minCost,
+		maxCost:        maxCost,
+		insights:       insights,
+		skippedLines:   result.SkippedLines,
+		skippedAgents:  result.SkippedAgents,
+		estimatedCosts: result.EstimatedCostMessages,
+		hasUnknown:     hasUnknown,
 	}
 }
 

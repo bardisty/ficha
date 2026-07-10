@@ -210,7 +210,15 @@ func ExcludeSeenMessages(messages []models.JSONLMessage, seen map[string]struct{
 	return kept
 }
 
-// ExtractUsageFromMessages extracts token usage data from parsed messages
+// ExtractUsageFromMessages extracts token usage data from parsed messages.
+//
+// Each usage is reconciled here, once, so every downstream consumer — cost
+// calculation, token aggregation, per-TTL display — reads the same canonical
+// representation instead of interpreting the raw duality independently:
+//   - negative counts are clamped to zero (a corrupt line otherwise yields a
+//     clamped cost next to unclamped, possibly negative, token totals)
+//   - when write tokens exist, CacheCreation is non-nil and its 5m+1h buckets
+//     sum exactly to CacheCreationInputTokens
 func ExtractUsageFromMessages(messages []models.JSONLMessage) []models.MessageAnalysis {
 	var analyses []models.MessageAnalysis
 
@@ -222,14 +230,44 @@ func ExtractUsageFromMessages(messages []models.JSONLMessage) []models.MessageAn
 		analysis := models.MessageAnalysis{
 			Timestamp: msg.Timestamp,
 			Model:     msg.Message.Model,
-			Usage:     msg.Message.Usage,
 		}
-		// Reconcile CacheCreationInputTokens with detailed CacheCreation
-		if analysis.Usage.CacheCreation != nil {
-			analysis.Usage.CacheCreationInputTokens = analysis.Usage.CacheCreation.Ephemeral5mInputTokens + analysis.Usage.CacheCreation.Ephemeral1hInputTokens
-		}
+		analysis.Usage, analysis.EstimatedCost = reconcileUsage(msg.Message.Usage)
 		analyses = append(analyses, analysis)
 	}
 
 	return analyses
+}
+
+// reconcileUsage returns the canonical form of a raw usage: negatives clamped,
+// and every cache-write token attributed to a TTL bucket. Write tokens the
+// data itself doesn't attribute (no cache_creation object — the older session
+// format — or a flat count exceeding the buckets' sum) are folded into the 5m
+// bucket, mirroring the pricing fallback CalculateCost documents; estimated
+// reports that this assumption fired, since 5m is the cheapest write tier and
+// the resulting cost is a lower bound. A bucket sum exceeding the flat count
+// wins over it (the same guard ContextWindowSize applies), so a sparse or
+// empty cache_creation object can never zero out billed write tokens.
+func reconcileUsage(usage models.TokenUsage) (reconciled models.TokenUsage, estimated bool) {
+	// Sanitized deep-copies CacheCreation, so the mutations below can't touch
+	// the raw JSONLMessage the usage came from.
+	usage = usage.Sanitized()
+
+	if usage.CacheCreation == nil {
+		if usage.CacheCreationInputTokens > 0 {
+			usage.CacheCreation = &models.CacheCreation{
+				Ephemeral5mInputTokens: usage.CacheCreationInputTokens,
+			}
+			estimated = true
+		}
+		return usage, estimated
+	}
+
+	bucketSum := usage.CacheCreation.Ephemeral5mInputTokens + usage.CacheCreation.Ephemeral1hInputTokens
+	if usage.CacheCreationInputTokens > bucketSum {
+		usage.CacheCreation.Ephemeral5mInputTokens += usage.CacheCreationInputTokens - bucketSum
+		estimated = true
+	} else {
+		usage.CacheCreationInputTokens = bucketSum
+	}
+	return usage, estimated
 }

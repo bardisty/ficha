@@ -115,6 +115,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 		"workflow_id",
 		"skipped_agents",
 		"skipped_lines",
+		"estimated_cost_messages",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing summary detail CSV header: %w", err)
@@ -144,6 +145,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 			"",
 			fmt.Sprintf("%d", a.SkippedAgents),
 			fmt.Sprintf("%d", a.SkippedLines),
+			fmt.Sprintf("%d", a.EstimatedCostMessages),
 		}
 		if err := w.Write(sessionRow); err != nil {
 			return "", fmt.Errorf("writing summary detail session row: %w", err)
@@ -172,6 +174,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 				csvCell(agent.WorkflowID),
 				"", // skipped_agents is a session-row concept
 				fmt.Sprintf("%d", agent.SkippedLines),
+				fmt.Sprintf("%d", agent.EstimatedCostMessages),
 			}
 			if err := w.Write(agentRow); err != nil {
 				return "", fmt.Errorf("writing summary detail agent row: %w", err)
