@@ -101,6 +101,7 @@ func TestFormatSessionCSV(t *testing.T) {
 		"cache_write_1h_cost", "cache_read_cost", "total_cost", "cache_savings",
 		"message_count", "duration_seconds", "agent_count", "agent_message_count",
 		"parent_cost", "agents_cost", "workflow_count",
+		"skipped_sessions", "skipped_agents", "skipped_lines",
 	}
 	header := records[0]
 	if len(header) != len(expectedHeader) {
@@ -309,6 +310,7 @@ func TestFormatSessionListCSV(t *testing.T) {
 	expectedHeader := []string{
 		"session_id", "full_path", "message_count", "created",
 		"modified", "agent_count", "agent_message_count",
+		"skipped_sessions", "skipped_agents", "skipped_lines",
 	}
 	header := records[0]
 	if len(header) != len(expectedHeader) {
@@ -660,15 +662,15 @@ func TestFormatGlobalCSV(t *testing.T) {
 		t.Fatalf("expected 3 rows (header + 2 data), got %d", len(records))
 	}
 
-	// Verify 11-column header
-	if len(records[0]) != 11 {
-		t.Fatalf("expected 11 columns, got %d", len(records[0]))
+	// Verify 14-column header
+	if len(records[0]) != 14 {
+		t.Fatalf("expected 14 columns, got %d", len(records[0]))
 	}
 	if records[0][0] != "project" {
 		t.Errorf("first header column: got %q, want %q", records[0][0], "project")
 	}
-	if records[0][10] != "last_active" {
-		t.Errorf("last header column: got %q, want %q", records[0][10], "last_active")
+	if records[0][13] != "skipped_lines" {
+		t.Errorf("last header column: got %q, want %q", records[0][13], "skipped_lines")
 	}
 
 	// Verify first data row

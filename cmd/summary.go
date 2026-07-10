@@ -56,12 +56,8 @@ func runSummary(cfg *config) error {
 	}
 
 	// Warn about skipped sessions/agents
-	if analysis.SkippedSessions > 0 {
-		fmt.Fprintf(cfg.stderr, "Warning: %d session(s) could not be parsed\n", analysis.SkippedSessions)
-	}
-	if analysis.SkippedAgents > 0 {
-		fmt.Fprintf(cfg.stderr, "Warning: %d agent sub-session(s) could not be parsed\n", analysis.SkippedAgents)
-	}
+	warnSkippedSessions(cfg.stderr, analysis.SkippedSessions)
+	warnSkippedAgents(cfg.stderr, analysis.SkippedAgents)
 	warnSkippedLines(cfg.stderr, analysis.SkippedLines)
 
 	// Warn about unknown models (using fallback pricing)

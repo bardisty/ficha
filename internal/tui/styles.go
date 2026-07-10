@@ -1,6 +1,11 @@
 package tui
 
-import "github.com/bardisty/ficha/internal/styles"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/bardisty/ficha/internal/styles"
+)
 
 // unknownModelMarker tags a model whose cost came from the fallback pricing
 // table rather than the catalog. show/summary/global say so on stderr; a TUI
@@ -16,6 +21,28 @@ func unknownModelFootnote(noColor bool) string {
 		glyph = "!"
 	}
 	return glyph + " " + unknownModelMarker + " = fallback pricing"
+}
+
+// skippedFootnote reports the inputs a TUI's totals could not account for,
+// returning "" when there were none. Agents and lines share one footer segment
+// rather than claiming a separator each: the footer is a single line, and it
+// already carries the fallback-pricing footnote.
+func skippedFootnote(skippedAgents, skippedLines int, noColor bool) string {
+	if skippedAgents == 0 && skippedLines == 0 {
+		return ""
+	}
+	glyph := "⚠"
+	if noColor {
+		glyph = "!"
+	}
+	var parts []string
+	if skippedAgents > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped agent(s)", skippedAgents))
+	}
+	if skippedLines > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped line(s)", skippedLines))
+	}
+	return glyph + " " + strings.Join(parts, ", ")
 }
 
 // Local aliases for frequently used styles

@@ -9,22 +9,30 @@ import (
 	"github.com/bardisty/ficha/internal/parser"
 )
 
+// BreakdownResult holds the merged message list plus the counters that say how
+// much of the session it could not account for. The breakdown surface must
+// report both, or its total looks complete when it is not — the same contract
+// show and summary hold with SkippedLines/SkippedAgents.
+type BreakdownResult struct {
+	Messages      []models.BreakdownMessage
+	SkippedLines  int // JSONL lines skipped as malformed or oversized (parent + agents)
+	SkippedAgents int // Agent sub-sessions that could not be read
+}
+
 // GetBreakdownMessages parses a session and returns all messages (parent + agents)
 // merged chronologically with sequential indices and agent IDs assigned.
-// The int result counts JSONL lines skipped as malformed or oversized
-// (parent + agents) so callers can warn that the breakdown may be incomplete.
-func GetBreakdownMessages(sessionPath, sessionID string) ([]models.BreakdownMessage, int, error) {
+func GetBreakdownMessages(sessionPath, sessionID string) (*BreakdownResult, error) {
 	return GetBreakdownMessagesWithCache(sessionPath, sessionID, nil)
 }
 
 // GetBreakdownMessagesWithCache is GetBreakdownMessages with an optional
 // agent-parse cache. The parent session is always re-parsed; unchanged agent
 // sub-sessions are served from the cache. A nil cache parses every agent.
-func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentParseCache) ([]models.BreakdownMessage, int, error) {
+func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentParseCache) (*BreakdownResult, error) {
 	// Parse parent session messages
 	result, err := parser.ParseJSONLFileWithResult(sessionPath)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	skippedLines := result.SkippedLines
 
@@ -46,9 +54,11 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		})
 	}
 
-	// Discover and process agent sub-sessions
+	// Discover and process agent sub-sessions. An unreadable subagents/ or
+	// workflow-run directory hides agents entirely, so it counts as skipped
+	// just like an agent file that fails to parse.
 	projectDir := filepath.Dir(sessionPath)
-	agentPaths, _ := parser.DiscoverAgentSessions(projectDir, sessionID)
+	agentPaths, skippedAgents := parser.DiscoverAgentSessions(projectDir, sessionID)
 
 	// Track agents with simple sequential numbering
 	agentNum := 1
@@ -57,6 +67,7 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 	for _, agentPath := range agentPaths {
 		agentAnalyses, agentSkipped, err := loadAgentMessages(agentPath, cache)
 		if err != nil {
+			skippedAgents++
 			continue // Skip agents that fail to parse
 		}
 		skippedLines += agentSkipped
@@ -89,5 +100,9 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		allMessages[i].Index = i + 1
 	}
 
-	return allMessages, skippedLines, nil
+	return &BreakdownResult{
+		Messages:      allMessages,
+		SkippedLines:  skippedLines,
+		SkippedAgents: skippedAgents,
+	}, nil
 }

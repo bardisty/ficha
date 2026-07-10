@@ -1330,8 +1330,11 @@ func TestAnalyzeSession_AllMessagesSkipsUnparseableAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AnalyzeSession: %v", err)
 	}
-	if analysis.AgentCount != 2 || len(analysis.Agents) != 1 || analysis.SkippedAgents != 1 {
-		t.Errorf("AgentCount=%d len(Agents)=%d SkippedAgents=%d, want 2/1/1",
+	// AgentCount describes the agents actually analyzed, so it matches the
+	// Agents slice every exporter derives its rows from; the unreadable one is
+	// in SkippedAgents.
+	if analysis.AgentCount != 1 || len(analysis.Agents) != 1 || analysis.SkippedAgents != 1 {
+		t.Errorf("AgentCount=%d len(Agents)=%d SkippedAgents=%d, want 1/1/1",
 			analysis.AgentCount, len(analysis.Agents), analysis.SkippedAgents)
 	}
 
@@ -1344,5 +1347,84 @@ func TestAnalyzeSession_AllMessagesSkipsUnparseableAgent(t *testing.T) {
 	}
 	if !almostEqual(sum, analysis.TotalCost.TotalCost, 1e-9) {
 		t.Errorf("row sum %f != TotalCost %f with a skipped agent", sum, analysis.TotalCost.TotalCost)
+	}
+}
+
+// makeUnreadableDir strips every permission bit from dir for the test's
+// duration. Skips only where chmod 000 still permits reads (root, or a
+// filesystem without POSIX modes).
+func makeUnreadableDir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.Chmod(dir, 0000); err != nil {
+		t.Fatalf("chmod 000 %s: %v", dir, err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+	if _, err := os.ReadDir(dir); err == nil {
+		t.Skip("chmod 000 does not bar directory reads (running as root?)")
+	}
+}
+
+// AGENT-04: an unreadable subagents/ dir used to yield HasAgents=false and
+// SkippedAgents=0 — a session that silently lost every agent's cost looked
+// exactly like a session that never had one.
+func TestAnalyzeSession_UnreadableSubagentsDirCountsAsSkipped(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "sess.jsonl")
+	writeJSONLFile(t, sessionPath, []string{forkMsg1})
+	writeAgentSession(t, tmpDir, "sess", "agent-a.jsonl", []string{forkMsg2})
+	makeUnreadableDir(t, filepath.Join(tmpDir, "sess", "subagents"))
+
+	analysis, err := AnalyzeSession(sessionPath, "sess", NoMessages)
+	if err != nil {
+		t.Fatalf("AnalyzeSession: %v", err)
+	}
+	if analysis.SkippedAgents != 1 {
+		t.Errorf("SkippedAgents: got %d, want 1", analysis.SkippedAgents)
+	}
+	if analysis.AgentCount != 0 || len(analysis.Agents) != 0 {
+		t.Errorf("AgentCount=%d len(Agents)=%d, want 0/0 (none could be read)",
+			analysis.AgentCount, len(analysis.Agents))
+	}
+}
+
+// The same accounting when only the workflows/ dir is unreadable: the regular
+// subagent beside it still analyzes.
+func TestAnalyzeSession_UnreadableWorkflowsDirCountsAsSkipped(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "sess.jsonl")
+	writeJSONLFile(t, sessionPath, []string{forkMsg1})
+	writeAgentSession(t, tmpDir, "sess", "agent-a.jsonl", []string{forkMsg2})
+	workflowsDir := filepath.Join(tmpDir, "sess", "subagents", "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	makeUnreadableDir(t, workflowsDir)
+
+	analysis, err := AnalyzeSession(sessionPath, "sess", NoMessages)
+	if err != nil {
+		t.Fatalf("AnalyzeSession: %v", err)
+	}
+	if analysis.SkippedAgents != 1 {
+		t.Errorf("SkippedAgents: got %d, want 1", analysis.SkippedAgents)
+	}
+	if analysis.AgentCount != 1 || !analysis.HasAgents {
+		t.Errorf("AgentCount=%d HasAgents=%v, want 1/true", analysis.AgentCount, analysis.HasAgents)
+	}
+}
+
+// A session with no agent trouble must report nothing skipped.
+func TestAnalyzeSession_HealthyAgentsReportNoSkips(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "sess.jsonl")
+	writeJSONLFile(t, sessionPath, []string{forkMsg1})
+	writeAgentSession(t, tmpDir, "sess", "agent-a.jsonl", []string{forkMsg2})
+
+	analysis, err := AnalyzeSession(sessionPath, "sess", NoMessages)
+	if err != nil {
+		t.Fatalf("AnalyzeSession: %v", err)
+	}
+	if analysis.SkippedAgents != 0 || analysis.AgentCount != 1 {
+		t.Errorf("SkippedAgents=%d AgentCount=%d, want 0/1",
+			analysis.SkippedAgents, analysis.AgentCount)
 	}
 }

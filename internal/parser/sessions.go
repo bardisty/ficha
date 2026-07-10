@@ -1,11 +1,8 @@
 package parser
 
 import (
-	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,27 +79,46 @@ func DiscoverSessionsFromDisk(projectDir string, countMessages bool) ([]models.S
 // on analysis paths, which re-parse the same files and recompute counts anyway,
 // so they pass countMessages=false and leave the counts zero. Agent discovery
 // is a cheap directory listing and always runs.
+//
+// The skip counters have three sources: unreadable agent directories (found by
+// discovery, which always runs), and — only when the scan runs — agent files
+// and the parent file that cannot be read. With countMessages=false the scan is
+// skipped, so only the directory count is populated; harmless, because the
+// analysis paths that pass false detect unreadable files themselves.
+//
+// AgentCount, like MessageCount, describes what the scan could read: an agent
+// file it could not open lands in SkippedAgents instead, so AgentCount +
+// SkippedAgents recovers what is on disk. Without the scan AgentCount is the
+// discovery count, which is the best the listing alone can know.
 func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time, countMessages bool) models.SessionEntry {
-	// Discover agent sub-sessions (ignore errors - missing subagents dir is common)
-	agentPaths, err := DiscoverAgentSessions(projectDir, sessionID)
-	if err != nil {
-		// Log warning but continue - agent discovery failure shouldn't block session discovery
-		// Note: NotExist errors are already handled inside DiscoverAgentSessions
-		_ = err // Error intentionally ignored - subagent discovery is non-critical
-	}
+	agentPaths, unreadableDirs := DiscoverAgentSessions(projectDir, sessionID)
+	skippedAgents := unreadableDirs
 
-	// Count parent + agent messages for display. countMessagesInFile returns -1
-	// on error; treat that (and empty files) as 0.
+	// Count parent + agent messages for display. countMessagesInFile returns a
+	// negative count on file access / I/O error.
 	parentMsgCount := 0
 	agentMsgCount := 0
+	skippedLines := 0
+	skippedSessions := 0
+	readableAgents := len(agentPaths)
 	if countMessages {
-		if c := countMessagesInFile(fullPath); c > 0 {
+		if c, skipped := countMessagesInFile(fullPath); c >= 0 {
 			parentMsgCount = c
+			skippedLines += skipped
+		} else {
+			// The session's own transcript is unreadable: its row would show a
+			// zero message count that looks like an empty session.
+			skippedSessions = 1
 		}
 		for _, agentPath := range agentPaths {
-			if c := countMessagesInFile(agentPath); c > 0 {
-				agentMsgCount += c
+			c, skipped := countMessagesInFile(agentPath)
+			if c < 0 {
+				skippedAgents++
+				readableAgents--
+				continue
 			}
+			agentMsgCount += c
+			skippedLines += skipped
 		}
 	}
 
@@ -113,8 +129,11 @@ func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time, c
 		Created:           modTime,                        // Best approximation
 		Modified:          modTime,
 		AgentPaths:        agentPaths,
-		AgentCount:        len(agentPaths),
+		AgentCount:        readableAgents,
 		AgentMessageCount: agentMsgCount,
+		SkippedSessions:   skippedSessions,
+		SkippedAgents:     skippedAgents,
+		SkippedLines:      skippedLines,
 	}
 }
 
@@ -151,6 +170,9 @@ func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.Sess
 			indexed.AgentPaths = disk.AgentPaths
 			indexed.AgentCount = disk.AgentCount
 			indexed.AgentMessageCount = disk.AgentMessageCount
+			indexed.SkippedSessions = disk.SkippedSessions
+			indexed.SkippedAgents = disk.SkippedAgents
+			indexed.SkippedLines = disk.SkippedLines
 			// Use disk message count which includes agent messages for consistency
 			indexed.MessageCount = disk.MessageCount
 			// Use disk's Modified time (actual file mtime) instead of index's
@@ -204,37 +226,59 @@ func pathWithinDir(path, dir string) bool {
 // and, for workflow runs, in {sessionID}/subagents/workflows/{runID}/.
 // Regular agents come first, then workflow runs alphabetically. The name
 // filter excludes each run's journal.jsonl and agent-*.meta.json files.
-func DiscoverAgentSessions(projectDir, sessionID string) ([]string, error) {
+//
+// unreadableDirs counts directories that exist but could not be listed
+// (permissions, or a plain file where a directory was expected). Their agent
+// files are missing from the returned paths, so the caller must fold the count
+// into its skipped-agent accounting rather than report a complete result. An
+// absent directory is normal (a session without agents) and counts nothing.
+//
+// The count is a lower bound on the agents lost: an unreadable directory hides
+// however many agent files it held, and one that held none still counts 1.
+// There is no way to do better without reading it — a loud undercount beats
+// silence.
+func DiscoverAgentSessions(projectDir, sessionID string) (paths []string, unreadableDirs int) {
 	subagentsDir := filepath.Join(projectDir, sessionID, "subagents")
-
-	entries, err := os.ReadDir(subagentsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil // No subagents directory - not an error
-		}
-		return nil, err
+	entries, unreadable := readAgentDir(subagentsDir)
+	if unreadable > 0 {
+		// Nothing beneath an unlistable subagents/ can be read either, so the
+		// whole subtree counts once rather than once per directory in it.
+		return collectAgentFiles(subagentsDir, entries), unreadable
 	}
-
 	agentPaths := collectAgentFiles(subagentsDir, entries)
 
 	workflowsDir := filepath.Join(subagentsDir, "workflows")
-	runDirs, err := os.ReadDir(workflowsDir)
-	if err != nil {
-		return agentPaths, nil // No workflows directory - not an error
+	runDirs, unreadable := readAgentDir(workflowsDir)
+	if unreadable > 0 {
+		return agentPaths, unreadable
 	}
 	for _, run := range runDirs {
 		if !run.IsDir() {
 			continue
 		}
 		runDir := filepath.Join(workflowsDir, run.Name())
-		runEntries, err := os.ReadDir(runDir)
-		if err != nil {
-			continue // Unreadable run dir - skip, like unreadable agents
-		}
+		runEntries, unreadable := readAgentDir(runDir)
+		unreadableDirs += unreadable
 		agentPaths = append(agentPaths, collectAgentFiles(runDir, runEntries)...)
 	}
 
-	return agentPaths, nil
+	return agentPaths, unreadableDirs
+}
+
+// readAgentDir lists dir, separating "it isn't there" from "it's there and I
+// can't read it". Only the latter hides agent files, so only it counts. A run
+// directory can also vanish between the parent listing and this call — the live
+// TUIs rescan directories Claude Code is still writing — and a directory that
+// no longer exists hides nothing.
+//
+// os.ReadDir returns the entries it managed to read alongside the error, so a
+// partially-readable directory still contributes the agents it named.
+func readAgentDir(dir string) (entries []os.DirEntry, unreadable int) {
+	entries, err := os.ReadDir(dir)
+	if err == nil || os.IsNotExist(err) {
+		return entries, 0
+	}
+	return entries, 1
 }
 
 // collectAgentFiles returns full paths of agent-*.jsonl files among entries.
@@ -306,48 +350,22 @@ func ParseWorkflowMeta(projectDir, sessionID, runID string) (models.WorkflowMeta
 	return meta, true
 }
 
-// countMessagesInFile counts distinct assistant messages in a JSONL file.
-// Streaming lines repeating the same message.id + requestId count once, so
-// the count matches the deduplicated analysis (see DeduplicateMessages).
-// Returns -1 on error (file access, I/O) to distinguish from empty files (0).
-// Oversized lines are skipped individually; counting continues after them,
-// matching ParseJSONLWithResult.
-func countMessagesInFile(path string) int {
-	file, err := os.Open(path)
+// countMessagesInFile counts the assistant messages a JSONL file contributes to
+// an analysis, and how many of its lines the parse rejected. It runs the very
+// parse the analysis paths run, so the two can never disagree: a line dropped
+// there (malformed JSON, unparseable timestamp, non-integer token count,
+// oversized) is dropped here and counted in skippedLines, and streaming lines
+// repeating the same message.id + requestId collapse to one message.
+//
+// Deriving the count from a cheaper, laxer decode is what made `list` report
+// more messages than `show` analyzed. Keep this delegating to the real parser.
+//
+// count is -1 on file access / I/O error, distinguishing failure from an empty
+// file (0).
+func countMessagesInFile(path string) (count, skippedLines int) {
+	result, err := ParseJSONLFileWithResult(path)
 	if err != nil {
-		return -1
+		return -1, 0
 	}
-	defer file.Close()
-
-	count := 0 // lines without a message id — never collapsed
-	seen := make(map[string]struct{})
-	reader := bufio.NewReaderSize(file, readerBufSize)
-
-	for {
-		line, oversized, err := readLine(reader, maxLineBytes)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return -1 // I/O error
-		}
-		if oversized || len(line) == 0 {
-			continue
-		}
-		var msg struct {
-			Type      string `json:"type"`
-			RequestID string `json:"requestId"`
-			Message   *struct {
-				ID string `json:"id"`
-			} `json:"message"`
-		}
-		if json.Unmarshal(line, &msg) == nil && msg.Type == "assistant" && msg.Message != nil {
-			if msg.Message.ID == "" {
-				count++
-			} else {
-				seen[msg.Message.ID+":"+msg.RequestID] = struct{}{}
-			}
-		}
-	}
-	return count + len(seen)
+	return len(result.Messages), result.SkippedLines
 }

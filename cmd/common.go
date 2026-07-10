@@ -161,6 +161,24 @@ func warnSkippedLines(w io.Writer, skippedLines int) {
 	}
 }
 
+// warnSkippedSessions prints a stderr warning when whole session files could
+// not be parsed. Their cost is missing from every total on the surface.
+func warnSkippedSessions(w io.Writer, skippedSessions int) {
+	if skippedSessions > 0 {
+		fmt.Fprintf(w, "Warning: %d session(s) could not be parsed\n", skippedSessions)
+	}
+}
+
+// warnSkippedAgents prints a stderr warning when agent sub-sessions could not
+// be read. "read" rather than "parsed": the count also covers agent
+// directories that could not be listed, whose agent files were never seen —
+// there the number is a lower bound on the sub-sessions actually missing.
+func warnSkippedAgents(w io.Writer, skippedAgents int) {
+	if skippedAgents > 0 {
+		fmt.Fprintf(w, "Warning: %d agent sub-session(s) could not be read\n", skippedAgents)
+	}
+}
+
 // warnUnknownModels prints a warning if any models have unknown pricing
 func warnUnknownModels(w io.Writer, costByModel map[string]models.CostBreakdown) {
 	var unknownModels []string

@@ -26,16 +26,17 @@ type BreakdownModel struct {
 	sessionID   string
 	noColor     bool
 
-	messages     []models.BreakdownMessage
-	totalCost    float64
-	minCost      float64 // For cost gradient coloring
-	maxCost      float64 // For cost gradient coloring
-	insights     *models.MessageInsights
-	skippedLines int  // JSONL lines skipped during parsing (malformed or oversized)
-	hasUnknown   bool // Any message priced from the fallback table (marked in the rows)
-	err          error
-	loading      bool
-	lastUpdated  time.Time
+	messages      []models.BreakdownMessage
+	totalCost     float64
+	minCost       float64 // For cost gradient coloring
+	maxCost       float64 // For cost gradient coloring
+	insights      *models.MessageInsights
+	skippedLines  int  // JSONL lines skipped during parsing (malformed or oversized)
+	skippedAgents int  // Agent sub-sessions that could not be read
+	hasUnknown    bool // Any message priced from the fallback table (marked in the rows)
+	err           error
+	loading       bool
+	lastUpdated   time.Time
 
 	// agentCache memoizes agent sub-session parses so a reload triggered by a
 	// parent-file write doesn't re-parse every unchanged agent (see TUI-3).
@@ -74,13 +75,14 @@ type BreakdownModel struct {
 // Breakdown-specific messages
 type (
 	breakdownMsgsMsg struct {
-		messages     []models.BreakdownMessage
-		totalCost    float64
-		minCost      float64
-		maxCost      float64
-		insights     *models.MessageInsights
-		skippedLines int
-		hasUnknown   bool
+		messages      []models.BreakdownMessage
+		totalCost     float64
+		minCost       float64
+		maxCost       float64
+		insights      *models.MessageInsights
+		skippedLines  int
+		skippedAgents int
+		hasUnknown    bool
 	}
 	breakdownErrorMsg error
 )
@@ -212,6 +214,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.maxCost = msg.maxCost
 		m.insights = msg.insights
 		m.skippedLines = msg.skippedLines
+		m.skippedAgents = msg.skippedAgents
 		m.hasUnknown = msg.hasUnknown
 		m.loading = false
 		m.lastUpdated = time.Now()
@@ -265,6 +268,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.minCost = 0
 		m.maxCost = 0
 		m.skippedLines = 0
+		m.skippedAgents = 0
 		m.loading = true
 		m.newMsgIndices = make(map[int]time.Time)
 		// Drop the previous session's cached agent parses
@@ -435,10 +439,10 @@ func (m BreakdownModel) View() string {
 		sb.WriteString(sepStyle.Render(" │ "))
 		sb.WriteString(lightGray.Render(scrollPart))
 		// Surface parse warnings so an incomplete breakdown doesn't look complete
-		if m.skippedLines > 0 {
+		if note := skippedFootnote(m.skippedAgents, m.skippedLines, false); note != "" {
 			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
 			sb.WriteString(sepStyle.Render(" │ "))
-			sb.WriteString(warnStyle.Render(fmt.Sprintf("⚠ %d skipped line(s)", m.skippedLines)))
+			sb.WriteString(warnStyle.Render(note))
 		}
 		// Explain the MODEL-column asterisk: those rows are fallback-priced
 		if m.hasUnknown {
@@ -449,8 +453,8 @@ func (m BreakdownModel) View() string {
 	} else {
 		sb.WriteString(fmt.Sprintf("  Messages: %d | Total: $%.6f | Scroll: %s",
 			len(m.messages), m.totalCost, scrollMode))
-		if m.skippedLines > 0 {
-			sb.WriteString(fmt.Sprintf(" | ! %d skipped line(s)", m.skippedLines))
+		if note := skippedFootnote(m.skippedAgents, m.skippedLines, true); note != "" {
+			sb.WriteString(" | " + note)
 		}
 		if m.hasUnknown {
 			sb.WriteString(" | " + unknownModelFootnote(true))
@@ -686,10 +690,11 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	if m.closing != nil && m.closing.Load() {
 		return nil
 	}
-	messages, skippedLines, err := analyzer.GetBreakdownMessagesWithCache(m.sessionPath, m.sessionID, m.agentCache)
+	result, err := analyzer.GetBreakdownMessagesWithCache(m.sessionPath, m.sessionID, m.agentCache)
 	if err != nil {
 		return breakdownErrorMsg(err)
 	}
+	messages := result.Messages
 
 	// Calculate total cost, min/max cost, and get insights
 	var totalCost float64
@@ -727,13 +732,14 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	insights := analyzer.CalculateInsights(messageAnalyses)
 
 	return breakdownMsgsMsg{
-		messages:     messages,
-		totalCost:    totalCost,
-		minCost:      minCost,
-		maxCost:      maxCost,
-		insights:     insights,
-		skippedLines: skippedLines,
-		hasUnknown:   hasUnknown,
+		messages:      messages,
+		totalCost:     totalCost,
+		minCost:       minCost,
+		maxCost:       maxCost,
+		insights:      insights,
+		skippedLines:  result.SkippedLines,
+		skippedAgents: result.SkippedAgents,
+		hasUnknown:    hasUnknown,
 	}
 }
 

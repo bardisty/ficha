@@ -145,7 +145,7 @@ type SessionAnalysis struct {
 	WorkflowCount      int                      `json:"workflow_count,omitempty"`   // Distinct workflow runs
 	ParentMessageCount int                      `json:"parent_message_count"`       // Messages from parent session only
 	AgentMessageCount  int                      `json:"agent_message_count"`        // Messages from all agents
-	SkippedAgents      int                      `json:"skipped_agents,omitempty"`   // Agents that failed to parse
+	SkippedAgents      int                      `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read (parse failure, or an unreadable agent directory)
 	SkippedSessions    int                      `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)
 	SkippedLines       int                      `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized), incl. agents
 	IsSummary          bool                     `json:"-"`                          // True for aggregate summaries
@@ -195,6 +195,11 @@ type SessionEntry struct {
 	AgentPaths        []string `json:"agent_paths,omitempty"`
 	AgentCount        int      `json:"agent_count"`
 	AgentMessageCount int      `json:"agent_message_count"` // Messages from agents (for list display)
+	// Skip accounting for the discovery-time scan `list` performs. Zero on the
+	// analysis paths, which skip the scan and do their own accounting.
+	SkippedSessions int `json:"skipped_sessions,omitempty"` // 1 when this session's own transcript could not be read
+	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
+	SkippedLines    int `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized), incl. agents
 }
 
 // SessionsIndex represents the sessions-index.json file
@@ -359,7 +364,16 @@ type ProjectInfo struct {
 	DisplayName  string // "foo" (basename)
 }
 
-// ProjectAnalysis represents the analysis of a single project
+// ProjectAnalysis represents the analysis of a single project.
+//
+// SessionCount counts the sessions that were successfully analyzed, so it
+// describes the same set of sessions TotalCost and MessageCount do. Sessions
+// discovered but not parsed are in SkippedSessions instead; the two sum to the
+// number of session files on disk.
+//
+// FirstActive/LastActive come from message timestamps, matching the summary
+// surface. A project whose sessions carry no usable timestamps falls back to
+// session-file mtimes.
 type ProjectAnalysis struct {
 	ProjectInfo
 	TotalCost    CostBreakdown            `json:"total_cost"`
@@ -369,6 +383,10 @@ type ProjectAnalysis struct {
 	MessageCount int                      `json:"message_count"`
 	FirstActive  time.Time                `json:"first_active"`
 	LastActive   time.Time                `json:"last_active"`
+	// Inputs this project's totals could not account for
+	SkippedSessions int `json:"skipped_sessions,omitempty"` // Sessions that failed to parse
+	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
+	SkippedLines    int `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized)
 }
 
 // GlobalAnalysis represents aggregated stats across all projects
@@ -378,10 +396,15 @@ type GlobalAnalysis struct {
 	TotalUsage      TokenUsage               `json:"total_usage"`
 	CostByModel     map[string]CostBreakdown `json:"cost_by_model"`
 	ProjectCount    int                      `json:"project_count"`
-	SessionCount    int                      `json:"session_count"`
+	SessionCount    int                      `json:"session_count"` // Sessions successfully analyzed (see ProjectAnalysis)
 	MessageCount    int                      `json:"message_count"`
 	SkippedProjects int                      `json:"skipped_projects"`
-	FirstActive     time.Time                `json:"first_active"`
-	LastActive      time.Time                `json:"last_active"`
-	Duration        Duration                 `json:"duration"`
+	// Skipped inputs summed over the analyzed projects. A skipped project
+	// contributes only to SkippedProjects — nothing inside it was counted.
+	SkippedSessions int       `json:"skipped_sessions,omitempty"` // Sessions that failed to parse
+	SkippedAgents   int       `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
+	SkippedLines    int       `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized)
+	FirstActive     time.Time `json:"first_active"`
+	LastActive      time.Time `json:"last_active"`
+	Duration        Duration  `json:"duration"`
 }

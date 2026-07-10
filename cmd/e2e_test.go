@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -761,4 +762,142 @@ func betaSessionTotalCost(t *testing.T) float64 {
 		t.Fatalf("total_cost missing from header %v", records[0])
 	}
 	return mustFloat(t, records[1][i])
+}
+
+// TestE2EGlobalExposesSkippedInputs drives `global` over a project holding one
+// good session, one unreadable session, and one unreadable agent directory. The
+// json document and the stderr warnings must both account for what the totals
+// left out — before, session_count silently counted a session no cost came from.
+func TestE2EGlobalExposesSkippedInputs(t *testing.T) {
+	root := t.TempDir()
+	projDir := filepath.Join(root, "projects", "-home-test-skips")
+	sessOK := "11111111-aaaa-bbbb-cccc-000000000000"
+	sessBad := "22222222-aaaa-bbbb-cccc-000000000000"
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Good session: two billable lines plus one the strict parse rejects.
+	good := e2eMsg("2026-02-01T10:00:00Z", "g1", "claude-opus-4-8", 1000, 500, 0, 0, 0) + "\n" +
+		e2eMsg("2026-02-01T16:00:00Z", "g2", "claude-opus-4-8", 1000, 500, 0, 0, 0) + "\n" +
+		`{"type":"assistant","timestamp":"not-a-time","requestId":"r9","message":{"id":"m9","usage":{"input_tokens":10}}}` + "\n"
+	if err := os.WriteFile(filepath.Join(projDir, sessOK+".jsonl"), []byte(good), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// An unreadable agent dir under the good session.
+	subagents := filepath.Join(projDir, sessOK, "subagents")
+	if err := os.MkdirAll(subagents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	agentLine := e2eMsg("2026-02-01T11:00:00Z", "a1", "claude-sonnet-5", 500, 100, 0, 0, 0) + "\n"
+	if err := os.WriteFile(filepath.Join(subagents, "agent-x.jsonl"), []byte(agentLine), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(subagents, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(subagents, 0o755) })
+	if _, err := os.ReadDir(subagents); err == nil {
+		t.Skip("chmod 000 does not bar directory reads (running as root?)")
+	}
+
+	// An unreadable session file.
+	badPath := filepath.Join(projDir, sessBad+".jsonl")
+	if err := os.WriteFile(badPath, []byte(good), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(badPath, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(badPath, 0o644) })
+
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	stdout, stderr, err := executeCLISplit(t, "global", "-f", "json")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr)
+	}
+
+	var g models.GlobalAnalysis
+	mustJSON(t, stdout, &g)
+	if g.SessionCount != 1 {
+		t.Errorf("session_count: got %d, want 1 (the session the totals cover)", g.SessionCount)
+	}
+	if g.SkippedSessions != 1 {
+		t.Errorf("skipped_sessions: got %d, want 1", g.SkippedSessions)
+	}
+	if g.SkippedAgents != 1 {
+		t.Errorf("skipped_agents: got %d, want 1", g.SkippedAgents)
+	}
+	if g.SkippedLines != 1 {
+		t.Errorf("skipped_lines: got %d, want 1", g.SkippedLines)
+	}
+	if len(g.Projects) != 1 || g.Projects[0].SkippedSessions != 1 {
+		t.Errorf("per-project skipped_sessions missing: %+v", g.Projects)
+	}
+	// AGG-02: the span comes from message timestamps, not file mtimes.
+	if got := g.Duration.Duration(); got != 6*time.Hour {
+		t.Errorf("duration: got %v, want 6h0m0s (message timestamps, not mtimes)", got)
+	}
+
+	for _, want := range []string{
+		"1 session(s) could not be parsed",
+		"1 agent sub-session(s) could not be read",
+		"unparseable line(s) skipped",
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr missing %q, got: %q", want, stderr)
+		}
+	}
+}
+
+// TestE2EListShowCountParity pins DEDUP-01: `list` derived its message counts
+// from a laxer decode than the analysis, so a line show skipped was counted by
+// list. Both surfaces must now agree, and list must warn about the skip.
+func TestE2EListShowCountParity(t *testing.T) {
+	root := t.TempDir()
+	projDir := filepath.Join(root, "projects", "-home-test-parity")
+	sessionID := "33333333-aaaa-bbbb-cccc-000000000000"
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Line 2's timestamp fails the strict decode the analysis performs.
+	content := e2eMsg("2026-02-01T10:00:00Z", "p1", "claude-opus-4-8", 1000, 500, 0, 0, 0) + "\n" +
+		`{"type":"assistant","timestamp":"not-a-time","requestId":"r2","message":{"id":"m2","usage":{"input_tokens":10}}}` + "\n" +
+		e2eMsg("2026-02-01T10:05:00Z", "p3", "claude-opus-4-8", 200, 100, 0, 0, 0) + "\n"
+	if err := os.WriteFile(filepath.Join(projDir, sessionID+".jsonl"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+
+	listOut, listErr, err := executeCLISplit(t, "list", "--project-dir=-home-test-parity", "-f", "json")
+	if err != nil {
+		t.Fatalf("list: %v\nstderr: %s", err, listErr)
+	}
+	var entries []models.SessionEntry
+	mustJSON(t, listOut, &entries)
+	if len(entries) != 1 {
+		t.Fatalf("list entries: got %d, want 1", len(entries))
+	}
+
+	showOut, _, err := executeCLISplit(t, "show", "--project-dir=-home-test-parity", sessionID, "-f", "json")
+	if err != nil {
+		t.Fatalf("show: %v", err)
+	}
+	var a models.SessionAnalysis
+	mustJSON(t, showOut, &a)
+
+	if entries[0].MessageCount != a.MessageCount {
+		t.Errorf("list message_count %d != show message_count %d",
+			entries[0].MessageCount, a.MessageCount)
+	}
+	if a.MessageCount != 2 {
+		t.Errorf("show message_count: got %d, want 2", a.MessageCount)
+	}
+	if entries[0].SkippedLines != 1 {
+		t.Errorf("list skipped_lines: got %d, want 1", entries[0].SkippedLines)
+	}
+	if !strings.Contains(listErr, "unparseable line(s) skipped") {
+		t.Errorf("list should warn on stderr about the skipped line, got: %q", listErr)
+	}
 }

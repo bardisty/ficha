@@ -38,6 +38,21 @@ func runList(cfg *config) error {
 	// Sort sessions by modified time (most recent first)
 	sortSessionsByModified(sessions)
 
+	// The counts below come from the same parse `show` runs, so warn about the
+	// inputs it dropped — otherwise a session whose transcript could not be read
+	// is indistinguishable from one that holds no messages.
+	skippedSessions := 0
+	skippedAgents := 0
+	skippedLines := 0
+	for _, s := range sessions {
+		skippedSessions += s.SkippedSessions
+		skippedAgents += s.SkippedAgents
+		skippedLines += s.SkippedLines
+	}
+	warnSkippedSessions(cfg.stderr, skippedSessions)
+	warnSkippedAgents(cfg.stderr, skippedAgents)
+	warnSkippedLines(cfg.stderr, skippedLines)
+
 	// Output in requested format
 	var output string
 	switch cfg.format {

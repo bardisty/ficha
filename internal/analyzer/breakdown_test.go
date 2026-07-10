@@ -27,10 +27,11 @@ func TestGetBreakdownMessages(t *testing.T) {
 	}
 
 	// Get breakdown messages
-	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
+	messages := result.Messages
 
 	// Verify message count
 	if len(messages) != 2 {
@@ -88,13 +89,14 @@ garbage
 		t.Fatalf("failed to write agent file: %v", err)
 	}
 
-	messages, skippedLines, err := GetBreakdownMessages(sessionPath, sessionID)
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
+	messages := result.Messages
 
-	if skippedLines != 3 {
-		t.Errorf("skippedLines: got %d, want 3 (1 parent + 2 agent)", skippedLines)
+	if result.SkippedLines != 3 {
+		t.Errorf("skippedLines: got %d, want 3 (1 parent + 2 agent)", result.SkippedLines)
 	}
 	if len(messages) != 2 {
 		t.Errorf("expected 2 messages, got %d", len(messages))
@@ -135,10 +137,11 @@ func TestGetBreakdownMessages_WithAgents(t *testing.T) {
 	}
 
 	// Get breakdown messages
-	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
+	messages := result.Messages
 
 	// Verify total message count (2 parent + 1 agent)
 	if len(messages) != 3 {
@@ -181,10 +184,11 @@ func TestGetBreakdownMessages_EmptySession(t *testing.T) {
 		t.Fatalf("failed to write session file: %v", err)
 	}
 
-	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
+	messages := result.Messages
 
 	if len(messages) != 0 {
 		t.Errorf("expected 0 messages for empty session, got %d", len(messages))
@@ -208,10 +212,11 @@ func TestGetBreakdownMessages_CostCalculation(t *testing.T) {
 		t.Fatalf("failed to write session file: %v", err)
 	}
 
-	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
+	messages := result.Messages
 
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(messages))
@@ -272,10 +277,11 @@ func TestGetBreakdownMessages_ChronologicalMerge(t *testing.T) {
 		t.Fatalf("failed to write agent file: %v", err)
 	}
 
-	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
+	messages := result.Messages
 
 	// Should have 5 messages total
 	if len(messages) != 5 {
@@ -329,10 +335,11 @@ func TestGetBreakdownMessages_WithWorkflowAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	messages, _, err := GetBreakdownMessages(sessionPath, sessionID)
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
 	if err != nil {
 		t.Fatalf("GetBreakdownMessages failed: %v", err)
 	}
+	messages := result.Messages
 
 	if len(messages) != 3 {
 		t.Fatalf("expected 3 messages (2 parent + 1 workflow agent), got %d", len(messages))
@@ -344,5 +351,68 @@ func TestGetBreakdownMessages_WithWorkflowAgents(t *testing.T) {
 		if msg.AgentID != expectedOrder[i] {
 			t.Errorf("message %d: expected AgentID %q, got %q", i, expectedOrder[i], msg.AgentID)
 		}
+	}
+}
+
+// AGENT-07: the breakdown TUI is the only surface for its own numbers, so an
+// agent it could not read must reach the footer. Both sources count: an agent
+// file that fails to parse, and a directory that cannot be listed at all.
+func TestGetBreakdownMessages_SkippedAgents(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+	writeJSONLFile(t, sessionPath, []string{forkMsg1})
+
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONLFile(t, filepath.Join(subagentsDir, "agent-good.jsonl"), []string{forkMsg2})
+
+	badAgent := filepath.Join(subagentsDir, "agent-bad.jsonl")
+	writeJSONLFile(t, badAgent, []string{forkMsg3})
+	if err := os.Chmod(badAgent, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(badAgent, 0644) })
+	if _, err := os.ReadFile(badAgent); err == nil {
+		t.Skip("chmod 000 does not bar reads (running as root?)")
+	}
+
+	workflowsDir := filepath.Join(subagentsDir, "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	makeUnreadableDir(t, workflowsDir)
+
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
+	if err != nil {
+		t.Fatalf("GetBreakdownMessages: %v", err)
+	}
+	// 1 unreadable workflows dir + 1 unparseable agent file
+	if result.SkippedAgents != 2 {
+		t.Errorf("SkippedAgents: got %d, want 2", result.SkippedAgents)
+	}
+	// Parent message + the one readable agent's message
+	if len(result.Messages) != 2 {
+		t.Errorf("Messages: got %d, want 2", len(result.Messages))
+	}
+}
+
+// A healthy session reports nothing skipped, so the footer stays clean.
+func TestGetBreakdownMessages_NoSkippedAgents(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+	writeJSONLFile(t, sessionPath, []string{forkMsg1})
+	writeAgentSession(t, tmpDir, sessionID, "agent-a.jsonl", []string{forkMsg2})
+
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
+	if err != nil {
+		t.Fatalf("GetBreakdownMessages: %v", err)
+	}
+	if result.SkippedAgents != 0 || result.SkippedLines != 0 {
+		t.Errorf("SkippedAgents=%d SkippedLines=%d, want 0/0",
+			result.SkippedAgents, result.SkippedLines)
 	}
 }

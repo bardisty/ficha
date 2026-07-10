@@ -81,6 +81,9 @@ func AnalyzeAllProjects(projects []models.ProjectInfo) (*models.GlobalAnalysis, 
 		global.ProjectCount++
 		global.SessionCount += analysis.SessionCount
 		global.MessageCount += analysis.MessageCount
+		global.SkippedSessions += analysis.SkippedSessions
+		global.SkippedAgents += analysis.SkippedAgents
+		global.SkippedLines += analysis.SkippedLines
 		global.TotalCost.Add(analysis.TotalCost)
 		global.TotalUsage.Add(analysis.TotalUsage)
 
@@ -154,17 +157,31 @@ func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error)
 		return nil, err
 	}
 
-	// Build project analysis
+	// Build project analysis. SessionCount counts only the sessions the
+	// aggregate could cost — a discovered-but-unparseable session belongs in
+	// SkippedSessions, not in a count sitting next to a total that omits it.
 	analysis := &models.ProjectAnalysis{
-		ProjectInfo:  project,
-		TotalCost:    aggregate.TotalCost,
-		TotalUsage:   aggregate.TotalUsage,
-		CostByModel:  aggregate.CostByModel,
-		SessionCount: len(sessions),
-		MessageCount: aggregate.MessageCount,
+		ProjectInfo:     project,
+		TotalCost:       aggregate.TotalCost,
+		TotalUsage:      aggregate.TotalUsage,
+		CostByModel:     aggregate.CostByModel,
+		SessionCount:    len(sessions) - aggregate.SkippedSessions,
+		MessageCount:    aggregate.MessageCount,
+		SkippedSessions: aggregate.SkippedSessions,
+		SkippedAgents:   aggregate.SkippedAgents,
+		SkippedLines:    aggregate.SkippedLines,
 	}
 
-	// Find first/last active times from sessions
+	// Activity span comes from message timestamps, as it does on every other
+	// surface. AnalyzeMultipleSessions already derived them; a file's mtime is
+	// its LAST write, so a project of one session would otherwise span 0s.
+	if !aggregate.StartTime.IsZero() {
+		analysis.FirstActive = aggregate.StartTime
+		analysis.LastActive = aggregate.EndTime
+		return analysis, nil
+	}
+
+	// No session carried a usable message timestamp — fall back to file mtimes.
 	for _, session := range sessions {
 		if session.Modified.After(analysis.LastActive) {
 			analysis.LastActive = session.Modified
