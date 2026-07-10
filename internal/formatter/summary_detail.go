@@ -88,7 +88,8 @@ func FormatSummaryDetailJSON(summary *models.SessionAnalysis, results []models.S
 // expandAgents is set. Session rows carry the session total (message_count and
 // costs include agents); agent rows break out each agent — do not sum across
 // row types. cumulative_cost is the running session total in modified order and
-// is empty on agent rows.
+// is empty on agent rows. agent_id holds the agent's real ID — the same key
+// `show --messages` and the json agents[] array use, so the exports join.
 func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
@@ -122,10 +123,10 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 
 		sessionRow := []string{
 			"session",
-			r.Entry.SessionID,
+			csvCell(r.Entry.SessionID),
 			"",
 			r.Entry.Modified.Format(csvTimeFormat),
-			primarySessionModelID(a),
+			csvCell(primarySessionModelID(a)),
 			fmt.Sprintf("%d", a.MessageCount),
 			fmt.Sprintf("%d", a.AgentCount),
 			fmt.Sprintf("%.6f", a.TotalCost.InputCost),
@@ -145,13 +146,13 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 		if !expandAgents {
 			continue
 		}
-		for i, agent := range a.Agents {
+		for _, agent := range a.Agents {
 			agentRow := []string{
 				"agent",
-				r.Entry.SessionID,
-				fmt.Sprintf("%d", i+1),
+				csvCell(r.Entry.SessionID),
+				csvCell(agent.AgentID),
 				"",
-				primaryModelID(agent.CostByModel),
+				csvCell(primaryModelID(agent.CostByModel)),
 				fmt.Sprintf("%d", agent.MessageCount),
 				"",
 				fmt.Sprintf("%.6f", agent.TotalCost.InputCost),
@@ -162,7 +163,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 				fmt.Sprintf("%.6f", agent.TotalCost.TotalCost),
 				fmt.Sprintf("%.6f", agent.TotalCost.CacheSavings),
 				"",
-				agent.WorkflowID,
+				csvCell(agent.WorkflowID),
 			}
 			if err := w.Write(agentRow); err != nil {
 				return "", fmt.Errorf("writing summary detail agent row: %w", err)

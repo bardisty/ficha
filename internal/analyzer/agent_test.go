@@ -27,7 +27,7 @@ func TestAnalyzeAgent_Normal(t *testing.T) {
 `
 	path := writeAgentFile(t, "agent-norm123.jsonl", content)
 
-	analysis, err := AnalyzeAgent(path, false)
+	analysis, err := AnalyzeAgent(path)
 	if err != nil {
 		t.Fatalf("AnalyzeAgent returned error: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestAnalyzeAgent_Normal(t *testing.T) {
 func TestAnalyzeAgent_EmptyFile(t *testing.T) {
 	path := writeAgentFile(t, "agent-empty.jsonl", "")
 
-	analysis, err := AnalyzeAgent(path, false)
+	analysis, err := AnalyzeAgent(path)
 	if err != nil {
 		t.Fatalf("AnalyzeAgent on empty file returned error: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestAnalyzeAgent_MalformedLines(t *testing.T) {
 `
 	path := writeAgentFile(t, "agent-mal.jsonl", content)
 
-	analysis, err := AnalyzeAgent(path, false)
+	analysis, err := AnalyzeAgent(path)
 	if err != nil {
 		t.Fatalf("AnalyzeAgent on malformed file returned error: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestAnalyzeAgent_MalformedLines(t *testing.T) {
 }
 
 func TestAnalyzeAgent_MissingFile(t *testing.T) {
-	_, err := AnalyzeAgent(filepath.Join(t.TempDir(), "agent-nope.jsonl"), false)
+	_, err := AnalyzeAgent(filepath.Join(t.TempDir(), "agent-nope.jsonl"))
 	if err == nil {
 		t.Fatal("AnalyzeAgent on missing file should return error")
 	}

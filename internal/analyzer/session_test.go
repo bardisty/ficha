@@ -759,7 +759,7 @@ func TestAnalyzeAgent_OutOfOrderTimestamps(t *testing.T) {
 		t.Fatalf("failed to write agent file: %v", err)
 	}
 
-	analysis, err := AnalyzeAgent(agentPath, false)
+	analysis, err := AnalyzeAgent(agentPath)
 	if err != nil {
 		t.Fatalf("AnalyzeAgent failed: %v", err)
 	}
@@ -927,6 +927,8 @@ const (
 	forkMsg1 = `{"type":"assistant","requestId":"req_1","timestamp":"2024-01-15T10:00:00Z","message":{"id":"msg_1","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`
 	forkMsg2 = `{"type":"assistant","requestId":"req_2","timestamp":"2024-01-15T10:10:00Z","message":{"id":"msg_2","model":"claude-sonnet-4-5","usage":{"input_tokens":500,"output_tokens":200}}}`
 	forkMsg3 = `{"type":"assistant","requestId":"req_3","timestamp":"2024-01-16T09:00:00Z","message":{"id":"msg_3","model":"claude-sonnet-4-5","usage":{"input_tokens":2000,"output_tokens":1000}}}`
+	// Carries a cache_creation block, so Usage.CacheCreation is a non-nil pointer.
+	cacheCreationMsg = `{"type":"assistant","requestId":"req_4","timestamp":"2024-01-15T10:20:00Z","message":{"id":"msg_4","model":"claude-sonnet-4-5","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":800,"cache_creation":{"ephemeral_5m_input_tokens":800,"ephemeral_1h_input_tokens":0}}}}`
 )
 
 func TestAnalyzeMultipleSessions_CrossFileDedup(t *testing.T) {
@@ -1087,7 +1089,7 @@ func writeAgentSession(t *testing.T, projectDir, sessionID, agentFile string, li
 
 // The summary aggregate must carry the same parent/agent partition each session
 // carries: machine formats serialize it whole, so a zeroed partition beside a
-// total that includes agent spend is a lie (AGENT-01).
+// total that includes agent spend is a lie.
 func TestAnalyzeMultipleSessions_AggregatesAgentPartition(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -1174,7 +1176,7 @@ func TestAnalyzeMultipleSessions_AggregatesWorkflowCount(t *testing.T) {
 }
 
 // AllMessages appends each agent's messages after the parent block, tagged with
-// the agent ID, so per-message rows sum to the session total (AGENT-02).
+// the agent ID, so per-message rows sum to the session total.
 // ParentMessages keeps the list parent-only for the live cost chart.
 func TestAnalyzeSession_MessageScope(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -1223,7 +1225,7 @@ func TestAnalyzeSession_MessageScope(t *testing.T) {
 			}
 			sum += msg.Cost.TotalCost
 		}
-		// The regression AGENT-02 names: rows must sum to the session total.
+		// Rows must sum to the session total.
 		if !almostEqual(sum, analysis.TotalCost.TotalCost, 1e-9) {
 			t.Errorf("sum of message costs: got %f, want TotalCost %f", sum, analysis.TotalCost.TotalCost)
 		}
@@ -1235,25 +1237,112 @@ func TestAnalyzeSession_MessageScope(t *testing.T) {
 }
 
 // The parse cache hands back its own slice; tagging agent messages must not
-// write an AgentID into the cached entry (nor bleed across sessions).
+// write an AgentID into the cached entry, and must not alias the cached
+// Usage.CacheCreation pointer (MessageAnalysis copies shallowly). The exported
+// analysis is checked against the cache directly — asserting on a later
+// ParentMessages pass would pass vacuously, since that scope never emits agent
+// rows at all.
 func TestAnalyzeSession_AllMessagesDoesNotMutateCache(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionPath := filepath.Join(tmpDir, "sess.jsonl")
 	writeJSONLFile(t, sessionPath, []string{forkMsg1})
-	writeAgentSession(t, tmpDir, "sess", "agent-x.jsonl", []string{forkMsg2})
+	writeAgentSession(t, tmpDir, "sess", "agent-x.jsonl", []string{cacheCreationMsg})
+	agentPath := filepath.Join(tmpDir, "sess", "subagents", "agent-x.jsonl")
 
 	cache := NewAgentParseCache()
-	if _, err := AnalyzeSessionWithCache(sessionPath, "sess", AllMessages, cache); err != nil {
-		t.Fatalf("first AnalyzeSessionWithCache: %v", err)
-	}
-	// Second pass is served from the cache; a mutated entry would surface here.
-	second, err := AnalyzeSessionWithCache(sessionPath, "sess", ParentMessages, cache)
+	analysis, err := AnalyzeSessionWithCache(sessionPath, "sess", AllMessages, cache)
 	if err != nil {
-		t.Fatalf("second AnalyzeSessionWithCache: %v", err)
+		t.Fatalf("AnalyzeSessionWithCache: %v", err)
 	}
-	for i, msg := range second.Messages {
-		if msg.AgentID != "" {
-			t.Errorf("ParentMessages[%d].AgentID: got %q, want empty (cache was mutated)", i, msg.AgentID)
+
+	cached, _, err := loadAgentMessages(agentPath, cache)
+	if err != nil {
+		t.Fatalf("loadAgentMessages: %v", err)
+	}
+	if len(cached) != 1 {
+		t.Fatalf("cached messages: got %d, want 1", len(cached))
+	}
+	if cached[0].AgentID != "" {
+		t.Errorf("cached AgentID: got %q, want empty (tagging mutated the cache)", cached[0].AgentID)
+	}
+
+	// The exported row must own its CacheCreation, not point at the cache's.
+	var exported *models.MessageAnalysis
+	for i := range analysis.Messages {
+		if analysis.Messages[i].AgentID == "x" {
+			exported = &analysis.Messages[i]
 		}
+	}
+	if exported == nil {
+		t.Fatal("no agent row in the export")
+	}
+	if exported.Usage.CacheCreation == nil || cached[0].Usage.CacheCreation == nil {
+		t.Fatal("fixture must carry a cache_creation block")
+	}
+	if exported.Usage.CacheCreation == cached[0].Usage.CacheCreation {
+		t.Error("exported row aliases the cache's CacheCreation pointer")
+	}
+}
+
+// A session whose parent transcript has no billable messages still exports its
+// agents' rows: buildSessionAnalysis returns early before assigning Messages,
+// so the agent rows append onto a nil slice.
+func TestAnalyzeSession_AllMessagesNoParentMessages(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "sess.jsonl")
+	writeJSONLFile(t, sessionPath, []string{`{"type":"user","timestamp":"2024-01-15T10:00:00Z"}`})
+	writeAgentSession(t, tmpDir, "sess", "agent-x.jsonl", []string{forkMsg2})
+
+	analysis, err := AnalyzeSession(sessionPath, "sess", AllMessages)
+	if err != nil {
+		t.Fatalf("AnalyzeSession: %v", err)
+	}
+	if len(analysis.Messages) != 1 {
+		t.Fatalf("Messages: got %d, want 1 (agent only)", len(analysis.Messages))
+	}
+	if analysis.Messages[0].AgentID != "x" {
+		t.Errorf("AgentID: got %q, want %q", analysis.Messages[0].AgentID, "x")
+	}
+	if !almostEqual(analysis.Messages[0].Cost.TotalCost, analysis.TotalCost.TotalCost, 1e-9) {
+		t.Errorf("row cost %f != TotalCost %f", analysis.Messages[0].Cost.TotalCost, analysis.TotalCost.TotalCost)
+	}
+}
+
+// An agent that fails to parse still counts toward AgentCount but contributes
+// no rows and no cost, so the rows-sum-to-total invariant survives it.
+func TestAnalyzeSession_AllMessagesSkipsUnparseableAgent(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "sess.jsonl")
+	writeJSONLFile(t, sessionPath, []string{forkMsg1})
+	writeAgentSession(t, tmpDir, "sess", "agent-good.jsonl", []string{forkMsg2})
+	// An unreadable agent file is discovered but fails to parse.
+	writeAgentSession(t, tmpDir, "sess", "agent-bad.jsonl", []string{forkMsg3})
+	badPath := filepath.Join(tmpDir, "sess", "subagents", "agent-bad.jsonl")
+	if err := os.Chmod(badPath, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(badPath, 0644) })
+	if _, err := os.ReadFile(badPath); err == nil {
+		t.Skip("chmod 000 does not bar reads (running as root?)")
+	}
+
+	analysis, err := AnalyzeSession(sessionPath, "sess", AllMessages)
+	if err != nil {
+		t.Fatalf("AnalyzeSession: %v", err)
+	}
+	if analysis.AgentCount != 2 || len(analysis.Agents) != 1 || analysis.SkippedAgents != 1 {
+		t.Errorf("AgentCount=%d len(Agents)=%d SkippedAgents=%d, want 2/1/1",
+			analysis.AgentCount, len(analysis.Agents), analysis.SkippedAgents)
+	}
+
+	var sum float64
+	for _, msg := range analysis.Messages {
+		if msg.AgentID == "bad" {
+			t.Error("the skipped agent leaked a message row")
+		}
+		sum += msg.Cost.TotalCost
+	}
+	if !almostEqual(sum, analysis.TotalCost.TotalCost, 1e-9) {
+		t.Errorf("row sum %f != TotalCost %f with a skipped agent", sum, analysis.TotalCost.TotalCost)
 	}
 }

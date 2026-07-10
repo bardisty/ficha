@@ -44,7 +44,7 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 
 	// Write session row
 	row := []string{
-		analysis.SessionID,
+		csvCell(analysis.SessionID),
 		fmt.Sprintf("%.6f", analysis.TotalCost.InputCost),
 		fmt.Sprintf("%.6f", analysis.TotalCost.OutputCost),
 		fmt.Sprintf("%.6f", analysis.TotalCost.CacheWrite5mCost),
@@ -102,9 +102,9 @@ func formatMessagesCSV(messages []models.MessageAnalysis) (string, error) {
 	// Write message rows
 	for _, msg := range messages {
 		row := []string{
-			msg.AgentID,
+			csvCell(msg.AgentID),
 			msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
-			msg.Model,
+			csvCell(msg.Model),
 			fmt.Sprintf("%d", msg.Usage.InputTokens),
 			fmt.Sprintf("%d", msg.Usage.OutputTokens),
 			fmt.Sprintf("%d", msg.Usage.CacheCreationInputTokens),
@@ -150,8 +150,8 @@ func FormatSessionListCSV(entries []models.SessionEntry) (string, error) {
 	// Write session rows
 	for _, entry := range entries {
 		row := []string{
-			entry.SessionID,
-			entry.FullPath,
+			csvCell(entry.SessionID),
+			csvCell(entry.FullPath),
 			fmt.Sprintf("%d", entry.MessageCount),
 			entry.Created.Format("2006-01-02T15:04:05Z07:00"),
 			entry.Modified.Format("2006-01-02T15:04:05Z07:00"),

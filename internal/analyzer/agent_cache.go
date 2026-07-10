@@ -65,8 +65,9 @@ func (c *AgentParseCache) store(path string, modTime time.Time, size int64, mess
 // size) is served from memory instead of re-parsed; a changed or absent cache
 // entry is parsed and stored. A nil cache always parses.
 //
-// The returned slice is shared with the cache — callers must treat it as
-// read-only (both AnalyzeAgent and GetBreakdownMessages only read it).
+// The returned slice is shared with the cache — callers must never mutate an
+// element in place. The AllMessages export path tags each message with its
+// AgentID, so it copies (and deep-copies Usage.CacheCreation) before writing.
 func loadAgentMessages(agentPath string, cache *AgentParseCache) ([]models.MessageAnalysis, int, error) {
 	if cache != nil {
 		// Stat outside the lock; only the map operations are serialized. Parsing

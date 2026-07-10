@@ -126,9 +126,12 @@ type SessionAnalysis struct {
 	// spelling of one model shares a row; unknown IDs keep their raw form.
 	// MessageAnalysis.Model and LastMessageModel stay raw.
 	CostByModel map[string]CostBreakdown `json:"cost_by_model"`
-	Messages    []MessageAnalysis        `json:"messages,omitempty"`
-	Insights    *MessageInsights         `json:"insights,omitempty"` // Cost insights (populated when messages available)
-	// Last message usage for context window calculation (matches /context output)
+	// Messages carries agent rows too under analyzer.AllMessages (each tagged
+	// with AgentID). Insights and the LastMessage* fields below describe the
+	// parent transcript alone — don't reconcile them against this list.
+	Messages []MessageAnalysis `json:"messages,omitempty"`
+	Insights *MessageInsights  `json:"insights,omitempty"` // Parent-transcript cost insights
+	// Last parent message usage for context window calculation (matches /context output)
 	LastMessageUsage TokenUsage `json:"last_message_usage"`
 	LastMessageModel string     `json:"last_message_model"` // Model used for last message (for context limit lookup)
 	// Agent-related fields

@@ -226,8 +226,8 @@ func TestE2ECommands(t *testing.T) {
 			},
 		},
 		{
-			// AGENT-02: agent rows carry an agent_id and the whole table sums to
-			// the session total that `show -f csv` reports.
+			// Agent rows carry an agent_id and the whole table sums to the session
+			// total that `show -f csv` reports.
 			name: "show csv --messages includes agent rows summing to the session total",
 			args: []string{"show", projFlag, e2eBetaID, "-f", "csv", "--messages"},
 			check: func(t *testing.T, out string) {
@@ -385,7 +385,7 @@ func TestE2ECommands(t *testing.T) {
 				if a.MessageCount <= 0 {
 					t.Errorf("message_count = %d, want > 0", a.MessageCount)
 				}
-				// AGENT-01: the aggregate carries the same partition a session does.
+				// The aggregate carries the same partition a session does.
 				if !a.HasAgents || a.AgentCount != 2 || a.WorkflowCount != 1 {
 					t.Errorf("partition: has_agents=%v agent_count=%d workflow_count=%d, want true/2/1",
 						a.HasAgents, a.AgentCount, a.WorkflowCount)
@@ -528,6 +528,23 @@ func TestE2ECommands(t *testing.T) {
 				}
 				if agentRows != 2 || wfRows != 1 {
 					t.Errorf("agent rows: got %d (workflow-tagged %d), want 2 (1)", agentRows, wfRows)
+				}
+
+				// agent_id is one key space across every export: these rows must
+				// join to `show --messages` rows, not to an ordinal.
+				idCol := slices.Index(records[0], "agent_id")
+				if idCol == -1 {
+					t.Fatal("agent_id column missing from header")
+				}
+				got := []string{}
+				for _, r := range records[1:] {
+					if r[0] == "agent" {
+						got = append(got, r[idCol])
+					}
+				}
+				slices.Sort(got)
+				if !slices.Equal(got, []string{"g1", "w1"}) {
+					t.Errorf("agent_id values: got %v, want [g1 w1] (real IDs, not ordinals)", got)
 				}
 			},
 		},
