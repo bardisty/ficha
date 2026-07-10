@@ -165,7 +165,7 @@ func TestE2ECommands(t *testing.T) {
 			name: "show table groups workflow agents under a header",
 			args: []string{"show", projFlag, e2eBetaID},
 			check: func(t *testing.T, out string) {
-				mustContainAll(t, out, "AGENT SUB-SESSIONS", "workflow: e2e-flow (completed)", "[A2]")
+				mustContainAll(t, out, "AGENT SUB-SESSIONS", "workflow: e2e-flow (completed)", "[Aw1]")
 			},
 		},
 		{

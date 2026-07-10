@@ -404,9 +404,10 @@ func (m Model) renderAgentBreakdownContent() string {
 	//       = 4 + 37 + 6 = 47 chars before cost (aligned with parent)
 	// Uses plain white costs - model tier colors already provide cost hierarchy
 	// Workflow agents are grouped after regular agents; a dim header line marks
-	// each run's start. [AN] numbering stays continuous across groups.
+	// each run's start. Markers carry the real agent ID (abbreviated), matching
+	// the breakdown TUI's [A<id>] scheme.
 	prevWorkflow := ""
-	for i, agent := range a.Agents {
+	for _, agent := range a.Agents {
 		if agent.WorkflowID != prevWorkflow {
 			prevWorkflow = agent.WorkflowID
 			if agent.WorkflowID != "" {
@@ -418,11 +419,12 @@ func (m Model) renderAgentBreakdownContent() string {
 				}
 			}
 		}
-		agentNum := fmt.Sprintf("%d", i+1)
 		agentHighlighted := m.isHighlighted("agent_" + agent.AgentID)
 		costStr := render.CostStyled(agent.TotalCost.TotalCost, 11, agentHighlighted, m.noColor)
 
-		shortID := render.ShortAgentID(agent.AgentID)
+		// [A<id>] carries the abbreviated real agent ID (%-10s fits [A1234567]),
+		// so no separate ID column is needed
+		marker := "[A" + render.ShortAgentID(agent.AgentID) + "]"
 
 		// Get primary model for this agent
 		modelName := render.PrimaryModel(agent.CostByModel)
@@ -435,25 +437,22 @@ func (m Model) renderAgentBreakdownContent() string {
 		}
 
 		if !m.noColor {
-			// Color the [An] marker (use %-5s to handle [A10] etc)
-			agentColor := styles.GetAgentColor(agentNum)
-			markerStyled := lipgloss.NewStyle().Foreground(agentColor).Render(fmt.Sprintf("%-5s", fmt.Sprintf("[A%s]", agentNum)))
+			// Color the marker by hashing the full agent ID (matches breakdown)
+			agentColor := styles.GetAgentColor(agent.AgentID)
+			markerStyled := lipgloss.NewStyle().Foreground(agentColor).Render(fmt.Sprintf("%-10s", marker))
 
 			// Color model name by tier
 			modelColor := styles.GetModelColor(modelName)
 			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
 
-			// Dim the ID and message count
-			idStyled := dimStyle.Render(fmt.Sprintf("%-10s", fmt.Sprintf("(%s)", shortID)))
+			// Dim the message count
 			msgStyled := dimStyle.Render(fmt.Sprintf("%8s", msgStr))
 
-			sb.WriteString(fmt.Sprintf("    %s %s %s %s      %s\n",
-				markerStyled, modelStyled, idStyled, msgStyled, costStr))
+			sb.WriteString(fmt.Sprintf("    %s %s %s            %s\n",
+				markerStyled, modelStyled, msgStyled, costStr))
 		} else {
-			marker := fmt.Sprintf("[A%d]", i+1)
-			idStr := fmt.Sprintf("(%s)", shortID)
-			sb.WriteString(fmt.Sprintf("    %-5s %-11s %-10s %8s      %s\n",
-				marker, modelLabel, idStr, msgStr, costStr))
+			sb.WriteString(fmt.Sprintf("    %-10s %-11s %8s            %s\n",
+				marker, modelLabel, msgStr, costStr))
 		}
 	}
 
