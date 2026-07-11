@@ -35,6 +35,7 @@ type BreakdownModel struct {
 	skippedAgents  int  // Agent sub-sessions that could not be read
 	estimatedCosts int  // Messages whose cache-write cost is a 5m-rate estimate
 	hasUnknown     bool // Any message priced from the fallback table (marked in the rows)
+	hasAgents      bool // Any agent row in the merged list — drives the insight scope label
 	err            error
 	loading        bool
 	lastUpdated    time.Time
@@ -85,6 +86,7 @@ type (
 		skippedAgents  int
 		estimatedCosts int
 		hasUnknown     bool
+		hasAgents      bool
 	}
 	breakdownErrorMsg error
 )
@@ -219,6 +221,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.skippedAgents = msg.skippedAgents
 		m.estimatedCosts = msg.estimatedCosts
 		m.hasUnknown = msg.hasUnknown
+		m.hasAgents = msg.hasAgents
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.err = nil
@@ -267,6 +270,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reset state for clean switch
 		m.messages = nil
 		m.insights = nil
+		m.hasAgents = false
 		m.totalCost = 0
 		m.minCost = 0
 		m.maxCost = 0
@@ -525,8 +529,8 @@ func (m BreakdownModel) renderCompactInsights() string {
 		}
 	}
 
-	// Trend
-	if m.insights.MessageCount >= 5 {
+	// Trend (only once the analyzer actually computed one — see HasTrend)
+	if m.insights.HasTrend() {
 		trendDesc := m.insights.TrendDescription()
 		trendSymbol := m.insights.CostTrend.Symbol()
 		trendStr := fmt.Sprintf("Trend: %s %s", trendSymbol, trendDesc)
@@ -543,6 +547,19 @@ func (m BreakdownModel) renderCompactInsights() string {
 			parts = append(parts, lipgloss.NewStyle().Foreground(color).Render(trendStr))
 		} else {
 			parts = append(parts, trendStr)
+		}
+	}
+
+	// Label the scope when agents ran: the breakdown computes Peak/trend over the
+	// merged parent+agent messages, unlike show/watch's parent-only insights, so
+	// the figures can legitimately differ. Without agents the sets are identical,
+	// so no label (and no churn for the common case).
+	if m.hasAgents && len(parts) > 0 {
+		const scope = "scope: parent + agents"
+		if m.noColor {
+			parts = append(parts, scope)
+		} else {
+			parts = append(parts, lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(scope))
 		}
 	}
 
@@ -706,11 +723,15 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	var minCost, maxCost float64
 	var messageAnalyses []models.MessageAnalysis
 	hasUnknown := false
+	hasAgents := false
 
 	for i, msg := range messages {
 		totalCost += msg.Cost.TotalCost
 		if !hasUnknown && !pricing.IsKnownModel(msg.Model) {
 			hasUnknown = true
+		}
+		if msg.AgentID != "" {
+			hasAgents = true
 		}
 
 		// Track min/max for cost gradient
@@ -746,6 +767,7 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 		skippedAgents:  result.SkippedAgents,
 		estimatedCosts: result.EstimatedCostMessages,
 		hasUnknown:     hasUnknown,
+		hasAgents:      hasAgents,
 	}
 }
 

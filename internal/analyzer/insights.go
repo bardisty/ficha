@@ -20,7 +20,10 @@ const (
 
 	// minMessagesForTrend is the minimum number of messages required
 	// to calculate meaningful cost trends; 2*trendSampleSize keeps the
-	// early and late sample windows disjoint
+	// early and late sample windows disjoint. It equals models.MinMessagesForTrend
+	// (the gate every renderer consults via MessageInsights.HasTrend); the two are
+	// bound by TestMinMessagesForTrendMatchesModel so the compute and render
+	// thresholds can never drift.
 	minMessagesForTrend = 2 * trendSampleSize
 )
 

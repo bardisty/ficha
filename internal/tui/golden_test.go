@@ -278,6 +278,10 @@ func goldenBreakdownView(t *testing.T, noColor bool) string {
 			MessageCount: 6,
 		},
 		skippedLines: 3,
+		// The fixture rows include agent messages (indices 3-4), so the breakdown
+		// merges parent+agent — exercises the "scope: parent + agents" label that
+		// distinguishes this surface from show/watch's parent-only insights.
+		hasAgents: true,
 	})
 	m = updated.(BreakdownModel)
 	m.lastUpdated = goldenTime(11, 30, 0)

@@ -89,7 +89,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 		sb.WriteString("\n")
 		sb.WriteString(render.SectionHeader("MESSAGE INSIGHTS", sectionWidth, noColor))
 		sb.WriteString("\n\n")
-		sb.WriteString(formatInsightsSectionContent(analysis.Insights, noColor))
+		sb.WriteString(formatInsightsSectionContent(analysis.Insights, analysis.HasAgents, noColor))
 	}
 
 	// Footer with double-line separator
@@ -257,8 +257,22 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 }
 
 // formatInsightsSectionContent renders message insights rows (content only, no header)
-func formatInsightsSectionContent(insights *models.MessageInsights, noColor bool) string {
+func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bool, noColor bool) string {
 	var sb strings.Builder
+
+	// When agents ran, these insights cover the parent transcript alone (the
+	// agent rows live in AGENT SUB-SESSIONS above and are excluded here). Label
+	// the scope so it can't be silently mistaken for the breakdown view, which
+	// computes Peak/trend over the merged parent+agent messages. No label when
+	// there are no agents: parent-only and all-messages are then identical.
+	if hasAgents {
+		const scope = "scope: parent transcript"
+		if noColor {
+			sb.WriteString("  " + scope + "\n")
+		} else {
+			sb.WriteString("  " + dimStyle.Render(scope) + "\n")
+		}
+	}
 
 	// First message
 	if insights.FirstMessage != nil {
@@ -329,8 +343,8 @@ func formatInsightsSectionContent(insights *models.MessageInsights, noColor bool
 		}
 	}
 
-	// Trend (only for sessions with 5+ messages)
-	if insights.MessageCount >= 5 {
+	// Trend (only once the analyzer actually computed one — see HasTrend)
+	if insights.HasTrend() {
 		trendDesc := insights.TrendDescription()
 		trendSymbol := insights.CostTrend.Symbol()
 

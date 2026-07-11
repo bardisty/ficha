@@ -960,3 +960,67 @@ func TestE2EEstimatedCostSurface(t *testing.T) {
 		t.Errorf("exact session warned about estimated pricing: %q", stderr)
 	}
 }
+
+// TestE2ESummarySessionCountExcludesUnparseable pins ROLL-01: summary's
+// "Summary: N sessions" once counted a discovered-but-unparseable session that
+// contributed nothing to the totals, so it disagreed with global's per-project
+// session_count for the same directory. Both surfaces must now report the same
+// count, and the skipped-session warning must still disclose the remainder.
+func TestE2ESummarySessionCountExcludesUnparseable(t *testing.T) {
+	root := t.TempDir()
+	projName := "-home-test-rollup"
+	projDir := filepath.Join(root, "projects", projName)
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	good := e2eMsg("2026-03-01T10:00:00Z", "g1", "claude-opus-4-8", 1000, 500, 0, 0, 0) + "\n"
+	if err := os.WriteFile(filepath.Join(projDir, "11111111-aaaa-bbbb-cccc-000000000000.jsonl"), []byte(good), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A discovered-but-unreadable session: no cost comes from it.
+	badPath := filepath.Join(projDir, "22222222-aaaa-bbbb-cccc-000000000000.jsonl")
+	if err := os.WriteFile(badPath, []byte(good), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(badPath, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(badPath, 0o644) })
+	if f, err := os.Open(badPath); err == nil {
+		_ = f.Close()
+		t.Skip("chmod 000 does not bar file reads (running as root?)")
+	}
+
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+
+	// summary: the rendered count excludes the unparseable session and warns.
+	stdout, stderr, err := executeCLISplit(t, "summary", "--project-dir="+projName)
+	if err != nil {
+		t.Fatalf("summary: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "Summary: 1 session") {
+		t.Errorf("summary count should exclude the unparseable session; got:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "Summary: 2 session") {
+		t.Errorf("summary counted the unparseable session:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "could not be parsed") {
+		t.Errorf("summary should warn about the skipped session; stderr: %q", stderr)
+	}
+
+	// global: its per-project session_count must agree with summary's count.
+	gout, _, err := executeCLISplit(t, "global", "-f", "json")
+	if err != nil {
+		t.Fatalf("global: %v", err)
+	}
+	var g models.GlobalAnalysis
+	mustJSON(t, gout, &g)
+	if len(g.Projects) != 1 {
+		t.Fatalf("expected 1 project, got %d", len(g.Projects))
+	}
+	if g.Projects[0].SessionCount != 1 {
+		t.Errorf("global session_count: got %d, want 1 (must agree with summary)", g.Projects[0].SessionCount)
+	}
+}
