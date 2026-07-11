@@ -97,7 +97,7 @@ func TestFormatSessionCSV(t *testing.T) {
 
 	// Verify header columns
 	expectedHeader := []string{
-		"session_id", "input_cost", "output_cost", "cache_write_5m_cost",
+		"session_id", "project_path", "session_file", "input_cost", "output_cost", "cache_write_5m_cost",
 		"cache_write_1h_cost", "cache_read_cost", "total_cost", "cache_savings",
 		"message_count", "duration_seconds", "agent_count", "agent_message_count",
 		"parent_cost", "agents_cost", "workflow_count",
@@ -119,44 +119,50 @@ func TestFormatSessionCSV(t *testing.T) {
 	if data[0] != "test-session-123" {
 		t.Errorf("session_id (col 0): got %q, want %q", data[0], "test-session-123")
 	}
-	if data[1] != "0.015000" {
-		t.Errorf("input_cost (col 1): got %q, want %q", data[1], "0.015000")
+	if data[1] != "/path/to/project" {
+		t.Errorf("project_path (col 1): got %q, want %q", data[1], "/path/to/project")
 	}
-	if data[2] != "0.030000" {
-		t.Errorf("output_cost (col 2): got %q, want %q", data[2], "0.030000")
+	if data[2] != "" {
+		t.Errorf("session_file (col 2): got %q, want empty", data[2])
 	}
-	if data[3] != "0.003750" {
-		t.Errorf("cache_write_5m_cost (col 3): got %q, want %q", data[3], "0.003750")
+	if data[3] != "0.015000" {
+		t.Errorf("input_cost (col 3): got %q, want %q", data[3], "0.015000")
 	}
-	if data[4] != "0.000000" {
-		t.Errorf("cache_write_1h_cost (col 4): got %q, want %q", data[4], "0.000000")
+	if data[4] != "0.030000" {
+		t.Errorf("output_cost (col 4): got %q, want %q", data[4], "0.030000")
 	}
-	if data[5] != "0.000300" {
-		t.Errorf("cache_read_cost (col 5): got %q, want %q", data[5], "0.000300")
+	if data[5] != "0.003750" {
+		t.Errorf("cache_write_5m_cost (col 5): got %q, want %q", data[5], "0.003750")
 	}
-	if data[6] != "0.049050" {
-		t.Errorf("total_cost (col 6): got %q, want %q", data[6], "0.049050")
+	if data[6] != "0.000000" {
+		t.Errorf("cache_write_1h_cost (col 6): got %q, want %q", data[6], "0.000000")
 	}
-	if data[7] != "0.008700" {
-		t.Errorf("cache_savings (col 7): got %q, want %q", data[7], "0.008700")
+	if data[7] != "0.000300" {
+		t.Errorf("cache_read_cost (col 7): got %q, want %q", data[7], "0.000300")
 	}
-	if data[8] != "10" {
-		t.Errorf("message_count (col 8): got %q, want %q", data[8], "10")
+	if data[8] != "0.049050" {
+		t.Errorf("total_cost (col 8): got %q, want %q", data[8], "0.049050")
 	}
-	if data[9] != "5400" {
-		t.Errorf("duration_seconds (col 9): got %q, want %q", data[9], "5400")
+	if data[9] != "0.008700" {
+		t.Errorf("cache_savings (col 9): got %q, want %q", data[9], "0.008700")
 	}
-	if data[10] != "0" {
-		t.Errorf("agent_count (col 10): got %q, want %q", data[10], "0")
+	if data[10] != "10" {
+		t.Errorf("message_count (col 10): got %q, want %q", data[10], "10")
 	}
-	if data[11] != "0" {
-		t.Errorf("agent_message_count (col 11): got %q, want %q", data[11], "0")
+	if data[11] != "5400" {
+		t.Errorf("duration_seconds (col 11): got %q, want %q", data[11], "5400")
 	}
-	if data[12] != "0.000000" {
-		t.Errorf("parent_cost (col 12): got %q, want %q", data[12], "0.000000")
+	if data[12] != "0" {
+		t.Errorf("agent_count (col 12): got %q, want %q", data[12], "0")
 	}
-	if data[13] != "0.000000" {
-		t.Errorf("agents_cost (col 13): got %q, want %q", data[13], "0.000000")
+	if data[13] != "0" {
+		t.Errorf("agent_message_count (col 13): got %q, want %q", data[13], "0")
+	}
+	if data[14] != "0.000000" {
+		t.Errorf("parent_cost (col 14): got %q, want %q", data[14], "0.000000")
+	}
+	if data[15] != "0.000000" {
+		t.Errorf("agents_cost (col 15): got %q, want %q", data[15], "0.000000")
 	}
 }
 
@@ -398,11 +404,21 @@ func TestFormatSessionCSV_EmptyAnalysis(t *testing.T) {
 		t.Errorf("session_id (col 0): got %q, want %q", data[0], "empty-session")
 	}
 
+	// project_path and session_file are empty on an empty analysis
+	for _, c := range []struct {
+		col  int
+		name string
+	}{{1, "project_path"}, {2, "session_file"}} {
+		if data[c.col] != "" {
+			t.Errorf("%s (col %d): got %q, want empty", c.name, c.col, data[c.col])
+		}
+	}
+
 	// Verify all cost fields are zero
 	zeroCols := map[int]string{
-		1: "input_cost", 2: "output_cost", 3: "cache_write_5m_cost",
-		4: "cache_write_1h_cost", 5: "cache_read_cost", 6: "total_cost",
-		7: "cache_savings", 12: "parent_cost", 13: "agents_cost",
+		3: "input_cost", 4: "output_cost", 5: "cache_write_5m_cost",
+		6: "cache_write_1h_cost", 7: "cache_read_cost", 8: "total_cost",
+		9: "cache_savings", 14: "parent_cost", 15: "agents_cost",
 	}
 	for col, name := range zeroCols {
 		if data[col] != "0.000000" {
@@ -412,7 +428,7 @@ func TestFormatSessionCSV_EmptyAnalysis(t *testing.T) {
 
 	// Verify count fields are zero
 	intZeroCols := map[int]string{
-		8: "message_count", 10: "agent_count", 11: "agent_message_count",
+		10: "message_count", 12: "agent_count", 13: "agent_message_count",
 	}
 	for col, name := range intZeroCols {
 		if data[col] != "0" {

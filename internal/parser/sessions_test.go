@@ -1214,6 +1214,88 @@ func TestDiscoverAgentSessions_UnreadableWorkflowRunDir(t *testing.T) {
 	}
 }
 
+// AGENT-01: a workflow run dir reached through a symlink (e.g. a bulky run
+// relocated to another disk and linked back) must be discovered. fs.DirEntry's
+// IsDir() is lstat-based and false for a symlink-to-dir, so without the os.Stat
+// follow the run's agents would silently vanish from every cost surface.
+func TestDiscoverAgentSessions_SymlinkedWorkflowRunDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	workflowsDir := filepath.Join(subagentsDir, "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// The real run dir lives outside the session tree; a symlink stands in for it
+	// under workflows/.
+	target := filepath.Join(tmpDir, "external-run")
+	if err := os.MkdirAll(target, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "agent-w1.jsonl"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(workflowsDir, "wf_linked")); err != nil {
+		t.Skipf("symlink creation not supported: %v", err)
+	}
+
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 0 {
+		t.Errorf("unreadableDirs: got %d, want 0", unreadable)
+	}
+	if len(paths) != 1 || filepath.Base(paths[0]) != "agent-w1.jsonl" {
+		t.Errorf("paths: got %v, want the symlinked run's agent", paths)
+	}
+}
+
+// AGENT-01: a broken symlink where a run dir might be hides a possible run, so
+// it is disclosed via unreadableDirs (mapped to SkippedAgents upstream), not
+// silently skipped like a stray file.
+func TestDiscoverAgentSessions_BrokenSymlinkWorkflowRunDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	workflowsDir := filepath.Join(subagentsDir, "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(tmpDir, "does-not-exist"), filepath.Join(workflowsDir, "wf_broken")); err != nil {
+		t.Skipf("symlink creation not supported: %v", err)
+	}
+
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 1 {
+		t.Errorf("unreadableDirs: got %d, want 1 (broken symlink disclosed)", unreadable)
+	}
+	if len(paths) != 0 {
+		t.Errorf("paths: got %v, want none", paths)
+	}
+}
+
+// A plain file (not a directory) in workflows/ is not a run dir and is skipped
+// silently — no unreadable count, unlike a broken symlink.
+func TestDiscoverAgentSessions_StrayFileInWorkflowsDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	workflowsDir := filepath.Join(subagentsDir, "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workflowsDir, "stray.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 0 {
+		t.Errorf("unreadableDirs: got %d, want 0 (stray file is not a run dir)", unreadable)
+	}
+	if len(paths) != 0 {
+		t.Errorf("paths: got %v, want none", paths)
+	}
+}
+
 // A missing subagents/ dir is the common case and must stay silent.
 func TestDiscoverAgentSessions_MissingDirIsNotUnreadable(t *testing.T) {
 	tmpDir := t.TempDir()

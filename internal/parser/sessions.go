@@ -260,16 +260,44 @@ func DiscoverAgentSessions(projectDir, sessionID string) (paths []string, unread
 		return agentPaths, unreadable
 	}
 	for _, run := range runDirs {
-		if !run.IsDir() {
+		isDir, unreadable := classifyWorkflowRunEntry(run, workflowsDir)
+		if unreadable {
+			// A broken or unreadable symlink where a run dir may be — disclose it
+			// rather than silently dropping the agents it might hide.
+			unreadableDirs++
+			continue
+		}
+		if !isDir {
 			continue
 		}
 		runDir := filepath.Join(workflowsDir, run.Name())
-		runEntries, unreadable := readAgentDir(runDir)
-		unreadableDirs += unreadable
+		runEntries, runUnreadable := readAgentDir(runDir)
+		unreadableDirs += runUnreadable
 		agentPaths = append(agentPaths, collectAgentFiles(runDir, runEntries)...)
 	}
 
 	return agentPaths, unreadableDirs
+}
+
+// classifyWorkflowRunEntry decides whether a workflows/ entry is a run directory
+// to descend into. fs.DirEntry.IsDir() is lstat-based and reports false for a
+// symlink pointing at a directory, so a symlinked run dir would otherwise be
+// dropped as a stray file with its agent spend (the same pitfall entryIsDir
+// fixes for project dirs in projects.go). A symlink resolving to a directory is
+// a run dir; a plain file is not; a broken or unreadable symlink hides a
+// possible run dir, so it is disclosed (unreadable=true) rather than skipped.
+func classifyWorkflowRunEntry(entry os.DirEntry, workflowsDir string) (isDir, unreadable bool) {
+	if entry.IsDir() {
+		return true, false
+	}
+	if entry.Type()&os.ModeSymlink == 0 {
+		return false, false // a plain file is not a run dir
+	}
+	info, err := os.Stat(filepath.Join(workflowsDir, entry.Name()))
+	if err != nil {
+		return false, true // broken/unreadable symlink — may hide a run dir
+	}
+	return info.IsDir(), false // symlink→dir is a run dir; symlink→file is not
 }
 
 // readAgentDir lists dir, separating "it isn't there" from "it's there and I

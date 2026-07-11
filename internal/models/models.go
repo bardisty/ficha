@@ -163,8 +163,16 @@ type WorkflowMeta struct {
 
 // SessionAnalysis represents the complete analysis of a session
 type SessionAnalysis struct {
-	SessionID    string        `json:"session_id"`
-	ProjectPath  string        `json:"project_path"`
+	SessionID string `json:"session_id"`
+	// ProjectPath names the Claude project directory the session(s) belong to
+	// (~/.claude/projects/<encoded>) — the same value the summary table's
+	// "Project:" header shows. It is uniform across show, the summary aggregate,
+	// and every per-session record (all derived from a transcript in that dir),
+	// so machine outputs join on it. Set by the analyzer, never rendered.
+	ProjectPath string `json:"project_path"`
+	// SessionFile is the session's transcript .jsonl path. Empty on the summary
+	// aggregate, which spans many files; use project_path to name the project.
+	SessionFile  string        `json:"session_file,omitempty"`
 	StartTime    time.Time     `json:"start_time"`
 	EndTime      time.Time     `json:"end_time"`
 	Duration     Duration      `json:"duration"`

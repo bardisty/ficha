@@ -85,7 +85,10 @@ func FormatSummaryDetailJSON(summary *models.SessionAnalysis, results []models.S
 
 // FormatSummaryDetailCSV renders one row per session as a single flat table. A
 // row_type column discriminates "session" rows from the "agent" rows added when
-// expandAgents is set. Session rows carry the session total (message_count,
+// expandAgents is set. project_path (the project dir, shared with the summary
+// aggregate for joining) and session_file (the transcript path) ride the session
+// rows only — join agent rows back through session_id. Session rows carry the
+// session total (message_count,
 // costs and skipped_lines include agents); agent rows break out each agent — do
 // not sum across row types. cumulative_cost is the running session total in
 // modified order and is empty on agent rows. agent_id holds the agent's real ID
@@ -99,6 +102,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 	header := []string{
 		"row_type",
 		"session_id",
+		"project_path",
+		"session_file",
 		"agent_id",
 		"modified",
 		"model",
@@ -129,6 +134,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 		sessionRow := []string{
 			"session",
 			csvCell(r.Entry.SessionID),
+			csvCell(a.ProjectPath),
+			csvCell(a.SessionFile),
 			"",
 			r.Entry.Modified.Format(csvTimeFormat),
 			csvCell(primarySessionModelID(a)),
@@ -158,6 +165,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 			agentRow := []string{
 				"agent",
 				csvCell(r.Entry.SessionID),
+				"", // project_path is a session-row concept; join via session_id
+				"", // session_file is a session-row concept
 				csvCell(agent.AgentID),
 				"",
 				csvCell(primaryModelID(agent.CostByModel)),
