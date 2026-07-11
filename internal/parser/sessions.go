@@ -140,11 +140,12 @@ func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time, c
 // MergeSessionSources combines index entries with disk-discovered sessions.
 // Index entries take precedence for metadata (Created time, etc.).
 // Index-only entries (present in the index but missed by the disk scan) are
-// kept only if their FullPath resolves inside projectDir and still exists;
-// their message counts and agent info are recomputed from disk because the
-// index may be stale. countMessages is forwarded to that rebuild so analysis
-// paths skip the message-count scan (see buildDiskEntry). Returns merged list
-// and count of orphaned sessions found on disk.
+// kept only if their FullPath is the top-level {sessionId}.jsonl inside
+// projectDir and still exists; their message counts and agent info are
+// recomputed from disk because the index may be stale. countMessages is
+// forwarded to that rebuild so analysis paths skip the message-count scan
+// (see buildDiskEntry). Returns merged list and count of orphaned sessions
+// found on disk.
 func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.SessionEntry, projectDir string, countMessages bool) ([]models.SessionEntry, int) {
 	// Build map from index for fast lookup
 	indexMap := make(map[string]models.SessionEntry)
@@ -188,17 +189,19 @@ func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.Sess
 	}
 
 	// Add index-only entries whose files still exist inside projectDir. The
-	// index's FullPath is untrusted (may point outside the project) and its
-	// counts may be stale, so validate the path and rebuild from disk.
+	// index's FullPath is untrusted (may point outside the project, at a
+	// nested agent file, or at another session's transcript) and its counts
+	// may be stale, so validate the path and rebuild from disk.
 	for _, e := range indexMap {
-		if !pathWithinDir(e.FullPath, projectDir) {
+		if !isSessionFilePath(e.FullPath, projectDir, e.SessionID) {
 			continue
 		}
-		info, err := os.Stat(e.FullPath)
+		fullPath := filepath.Clean(e.FullPath)
+		info, err := os.Stat(fullPath)
 		if err != nil || info.IsDir() {
 			continue
 		}
-		rebuilt := buildDiskEntry(projectDir, e.SessionID, e.FullPath, info.ModTime(), countMessages)
+		rebuilt := buildDiskEntry(projectDir, e.SessionID, fullPath, info.ModTime(), countMessages)
 		// Index metadata still takes precedence, as in the matched branch above
 		rebuilt.Created = e.Created
 		rebuilt.ProjectPath = e.ProjectPath
@@ -208,18 +211,22 @@ func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.Sess
 	return merged, orphanCount
 }
 
-// pathWithinDir reports whether path resolves lexically inside dir. Symlinks
-// are not resolved — this guards against index entries that plainly point
-// outside the project directory, not against adversarial filesystems.
-func pathWithinDir(path, dir string) bool {
-	if path == "" || dir == "" {
+// isSessionFilePath reports whether fullPath names the top-level transcript
+// for sessionID inside projectDir — exactly {projectDir}/{sessionID}.jsonl,
+// lexically (symlinks are not resolved). The disk scan derives session
+// identity from the filename stem, so an index entry whose path nests deeper
+// (an agent file) or whose stem disagrees with its sessionId would re-add a
+// transcript the scan already produced under a different identity: one file,
+// two session rows.
+func isSessionFilePath(fullPath, projectDir, sessionID string) bool {
+	if fullPath == "" || projectDir == "" || sessionID == "" {
 		return false
 	}
-	rel, err := filepath.Rel(dir, path)
-	if err != nil {
+	cleaned := filepath.Clean(fullPath)
+	if filepath.Dir(cleaned) != filepath.Clean(projectDir) {
 		return false
 	}
-	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return filepath.Base(cleaned) == sessionID+".jsonl"
 }
 
 // DiscoverAgentSessions finds agent-*.jsonl files in {sessionID}/subagents/

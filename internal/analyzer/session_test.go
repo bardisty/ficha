@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/parser"
 )
 
 func TestBuildSessionAnalysisEmpty(t *testing.T) {
@@ -940,8 +941,10 @@ func TestAnalyzeMultipleSessions_CrossFileDedup(t *testing.T) {
 	forkPath := filepath.Join(tmpDir, "fork.jsonl")
 	writeJSONLFile(t, forkPath, []string{forkMsg1, forkMsg2, forkMsg3})
 
-	// Fork first in input order but with a later mtime: attribution must
-	// follow mtime (original keeps the shared history), results input order.
+	// Fork first in input order: the earliest-timestamp keys tie (the fork
+	// clones the original's lines, timestamps included) and no Created is
+	// set, so attribution falls back to mtime — the original (earlier mtime)
+	// keeps the shared history; results stay in input order.
 	entries := []models.SessionEntry{
 		{SessionID: "fork", FullPath: forkPath, Modified: time.Date(2024, 1, 16, 9, 0, 0, 0, time.UTC)},
 		{SessionID: "original", FullPath: originalPath, Modified: time.Date(2024, 1, 15, 10, 10, 0, 0, time.UTC)},
@@ -1005,6 +1008,96 @@ func TestAnalyzeSession_ForkFileStaysFileLocal(t *testing.T) {
 	}
 	if !almostEqual(analysis.TotalCost.TotalCost, 0.036, 0.0001) {
 		t.Errorf("TotalCost: got %f, want 0.036", analysis.TotalCost.TotalCost)
+	}
+}
+
+// DEDUP-01: keeping work in the original session after forking pushes its
+// mtime past the fork's, and mtime-ordered attribution handed the fork the
+// shared history. The Created tie-break (session creation time from the
+// index) must keep the original first regardless of who was written to last.
+func TestAnalyzeMultipleSessions_ForkAttribution_OriginalMtimeLater(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// The user continued in the original after forking: it holds the shared
+	// m1+m2 plus post-fork m3, and its mtime is the latest of the pair.
+	originalPath := filepath.Join(tmpDir, "original.jsonl")
+	writeJSONLFile(t, originalPath, []string{forkMsg1, forkMsg2, forkMsg3})
+
+	// The abandoned fork holds only verbatim clones of m1+m2, so both files
+	// share the same earliest message timestamp.
+	forkPath := filepath.Join(tmpDir, "fork.jsonl")
+	writeJSONLFile(t, forkPath, []string{forkMsg1, forkMsg2})
+
+	entries := []models.SessionEntry{
+		{
+			SessionID: "fork", FullPath: forkPath,
+			Created:  time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+			Modified: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+		},
+		{
+			SessionID: "original", FullPath: originalPath,
+			Created:  time.Date(2024, 1, 15, 9, 55, 0, 0, time.UTC),
+			Modified: time.Date(2024, 1, 16, 10, 0, 0, 0, time.UTC),
+		},
+	}
+
+	aggregate, results, err := AnalyzeMultipleSessions(entries)
+	if err != nil {
+		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
+	}
+
+	if aggregate.MessageCount != 3 {
+		t.Errorf("aggregate MessageCount: got %d, want 3", aggregate.MessageCount)
+	}
+	fork, original := results[0], results[1]
+	if original.Analysis.MessageCount != 3 {
+		t.Errorf("original MessageCount: got %d, want 3 (owns the shared history)", original.Analysis.MessageCount)
+	}
+	if !almostEqual(original.Analysis.TotalCost.TotalCost, 0.036, 0.0001) {
+		t.Errorf("original TotalCost: got %f, want 0.036", original.Analysis.TotalCost.TotalCost)
+	}
+	if fork.Analysis.MessageCount != 0 {
+		t.Errorf("fork MessageCount: got %d, want 0 (its lines are all clones)", fork.Analysis.MessageCount)
+	}
+	if !almostEqual(fork.Analysis.TotalCost.TotalCost, 0, 0.0001) {
+		t.Errorf("fork TotalCost: got %f, want 0", fork.Analysis.TotalCost.TotalCost)
+	}
+}
+
+// Index-sourced entries can carry zero Modified times. Ordering must come
+// from the message timestamps — deterministic, no panic, and no arbitrary
+// grab of the shared history by whichever entry sorted first.
+func TestAnalyzeMultipleSessions_ZeroModifiedOrdersByMessageTime(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// The continuation holds a clone of m2 but not m1 (compact-style fork),
+	// so the two files differ in earliest message timestamp.
+	originalPath := filepath.Join(tmpDir, "original.jsonl")
+	writeJSONLFile(t, originalPath, []string{forkMsg1, forkMsg2})
+
+	contPath := filepath.Join(tmpDir, "continuation.jsonl")
+	writeJSONLFile(t, contPath, []string{forkMsg2, forkMsg3})
+
+	// Continuation first in input order, all Modified/Created zero.
+	entries := []models.SessionEntry{
+		{SessionID: "continuation", FullPath: contPath},
+		{SessionID: "original", FullPath: originalPath},
+	}
+
+	aggregate, results, err := AnalyzeMultipleSessions(entries)
+	if err != nil {
+		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
+	}
+
+	if aggregate.MessageCount != 3 {
+		t.Errorf("aggregate MessageCount: got %d, want 3", aggregate.MessageCount)
+	}
+	cont, original := results[0], results[1]
+	if original.Analysis.MessageCount != 2 {
+		t.Errorf("original MessageCount: got %d, want 2 (earlier first message wins m2)", original.Analysis.MessageCount)
+	}
+	if cont.Analysis.MessageCount != 1 {
+		t.Errorf("continuation MessageCount: got %d, want 1 (novel m3 only)", cont.Analysis.MessageCount)
 	}
 }
 
@@ -1074,6 +1167,75 @@ func TestAnalyzeMultipleSessions_AgentFilesStayFileLocal(t *testing.T) {
 	}
 	if results[1].Analysis.AgentMessageCount != 1 {
 		t.Errorf("sess-b AgentMessageCount: got %d, want 1", results[1].Analysis.AgentMessageCount)
+	}
+}
+
+// SESS-01: a session whose parent transcript cannot be read still has agent
+// sub-sessions on disk that `list` counts. Their spend never enters the
+// aggregate (the parent parse fails before agent analysis), so it must be
+// disclosed through SkippedAgents — not vanish behind a generic
+// session-could-not-be-parsed warning with skipped-agent count 0.
+func TestAnalyzeMultipleSessions_UnreadableParentDisclosesAgents(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	okPath := filepath.Join(tmpDir, "sess-ok.jsonl")
+	writeJSONLFile(t, okPath, []string{forkMsg1})
+
+	badPath := filepath.Join(tmpDir, "sess-bad.jsonl")
+	writeJSONLFile(t, badPath, []string{forkMsg3})
+	writeAgentSession(t, tmpDir, "sess-bad", "agent-a1.jsonl", []string{
+		`{"type":"assistant","requestId":"req_a1","timestamp":"2024-01-15T10:05:00Z","message":{"id":"msg_a1","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`,
+	})
+	writeAgentSession(t, tmpDir, "sess-bad", "agent-a2.jsonl", []string{
+		`{"type":"assistant","requestId":"req_a2","timestamp":"2024-01-15T10:06:00Z","message":{"id":"msg_a2","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`,
+	})
+	if err := os.Chmod(badPath, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(badPath, 0644) })
+	if _, err := os.ReadFile(badPath); err == nil {
+		t.Skip("chmod 000 does not bar reads (running as root?)")
+	}
+
+	// Build entries the way `list` does, so the two surfaces can be compared.
+	entries, err := parser.DiscoverSessionsFromDisk(tmpDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var badEntry *models.SessionEntry
+	for i := range entries {
+		if entries[i].SessionID == "sess-bad" {
+			badEntry = &entries[i]
+		}
+	}
+	if badEntry == nil {
+		t.Fatal("sess-bad not discovered")
+	}
+	// list still shows the readable agents' activity for the unreadable parent
+	if badEntry.AgentMessageCount != 2 {
+		t.Fatalf("list-side AgentMessageCount: got %d, want 2", badEntry.AgentMessageCount)
+	}
+
+	aggregate, results, err := AnalyzeMultipleSessions(entries)
+	if err != nil {
+		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
+	}
+
+	if aggregate.SkippedSessions != 1 {
+		t.Errorf("SkippedSessions: got %d, want 1", aggregate.SkippedSessions)
+	}
+	// ...and summary discloses those same agents as skipped, matching list.
+	if aggregate.SkippedAgents != 2 {
+		t.Errorf("SkippedAgents: got %d, want 2 (readable agents of the unreadable parent)", aggregate.SkippedAgents)
+	}
+	// Only the readable session's spend is counted: m1 = 0.0105.
+	if !almostEqual(aggregate.TotalCost.TotalCost, 0.0105, 0.0001) {
+		t.Errorf("TotalCost: got %f, want 0.0105 (agent spend excluded, disclosed)", aggregate.TotalCost.TotalCost)
+	}
+	for _, r := range results {
+		if r.Entry.SessionID == "sess-bad" && r.Analysis != nil {
+			t.Error("sess-bad should have nil Analysis")
+		}
 	}
 }
 

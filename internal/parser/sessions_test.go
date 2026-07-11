@@ -773,26 +773,100 @@ func TestMergeIndexOnly_OutsideProjectDirDropped(t *testing.T) {
 	}
 }
 
-func TestPathWithinDir(t *testing.T) {
+// An index entry whose sessionId disagrees with its fullPath's filename stem
+// aliases a transcript the disk scan already produced under the stem's
+// identity. Merging by SessionID alone never matches the two, so the alias
+// used to survive as a second session row over the same file.
+func TestMergeIndexOnly_AliasedStemDropped(t *testing.T) {
+	projectDir := t.TempDir()
+
+	sessionPath := filepath.Join(projectDir, "def.jsonl")
+	if err := os.WriteFile(sessionPath, []byte(`{"type":"assistant","requestId":"r1","message":{"id":"m1","model":"test","usage":{}}}`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	disk, err := DiscoverSessionsFromDisk(projectDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := &models.SessionsIndex{
+		Entries: []models.SessionEntry{
+			{SessionID: "abc", FullPath: sessionPath, Created: time.Now()},
+		},
+	}
+
+	merged, _ := MergeSessionSources(index, disk, projectDir, true)
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged session, got %d", len(merged))
+	}
+	if merged[0].SessionID != "def" {
+		t.Errorf("SessionID: got %q, want %q (disk identity wins)", merged[0].SessionID, "def")
+	}
+}
+
+// An index entry pointing at a nested agent file passes a containment-only
+// check but is not a session transcript: it must not become a session row
+// (its messages are already rolled into the parent session).
+func TestMergeIndexOnly_NestedAgentPathDropped(t *testing.T) {
+	projectDir := t.TempDir()
+
+	parentPath := filepath.Join(projectDir, "parent.jsonl")
+	if err := os.WriteFile(parentPath, []byte(`{"type":"assistant","requestId":"r1","message":{"id":"m1","model":"test","usage":{}}}`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	subagentsDir := filepath.Join(projectDir, "parent", "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	agentPath := filepath.Join(subagentsDir, "agent-x.jsonl")
+	if err := os.WriteFile(agentPath, []byte(`{"type":"assistant","requestId":"r2","message":{"id":"m2","model":"test","usage":{}}}`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	disk, err := DiscoverSessionsFromDisk(projectDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := &models.SessionsIndex{
+		Entries: []models.SessionEntry{
+			{SessionID: "agent-x", FullPath: agentPath, Created: time.Now()},
+		},
+	}
+
+	merged, _ := MergeSessionSources(index, disk, projectDir, true)
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged session, got %d", len(merged))
+	}
+	if merged[0].SessionID != "parent" {
+		t.Errorf("SessionID: got %q, want %q", merged[0].SessionID, "parent")
+	}
+}
+
+func TestIsSessionFilePath(t *testing.T) {
 	tests := []struct {
-		name string
-		path string
-		dir  string
-		want bool
+		name      string
+		path      string
+		dir       string
+		sessionID string
+		want      bool
 	}{
-		{"file inside dir", "/proj/session.jsonl", "/proj", true},
-		{"file in subdir", "/proj/sub/agent.jsonl", "/proj", true},
-		{"file outside dir", "/other/session.jsonl", "/proj", false},
-		{"traversal escape", "/proj/../other/session.jsonl", "/proj", false},
-		{"sibling with shared prefix", "/proj-evil/session.jsonl", "/proj", false},
-		{"path equals dir", "/proj", "/proj", false},
-		{"empty path", "", "/proj", false},
-		{"empty dir", "/proj/session.jsonl", "", false},
+		{"top-level session file", "/proj/abc.jsonl", "/proj", "abc", true},
+		{"dot segments cleaned", "/proj/./abc.jsonl", "/proj", "abc", true},
+		{"stem disagrees with sessionId", "/proj/def.jsonl", "/proj", "abc", false},
+		{"nested agent file", "/proj/abc/subagents/agent-x.jsonl", "/proj", "agent-x", false},
+		{"file outside dir", "/other/abc.jsonl", "/proj", "abc", false},
+		{"traversal escape", "/proj/../other/abc.jsonl", "/proj", "abc", false},
+		{"sibling with shared prefix", "/proj-evil/abc.jsonl", "/proj", "abc", false},
+		{"missing .jsonl suffix", "/proj/abc", "/proj", "abc", false},
+		{"path equals dir", "/proj", "/proj", "proj", false},
+		{"empty path", "", "/proj", "abc", false},
+		{"empty dir", "/proj/abc.jsonl", "", "abc", false},
+		{"empty sessionId", "/proj/.jsonl", "/proj", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := pathWithinDir(tt.path, tt.dir); got != tt.want {
-				t.Errorf("pathWithinDir(%q, %q) = %v, want %v", tt.path, tt.dir, got, tt.want)
+			if got := isSessionFilePath(tt.path, tt.dir, tt.sessionID); got != tt.want {
+				t.Errorf("isSessionFilePath(%q, %q, %q) = %v, want %v", tt.path, tt.dir, tt.sessionID, got, tt.want)
 			}
 		})
 	}
