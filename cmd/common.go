@@ -127,7 +127,7 @@ func formatNoProjectError(projPath string, allProjects []models.ProjectInfo) err
 	const maxSuggestions = 5
 	for _, proj := range allProjects {
 		if proj.OriginalPath != "" {
-			projBasename := strings.ToLower(filepath.Base(proj.OriginalPath))
+			projBasename := strings.ToLower(paths.BasenameCrossOS(proj.OriginalPath))
 			if strings.HasPrefix(projBasename, basename) || strings.HasPrefix(basename, projBasename) {
 				suggestions = append(suggestions, fmt.Sprintf("  %s (original: %s)", proj.EncodedPath, proj.OriginalPath))
 				if len(suggestions) >= maxSuggestions {

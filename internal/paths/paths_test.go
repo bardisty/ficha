@@ -69,6 +69,136 @@ func testWindowsPaths(t *testing.T) {
 	}
 }
 
+// PathToProjectDir must mirror Claude Code's JS `/[^a-zA-Z0-9]/g`, which
+// replaces per UTF-16 code unit: an astral-plane character (surrogate pair)
+// becomes two dashes, while ASCII/BMP characters stay one dash.
+func TestPathToProjectDir_UTF16CodeUnits(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"astral emoji is two dashes", "/home/x/app😀", "-home-x-app--"},
+		{"bmp accented char stays one dash", "/home/x/café", "-home-x-caf-"},
+		{"bmp cjk stays one dash", "/home/x/日本", "-home-x---"},
+		{"multiple astral chars", "/a/😀😀", "-a-----"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := PathToProjectDir(tt.input)
+			if result != tt.expected {
+				t.Errorf("PathToProjectDir(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBasenameCrossOS(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"windows path", `C:\Users\Brian\source\foo`, "foo"},
+		{"windows path forward slashes", "C:/Users/Brian/source/foo", "foo"},
+		{"windows drive root", `C:\`, "/"},
+		{"unix path unchanged", "/home/user/foo", "foo"},
+		{"bare name", "foo", "foo"},
+		{"trailing backslash", `C:\Users\Brian\`, "Brian"},
+		{"empty", "", "."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := BasenameCrossOS(tt.input)
+			if result != tt.expected {
+				t.Errorf("BasenameCrossOS(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// FindProjectDir's basename fallback must match a Windows-style originalPath
+// (WSL sharing a Windows config dir) even on Linux, where filepath.Base does
+// not split on backslash.
+func TestFindProjectDir_WindowsOriginalPathBasename(t *testing.T) {
+	allProjects := []models.ProjectInfo{
+		{
+			EncodedPath:  "C--Users-Brian-source-foo",
+			FullPath:     "/mnt/c/Users/Brian/.claude/projects/C--Users-Brian-source-foo",
+			OriginalPath: `C:\Users\Brian\source\foo`,
+			DisplayName:  "C:/Users/Brian/source/foo",
+		},
+	}
+
+	match, err := FindProjectDir("/mnt/c/Users/Brian/source/foo", allProjects)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if match.MatchMethod != "suffix" {
+		t.Errorf("expected suffix match, got %s", match.MatchMethod)
+	}
+	if match.EncodedPath != "C--Users-Brian-source-foo" {
+		t.Errorf("expected C--Users-Brian-source-foo, got %s", match.EncodedPath)
+	}
+}
+
+func TestLooksLikePath(t *testing.T) {
+	tests := []struct {
+		value    string
+		expected bool
+	}{
+		{`.\proj`, true},              // Windows-style relative
+		{`..\projects\C--foo`, true},  // Windows-style parent-relative
+		{"./proj", true},              // Unix relative
+		{"../proj", true},             // Unix parent-relative
+		{"foo/bar", true},             // embedded separator
+		{".", true},                   // current dir
+		{"..", true},                  // parent dir
+		{"-home-user-foo", false},     // encoded project name
+		{"C--Users-Brian-foo", false}, // encoded Windows project name
+		{"plainname", false},          // bare token
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			if got := looksLikePath(tt.value); got != tt.expected {
+				t.Errorf("looksLikePath(%q) = %v, want %v", tt.value, got, tt.expected)
+			}
+		})
+	}
+}
+
+// A relative --project-dir value carrying a separator but no "./" prefix must
+// route to the path branch (resolved relative to cwd), not the encoded-name
+// branch under ~/.claude/projects. Before the looksLikePath change only "./"
+// and "../" prefixes were recognized, so this — and the Windows backslash
+// forms it now also catches — landed in the wrong branch. Uses a forward-slash
+// path so the positive resolution is deterministic on Linux.
+func TestResolveProjectDir_SeparatorRelativeRoutesToPath(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "ficha-resolve-sep-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	nested := filepath.Join(tempDir, "nested", "proj")
+	if err := os.MkdirAll(nested, 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+
+	t.Chdir(tempDir)
+
+	result, err := ResolveProjectDir("nested/proj")
+	if err != nil {
+		t.Fatalf("unexpected error (value misrouted to encoded-name branch?): %v", err)
+	}
+	if result != nested {
+		t.Errorf("expected %s, got %s", nested, result)
+	}
+}
+
 func TestGetSessionsIndexPath(t *testing.T) {
 	projectDir := "/home/user/.claude/projects/-home-user-myproject"
 	result := GetSessionsIndexPath(projectDir)

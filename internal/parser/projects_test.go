@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -231,6 +233,86 @@ func TestResolveDisplayNameCollisions(t *testing.T) {
 	// Unique stays unchanged
 	if projects[3].DisplayName != "unique" {
 		t.Errorf("unique: got %q, want %q", projects[3].DisplayName, "unique")
+	}
+}
+
+// DiscoverAllProjects must include a project directory reached through a
+// symlink. os.ReadDir's DirEntry.IsDir() is false for a symlink-to-dir, so
+// without the os.Stat follow the symlinked project is dropped from global
+// aggregation while show/list still resolve it. A broken symlink is skipped.
+func TestDiscoverAllProjects_IncludesSymlinkedDir(t *testing.T) {
+	tempDir := t.TempDir()
+	projectsDir := filepath.Join(tempDir, "projects")
+	if err := os.MkdirAll(projectsDir, 0755); err != nil {
+		t.Fatalf("failed to create projects dir: %v", err)
+	}
+
+	realProj := filepath.Join(projectsDir, "-home-user-realproj")
+	if err := os.MkdirAll(realProj, 0755); err != nil {
+		t.Fatalf("failed to create real project: %v", err)
+	}
+
+	// A project dir relocated outside ~/.claude/projects, symlinked back in.
+	target := filepath.Join(tempDir, "external-big")
+	if err := os.MkdirAll(target, 0755); err != nil {
+		t.Fatalf("failed to create symlink target: %v", err)
+	}
+	linkPath := filepath.Join(projectsDir, "-home-user-linkedproj")
+	if err := os.Symlink(target, linkPath); err != nil {
+		t.Skipf("symlink creation not supported: %v", err)
+	}
+
+	// A broken symlink must be skipped (Stat fails), not counted.
+	brokenLink := filepath.Join(projectsDir, "-home-user-broken")
+	if err := os.Symlink(filepath.Join(tempDir, "does-not-exist"), brokenLink); err != nil {
+		t.Fatalf("failed to create broken symlink: %v", err)
+	}
+
+	t.Setenv("CLAUDE_CONFIG_DIR", tempDir)
+
+	projects, err := DiscoverAllProjects()
+	if err != nil {
+		t.Fatalf("DiscoverAllProjects failed: %v", err)
+	}
+
+	found := make(map[string]bool)
+	for _, p := range projects {
+		found[p.EncodedPath] = true
+	}
+	if !found["-home-user-realproj"] {
+		t.Error("real project dir missing")
+	}
+	if !found["-home-user-linkedproj"] {
+		t.Error("symlinked project dir was dropped")
+	}
+	if found["-home-user-broken"] {
+		t.Error("broken symlink should have been skipped")
+	}
+}
+
+// A synthesized "~N" collision suffix must not collide with a genuine project
+// whose display name already ends in "~N" (paths may legitimately contain '~').
+func TestResolveDisplayNameCollisions_SuffixAvoidsRealName(t *testing.T) {
+	projects := []models.ProjectInfo{
+		{DisplayName: "home/u/app"},
+		{DisplayName: "home/u/app"},
+		{DisplayName: "home/u/app~2"}, // a real, distinct project
+	}
+	resolveDisplayNameCollisions(projects)
+
+	seen := make(map[string]bool)
+	for i, p := range projects {
+		if seen[p.DisplayName] {
+			t.Errorf("duplicate display name %q at index %d", p.DisplayName, i)
+		}
+		seen[p.DisplayName] = true
+	}
+	// The second colliding project must skip the taken "~2" and use "~3".
+	if projects[1].DisplayName != "home/u/app~3" {
+		t.Errorf("second: got %q, want %q", projects[1].DisplayName, "home/u/app~3")
+	}
+	if projects[2].DisplayName != "home/u/app~2" {
+		t.Errorf("real ~2 project name changed: got %q", projects[2].DisplayName)
 	}
 }
 
