@@ -63,12 +63,18 @@ func AnalyzeSessionWithCache(sessionPath string, sessionID string, scope Message
 // files are never cloned by fork, so they stay file-local. A nil seen keeps
 // the session fully file-local.
 func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[string]struct{}) (*models.SessionAnalysis, error) {
-	// Parse the JSONL file
 	result, err := parser.ParseJSONLFileWithResult(sessionPath)
 	if err != nil {
 		return nil, err
 	}
+	return analyzeParsedSession(result, sessionPath, sessionID, scope, cache, seen), nil
+}
 
+// analyzeParsedSession is analyzeSessionExcludingSeen after the parent parse.
+// AnalyzeMultipleSessions parses every parent before analyzing any of them
+// (processing order derives from the parsed timestamps), so it hands the
+// result in rather than parse twice.
+func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[string]struct{}) *models.SessionAnalysis {
 	messages := result.Messages
 	if seen != nil {
 		messages = parser.ExcludeSeenMessages(messages, seen)
@@ -177,7 +183,7 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope Mes
 		}
 	}
 
-	return analysis, nil
+	return analysis
 }
 
 // AnalyzeAgent analyzes a single agent sub-session. There is no message-scope
@@ -245,6 +251,32 @@ func timeRange(messages []models.MessageAnalysis) (start, end time.Time) {
 		}
 	}
 	return start, end
+}
+
+// earliestMessageTime returns the earliest non-zero timestamp in messages, or
+// the zero time when none carries one. Messages can be out of chronological
+// order (see timeRange), so positional first is unreliable.
+func earliestMessageTime(messages []models.JSONLMessage) time.Time {
+	var earliest time.Time
+	for _, msg := range messages {
+		if msg.Timestamp.IsZero() {
+			continue
+		}
+		if earliest.IsZero() || msg.Timestamp.Before(earliest) {
+			earliest = msg.Timestamp
+		}
+	}
+	return earliest
+}
+
+// createdOrModified returns the entry's Created time, falling back to Modified
+// when the index never supplied one — a zero Created must not outrank entries
+// with real creation times.
+func createdOrModified(entry models.SessionEntry) time.Time {
+	if entry.Created.IsZero() {
+		return entry.Modified
+	}
+	return entry.Created
 }
 
 // AnalyzeSessionFromMessages analyzes already-parsed messages. It discovers no
@@ -326,10 +358,11 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 // Sessions share a cross-file dedup set: fork/branch flows copy the prior
 // transcript (billed assistant lines included) into a new session file, and
 // summing file-local totals would bill those responses once per file. Files
-// are processed in ascending mtime order so shared history is attributed to
-// the earliest file (the original session); later copies are excluded from
-// both the aggregate and their session's result, so per-session results sum
-// to the aggregate. Standalone single-session views stay file-local.
+// are processed in ascending earliest-message-timestamp order (session
+// Created time, then input order, break ties — see the sort below) so shared
+// history is attributed to the original session; later copies are excluded
+// from both the aggregate and their session's result, so per-session results
+// sum to the aggregate. Standalone single-session views stay file-local.
 //
 // The aggregate carries the parent/agent cost partition (ParentCost, AgentsCost,
 // AgentCount, ...) summed across sessions, but not the nested Agents/Workflows
@@ -356,24 +389,60 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 	successfulSessions := 0
 	seen := make(map[string]struct{})
 
-	// Analyze in ascending mtime order (ties keep input order) so duplicate
-	// attribution is deterministic; results stay in input order.
+	// Parse every parent up front: processing order derives from each
+	// session's earliest message timestamp, which only the parse can provide.
+	// Parsed messages carry usage metadata, not content, so holding them all
+	// is cheap. A nil result failed to parse; its sort key falls back to the
+	// file mtime (position is moot — it consumes no dedup keys).
+	parsed := make([]*parser.ParseResult, len(entries))
+	sortKeys := make([]time.Time, len(entries))
+	for i, entry := range entries {
+		sortKeys[i] = entry.Modified
+		result, err := parser.ParseJSONLFileWithResult(entry.FullPath)
+		if err != nil {
+			continue
+		}
+		parsed[i] = result
+		if ts := earliestMessageTime(result.Messages); !ts.IsZero() {
+			sortKeys[i] = ts
+		}
+	}
+
+	// Analyze in ascending earliest-timestamp order so shared history is
+	// attributed to the original session, not the file written to last. A
+	// fork clones the original transcript verbatim, timestamps included, so
+	// within a fork family the primary keys tie; the entry's Created time
+	// (genuine session creation when the index supplied it) breaks the tie —
+	// the original predates its forks. Disk-only entries carry Created ==
+	// Modified, so without the index attribution degrades to mtime order.
+	// Remaining ties keep input order; results stay in input order.
 	order := make([]int, len(entries))
 	for i := range order {
 		order[i] = i
 	}
 	sort.SliceStable(order, func(a, b int) bool {
-		return entries[order[a]].Modified.Before(entries[order[b]].Modified)
+		if !sortKeys[order[a]].Equal(sortKeys[order[b]]) {
+			return sortKeys[order[a]].Before(sortKeys[order[b]])
+		}
+		return createdOrModified(entries[order[a]]).Before(createdOrModified(entries[order[b]]))
 	})
 
 	for _, idx := range order {
 		entry := entries[idx]
-		sessionAnalysis, err := analyzeSessionExcludingSeen(entry.FullPath, entry.SessionID, NoMessages, nil, seen)
-		if err != nil {
+		if parsed[idx] == nil {
+			// The parent transcript could not be read, so its agent
+			// sub-sessions — readable or not — were never analyzed and their
+			// spend is excluded. Disclose them as skipped: `list` counts
+			// their messages independently of the parent, and a zero
+			// SkippedAgents would present the excluded spend as a session
+			// that simply had no agents.
+			agentPaths, unreadableDirs := parser.DiscoverAgentSessions(filepath.Dir(entry.FullPath), entry.SessionID)
+			aggregate.SkippedAgents += len(agentPaths) + unreadableDirs
 			skippedSessions++
 			results[idx] = models.SessionResult{Entry: entry, Analysis: nil}
-			continue // Skip sessions that can't be parsed
+			continue
 		}
+		sessionAnalysis := analyzeParsedSession(parsed[idx], entry.FullPath, entry.SessionID, NoMessages, nil, seen)
 		successfulSessions++
 		results[idx] = models.SessionResult{Entry: entry, Analysis: sessionAnalysis}
 		// Also aggregate skipped agents and lines from individual sessions
