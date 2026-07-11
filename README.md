@@ -71,6 +71,14 @@
   Sessions that fail to parse are omitted from detail output and
   reported on stderr (stdout stays clean for piping).
 
+  Two fields name where a record came from. project_path is the Claude
+  project directory (~/.claude/projects/<encoded>) — identical on show,
+  the summary aggregate, and every per-session record, so machine
+  outputs join on it. session_file is the transcript .jsonl path; it is
+  empty on the summary aggregate, which spans many files. In csv,
+  session rows carry both columns and agent rows leave them empty (join
+  back through session_id).
+
   Every input ficha could not read is counted, never swallowed. Three
   counters travel together on json (omitted when zero) and csv, and each
   one also prints a stderr warning:

@@ -1354,6 +1354,132 @@ func TestAnalyzeMultipleSessions_AggregatesAgentPartition(t *testing.T) {
 	}
 }
 
+// SESS-01: project_path must name the project directory (not the transcript
+// path), and session_file must carry the transcript. AnalyzeSession (the show
+// path) sets both.
+func TestAnalyzeSession_PopulatesProjectPathAndSessionFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "sess.jsonl")
+	writeJSONLFile(t, path, []string{forkMsg1})
+
+	analysis, err := AnalyzeSession(path, "sess", NoMessages)
+	if err != nil {
+		t.Fatalf("AnalyzeSession failed: %v", err)
+	}
+	if analysis.ProjectPath != tmpDir {
+		t.Errorf("ProjectPath: got %q, want the project dir %q", analysis.ProjectPath, tmpDir)
+	}
+	if analysis.SessionFile != path {
+		t.Errorf("SessionFile: got %q, want the transcript %q", analysis.SessionFile, path)
+	}
+}
+
+// SESS-01: the summary aggregate names the project (project_path) so machine
+// consumers can join it to the per-session records, and its session_file is
+// empty because it spans many files. Each per-session record repeats the same
+// project_path and carries its own session_file.
+func TestAnalyzeMultipleSessions_ProjectPathJoinsRecords(t *testing.T) {
+	tmpDir := t.TempDir()
+	pathA := filepath.Join(tmpDir, "sess-a.jsonl")
+	writeJSONLFile(t, pathA, []string{forkMsg1})
+	pathB := filepath.Join(tmpDir, "sess-b.jsonl")
+	writeJSONLFile(t, pathB, []string{forkMsg3})
+
+	entries := []models.SessionEntry{
+		{SessionID: "sess-a", FullPath: pathA},
+		{SessionID: "sess-b", FullPath: pathB},
+	}
+
+	aggregate, results, err := AnalyzeMultipleSessions(entries)
+	if err != nil {
+		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
+	}
+
+	if aggregate.ProjectPath != tmpDir {
+		t.Errorf("aggregate ProjectPath: got %q, want %q", aggregate.ProjectPath, tmpDir)
+	}
+	if aggregate.SessionFile != "" {
+		t.Errorf("aggregate SessionFile: got %q, want empty (spans many files)", aggregate.SessionFile)
+	}
+	for i, r := range results {
+		if r.Analysis == nil {
+			t.Fatalf("results[%d].Analysis is nil", i)
+		}
+		if r.Analysis.ProjectPath != aggregate.ProjectPath {
+			t.Errorf("results[%d].ProjectPath %q != aggregate %q (not joinable)",
+				i, r.Analysis.ProjectPath, aggregate.ProjectPath)
+		}
+		if r.Analysis.SessionFile != entries[i].FullPath {
+			t.Errorf("results[%d].SessionFile: got %q, want %q", i, r.Analysis.SessionFile, entries[i].FullPath)
+		}
+	}
+}
+
+// AGENT-01: a symlinked workflow run dir's spend must reach the session total
+// and not inflate SkippedAgents; a broken-symlink run dir must be disclosed.
+func TestAnalyzeSession_SymlinkedWorkflowRunDirCounted(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "sess.jsonl")
+	writeJSONLFile(t, path, []string{forkMsg1})
+
+	// Parent-only baseline cost, for comparison.
+	base, err := AnalyzeSession(path, "sess", NoMessages)
+	if err != nil {
+		t.Fatalf("baseline AnalyzeSession failed: %v", err)
+	}
+
+	// Relocate a workflow run dir outside the session tree and symlink it back.
+	workflowsDir := filepath.Join(tmpDir, "sess", "subagents", "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(tmpDir, "external-run")
+	if err := os.MkdirAll(target, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONLFile(t, filepath.Join(target, "agent-w1.jsonl"), []string{forkMsg2})
+	if err := os.Symlink(target, filepath.Join(workflowsDir, "wf_linked")); err != nil {
+		t.Skipf("symlink creation not supported: %v", err)
+	}
+
+	got, err := AnalyzeSession(path, "sess", NoMessages)
+	if err != nil {
+		t.Fatalf("AnalyzeSession failed: %v", err)
+	}
+	if got.SkippedAgents != 0 {
+		t.Errorf("SkippedAgents: got %d, want 0 (symlinked run dir is readable)", got.SkippedAgents)
+	}
+	if got.AgentCount != 1 {
+		t.Errorf("AgentCount: got %d, want 1", got.AgentCount)
+	}
+	if got.TotalCost.TotalCost <= base.TotalCost.TotalCost {
+		t.Errorf("TotalCost %f should exceed the parent-only baseline %f — the linked run's spend is missing",
+			got.TotalCost.TotalCost, base.TotalCost.TotalCost)
+	}
+}
+
+func TestAnalyzeSession_BrokenSymlinkRunDirSkipped(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "sess.jsonl")
+	writeJSONLFile(t, path, []string{forkMsg1})
+
+	workflowsDir := filepath.Join(tmpDir, "sess", "subagents", "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(tmpDir, "gone"), filepath.Join(workflowsDir, "wf_broken")); err != nil {
+		t.Skipf("symlink creation not supported: %v", err)
+	}
+
+	got, err := AnalyzeSession(path, "sess", NoMessages)
+	if err != nil {
+		t.Fatalf("AnalyzeSession failed: %v", err)
+	}
+	if got.SkippedAgents != 1 {
+		t.Errorf("SkippedAgents: got %d, want 1 (broken-symlink run dir disclosed)", got.SkippedAgents)
+	}
+}
+
 // A workflow run's agents contribute to the aggregate's WorkflowCount.
 func TestAnalyzeMultipleSessions_AggregatesWorkflowCount(t *testing.T) {
 	tmpDir := t.TempDir()

@@ -27,6 +27,8 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 	// Write header
 	header := []string{
 		"session_id",
+		"project_path",
+		"session_file",
 		"input_cost",
 		"output_cost",
 		"cache_write_5m_cost",
@@ -53,6 +55,8 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 	// Write session row
 	row := []string{
 		csvCell(analysis.SessionID),
+		csvCell(analysis.ProjectPath),
+		csvCell(analysis.SessionFile),
 		fmt.Sprintf("%.6f", analysis.TotalCost.InputCost),
 		fmt.Sprintf("%.6f", analysis.TotalCost.OutputCost),
 		fmt.Sprintf("%.6f", analysis.TotalCost.CacheWrite5mCost),

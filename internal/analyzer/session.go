@@ -301,8 +301,12 @@ func AnalyzeSessionFromMessages(sessionID string, sessionPath string, messages [
 // buildSessionAnalysis builds a SessionAnalysis from message analyses
 func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses []models.MessageAnalysis, includeMessages bool) *models.SessionAnalysis {
 	analysis := &models.SessionAnalysis{
-		SessionID:    sessionID,
-		ProjectPath:  sessionPath,
+		SessionID: sessionID,
+		// The transcript lives directly under its project dir, so its parent is
+		// the project path (same derivation used for agent discovery above).
+		// SessionFile keeps the transcript path itself.
+		ProjectPath:  filepath.Dir(sessionPath),
+		SessionFile:  sessionPath,
 		MessageCount: len(messageAnalyses),
 		CostByModel:  make(map[string]models.CostBreakdown),
 	}
@@ -392,6 +396,11 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 		SessionID:         "aggregate",
 		CostByModel:       make(map[string]models.CostBreakdown),
 		ParentCostByModel: make(map[string]models.CostBreakdown),
+		// Every entry resolves to the one project directory (all discovered under
+		// it); the aggregate names that project, matching what each per-session
+		// result derives from its own transcript path. SessionFile stays empty —
+		// the aggregate spans many files. entries is non-empty (checked above).
+		ProjectPath: filepath.Dir(entries[0].FullPath),
 	}
 
 	results := make([]models.SessionResult, len(entries))

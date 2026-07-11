@@ -711,6 +711,94 @@ func TestE2EReentrant(t *testing.T) {
 	}
 }
 
+// TestE2EProjectPathJoinsShowAndSummary is the SESS-01 guard: project_path names
+// the project directory (not the transcript) and is identical on show, the
+// summary aggregate, and every per-session detail record, so machine consumers
+// can join them. session_file carries the transcript path (empty on the
+// aggregate, which spans many files).
+func TestE2EProjectPathJoinsShowAndSummary(t *testing.T) {
+	setupE2EFixture(t)
+
+	// show: project_path is the project dir; session_file is this transcript.
+	showOut, _, err := executeCLISplit(t, "show", projFlag, e2eAlphaID, "-f", "json")
+	if err != nil {
+		t.Fatalf("show json failed: %v", err)
+	}
+	var show models.SessionAnalysis
+	mustJSON(t, showOut, &show)
+	if show.ProjectPath == "" {
+		t.Fatal("show project_path is empty")
+	}
+	if filepath.Base(show.ProjectPath) != e2eProjDir {
+		t.Errorf("show project_path %q should end in the project dir %q", show.ProjectPath, e2eProjDir)
+	}
+	if filepath.Base(show.SessionFile) != e2eAlphaID+".jsonl" {
+		t.Errorf("show session_file %q should be the transcript", show.SessionFile)
+	}
+	if filepath.Dir(show.SessionFile) != show.ProjectPath {
+		t.Errorf("show project_path %q should be the dir of session_file %q", show.ProjectPath, show.SessionFile)
+	}
+
+	// csv carries the same two columns with the same values (D3 parity).
+	csvOut, _, err := executeCLISplit(t, "show", projFlag, e2eAlphaID, "-f", "csv")
+	if err != nil {
+		t.Fatalf("show csv failed: %v", err)
+	}
+	csvRows := mustCSV(t, csvOut)
+	if len(csvRows) != 2 {
+		t.Fatalf("show csv: got %d rows, want header + 1", len(csvRows))
+	}
+	col := func(name string) string {
+		for i, h := range csvRows[0] {
+			if h == name {
+				return csvRows[1][i]
+			}
+		}
+		t.Fatalf("show csv missing column %q", name)
+		return ""
+	}
+	if col("project_path") != show.ProjectPath {
+		t.Errorf("csv project_path %q != json %q", col("project_path"), show.ProjectPath)
+	}
+	if col("session_file") != show.SessionFile {
+		t.Errorf("csv session_file %q != json %q", col("session_file"), show.SessionFile)
+	}
+
+	// summary aggregate: same project_path (joinable), empty session_file.
+	sumOut, _, err := executeCLISplit(t, "summary", projFlag, "-f", "json")
+	if err != nil {
+		t.Fatalf("summary json failed: %v", err)
+	}
+	var agg models.SessionAnalysis
+	mustJSON(t, sumOut, &agg)
+	if agg.ProjectPath != show.ProjectPath {
+		t.Errorf("summary project_path %q != show %q (not joinable)", agg.ProjectPath, show.ProjectPath)
+	}
+	if agg.SessionFile != "" {
+		t.Errorf("summary aggregate session_file %q should be empty", agg.SessionFile)
+	}
+
+	// summary --details: each per-session record joins on project_path and
+	// carries its own transcript.
+	detOut, _, err := executeCLISplit(t, "summary", projFlag, "-d", "-f", "json")
+	if err != nil {
+		t.Fatalf("summary details json failed: %v", err)
+	}
+	var det models.SummaryDetail
+	mustJSON(t, detOut, &det)
+	if len(det.Sessions) == 0 {
+		t.Fatal("summary details returned no sessions")
+	}
+	for _, s := range det.Sessions {
+		if s.ProjectPath != agg.ProjectPath {
+			t.Errorf("session %s project_path %q != aggregate %q", s.SessionID, s.ProjectPath, agg.ProjectPath)
+		}
+		if filepath.Base(s.SessionFile) != s.SessionID+".jsonl" {
+			t.Errorf("session %s session_file %q should be its transcript", s.SessionID, s.SessionFile)
+		}
+	}
+}
+
 // --- assertion helpers ---
 
 func mustContainAll(t *testing.T, s string, subs ...string) {

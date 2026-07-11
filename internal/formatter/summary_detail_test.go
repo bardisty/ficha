@@ -23,6 +23,8 @@ func sampleSummaryResults() []models.SessionResult {
 			},
 			Analysis: &models.SessionAnalysis{
 				SessionID:    "sess-01",
+				ProjectPath:  "/home/u/.claude/projects/-home-u-proj",
+				SessionFile:  "/home/u/.claude/projects/-home-u-proj/sess-01.jsonl",
 				MessageCount: 10,
 				HasAgents:    true,
 				AgentCount:   2,
@@ -68,6 +70,8 @@ func sampleSummaryResults() []models.SessionResult {
 			},
 			Analysis: &models.SessionAnalysis{
 				SessionID:    "sess-02",
+				ProjectPath:  "/home/u/.claude/projects/-home-u-proj",
+				SessionFile:  "/home/u/.claude/projects/-home-u-proj/sess-02.jsonl",
 				MessageCount: 4,
 				TotalCost:    models.CostBreakdown{InputCost: 0.5, OutputCost: 1.5, TotalCost: 2.0},
 				CostByModel: map[string]models.CostBreakdown{
@@ -171,7 +175,7 @@ func TestFormatSummaryDetailCSV_NoExpand(t *testing.T) {
 		t.Fatalf("rows: got %d, want 3 (header + 2 sessions)", len(records))
 	}
 	wantHeader := []string{
-		"row_type", "session_id", "agent_id", "modified", "model",
+		"row_type", "session_id", "project_path", "session_file", "agent_id", "modified", "model",
 		"message_count", "agent_count", "input_cost", "output_cost",
 		"cache_write_5m_cost", "cache_write_1h_cost", "cache_read_cost",
 		"total_cost", "cache_savings", "cumulative_cost", "workflow_id",
@@ -191,11 +195,19 @@ func TestFormatSummaryDetailCSV_NoExpand(t *testing.T) {
 	if r1[0] != "session" || r1[1] != "sess-02" {
 		t.Errorf("row1 row_type/session_id: got %q/%q, want session/sess-02", r1[0], r1[1])
 	}
-	if r1[4] != "claude-sonnet-5" {
-		t.Errorf("row1 model: got %q, want claude-sonnet-5", r1[4])
+	// project_path (col 2) joins with the summary aggregate; session_file (col 3)
+	// is this session's transcript.
+	if r1[2] != "/home/u/.claude/projects/-home-u-proj" {
+		t.Errorf("row1 project_path: got %q", r1[2])
 	}
-	if r1[14] != "2.000000" {
-		t.Errorf("row1 cumulative_cost: got %q, want 2.000000", r1[14])
+	if r1[3] != "/home/u/.claude/projects/-home-u-proj/sess-02.jsonl" {
+		t.Errorf("row1 session_file: got %q", r1[3])
+	}
+	if r1[6] != "claude-sonnet-5" {
+		t.Errorf("row1 model: got %q, want claude-sonnet-5", r1[6])
+	}
+	if r1[16] != "2.000000" {
+		t.Errorf("row1 cumulative_cost: got %q, want 2.000000", r1[16])
 	}
 
 	// Row 2: sess-01, agent_count 2, cumulative = 2.0 + 5.0 = 7.0
@@ -203,14 +215,17 @@ func TestFormatSummaryDetailCSV_NoExpand(t *testing.T) {
 	if r2[1] != "sess-01" {
 		t.Errorf("row2 session_id: got %q, want sess-01", r2[1])
 	}
-	if r2[6] != "2" {
-		t.Errorf("row2 agent_count: got %q, want 2", r2[6])
+	if r2[3] != "/home/u/.claude/projects/-home-u-proj/sess-01.jsonl" {
+		t.Errorf("row2 session_file: got %q", r2[3])
 	}
-	if r2[4] != "claude-opus-4-8" {
-		t.Errorf("row2 model (parent primary): got %q, want claude-opus-4-8", r2[4])
+	if r2[8] != "2" {
+		t.Errorf("row2 agent_count: got %q, want 2", r2[8])
 	}
-	if r2[14] != "7.000000" {
-		t.Errorf("row2 cumulative_cost: got %q, want 7.000000", r2[14])
+	if r2[6] != "claude-opus-4-8" {
+		t.Errorf("row2 model (parent primary): got %q, want claude-opus-4-8", r2[6])
+	}
+	if r2[16] != "7.000000" {
+		t.Errorf("row2 cumulative_cost: got %q, want 7.000000", r2[16])
 	}
 }
 
@@ -237,37 +252,42 @@ func TestFormatSummaryDetailCSV_Expand(t *testing.T) {
 	if agent[1] != "sess-01" {
 		t.Errorf("agent session_id: got %q, want sess-01 (parent)", agent[1])
 	}
+	// project_path and session_file are session-row concepts; empty on agent
+	// rows (join back through session_id).
+	if agent[2] != "" || agent[3] != "" {
+		t.Errorf("agent project_path/session_file: got %q/%q, want empty", agent[2], agent[3])
+	}
 	// agent_id is the agent's real ID, the same key show --messages and the
 	// json agents[] array use, so the exports join.
-	if agent[2] != "agent-x" {
-		t.Errorf("agent_id: got %q, want agent-x", agent[2])
+	if agent[4] != "agent-x" {
+		t.Errorf("agent_id: got %q, want agent-x", agent[4])
 	}
-	if agent[4] != "claude-haiku-4-5" {
-		t.Errorf("agent model: got %q, want claude-haiku-4-5", agent[4])
+	if agent[6] != "claude-haiku-4-5" {
+		t.Errorf("agent model: got %q, want claude-haiku-4-5", agent[6])
 	}
-	if agent[12] != "1.000000" {
-		t.Errorf("agent total_cost: got %q, want 1.000000", agent[12])
+	if agent[14] != "1.000000" {
+		t.Errorf("agent total_cost: got %q, want 1.000000", agent[14])
 	}
 	// Agent rows do not participate in the session cumulative.
-	if agent[14] != "" {
-		t.Errorf("agent cumulative_cost: got %q, want empty", agent[14])
+	if agent[16] != "" {
+		t.Errorf("agent cumulative_cost: got %q, want empty", agent[16])
 	}
 	// agent_count is a session-row concept; empty on agent rows.
-	if agent[6] != "" {
-		t.Errorf("agent agent_count: got %q, want empty", agent[6])
+	if agent[8] != "" {
+		t.Errorf("agent agent_count: got %q, want empty", agent[8])
 	}
 	// Regular agents carry no workflow_id.
-	if agent[15] != "" {
-		t.Errorf("regular agent workflow_id: got %q, want empty", agent[15])
+	if agent[17] != "" {
+		t.Errorf("regular agent workflow_id: got %q, want empty", agent[17])
 	}
 
 	// Workflow agent row carries its run ID.
 	wfAgent := records[4]
-	if wfAgent[0] != "agent" || wfAgent[2] != "agent-w" {
-		t.Errorf("workflow agent row_type/agent_id: got %q/%q, want agent/agent-w", wfAgent[0], wfAgent[2])
+	if wfAgent[0] != "agent" || wfAgent[4] != "agent-w" {
+		t.Errorf("workflow agent row_type/agent_id: got %q/%q, want agent/agent-w", wfAgent[0], wfAgent[4])
 	}
-	if wfAgent[15] != "wf_run-1" {
-		t.Errorf("workflow agent workflow_id: got %q, want wf_run-1", wfAgent[15])
+	if wfAgent[17] != "wf_run-1" {
+		t.Errorf("workflow agent workflow_id: got %q, want wf_run-1", wfAgent[17])
 	}
 }
 
