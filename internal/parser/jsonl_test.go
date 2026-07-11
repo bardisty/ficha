@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bardisty/ficha/internal/models"
 )
 
 func TestParseJSONL(t *testing.T) {
@@ -224,11 +226,45 @@ func TestReadLine(t *testing.T) {
 			lines:     []string{"", "", "ccc"},
 			oversized: []bool{true, true, false},
 		},
+		// The cap measures content, not the line terminator: content of exactly
+		// maxLen bytes is kept whether or not it carries a trailing newline
+		// (LF or CRLF), and content of maxLen+1 is skipped either way. Before
+		// the fix these cases classified differently depending on the delimiter.
 		{
-			name:      "line exactly at cap",
-			input:     strings.Repeat("x", maxLen-1) + "\n", // maxLen-1 content + newline = maxLen bytes
-			lines:     []string{strings.Repeat("x", maxLen-1)},
+			name:      "content exactly at cap with LF",
+			input:     strings.Repeat("x", maxLen) + "\n",
+			lines:     []string{strings.Repeat("x", maxLen)},
 			oversized: []bool{false},
+		},
+		{
+			name:      "content exactly at cap without terminator",
+			input:     strings.Repeat("x", maxLen),
+			lines:     []string{strings.Repeat("x", maxLen)},
+			oversized: []bool{false},
+		},
+		{
+			name:      "content exactly at cap with CRLF",
+			input:     strings.Repeat("x", maxLen) + "\r\n",
+			lines:     []string{strings.Repeat("x", maxLen)},
+			oversized: []bool{false},
+		},
+		{
+			name:      "content one over cap with LF",
+			input:     strings.Repeat("x", maxLen+1) + "\n",
+			lines:     []string{""},
+			oversized: []bool{true},
+		},
+		{
+			name:      "content one over cap without terminator",
+			input:     strings.Repeat("x", maxLen+1),
+			lines:     []string{""},
+			oversized: []bool{true},
+		},
+		{
+			name:      "content one over cap with CRLF",
+			input:     strings.Repeat("x", maxLen+1) + "\r\n",
+			lines:     []string{""},
+			oversized: []bool{true},
 		},
 	}
 
@@ -313,6 +349,15 @@ func TestExtractUsageReconcilesCacheCreation(t *testing.T) {
 			name:      "negative bucket clamps, flat remainder re-attributed at 5m",
 			usageJSON: `{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":800,"cache_creation":{"ephemeral_5m_input_tokens":-100,"ephemeral_1h_input_tokens":300}}`,
 			wantFlat:  800, want5m: 500, want1h: 300, wantDetail: true, wantEstimated: true,
+		},
+		{
+			// USAGE-01: two buckets that each fit in int64 but sum past
+			// MaxInt64 must not wrap the bucket sum negative. Per-field clamping
+			// to maxTokenField (1e15) caps each bucket so the sum stays
+			// non-negative and the buckets-sum-to-flat invariant holds.
+			name:      "quintillion-scale buckets clamp instead of overflowing",
+			usageJSON: `{"input_tokens":1000,"output_tokens":500,"cache_creation":{"ephemeral_5m_input_tokens":6000000000000000000,"ephemeral_1h_input_tokens":6000000000000000000}}`,
+			wantFlat:  2_000_000_000_000_000, want5m: 1_000_000_000_000_000, want1h: 1_000_000_000_000_000, wantDetail: true,
 		},
 	}
 
@@ -481,6 +526,15 @@ func TestParseJSONLDedupKeyHandling(t *testing.T) {
 			expectedCount: 1,
 		},
 		{
+			// A colon inside message.id must not let one id/requestId split
+			// alias another: id "msg_1" + req "a:b" vs id "msg_1:a" + req "b"
+			// both concatenate to "msg_1:a:b" but are distinct responses.
+			name: "colon in id does not alias a different id/requestId split",
+			input: `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","requestId":"a:b","message":{"id":"msg_1","model":"claude-opus-4-5","usage":{"output_tokens":10}}}
+{"type":"assistant","timestamp":"2024-01-01T12:01:00Z","requestId":"b","message":{"id":"msg_1:a","model":"claude-opus-4-5","usage":{"output_tokens":20}}}`,
+			expectedCount: 2,
+		},
+		{
 			name: "interleaved duplicates collapse to first-seen order",
 			input: `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","requestId":"req_A","message":{"id":"msg_A","model":"claude-opus-4-5","usage":{"output_tokens":5}}}
 {"type":"assistant","timestamp":"2024-01-01T12:00:01Z","requestId":"req_B","message":{"id":"msg_B","model":"claude-opus-4-5","usage":{"output_tokens":7}}}
@@ -514,4 +568,34 @@ func TestDeduplicateMessagesPassthrough(t *testing.T) {
 	if got := DeduplicateMessages(single); len(got) != 1 {
 		t.Errorf("single message: got %d messages, want 1", len(got))
 	}
+}
+
+// TestExcludeSeenMessagesColonAliasing guards the cross-file dedup key against
+// the same colon-aliasing collision as the within-file path: id "msg_1" + req
+// "a:b" and id "msg_1:a" + req "b" concatenate to the same "msg_1:a:b" string,
+// so a raw string key would drop the second response's billed usage when the
+// two land in different session files. The struct key keeps them distinct.
+func TestExcludeSeenMessagesColonAliasing(t *testing.T) {
+	fileA := mustParse(t, `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","requestId":"a:b","message":{"id":"msg_1","model":"claude-opus-4-5","usage":{"output_tokens":10}}}`)
+	fileB := mustParse(t, `{"type":"assistant","timestamp":"2024-01-01T12:01:00Z","requestId":"b","message":{"id":"msg_1:a","model":"claude-opus-4-5","usage":{"output_tokens":20}}}`)
+
+	seen := make(map[DedupKey]struct{})
+	keptA := ExcludeSeenMessages(fileA, seen)
+	keptB := ExcludeSeenMessages(fileB, seen)
+
+	if len(keptA) != 1 {
+		t.Fatalf("file A: got %d kept, want 1", len(keptA))
+	}
+	if len(keptB) != 1 {
+		t.Errorf("file B: got %d kept, want 1 (distinct response wrongly dropped as seen)", len(keptB))
+	}
+}
+
+func mustParse(t *testing.T, input string) []models.JSONLMessage {
+	t.Helper()
+	messages, err := ParseJSONL(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return messages
 }

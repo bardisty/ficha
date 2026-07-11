@@ -62,7 +62,7 @@ func AnalyzeSessionWithCache(sessionPath string, sessionID string, scope Message
 // are added to seen. Only parent-file messages participate: agent sub-session
 // files are never cloned by fork, so they stay file-local. A nil seen keeps
 // the session fully file-local.
-func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[string]struct{}) (*models.SessionAnalysis, error) {
+func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[parser.DedupKey]struct{}) (*models.SessionAnalysis, error) {
 	result, err := parser.ParseJSONLFileWithResult(sessionPath)
 	if err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope Mes
 // AnalyzeMultipleSessions parses every parent before analyzing any of them
 // (processing order derives from the parsed timestamps), so it hands the
 // result in rather than parse twice.
-func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[string]struct{}) *models.SessionAnalysis {
+func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[parser.DedupKey]struct{}) *models.SessionAnalysis {
 	messages := result.Messages
 	if seen != nil {
 		messages = parser.ExcludeSeenMessages(messages, seen)
@@ -338,8 +338,20 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 		analysis.Messages = messageAnalyses
 	}
 
-	// Capture last message usage and model for context window calculation
+	// Capture last-message usage and model for context-window display. Claude
+	// Code writes synthetic API-error lines (model "<synthetic>", all-zero
+	// usage) that can end a transcript; taking the positional last message
+	// would zero out the CONTEXT readout even though real context exists. Walk
+	// back to the last message that actually carries context, falling back to
+	// the positional last only when none does (an all-synthetic session still
+	// degrades to zero). Synthetic lines stay counted in MessageCount/dedup/cost.
 	lastMsg := messageAnalyses[len(messageAnalyses)-1]
+	for i := len(messageAnalyses) - 1; i >= 0; i-- {
+		if messageAnalyses[i].Usage.ContextWindowSize() > 0 {
+			lastMsg = messageAnalyses[i]
+			break
+		}
+	}
 	analysis.LastMessageUsage = lastMsg.Usage
 	analysis.LastMessageModel = lastMsg.Model
 
@@ -387,7 +399,7 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 	firstTimeSet := false
 	skippedSessions := 0
 	successfulSessions := 0
-	seen := make(map[string]struct{})
+	seen := make(map[parser.DedupKey]struct{})
 
 	// Parse every parent up front: processing order derives from each
 	// session's earliest message timestamp, which only the parse can provide.

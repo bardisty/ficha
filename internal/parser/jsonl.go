@@ -111,7 +111,16 @@ func readLine(r *bufio.Reader, maxLen int) (line []byte, oversized bool, err err
 	var buf []byte
 	for {
 		chunk, err := r.ReadSlice('\n')
-		if !oversized && len(buf)+len(chunk) > maxLen {
+		// Measure the cap against content only. The final chunk (err == nil)
+		// still carries the '\n' (and any preceding '\r'); counting it would
+		// classify identical content as oversized-or-not depending purely on
+		// whether the line has a trailing newline. err != nil chunks (buffer
+		// full mid-line, or EOF with no terminator) carry no delimiter.
+		chunkLen := len(chunk)
+		if err == nil {
+			chunkLen = len(trimLineEnding(chunk))
+		}
+		if !oversized && len(buf)+chunkLen > maxLen {
 			oversized = true
 			buf = nil
 		}
@@ -146,14 +155,27 @@ func trimLineEnding(line []byte) []byte {
 	return bytes.TrimSuffix(line, []byte("\r"))
 }
 
-// dedupKey identifies the API response a JSONL line belongs to, so streaming
-// lines of the same response can be collapsed. Returns "" for lines without a
-// message id — those must never be collapsed together.
-func dedupKey(msg models.JSONLMessage) string {
+// DedupKey identifies the API response a JSONL line belongs to, so streaming
+// lines of the same response can be collapsed and cross-file duplicates
+// dropped. It keeps message.id and requestId in separate struct fields rather
+// than concatenating them: a raw "id:requestId" string lets a colon inside an
+// untrusted id alias a different id/requestId split (id "msg_1"+req "a:b"
+// collides with id "msg_1:a"+req "b"), silently dropping one response's billed
+// usage. Callers hold cross-file seen sets keyed by this type.
+type DedupKey struct {
+	ID    string
+	ReqID string
+}
+
+// dedupKey returns the key for a line and whether it has one. Lines without a
+// message id (ok=false) must never be collapsed together — an empty id
+// identifies nothing. A missing requestId still yields a key (degraded), so two
+// lines sharing an id and both missing requestId do collapse, as before.
+func dedupKey(msg models.JSONLMessage) (DedupKey, bool) {
 	if msg.Message == nil || msg.Message.ID == "" {
-		return ""
+		return DedupKey{}, false
 	}
-	return msg.Message.ID + ":" + msg.RequestID
+	return DedupKey{ID: msg.Message.ID, ReqID: msg.RequestID}, true
 }
 
 // DeduplicateMessages collapses repeated streaming lines of the same API
@@ -167,11 +189,11 @@ func DeduplicateMessages(messages []models.JSONLMessage) []models.JSONLMessage {
 	}
 
 	deduped := make([]models.JSONLMessage, 0, len(messages))
-	seenIdx := make(map[string]int)
+	seenIdx := make(map[DedupKey]int)
 
 	for _, msg := range messages {
-		key := dedupKey(msg)
-		if key == "" {
+		key, ok := dedupKey(msg)
+		if !ok {
 			deduped = append(deduped, msg)
 			continue
 		}
@@ -186,18 +208,18 @@ func DeduplicateMessages(messages []models.JSONLMessage) []models.JSONLMessage {
 	return deduped
 }
 
-// ExcludeSeenMessages drops messages whose dedup key (message.id:requestId)
+// ExcludeSeenMessages drops messages whose dedup key (message.id + requestId)
 // is already recorded in seen — the same API response was kept from an
 // earlier file — and records the keys of the messages it keeps. Claude Code's
 // fork/branch flows clone the prior transcript (assistant lines included,
 // with billed usage) into a new session file, so without a cross-file seen
 // set aggregates bill those responses once per file. Messages without a
 // message id are always kept: an empty key identifies nothing.
-func ExcludeSeenMessages(messages []models.JSONLMessage, seen map[string]struct{}) []models.JSONLMessage {
+func ExcludeSeenMessages(messages []models.JSONLMessage, seen map[DedupKey]struct{}) []models.JSONLMessage {
 	kept := make([]models.JSONLMessage, 0, len(messages))
 	for _, msg := range messages {
-		key := dedupKey(msg)
-		if key == "" {
+		key, ok := dedupKey(msg)
+		if !ok {
 			kept = append(kept, msg)
 			continue
 		}

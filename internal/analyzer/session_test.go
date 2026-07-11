@@ -183,6 +183,46 @@ func TestCostByModelKeysAreNormalized(t *testing.T) {
 	}
 }
 
+// READ-01: Claude Code writes synthetic API-error lines (model "<synthetic>",
+// all-zero usage) that can end a transcript. Captured as the positional last
+// message they zero the CONTEXT readout even though real context exists, so
+// last-message capture walks back to the last message that carries context.
+func TestLastMessageSkipsTrailingSyntheticLines(t *testing.T) {
+	analysis := AnalyzeSessionFromMessages("s", "/p", []models.JSONLMessage{
+		assistantMsg("claude-opus-4-5", 500),
+		assistantMsg("claude-sonnet-4-5", 1500),
+		assistantMsg("<synthetic>", 0),
+		assistantMsg("<synthetic>", 0),
+	}, false)
+
+	if analysis.LastMessageModel != "claude-sonnet-4-5" {
+		t.Errorf("LastMessageModel = %q, want the last real message's model", analysis.LastMessageModel)
+	}
+	if got := analysis.LastMessageUsage.ContextWindowSize(); got != 1500 {
+		t.Errorf("LastMessageUsage context = %d, want 1500 (last real message)", got)
+	}
+	// Synthetic lines stay part of the transcript (dedup/cost/count).
+	if analysis.MessageCount != 4 {
+		t.Errorf("MessageCount = %d, want 4 (synthetic lines stay counted)", analysis.MessageCount)
+	}
+}
+
+// An all-synthetic session carries no context anywhere, so the last-message
+// capture degrades to zero exactly as before the walk-back was added.
+func TestLastMessageAllSyntheticDegradesToZero(t *testing.T) {
+	analysis := AnalyzeSessionFromMessages("s", "/p", []models.JSONLMessage{
+		assistantMsg("<synthetic>", 0),
+		assistantMsg("<synthetic>", 0),
+	}, false)
+
+	if got := analysis.LastMessageUsage.ContextWindowSize(); got != 0 {
+		t.Errorf("LastMessageUsage context = %d, want 0", got)
+	}
+	if analysis.LastMessageModel != "<synthetic>" {
+		t.Errorf("LastMessageModel = %q, want %q (positional last, unchanged)", analysis.LastMessageModel, "<synthetic>")
+	}
+}
+
 // Decorated spellings of one model (Vertex '@date', Bedrock profile+version,
 // the 1M-context beta marker) all resolve to the same catalog row, so they must
 // not each open a CostByModel key. Unknown models keep their raw ID — nothing
