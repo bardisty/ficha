@@ -66,32 +66,43 @@ type CacheCreation struct {
 	Ephemeral1hInputTokens int64 `json:"ephemeral_1h_input_tokens"`
 }
 
-// Sanitized returns a copy with negative token counts clamped to zero, so a
-// corrupt line can't drag aggregates or costs negative. The CacheCreation
-// pointer is always deep-copied, so the result is safe to mutate without
-// touching the receiver's.
+// maxTokenField caps any single token count at a quadrillion — astronomically
+// above any real API call (the largest observed is a few million) yet far below
+// math.MaxInt64. Clamping each field here keeps every within-message sum of
+// token fields (the cache buckets in reconcileUsage and ContextWindowSize)
+// provably free of int64 overflow: a corrupt line carrying two ~6e18 buckets
+// would otherwise wrap the sum negative and break the reconciled
+// buckets-sum-to-flat invariant. Cross-message aggregation in Add is not bounded
+// by this cap — it would still need ~9e3 clamped lines to wrap, far outside any
+// real or single-line-triggered input.
+const maxTokenField = 1_000_000_000_000_000
+
+// clampTokenField clamps a raw token count into [0, maxTokenField].
+func clampTokenField(n int64) int64 {
+	if n < 0 {
+		return 0
+	}
+	if n > maxTokenField {
+		return maxTokenField
+	}
+	return n
+}
+
+// Sanitized returns a copy with each token count clamped into
+// [0, maxTokenField], so a corrupt line can neither drag aggregates or costs
+// negative nor overflow int64 when its fields are summed downstream. The
+// CacheCreation pointer is always deep-copied, so the result is safe to mutate
+// without touching the receiver's.
 func (t TokenUsage) Sanitized() TokenUsage {
-	if t.InputTokens < 0 {
-		t.InputTokens = 0
-	}
-	if t.OutputTokens < 0 {
-		t.OutputTokens = 0
-	}
-	if t.CacheCreationInputTokens < 0 {
-		t.CacheCreationInputTokens = 0
-	}
-	if t.CacheReadInputTokens < 0 {
-		t.CacheReadInputTokens = 0
-	}
+	t.InputTokens = clampTokenField(t.InputTokens)
+	t.OutputTokens = clampTokenField(t.OutputTokens)
+	t.CacheCreationInputTokens = clampTokenField(t.CacheCreationInputTokens)
+	t.CacheReadInputTokens = clampTokenField(t.CacheReadInputTokens)
 	if t.CacheCreation != nil {
 		cc := *t.CacheCreation
 		t.CacheCreation = &cc
-		if t.CacheCreation.Ephemeral5mInputTokens < 0 {
-			t.CacheCreation.Ephemeral5mInputTokens = 0
-		}
-		if t.CacheCreation.Ephemeral1hInputTokens < 0 {
-			t.CacheCreation.Ephemeral1hInputTokens = 0
-		}
+		t.CacheCreation.Ephemeral5mInputTokens = clampTokenField(t.CacheCreation.Ephemeral5mInputTokens)
+		t.CacheCreation.Ephemeral1hInputTokens = clampTokenField(t.CacheCreation.Ephemeral1hInputTokens)
 	}
 	return t
 }
