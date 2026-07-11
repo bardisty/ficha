@@ -91,6 +91,12 @@ func TestGetModelPricing(t *testing.T) {
 		{"unknown beta marker uses default", "claude-opus-4-8[2m]", 3.00, 15.00},
 		{"letter-leading marker uses default", "claude-opus-4-8[foo]", 3.00, 15.00},
 		{"unterminated marker uses default", "claude-opus-4-8[1m", 3.00, 15.00},
+
+		// Serving-tier variants are a premium tier, not the base model — they must
+		// NOT bill at the base Opus row's $5/$25, but fall to default.
+		{"fast-mode opus 4.6 uses default", "claude-opus-4-6-fast", 3.00, 15.00},
+		{"fast-mode opus 4.7 uses default", "claude-opus-4-7-fast", 3.00, 15.00},
+		{"bedrock fast-mode opus 4.6 uses default", "us.anthropic.claude-opus-4-6-fast-v1:0", 3.00, 15.00},
 	}
 
 	for _, tt := range tests {
@@ -280,6 +286,17 @@ func TestNormalizeModelID(t *testing.T) {
 		{"claude-3-5-sonnet[beta]", "claude-3-5-sonnet[beta]"},
 		{"claude-opus-4-8[1m", "claude-opus-4-8[1m"}, // unterminated marker
 		{"claude-opus-4-123456789", "claude-opus-4-123456789"},
+
+		// Serving-tier variants (retired fast-mode IDs) name a premium tier, not
+		// a same-priced alias — they must fail safe to their raw key, never merge
+		// into the base row. Decorated forms strip to the same and stay unknown.
+		{"claude-opus-4-6-fast", "claude-opus-4-6-fast"},
+		{"claude-opus-4-7-fast", "claude-opus-4-7-fast"},
+		// Unknown IDs keep their full raw form as the aggregation key (matching
+		// the unlisted-family Bedrock cases above), so nothing ficha cannot price
+		// is silently merged into a normalized row.
+		{"us.anthropic.claude-opus-4-6-fast-v1:0", "us.anthropic.claude-opus-4-6-fast-v1:0"},
+		{"claude-opus-4-8-fast", "claude-opus-4-8-fast"},
 	}
 
 	for _, tt := range tests {
@@ -373,6 +390,14 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-opus-4-8[2m]", false},
 		{"claude-opus-4-8[foo]", false},
 		{"claude-opus-4-8[1m", false},
+
+		// Serving-tier variants (retired fast-mode IDs) are a premium tier, not a
+		// same-priced alias — they stay unknown so the warning fires and they get
+		// default pricing rather than the base row's standard rates.
+		{"claude-opus-4-6-fast", false},
+		{"claude-opus-4-7-fast", false},
+		{"us.anthropic.claude-opus-4-6-fast-v1:0", false},
+		{"claude-opus-4-8-fast", false},
 
 		// Unknown models - should return false
 		{"unknown-model", false},
