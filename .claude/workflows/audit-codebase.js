@@ -4,7 +4,7 @@ export const meta = {
   phases: [
     { title: 'Map', detail: 'Opus Explore agents decompose the scope into review units', model: 'opus' },
     { title: 'Review', detail: 'One Fable reviewer per unit emits findings + verified-clean areas', model: 'fable' },
-    { title: 'Verify', detail: 'Tiered panels — CRITICAL: 2 diverse-lens Fable + 1 gpt-5.5; HIGH: 1 Fable + 1 gpt-5.5; impactful-MEDIUM: 1 Fable; remaining MEDIUM/LOW + refuter-surfaced: Opus batch-verify' },
+    { title: 'Verify', detail: 'Tiered panels — CRITICAL: 2 diverse-lens Fable + 1 gpt-5.6-sol (xhigh); HIGH: 1 Fable + 1 gpt-5.6-sol (high); impactful-MEDIUM: 1 Fable; remaining MEDIUM/LOW + refuter-surfaced: Opus batch-verify' },
     { title: 'Synthesize', detail: 'Fable synthesizer writes assessment + clusters; JS owns IDs, dedup, counts, severity index', model: 'fable' },
   ],
 }
@@ -126,14 +126,14 @@ const VERDICT_SCHEMA = {
 }
 
 // codex wrapper relay: same shape as VERDICT_SCHEMA minus newFindings (the wrapper only relays
-// gpt-5.5's verdict), plus ABSTAIN for codex-unavailable — JS drops ABSTAIN before reconciling,
+// gpt-5.6-sol's verdict), plus ABSTAIN for codex-unavailable — JS drops ABSTAIN before reconciling,
 // so a missing cross-model vote can never lower the bar to refute.
 const CODEX_VERDICT_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['findingTid', 'verdict', 'reasoning'],
   properties: {
     findingTid: { type: 'string', description: 'echo the temp id of the finding EXACTLY as given' },
     verdict: { type: 'string', enum: ['CONFIRMED', 'REFUTED', 'DOWNGRADED', 'ADJUSTED', 'ABSTAIN'] },
-    reasoning: { type: 'string', description: "gpt-5.5's reasoning, relayed; for ABSTAIN, describe the codex failure" },
+    reasoning: { type: 'string', description: "gpt-5.6-sol's reasoning, relayed; for ABSTAIN, describe the codex failure" },
     adjustedSeverity: { type: 'string', enum: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] },
     adjustedTrigger: { type: 'string' },
   },
@@ -159,10 +159,10 @@ const VERDICT_RANK = { CONFIRMED: 0, ADJUSTED: 1, DOWNGRADED: 2, UNVERIFIED: 3, 
 // Panel composition per tier. Historical note (origin project): identical-prompt same-model panels
 // voted unanimously in every Fable-era audit (63/63 CONFIRMED) — redundancy, not verification.
 // Independence comes from lens diversity (guard-hunter vs reachability-tracer) + a cross-model
-// gpt-5.5 vote instead of a third identical Fable vote.
+// gpt-5.6-sol vote instead of a third identical Fable vote.
 function panelSpec(f) {
-  if (f.severity === 'CRITICAL') return ['fable:guard', 'fable:reach', 'codex']  // 3 dispatched, 2-of-3 to refute
-  if (f.severity === 'HIGH') return ['fable:full', 'codex']                      // unanimous-to-refute
+  if (f.severity === 'CRITICAL') return ['fable:guard', 'fable:reach', 'codex:xhigh']  // 3 dispatched, 2-of-3 to refute
+  if (f.severity === 'HIGH') return ['fable:full', 'codex:high']                       // unanimous-to-refute
   if (f.severity === 'MEDIUM' && (f.impact === 'data-loss' || f.impact === 'regression' || f.impact === 'exploit')) return ['fable:full']
   return []  // → Opus batch tier
 }
@@ -243,8 +243,12 @@ function findingBlock(f) {
 function refutePrompt(f, lensKey) {
   return `You are an ADVERSARIAL VERIFIER. Refute the finding below — do not confirm by default. Repo root: ${repoRoot}.\n\n${UNTRUSTED}\n\n${findingBlock(f)}\n\nRead the ACTUAL code at and around that location. ${LENSES[lensKey] || LENSES.full}\n\nVerdict: CONFIRMED (could not refute), REFUTED (unreachable or guarded), DOWNGRADED (real but less severe — give adjustedSeverity), ADJUSTED (real but claim/trigger wrong — give adjustedTrigger). Echo findingTid=${JSON.stringify(f._tid)}. If you incidentally find a DIFFERENT real issue, add it to newFindings (it will be batch-verified separately, not auto-confirmed). You are READ-ONLY. Return ONLY the schema object.`
 }
-function codexWrapperPrompt(f) {
-  return `You are a THIN WRAPPER around the OpenAI Codex CLI (gpt-5.5). Do NOT judge the finding yourself — your only job is to obtain and relay an independent gpt-5.5 verdict on the audit finding below.\n\nSteps:\n1. Compose a SELF-CONTAINED refutation prompt for codex. It must include: the finding details below verbatim; that repo root is ${repoRoot}; the instruction to READ the actual code at and around the locator and try hard to refute — (a) find a guard/early-return/validation/clamp preventing it, (b) check tests (unit, golden, fuzz, e2e) for documented-intentional behavior, (c) verify the trigger is reachable from a real entry point including ${CROSS_SURFACE}; and the instruction to END its reply with a fenced JSON object: {"verdict":"CONFIRMED|REFUTED|DOWNGRADED|ADJUSTED","reasoning":"...","adjustedSeverity":"(if DOWNGRADED)","adjustedTrigger":"(if ADJUSTED)"}.\n2. Write that prompt to a temp file OUTSIDE the repo (mktemp in Bash).\n3. From ${repoRoot}, run via Bash with an explicit timeout of 600000 ms:\n   codex exec -s read-only --output-last-message <out-temp-file> - < <prompt-temp-file>\n   (prompt on stdin avoids shell-quoting issues).\n4. Read the out-temp-file and extract the JSON verdict.\n5. Return the schema object: echo findingTid=${JSON.stringify(f._tid)} EXACTLY; relay gpt-5.5's verdict and reasoning. If codex is unavailable, times out, or returns no parseable verdict, return verdict "ABSTAIN" with reasoning describing the failure — NEVER substitute your own judgment of the finding.\n\n${findingBlock(f)}`
+function codexWrapperPrompt(f, effort) {
+  // xhigh reasoning can outlast Bash's 600000 ms foreground cap — background the run and poll instead
+  const runStep = effort === 'xhigh'
+    ? `3. From ${repoRoot}, run via Bash with run_in_background: true (you are re-notified when it exits):\n   codex exec -m gpt-5.6-sol -c model_reasoning_effort="xhigh" -s read-only --output-last-message <out-temp-file> - < <prompt-temp-file>\n   (prompt on stdin avoids shell-quoting issues). Overall deadline 20 minutes — if no verdict by then, treat it as a timeout.`
+    : `3. From ${repoRoot}, run via Bash with an explicit timeout of 600000 ms:\n   codex exec -m gpt-5.6-sol -c model_reasoning_effort="${effort}" -s read-only --output-last-message <out-temp-file> - < <prompt-temp-file>\n   (prompt on stdin avoids shell-quoting issues).`
+  return `You are a THIN WRAPPER around the OpenAI Codex CLI (gpt-5.6-sol). Do NOT judge the finding yourself — your only job is to obtain and relay an independent gpt-5.6-sol verdict on the audit finding below.\n\nSteps:\n1. Compose a SELF-CONTAINED refutation prompt for codex. It must include: the finding details below verbatim; that repo root is ${repoRoot}; the instruction to READ the actual code at and around the locator and try hard to refute — (a) find a guard/early-return/validation/clamp preventing it, (b) check tests (unit, golden, fuzz, e2e) for documented-intentional behavior, (c) verify the trigger is reachable from a real entry point including ${CROSS_SURFACE}; and the instruction to END its reply with a fenced JSON object: {"verdict":"CONFIRMED|REFUTED|DOWNGRADED|ADJUSTED","reasoning":"...","adjustedSeverity":"(if DOWNGRADED)","adjustedTrigger":"(if ADJUSTED)"}.\n2. Write that prompt to a temp file OUTSIDE the repo (mktemp in Bash).\n${runStep}\n4. Read the out-temp-file and extract the JSON verdict.\n5. Return the schema object: echo findingTid=${JSON.stringify(f._tid)} EXACTLY; relay gpt-5.6-sol's verdict and reasoning. If codex is unavailable, times out, or returns no parseable verdict, return verdict "ABSTAIN" with reasoning describing the failure — NEVER substitute your own judgment of the finding.\n\n${findingBlock(f)}`
 }
 function batchVerifyPrompt(items) {
   return `You are verifying ${items.length} lower-severity findings from ONE unit of a ${dimension.toUpperCase()} audit of ${PROJECT}, in a single pass. Repo root: ${repoRoot}.\n\n${UNTRUSTED}\n\nFor EACH finding: FIRST Grep for the quoted snippet — if it does not exist verbatim in the codebase, do NOT confirm: locate the real code the claim is about and verdict ADJUSTED (corrected trigger) or REFUTED, never rubber-stamp a stale locator. Then read the ACTUAL code at the locator (plus enough surrounding context and call sites to judge) and verdict it — CONFIRMED (claim holds), REFUTED (guarded / unreachable / documented-intentional — cite the guard), DOWNGRADED (real but less severe — give adjustedSeverity), ADJUSTED (real but the claim/trigger is wrong — give adjustedTrigger). Spend effort proportional to stakes: confirm quickly when the code plainly matches the claim; dig when a claim smells wrong. Echo each findingTid EXACTLY as given. Return one verdict per finding — no omissions.\n\n${items.map((f, i) => `--- ${i + 1} ---\n${findingBlock(f)}`).join('\n')}\n\nYou are READ-ONLY. Return ONLY the schema object.`
@@ -299,12 +303,12 @@ const reviewed = await pipeline(units,
     const fs = (rev.findings || []).map((f, i) => ({ ...f, _tid: `${unit.prefix}#${i}` }))
     const paneled = fs.filter(f => panelSpec(f).length > 0)
     const zeroPanel = fs.filter(f => panelSpec(f).length === 0)
-    // --- panel votes (Fable lenses + gpt-5.5 cross-model) ---
+    // --- panel votes (Fable lenses + gpt-5.6-sol cross-model) ---
     const tasks = []
     for (const f of paneled) panelSpec(f).forEach(kind => tasks.push({ f, kind }))
     const votes = tasks.length ? await parallel(tasks.map(t => () => {
-      const call = t.kind === 'codex'
-        ? agent(codexWrapperPrompt(t.f), { model: 'sonnet', effort: 'low', agentType: 'general-purpose', schema: CODEX_VERDICT_SCHEMA, label: `gpt-5.5:verify:${t.f._tid}`, phase: 'Verify' })
+      const call = t.kind.startsWith('codex:')
+        ? agent(codexWrapperPrompt(t.f, t.kind.split(':')[1]), { model: 'sonnet', effort: 'low', agentType: 'general-purpose', schema: CODEX_VERDICT_SCHEMA, label: `gpt-5.6-sol:verify:${t.f._tid}`, phase: 'Verify' })
         : agent(refutePrompt(t.f, t.kind.split(':')[1]), { model: 'fable', agentType: 'general-purpose', schema: VERDICT_SCHEMA, label: `verify:${t.f._tid}/${t.kind.split(':')[1]}`, phase: 'Verify' })
       return call.then(v => ({ tid: t.f._tid, v })).catch(() => ({ tid: t.f._tid, v: null }))
     })) : []
@@ -395,8 +399,8 @@ const synth = await agent(synthPrompt(idxList, cleanAreasAll, coverage), { model
 // ============================ ASSEMBLE + RETURN ============================
 const auditMeta = {
   schemaVersion: '2.0', tool: 'audit-codebase', dimension, area, dateSlug, gitCommit, repoRoot,
-  models: { map: 'claude-opus-4-8', review: 'claude-fable-5', refutePanel: 'claude-fable-5 + gpt-5.5 (codex exec)', batchVerify: 'claude-opus-4-8', synth: 'claude-fable-5' },
-  verification: 'Fable reviewers; tiered cross-model refutation — CRITICAL: 2 diverse-lens Fable (guard-hunter + reachability-tracer) + 1 gpt-5.5, majority of 3 dispatched to refute; HIGH: 1 Fable + 1 gpt-5.5, unanimous-to-refute; impactful-MEDIUM (data-loss|regression|exploit): 1 Fable; remaining MEDIUM/LOW + refuter-surfaced: single Opus batch verdict (verificationTier=batch); codex-unavailable votes ABSTAIN and never lower the refute bar; UNVERIFIED now = verification-agent failure only',
+  models: { map: 'claude-opus-4-8', review: 'claude-fable-5', refutePanel: 'claude-fable-5 + gpt-5.6-sol (codex exec; xhigh on CRITICAL, high on HIGH)', batchVerify: 'claude-opus-4-8', synth: 'claude-fable-5' },
+  verification: 'Fable reviewers; tiered cross-model refutation — CRITICAL: 2 diverse-lens Fable (guard-hunter + reachability-tracer) + 1 gpt-5.6-sol (xhigh), majority of 3 dispatched to refute; HIGH: 1 Fable + 1 gpt-5.6-sol (high), unanimous-to-refute; impactful-MEDIUM (data-loss|regression|exploit): 1 Fable; remaining MEDIUM/LOW + refuter-surfaced: single Opus batch verdict (verificationTier=batch); codex-unavailable votes ABSTAIN and never lower the refute bar; UNVERIFIED now = verification-agent failure only',
   unitsPlanned: units.length,
   skipList: { source: 'caller (prior summaries + legacy audit + BACKLOG.md)', entries: knownIssues.slice(0, 200) },
   complementaryManualReviews: dimension === 'security' ? ['dependency supply chain, CI/CD hardening, gosec-class static scanning — not covered by this fan-out; run separately if wanted'] : [],
