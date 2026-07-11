@@ -182,7 +182,8 @@ func matchCatalogPrefix(modelID string) (string, bool) {
 		if rest == "" {
 			return pattern, true
 		}
-		if !isBoundary(rest[0]) || isVersionSegment(firstSegment(rest[1:])) {
+		seg := firstSegment(rest[1:])
+		if !isBoundary(rest[0]) || isVersionSegment(seg) || isServingTierSegment(seg) {
 			continue
 		}
 		return pattern, true
@@ -241,6 +242,26 @@ func isVersionSegment(seg string) bool {
 		return false
 	}
 	return !isDateSegment(seg)
+}
+
+// servingTierSegments names suffix segments that denote a distinct,
+// non-price-neutral serving tier of a model rather than a date or same-priced
+// alias of it. The retired fast-mode IDs "claude-opus-4-6-fast" /
+// "claude-opus-4-7-fast" billed at a premium tier, but their "-fast" suffix is
+// letter-led, so isVersionSegment would otherwise wave them through as an alias
+// like "latest" — inheriting the base row's standard rates, a known-model
+// verdict (no unknown-model warning), and the base aggregation key. Listing the
+// segment here forces such IDs to fail safe: they fall through to unknown ->
+// raw aggregation key + default pricing + the existing unknown-model warning,
+// exactly like an unrecognized decorator.
+var servingTierSegments = map[string]bool{
+	"fast": true,
+}
+
+// isServingTierSegment reports whether seg is a known serving-tier variant name
+// (see servingTierSegments) that must not inherit its prefix's pricing.
+func isServingTierSegment(seg string) bool {
+	return servingTierSegments[seg]
 }
 
 // isDateSegment reports whether seg is an 8-digit release date ("20250514").
