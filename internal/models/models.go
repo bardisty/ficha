@@ -168,7 +168,8 @@ type SessionAnalysis struct {
 	// (~/.claude/projects/<encoded>) — the same value the summary table's
 	// "Project:" header shows. It is uniform across show, the summary aggregate,
 	// and every per-session record (all derived from a transcript in that dir),
-	// so machine outputs join on it. Set by the analyzer, never rendered.
+	// so machine outputs join on it. Set by the analyzer; emitted only in
+	// json/csv, never in the human table.
 	ProjectPath string `json:"project_path"`
 	// SessionFile is the session's transcript .jsonl path. Empty on the summary
 	// aggregate, which spans many files; use project_path to name the project.

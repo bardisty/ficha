@@ -1296,6 +1296,33 @@ func TestDiscoverAgentSessions_StrayFileInWorkflowsDir(t *testing.T) {
 	}
 }
 
+// A symlink pointing at a plain file (not a directory) in workflows/ is not a
+// run dir and is skipped silently — the target stats as a non-directory, so it
+// is neither descended nor disclosed.
+func TestDiscoverAgentSessions_SymlinkToFileInWorkflowsDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	workflowsDir := filepath.Join(tmpDir, sessionID, "subagents", "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(tmpDir, "some-file")
+	if err := os.WriteFile(target, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(workflowsDir, "wf_file")); err != nil {
+		t.Skipf("symlink creation not supported: %v", err)
+	}
+
+	paths, unreadable := DiscoverAgentSessions(tmpDir, sessionID)
+	if unreadable != 0 {
+		t.Errorf("unreadableDirs: got %d, want 0 (symlink→file is not a run dir)", unreadable)
+	}
+	if len(paths) != 0 {
+		t.Errorf("paths: got %v, want none", paths)
+	}
+}
+
 // A missing subagents/ dir is the common case and must stay silent.
 func TestDiscoverAgentSessions_MissingDirIsNotUnreadable(t *testing.T) {
 	tmpDir := t.TempDir()
