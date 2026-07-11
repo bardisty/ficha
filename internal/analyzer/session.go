@@ -301,14 +301,17 @@ func AnalyzeSessionFromMessages(sessionID string, sessionPath string, messages [
 // buildSessionAnalysis builds a SessionAnalysis from message analyses
 func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses []models.MessageAnalysis, includeMessages bool) *models.SessionAnalysis {
 	analysis := &models.SessionAnalysis{
-		SessionID: sessionID,
-		// The transcript lives directly under its project dir, so its parent is
-		// the project path (same derivation used for agent discovery above).
-		// SessionFile keeps the transcript path itself.
-		ProjectPath:  filepath.Dir(sessionPath),
+		SessionID:    sessionID,
 		SessionFile:  sessionPath,
 		MessageCount: len(messageAnalyses),
 		CostByModel:  make(map[string]models.CostBreakdown),
+	}
+	// The transcript lives directly under its project dir, so its parent is the
+	// project path (same derivation used for agent discovery above). Guard the
+	// empty path: filepath.Dir("") is ".", and the exported
+	// AnalyzeSessionFromMessages permits an empty sessionPath.
+	if sessionPath != "" {
+		analysis.ProjectPath = filepath.Dir(sessionPath)
 	}
 
 	if len(messageAnalyses) == 0 {

@@ -77,7 +77,9 @@
   outputs join on it. session_file is the transcript .jsonl path; it is
   empty on the summary aggregate, which spans many files. In csv,
   session rows carry both columns and agent rows leave them empty (join
-  back through session_id).
+  back through session_id). (list names the same transcript path fullPath /
+  full_path, and its projectPath is the original working directory, not this
+  encoded project dir.)
 
   Every input ficha could not read is counted, never swallowed. Three
   counters travel together on json (omitted when zero) and csv, and each
