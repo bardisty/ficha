@@ -97,4 +97,20 @@ func TestFormatNoProjectError(t *testing.T) {
 			t.Error("should not contain 'Similar projects' when basenames don't match")
 		}
 	})
+
+	// A Windows-style originalPath (WSL sharing a Windows config dir) must
+	// still surface as a suggestion; filepath.Base does not split on backslash
+	// on Linux, so BasenameCrossOS is required for the basename comparison.
+	t.Run("windows-style originalPath suggested", func(t *testing.T) {
+		projects := []models.ProjectInfo{
+			{EncodedPath: "C--Users-Brian-source-foo", OriginalPath: `C:\Users\Brian\source\foo`},
+		}
+		err := formatNoProjectError("/mnt/c/Users/Brian/source/foo", projects)
+		if !strings.Contains(err.Error(), "Similar projects") {
+			t.Errorf("expected Windows-style originalPath to be suggested: %v", err)
+		}
+		if !strings.Contains(err.Error(), "C--Users-Brian-source-foo") {
+			t.Errorf("suggestion list should list the matching project: %v", err)
+		}
+	})
 }

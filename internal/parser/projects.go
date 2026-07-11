@@ -28,7 +28,7 @@ func DiscoverAllProjects() ([]models.ProjectInfo, error) {
 
 	var projects []models.ProjectInfo
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entryIsDir(entry, projectsDir) {
 			continue
 		}
 
@@ -65,6 +65,22 @@ func DiscoverAllProjects() ([]models.ProjectInfo, error) {
 	resolveDisplayNameCollisions(projects)
 
 	return projects, nil
+}
+
+// entryIsDir reports whether a projects-dir entry is a directory, following
+// symlinks. os.ReadDir's DirEntry.IsDir() uses lstat semantics and returns
+// false for a symlink pointing at a directory, so a symlinked project dir
+// would be silently dropped from global aggregation even though show/list
+// resolve it fine via os.Stat. A broken symlink (Stat fails) is skipped.
+func entryIsDir(entry os.DirEntry, parent string) bool {
+	if entry.IsDir() {
+		return true
+	}
+	if entry.Type()&os.ModeSymlink == 0 {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(parent, entry.Name()))
+	return err == nil && info.IsDir()
 }
 
 // getOriginalPathFromIndex reads sessions-index.json and returns the originalPath if present.
@@ -189,16 +205,34 @@ func resolveDisplayNameCollisions(projects []models.ProjectInfo) {
 		counts[p.DisplayName]++
 	}
 
-	// For names that appear multiple times, add suffixes
+	// Seed the assigned-name set with every original display name so a
+	// synthesized "X~2" suffix can never collide with a genuine project that
+	// already displays as "X~2" (paths may legitimately contain '~') — the
+	// exact ambiguity this function exists to prevent.
+	assigned := make(map[string]bool, len(projects))
+	for _, p := range projects {
+		assigned[p.DisplayName] = true
+	}
+
+	// For names that appear multiple times, add the next unused suffix.
 	seen := make(map[string]int)
 	for i := range projects {
 		name := projects[i].DisplayName
-		if counts[name] > 1 {
-			seen[name]++
-			if seen[name] > 1 {
-				projects[i].DisplayName = name + "~" + strconv.Itoa(seen[name])
-			}
+		if counts[name] <= 1 {
+			continue
 		}
+		seen[name]++
+		if seen[name] == 1 {
+			continue // first occurrence keeps the bare name
+		}
+		suffix := seen[name]
+		candidate := name + "~" + strconv.Itoa(suffix)
+		for assigned[candidate] {
+			suffix++
+			candidate = name + "~" + strconv.Itoa(suffix)
+		}
+		assigned[candidate] = true
+		projects[i].DisplayName = candidate
 	}
 }
 
