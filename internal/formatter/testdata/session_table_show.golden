@@ -29,6 +29,7 @@
 
 ----------------------------[ MESSAGE INSIGHTS ]----------------------------
 
+  scope: parent transcript
   First       $0.350000  (10:00:05)  cache_write: $0.300000
   Last        $0.520000  (11:29:55)  cache_read: $0.310000
   Peak        $1.870000  (10:42:13)  ! 4.6x avg cost

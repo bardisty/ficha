@@ -367,6 +367,16 @@ type MessageSnapshot struct {
 	MainCostValue     float64   `json:"main_cost_value"`
 }
 
+// MinMessagesForTrend is the message count at or above which
+// analyzer.CalculateInsights actually computes the trend fields
+// (EarlyAvgCost/LateAvgCost/CostTrend); it needs two disjoint sample windows,
+// so the threshold is twice the analyzer's per-end sample size. Below it those
+// fields are left at their zero values, so renderers must gate the trend row on
+// HasTrend rather than a hardcoded count — otherwise they print a fabricated
+// "$0.00/msg -> $0.00/msg stable" from never-computed zeros. The analyzer binds
+// its own compute gate to this constant (see analyzer.minMessagesForTrend).
+const MinMessagesForTrend = 6
+
 // MessageInsights contains computed insights about message costs
 type MessageInsights struct {
 	FirstMessage *MessageSnapshot `json:"first_message,omitempty"`
@@ -377,6 +387,13 @@ type MessageInsights struct {
 	LateAvgCost  float64          `json:"late_avg_cost"`  // Average cost of last 3 messages
 	AverageCost  float64          `json:"average_cost"`   // Overall average cost per message
 	MessageCount int              `json:"message_count"`  // Total message count for insights
+}
+
+// HasTrend reports whether a cost trend was actually computed. It is the single
+// gate every trend renderer (and TrendDescription) must consult so the render
+// threshold can never drift from the analyzer's compute threshold.
+func (i *MessageInsights) HasTrend() bool {
+	return i.MessageCount >= MinMessagesForTrend
 }
 
 // CostMultiplier returns how many times above average the highest cost is
@@ -390,7 +407,7 @@ func (i *MessageInsights) CostMultiplier() float64 {
 
 // TrendDescription returns a human-readable description of the cost trend
 func (i *MessageInsights) TrendDescription() string {
-	if i.MessageCount < 5 {
+	if !i.HasTrend() {
 		return ""
 	}
 

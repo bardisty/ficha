@@ -64,9 +64,13 @@ func runSummary(cfg *config) error {
 	// Warn about unknown models (using fallback pricing)
 	warnUnknownModels(cfg.stderr, analysis.CostByModel)
 
-	// Mark as summary with session count (don't overwrite SessionID)
+	// Mark as summary with session count (don't overwrite SessionID). Count only
+	// the sessions the totals actually cover — an unparseable session lands in
+	// SkippedSessions (warned above), so pairing it into the count would sit an
+	// inclusive number next to an exclusive total and disagree with global's
+	// per-project session_count (analyzer.analyzeProject does the same subtraction).
 	analysis.IsSummary = true
-	analysis.SessionCount = len(sessions)
+	analysis.SessionCount = len(sessions) - analysis.SkippedSessions
 
 	// Output in requested format. --details/--expand-agents add per-session and
 	// per-agent records to json/csv (not just the table); without --details the

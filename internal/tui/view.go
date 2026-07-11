@@ -484,6 +484,19 @@ func (m Model) renderInsightsContent() string {
 	var sb strings.Builder
 	insights := m.analysis.Insights
 
+	// When agents ran, these insights cover the parent transcript alone (agents
+	// appear in AGENT SUB-SESSIONS above); label the scope so it can't be
+	// silently compared against the breakdown view's parent+agent insights. No
+	// label without agents: parent-only and all-messages are then identical.
+	if m.analysis.HasAgents {
+		const scope = "scope: parent transcript"
+		if m.noColor {
+			sb.WriteString("    " + scope + "\n")
+		} else {
+			sb.WriteString("    " + dimStyle.Render(scope) + "\n")
+		}
+	}
+
 	// First message
 	if insights.FirstMessage != nil {
 		first := insights.FirstMessage
@@ -564,8 +577,8 @@ func (m Model) renderInsightsContent() string {
 		}
 	}
 
-	// Trend (only for sessions with 5+ messages)
-	if insights.MessageCount >= 5 {
+	// Trend (only once the analyzer actually computed one — see HasTrend)
+	if insights.HasTrend() {
 		trendDesc := insights.TrendDescription()
 		trendSymbol := insights.CostTrend.Symbol()
 		highlighted := m.isHighlighted("insights_trend")

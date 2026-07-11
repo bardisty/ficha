@@ -158,6 +158,23 @@ func TestCalculateInsights_SixMessages_IncreasingTrend(t *testing.T) {
 	}
 }
 
+// TestMinMessagesForTrendMatchesModel binds the analyzer's compute gate to the
+// render-facing threshold. Every trend renderer gates on
+// MessageInsights.HasTrend (which uses models.MinMessagesForTrend); if that
+// diverged from the count at which CalculateInsights actually populates the
+// trend fields, a surface would either fabricate a trend from zeros or drop a
+// real one. Keep the two locked together.
+func TestMinMessagesForTrendMatchesModel(t *testing.T) {
+	if minMessagesForTrend != models.MinMessagesForTrend {
+		t.Fatalf("analyzer minMessagesForTrend (%d) != models.MinMessagesForTrend (%d): the compute and render gates have drifted",
+			minMessagesForTrend, models.MinMessagesForTrend)
+	}
+	if minMessagesForTrend != 2*trendSampleSize {
+		t.Fatalf("minMessagesForTrend (%d) must be 2*trendSampleSize (%d) to keep the early/late windows disjoint",
+			minMessagesForTrend, 2*trendSampleSize)
+	}
+}
+
 func TestCalculateInsights_SixMessages_StableTrend(t *testing.T) {
 	now := time.Now()
 	// Stable costs (within 20% variance)
@@ -408,17 +425,26 @@ func TestTrendDirection_Symbol(t *testing.T) {
 }
 
 func TestMessageInsights_TrendDescription(t *testing.T) {
-	// Less than 5 messages - no description
+	// Below the trend threshold - no description, because CalculateInsights never
+	// computed a trend (the fields would be zero values). This guards against the
+	// old bug where a description was rendered from never-computed data.
 	insights := &models.MessageInsights{
 		MessageCount: 3,
 		CostTrend:    models.TrendDecreasing,
 	}
 	if insights.TrendDescription() != "" {
-		t.Errorf("Expected empty description for < 5 messages")
+		t.Errorf("Expected empty description below the trend threshold")
 	}
 
-	// 5+ messages - should return description
-	insights.MessageCount = 5
+	// Exactly 5 messages is still below MinMessagesForTrend (6): the early/late
+	// windows would overlap, so no trend is computed and none is described.
+	insights.MessageCount = models.MinMessagesForTrend - 1
+	if desc := insights.TrendDescription(); desc != "" {
+		t.Errorf("Expected empty description at %d messages, got %q", models.MinMessagesForTrend-1, desc)
+	}
+
+	// At the threshold - should return a description
+	insights.MessageCount = models.MinMessagesForTrend
 	desc := insights.TrendDescription()
 	if desc != "stabilizing" {
 		t.Errorf("Expected 'stabilizing' for TrendDecreasing, got %q", desc)
