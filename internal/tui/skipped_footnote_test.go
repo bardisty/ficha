@@ -84,6 +84,49 @@ func TestWatchFooterShowsSkippedAgents(t *testing.T) {
 	}
 }
 
+// WCOST-02: a session that parses to zero messages but skipped input must still
+// disclose it. The empty state used to suppress the footer entirely, hiding the
+// only channel watch has for skip accounting. Driven end-to-end from a real
+// fixture whose single line is unparseable (0 messages, SkippedLines=1) so the
+// empty-session + nonzero-skips path exercises the actual load.
+func TestWatchEmptySessionDisclosesSkippedLines(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+
+	tmpDir := t.TempDir()
+	sessionID := "empty-with-skip"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+	// A non-JSON line increments SkippedLines and yields no message.
+	if err := os.WriteFile(sessionPath, []byte("not json at all\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewModel(sessionPath, sessionID, false, true, "", false)
+	msg, ok := m.loadAnalysis().(analysisMsg)
+	if !ok {
+		t.Fatalf("loadAnalysis returned %T, want analysisMsg", m.loadAnalysis())
+	}
+	if msg.analysis.MessageCount != 0 || msg.analysis.SkippedLines == 0 {
+		t.Fatalf("fixture precondition: MessageCount=%d SkippedLines=%d, want 0 and >0",
+			msg.analysis.MessageCount, msg.analysis.SkippedLines)
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(Model)
+	updated, _ = m.Update(msg)
+	m = updated.(Model)
+
+	if !m.isEmptySession() {
+		t.Fatal("expected an empty session (0 messages, 0 cost)")
+	}
+	view := m.View()
+	if !strings.Contains(view, "Awaiting first message") {
+		t.Errorf("expected the empty state body:\n%s", view)
+	}
+	if !strings.Contains(view, "skipped line(s)") {
+		t.Errorf("empty-session watch view hid the skipped-line disclosure:\n%s", view)
+	}
+}
+
 // loadBreakdown is the hop that carries the analyzer's counters into the TUI.
 // Asserting the footer from a hand-built breakdownMsgsMsg would leave this line
 // free to drop the count, so drive the real load against a real fixture. The

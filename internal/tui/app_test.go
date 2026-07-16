@@ -139,6 +139,85 @@ func TestDetectChanges(t *testing.T) {
 	}
 }
 
+// WCOST-01: each cache-write TTL row must highlight only its own bucket's
+// delta. With the detailed breakdown present, detectChanges keys deltas per TTL
+// (cache_write_5m_tokens / cache_write_1h_tokens); a detail-less legacy usage
+// keeps the single flat cache_write_tokens key.
+func TestDetectChanges_CacheWritePerTTLDeltas(t *testing.T) {
+	withBuckets := func(fivem, oneh int64) models.TokenUsage {
+		return models.TokenUsage{
+			CacheCreationInputTokens: fivem + oneh,
+			CacheCreation:            &models.CacheCreation{Ephemeral5mInputTokens: fivem, Ephemeral1hInputTokens: oneh},
+		}
+	}
+	flat := func(n int64) models.TokenUsage {
+		return models.TokenUsage{CacheCreationInputTokens: n}
+	}
+
+	tests := []struct {
+		name           string
+		old, new       models.TokenUsage
+		want5m, want1h *int64
+		wantFlat       *int64
+	}{
+		{
+			name:   "5m-only write moves only the 5m row",
+			old:    withBuckets(200000, 50000),
+			new:    withBuckets(201000, 50000),
+			want5m: ptr(1000),
+		},
+		{
+			name:   "1h-only write moves only the 1h row",
+			old:    withBuckets(200000, 50000),
+			new:    withBuckets(200000, 51000),
+			want1h: ptr(1000),
+		},
+		{
+			name:   "mixed write splits the delta per TTL",
+			old:    withBuckets(200000, 50000),
+			new:    withBuckets(200800, 50200),
+			want5m: ptr(800),
+			want1h: ptr(200),
+		},
+		{
+			name:     "detail-less usage keeps the flat key",
+			old:      flat(1000),
+			new:      flat(1800),
+			wantFlat: ptr(800),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel("/test/path", "test-session", false, true, "", false)
+			old := &models.SessionAnalysis{TotalUsage: tt.old, CostByModel: map[string]models.CostBreakdown{}}
+			neu := &models.SessionAnalysis{TotalUsage: tt.new, CostByModel: map[string]models.CostBreakdown{}}
+			m.detectChanges(old, neu)
+
+			assertDelta := func(key string, want *int64) {
+				got, exists := m.deltaTokens[key]
+				if want == nil {
+					if exists {
+						t.Errorf("deltaTokens[%q] = %d, want absent", key, got)
+					}
+					return
+				}
+				if !exists || got != *want {
+					t.Errorf("deltaTokens[%q] = %d (exists=%v), want %d", key, got, exists, *want)
+				}
+				if _, hl := m.changedAt[key]; !hl {
+					t.Errorf("changedAt[%q] not marked despite a delta", key)
+				}
+			}
+			assertDelta("cache_write_5m_tokens", tt.want5m)
+			assertDelta("cache_write_1h_tokens", tt.want1h)
+			assertDelta("cache_write_tokens", tt.wantFlat)
+		})
+	}
+}
+
+func ptr(n int64) *int64 { return &n }
+
 func TestIsEmptySession(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -275,14 +354,33 @@ func TestRenderHeaderPanelAlignment(t *testing.T) {
 	r.SetColorProfile(termenv.ANSI256)
 	defer r.SetColorProfile(origProfile)
 
-	for _, loading := range []bool{true, false} {
-		m := NewModel("/test/path", "0123456789abcdef", false, false, "", false)
-		m.loading = loading
-		assertPanelLinesAligned(t, m.renderHeaderPanel(76), fmt.Sprintf("watch loading=%v", loading))
+	// Cover the whole clamped panel-width range (minPanelWidth..design width),
+	// both with and without a prev-session clause: the header content is widest
+	// there and used to overflow the frame, drifting the right border (HDR-01).
+	// Elision must keep all three lines the same display width at every width.
+	widths := []int{minPanelWidth, 42, 50, 57, 60, 74, defaultPanelWidth, 100}
+	for _, noColor := range []bool{false, true} {
+		for _, loading := range []bool{true, false} {
+			for _, prev := range []bool{false, true} {
+				for _, width := range widths {
+					m := NewModel("/test/path", "0123456789abcdef", false, noColor, "", false)
+					m.loading = loading
+					if prev {
+						m.prevSessionID = "fedcba9876543210"
+					}
+					assertPanelLinesAligned(t, m.renderHeaderPanel(width),
+						fmt.Sprintf("watch noColor=%v loading=%v prev=%v width=%d", noColor, loading, prev, width))
 
-		b := NewBreakdownModel("/test/path", "0123456789abcdef", false, "", false)
-		b.loading = loading
-		assertPanelLinesAligned(t, b.renderHeaderPanel(76), fmt.Sprintf("breakdown loading=%v", loading))
+					b := NewBreakdownModel("/test/path", "0123456789abcdef", noColor, "", false)
+					b.loading = loading
+					if prev {
+						b.prevSessionID = "fedcba9876543210"
+					}
+					assertPanelLinesAligned(t, b.renderHeaderPanel(width),
+						fmt.Sprintf("breakdown noColor=%v loading=%v prev=%v width=%d", noColor, loading, prev, width))
+				}
+			}
+		}
 	}
 }
 

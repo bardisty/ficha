@@ -10,6 +10,7 @@ import (
 	"github.com/NimbleMarkets/ntcharts/sparkline"
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -447,7 +448,23 @@ func (m *Model) detectChanges(old, new *models.SessionAnalysis) {
 		m.deltaTokens["output_tokens"] = new.TotalUsage.OutputTokens - old.TotalUsage.OutputTokens
 		m.changedAt["output_tokens"] = now
 	}
-	if old.TotalUsage.CacheCreationInputTokens != new.TotalUsage.CacheCreationInputTokens {
+	// Cache-write tokens: when the per-TTL breakdown is present, track a delta
+	// per bucket under its own key so each row's highlight matches its own
+	// column — a 5m-only write must not flash a delta on the 1h row. Detail-less
+	// legacy usages (priced entirely as 5m) keep the single flat-keyed delta.
+	// Keying mirrors cacheWriteTokenKeys, which the view reads these back with.
+	if new.TotalUsage.CacheCreation != nil {
+		old5m, old1h := render.CacheTokensByTTL(old.TotalUsage)
+		new5m, new1h := render.CacheTokensByTTL(new.TotalUsage)
+		if old5m != new5m {
+			m.deltaTokens["cache_write_5m_tokens"] = new5m - old5m
+			m.changedAt["cache_write_5m_tokens"] = now
+		}
+		if old1h != new1h {
+			m.deltaTokens["cache_write_1h_tokens"] = new1h - old1h
+			m.changedAt["cache_write_1h_tokens"] = now
+		}
+	} else if old.TotalUsage.CacheCreationInputTokens != new.TotalUsage.CacheCreationInputTokens {
 		m.deltaTokens["cache_write_tokens"] = new.TotalUsage.CacheCreationInputTokens - old.TotalUsage.CacheCreationInputTokens
 		m.changedAt["cache_write_tokens"] = now
 	}
