@@ -60,7 +60,7 @@ type BreakdownModel struct {
 	wg        *sync.WaitGroup
 
 	// A file-change waiter is blocked on the watcher; gates armFileWaiter so
-	// poll-triggered reloads can't stack extra waiters (WATCH-01)
+	// poll-triggered reloads can't stack extra waiters
 	fileWaiterActive bool
 
 	// Auto-follow mode for tracking new sessions
@@ -238,7 +238,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Re-arm the file watcher only when no waiter is in flight: this reload
 		// may have been poll-triggered, in which case the file-change waiter is
-		// still blocked on the watcher (WATCH-01)
+		// still blocked on the watcher
 		// Call before return: the arm must mutate the m the caller receives
 		armCmd := m.armFileWaiter()
 		return m, armCmd
@@ -252,15 +252,28 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, armCmd
 
 	case fileWatchErrMsg:
-		// The file-change waiter exited with a watcher error; report it and
-		// arm a replacement so monitoring continues
+		if msg.watcher != m.watcher {
+			// Stale message from a superseded watcher; the current waiter
+			// accounting doesn't cover it
+			return m, nil
+		}
+		// The file-change waiter exited with a watcher error. Errors like an
+		// event-queue overflow mean changes may have been dropped unseen, so
+		// reload as well as arming a replacement waiter
 		m.err = msg.err
 		m.fileWaiterActive = false
-		// Call before return: the arm must mutate the m the caller receives
+		m.loading = true
 		armCmd := m.armFileWaiter()
-		return m, armCmd
+		return m, tea.Batch(m.loadBreakdownCmd(), armCmd)
 
 	case watcherStartedMsg:
+		// A replacement watcher (rapid session switches can have two watchFile
+		// calls in flight) supersedes the current one: close it so its waiter
+		// exits, and account for that exit here since it carries no message
+		if m.watcher != nil && m.watcher != msg.watcher {
+			m.watcher.Close()
+			m.fileWaiterActive = false
+		}
 		m.watcher = msg.watcher
 		// Call before return: the arm must mutate the m the caller receives
 		armCmd := m.armFileWaiter()
@@ -276,6 +289,11 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForNewSession()
 
 	case fileChangedMsg:
+		if msg.watcher != m.watcher {
+			// Stale message from a superseded watcher; the current waiter
+			// accounting doesn't cover it
+			return m, nil
+		}
 		// The waiter that reported this change has exited; the reload's
 		// breakdownMsgsMsg/breakdownErrorMsg arms its replacement
 		m.fileWaiterActive = false
@@ -809,8 +827,8 @@ func (m BreakdownModel) wrapErr(err error) tea.Msg { return breakdownErrorMsg(er
 func (m BreakdownModel) watchFile() tea.Msg { return watchFileCmd(m.sessionPath, m.wrapErr) }
 
 // armFileWaiter starts a file-change waiter unless one is already blocked on
-// the watcher; see Model.armFileWaiter (WATCH-01). Returns nil when a waiter
-// is already in flight.
+// the watcher; see Model.armFileWaiter. Returns nil when a waiter is already
+// in flight.
 func (m *BreakdownModel) armFileWaiter() tea.Cmd {
 	if m.watcher == nil || m.fileWaiterActive {
 		return nil

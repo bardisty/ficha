@@ -101,7 +101,7 @@ func TestWatchPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 
 	// A file-triggered reload means the waiter exited: exactly one re-arm on
 	// its completion, and only one
-	mm, _ = m.Update(fileChangedMsg{})
+	mm, _ = m.Update(fileChangedMsg{watcher: m.watcher})
 	m = mm.(Model)
 	mm, cmd = m.Update(analysisMsg(nil))
 	m = mm.(Model)
@@ -115,7 +115,7 @@ func TestWatchPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 	}
 
 	// A waiter error also means the waiter exited: re-arm a replacement
-	mm, cmd = m.Update(fileWatchErrMsg{err: errors.New("watch failed")})
+	mm, cmd = m.Update(fileWatchErrMsg{err: errors.New("watch failed"), watcher: m.watcher})
 	m = mm.(Model)
 	if cmd == nil {
 		t.Fatal("waiter error did not arm a replacement waiter")
@@ -158,7 +158,7 @@ func TestBreakdownPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 		t.Fatal("reload error armed an extra waiter")
 	}
 
-	mm, _ = m.Update(fileChangedMsg{})
+	mm, _ = m.Update(fileChangedMsg{watcher: m.watcher})
 	m = mm.(BreakdownModel)
 	mm, cmd = m.Update(breakdownMsgsMsg{})
 	m = mm.(BreakdownModel)
@@ -171,7 +171,7 @@ func TestBreakdownPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 		t.Fatal("second completion after re-arm armed an extra waiter")
 	}
 
-	mm, cmd = m.Update(fileWatchErrMsg{err: errors.New("watch failed")})
+	mm, cmd = m.Update(fileWatchErrMsg{err: errors.New("watch failed"), watcher: m.watcher})
 	m = mm.(BreakdownModel)
 	if cmd == nil {
 		t.Fatal("waiter error did not arm a replacement waiter")
@@ -210,7 +210,7 @@ func TestWatchQuitCompletesAfterMixedReloads(t *testing.T) {
 		runArmedWaiter(cmd)
 	}
 	// ...and a file-triggered cycle
-	mm, _ = m.Update(fileChangedMsg{})
+	mm, _ = m.Update(fileChangedMsg{watcher: m.watcher})
 	m = mm.(Model)
 	mm, cmd = m.Update(analysisMsg(nil))
 	m = mm.(Model)
@@ -244,7 +244,7 @@ func TestBreakdownQuitCompletesAfterMixedReloads(t *testing.T) {
 		m = mm.(BreakdownModel)
 		runArmedWaiter(cmd)
 	}
-	mm, _ = m.Update(fileChangedMsg{})
+	mm, _ = m.Update(fileChangedMsg{watcher: m.watcher})
 	m = mm.(BreakdownModel)
 	mm, cmd = m.Update(breakdownMsgsMsg{})
 	m = mm.(BreakdownModel)
@@ -259,5 +259,209 @@ func TestBreakdownQuitCompletesAfterMixedReloads(t *testing.T) {
 	case <-quitDone:
 	case <-time.After(5 * time.Second):
 		t.Fatal("quit hung in wg.Wait after mixed poll+file reloads")
+	}
+}
+
+func TestWatchSessionSwitchResetsWaiterAccounting(t *testing.T) {
+	sessionPath, projectDir, sessionID, agentPath := watchFixture(t)
+	m := NewModel(sessionPath, sessionID, false, true, projectDir, false)
+
+	mm, cmd := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
+	m = mm.(Model)
+	runArmedWaiter(cmd)
+
+	// Leave a poll-triggered reload completed so the flag machinery has state
+	growFile(t, agentPath)
+	mm, _ = m.Update(subagentPollMsg(time.Now()))
+	m = mm.(Model)
+	mm, _ = m.Update(analysisMsg(nil))
+	m = mm.(Model)
+
+	// Switch sessions: the old watcher closes (its waiter exits silently), so
+	// the switch must reset the accounting for the new watcher's waiter
+	newPath := filepath.Join(projectDir, "sess-2.jsonl")
+	writeSessionFile(t, newPath)
+	mm, _ = m.Update(sessionSwitchedMsg{newSessionPath: newPath, newSessionID: "sess-2"})
+	m = mm.(Model)
+	if m.fileWaiterActive {
+		t.Fatal("session switch did not reset fileWaiterActive")
+	}
+
+	mm, cmd = m.Update(watcherStartedMsg{watcher: newTestWatcher(t, newPath)})
+	m = mm.(Model)
+	if cmd == nil {
+		t.Fatal("new watcher after session switch did not arm a waiter")
+	}
+	if _, c := m.Update(analysisMsg(nil)); c != nil {
+		t.Fatal("completion after switch re-arm armed an extra waiter")
+	}
+}
+
+func TestBreakdownSessionSwitchResetsWaiterAccounting(t *testing.T) {
+	sessionPath, projectDir, sessionID, _ := watchFixture(t)
+	m := NewBreakdownModel(sessionPath, sessionID, true, projectDir, false)
+
+	mm, cmd := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
+	m = mm.(BreakdownModel)
+	runArmedWaiter(cmd)
+
+	newPath := filepath.Join(projectDir, "sess-2.jsonl")
+	writeSessionFile(t, newPath)
+	mm, _ = m.Update(sessionSwitchedMsg{newSessionPath: newPath, newSessionID: "sess-2"})
+	m = mm.(BreakdownModel)
+	if m.fileWaiterActive {
+		t.Fatal("session switch did not reset fileWaiterActive")
+	}
+
+	mm, cmd = m.Update(watcherStartedMsg{watcher: newTestWatcher(t, newPath)})
+	m = mm.(BreakdownModel)
+	if cmd == nil {
+		t.Fatal("new watcher after session switch did not arm a waiter")
+	}
+	if _, c := m.Update(breakdownMsgsMsg{}); c != nil {
+		t.Fatal("completion after switch re-arm armed an extra waiter")
+	}
+}
+
+func TestWatchStaleWatcherMessagesIgnored(t *testing.T) {
+	// A waiter message from a superseded watcher must not clear the in-flight
+	// flag (that would let a reload completion arm a second waiter on the
+	// current watcher) nor stamp its error over the current session.
+	sessionPath, projectDir, sessionID, _ := watchFixture(t)
+	m := NewModel(sessionPath, sessionID, false, true, projectDir, false)
+
+	mm, cmd := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
+	m = mm.(Model)
+	if cmd == nil {
+		t.Fatal("watcherStartedMsg did not arm the file-change waiter")
+	}
+	// Complete the initial load so loading is false before the stale message
+	mm, _ = m.Update(analysisMsg(nil))
+	m = mm.(Model)
+
+	stale := newTestWatcher(t, sessionPath)
+	mm, cmd = m.Update(fileChangedMsg{watcher: stale})
+	m = mm.(Model)
+	if cmd != nil {
+		t.Fatal("stale fileChangedMsg triggered a reload")
+	}
+	if m.loading {
+		t.Fatal("stale fileChangedMsg set loading")
+	}
+	if !m.fileWaiterActive {
+		t.Fatal("stale fileChangedMsg cleared the in-flight flag")
+	}
+
+	mm, cmd = m.Update(fileWatchErrMsg{err: errors.New("stale"), watcher: stale})
+	m = mm.(Model)
+	if cmd != nil {
+		t.Fatal("stale fileWatchErrMsg armed a waiter")
+	}
+	if m.err != nil {
+		t.Fatal("stale fileWatchErrMsg stamped its error on the model")
+	}
+	if !m.fileWaiterActive {
+		t.Fatal("stale fileWatchErrMsg cleared the in-flight flag")
+	}
+}
+
+func TestBreakdownStaleWatcherMessagesIgnored(t *testing.T) {
+	sessionPath, projectDir, sessionID, _ := watchFixture(t)
+	m := NewBreakdownModel(sessionPath, sessionID, true, projectDir, false)
+
+	mm, cmd := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
+	m = mm.(BreakdownModel)
+	if cmd == nil {
+		t.Fatal("watcherStartedMsg did not arm the file-change waiter")
+	}
+	// Complete the initial load so loading is false before the stale message
+	mm, _ = m.Update(breakdownMsgsMsg{})
+	m = mm.(BreakdownModel)
+
+	stale := newTestWatcher(t, sessionPath)
+	mm, cmd = m.Update(fileChangedMsg{watcher: stale})
+	m = mm.(BreakdownModel)
+	if cmd != nil || m.loading || !m.fileWaiterActive {
+		t.Fatal("stale fileChangedMsg was not ignored")
+	}
+	mm, cmd = m.Update(fileWatchErrMsg{err: errors.New("stale"), watcher: stale})
+	m = mm.(BreakdownModel)
+	if cmd != nil || m.err != nil || !m.fileWaiterActive {
+		t.Fatal("stale fileWatchErrMsg was not ignored")
+	}
+}
+
+func TestWatchReplacementWatcherClosesSuperseded(t *testing.T) {
+	// Two watchFile calls racing (rapid session switches) deliver two
+	// watcherStartedMsgs with no waiter exit between them: the second must
+	// close the first watcher (so its waiter drains) and arm on the new one.
+	sessionPath, projectDir, sessionID, _ := watchFixture(t)
+	m := NewModel(sessionPath, sessionID, false, true, projectDir, false)
+
+	w1 := newTestWatcher(t, sessionPath)
+	mm, cmd := m.Update(watcherStartedMsg{watcher: w1})
+	m = mm.(Model)
+	runArmedWaiter(cmd)
+
+	w2 := newTestWatcher(t, sessionPath)
+	mm, cmd = m.Update(watcherStartedMsg{watcher: w2})
+	m = mm.(Model)
+	if m.watcher != w2 {
+		t.Fatal("replacement watcher was not stored")
+	}
+	if cmd == nil {
+		t.Fatal("replacement watcher did not arm a waiter")
+	}
+	// The superseded watcher must be closed so its waiter goroutine exits
+	select {
+	case _, ok := <-w1.Events:
+		if ok {
+			t.Fatal("superseded watcher delivered an event instead of closing")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("superseded watcher was not closed")
+	}
+	if _, c := m.Update(analysisMsg(nil)); c != nil {
+		t.Fatal("completion after replacement armed an extra waiter")
+	}
+}
+
+func TestWatchErrTriggersReload(t *testing.T) {
+	// A watcher error (e.g. event-queue overflow) means changes may have been
+	// dropped: the handler must reload, not just re-arm.
+	sessionPath, projectDir, sessionID, _ := watchFixture(t)
+	m := NewModel(sessionPath, sessionID, false, true, projectDir, false)
+
+	mm, _ := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
+	m = mm.(Model)
+	mm, cmd := m.Update(fileWatchErrMsg{err: errors.New("overflow"), watcher: m.watcher})
+	m = mm.(Model)
+	if cmd == nil {
+		t.Fatal("watch error returned no command")
+	}
+	if !m.loading {
+		t.Fatal("watch error did not trigger a reload")
+	}
+	if m.err == nil {
+		t.Fatal("watch error was not surfaced on the model")
+	}
+}
+
+func TestBreakdownWatchErrTriggersReload(t *testing.T) {
+	sessionPath, projectDir, sessionID, _ := watchFixture(t)
+	m := NewBreakdownModel(sessionPath, sessionID, true, projectDir, false)
+
+	mm, _ := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
+	m = mm.(BreakdownModel)
+	mm, cmd := m.Update(fileWatchErrMsg{err: errors.New("overflow"), watcher: m.watcher})
+	m = mm.(BreakdownModel)
+	if cmd == nil {
+		t.Fatal("watch error returned no command")
+	}
+	if !m.loading {
+		t.Fatal("watch error did not trigger a reload")
+	}
+	if m.err == nil {
+		t.Fatal("watch error was not surfaced on the model")
 	}
 }
