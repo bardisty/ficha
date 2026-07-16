@@ -19,6 +19,15 @@ type BreakdownResult struct {
 	// Messages whose cache-write cost is a 5m-rate estimate (parent + agents;
 	// see models.MessageAnalysis.EstimatedCost)
 	EstimatedCostMessages int
+	// Insights over the merged messages in FILE ORDER (parent block, then agent
+	// blocks in discovery order) — deliberately computed before the display sort
+	// so order-sensitive insights (trend windows, first/last, HighestCost
+	// tie-break) share the ordering semantics show/watch use over their
+	// parent-only file-order list. For an agent-free session this list equals the
+	// parent list, so the figures match those surfaces exactly (BRK-03/D25(a)).
+	// The set still differs when agents ran (parent + agents); the breakdown's
+	// scope label discloses that (D21).
+	Insights *models.MessageInsights
 }
 
 // GetBreakdownMessages parses a session and returns all messages (parent + agents)
@@ -95,6 +104,23 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		}
 	}
 
+	// Insights are order-sensitive, so compute them over the FILE-ORDER list
+	// (parent block, then agent blocks in discovery order) before the display
+	// sort below reorders it by timestamp. This keeps breakdown's trend/Peak
+	// aligned with show/watch, which compute over their parent-only file-order
+	// list — for an agent-free session the two lists are identical (BRK-03).
+	fileOrderAnalyses := make([]models.MessageAnalysis, len(allMessages))
+	for i, msg := range allMessages {
+		fileOrderAnalyses[i] = models.MessageAnalysis{
+			AgentID:   msg.AgentID,
+			Timestamp: msg.Timestamp,
+			Model:     msg.Model,
+			Usage:     msg.Usage,
+			Cost:      msg.Cost,
+		}
+	}
+	insights := CalculateInsights(fileOrderAnalyses)
+
 	// Sort all messages by timestamp; stable so equal timestamps keep the
 	// deterministic append order (parent rows, then agents in discovery order)
 	sort.SliceStable(allMessages, func(i, j int) bool {
@@ -111,5 +137,6 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		SkippedLines:          skippedLines,
 		SkippedAgents:         skippedAgents,
 		EstimatedCostMessages: estimatedCostMessages,
+		Insights:              insights,
 	}, nil
 }

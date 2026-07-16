@@ -68,14 +68,14 @@ func TestWatchFooterShowsSkippedAgents(t *testing.T) {
 	m := NewModel("/fixture/sess.jsonl", "sess", false, true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = updated.(Model)
-	updated, _ = m.Update(analysisMsg(&models.SessionAnalysis{
+	updated, _ = m.Update(analysisMsg{analysis: &models.SessionAnalysis{
 		SessionID:             "sess",
 		CostByModel:           map[string]models.CostBreakdown{},
 		MessageCount:          4,
 		SkippedAgents:         1,
 		SkippedLines:          2,
 		EstimatedCostMessages: 3,
-	}))
+	}})
 	m = updated.(Model)
 
 	view := m.View()

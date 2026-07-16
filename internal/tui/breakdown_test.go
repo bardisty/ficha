@@ -35,68 +35,96 @@ func TestFormatCompactCost(t *testing.T) {
 	}
 }
 
+// bdMsg builds a message with a fixed timestamp (minutes offset) and optional
+// agent ID. Its identity — what highlight tracking keys on — is stable across
+// reloads regardless of the row's Index, so tests can add rows and reorder them.
+func bdMsg(index, minute int, agentID string) models.BreakdownMessage {
+	base := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	return models.BreakdownMessage{
+		Index:     index,
+		AgentID:   agentID,
+		Timestamp: base.Add(time.Duration(minute) * time.Minute),
+	}
+}
+
 func TestBreakdownModel_DetectNewMessages(t *testing.T) {
 	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
 
-	// Initial load with 3 messages
-	initialMessages := []models.BreakdownMessage{
-		{Index: 1, Timestamp: time.Now()},
-		{Index: 2, Timestamp: time.Now()},
-		{Index: 3, Timestamp: time.Now()},
-	}
-	m.messages = initialMessages
+	// Currently displayed: three messages at minutes 0, 1, 2.
+	m.messages = []models.BreakdownMessage{bdMsg(1, 0, ""), bdMsg(2, 1, ""), bdMsg(3, 2, "")}
 
-	// Simulate receiving 5 messages (2 new)
+	// Reload appends two more (minutes 3, 4). Indices are irrelevant to detection.
 	newMessages := []models.BreakdownMessage{
-		{Index: 1, Timestamp: time.Now()},
-		{Index: 2, Timestamp: time.Now()},
-		{Index: 3, Timestamp: time.Now()},
-		{Index: 4, Timestamp: time.Now()},
-		{Index: 5, Timestamp: time.Now()},
+		bdMsg(1, 0, ""), bdMsg(2, 1, ""), bdMsg(3, 2, ""), bdMsg(4, 3, ""), bdMsg(5, 4, ""),
 	}
-
 	m.detectNewMessages(newMessages)
 
-	// Should have marked indices 4 and 5 as new
-	if _, exists := m.newMsgIndices[4]; !exists {
-		t.Error("expected index 4 to be marked as new")
+	if !m.isNewMessage(bdMsg(4, 3, "")) {
+		t.Error("expected the minute-3 message to be marked new")
 	}
-	if _, exists := m.newMsgIndices[5]; !exists {
-		t.Error("expected index 5 to be marked as new")
+	if !m.isNewMessage(bdMsg(5, 4, "")) {
+		t.Error("expected the minute-4 message to be marked new")
 	}
-	if _, exists := m.newMsgIndices[1]; exists {
-		t.Error("index 1 should not be marked as new")
+	if m.isNewMessage(bdMsg(1, 0, "")) {
+		t.Error("the minute-0 message already existed and should not be new")
 	}
-	if _, exists := m.newMsgIndices[3]; exists {
-		t.Error("index 3 should not be marked as new")
+	if m.isNewMessage(bdMsg(3, 2, "")) {
+		t.Error("the minute-2 message already existed and should not be new")
+	}
+}
+
+// BRK-04: a newly discovered agent message whose timestamp precedes existing
+// rows inserts mid-list; the sort then renumbers the old tail rows past the old
+// count. Identity-based detection must flag only the inserted agent row, not the
+// shifted parent rows.
+func TestBreakdownModel_DetectNewMessages_MidListInsertion(t *testing.T) {
+	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
+
+	// Displayed: three parent rows at minutes 0, 2, 4 (indices 1..3).
+	m.messages = []models.BreakdownMessage{bdMsg(1, 0, ""), bdMsg(2, 2, ""), bdMsg(3, 4, "")}
+
+	// Reload: an agent row at minute 1 lands mid-list; after the timestamp sort
+	// and 1..N reindex the parent rows shift to indices 3 and 4.
+	agentRow := bdMsg(2, 1, "x")
+	reloaded := []models.BreakdownMessage{
+		bdMsg(1, 0, ""), agentRow, bdMsg(3, 2, ""), bdMsg(4, 4, ""),
+	}
+	m.detectNewMessages(reloaded)
+
+	if !m.isNewMessage(agentRow) {
+		t.Error("the inserted agent row should be flagged new")
+	}
+	// The parent row now at index 4 must NOT be flagged just because its index
+	// exceeds the old count of 3 — that was the positional-key bug.
+	if m.isNewMessage(bdMsg(4, 4, "")) {
+		t.Error("a pre-existing parent row must not flash as new after a mid-list insertion shifted its index")
+	}
+	if m.isNewMessage(bdMsg(3, 2, "")) {
+		t.Error("a pre-existing parent row must not be flagged after reindexing")
 	}
 }
 
 func TestBreakdownModel_IsNewMessage(t *testing.T) {
 	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
 
-	// Mark a message as new
-	m.newMsgIndices[5] = time.Now()
+	newRow := bdMsg(5, 5, "")
+	m.newMsgKeys[breakdownMsgKey(newRow)] = time.Now()
 
-	// Should be highlighted
-	if !m.isNewMessage(5) {
-		t.Error("expected message 5 to be highlighted")
+	if !m.isNewMessage(newRow) {
+		t.Error("expected the tracked message to be highlighted")
 	}
-
-	// Unknown message should not be highlighted
-	if m.isNewMessage(10) {
-		t.Error("expected message 10 to not be highlighted")
+	if m.isNewMessage(bdMsg(10, 10, "")) {
+		t.Error("expected an untracked message to not be highlighted")
 	}
 }
 
 func TestBreakdownModel_IsNewMessage_NoColor(t *testing.T) {
 	m := NewBreakdownModel("/test/path", "test-session", true, "", false) // noColor = true
 
-	// Mark a message as new
-	m.newMsgIndices[5] = time.Now()
+	newRow := bdMsg(5, 5, "")
+	m.newMsgKeys[breakdownMsgKey(newRow)] = time.Now()
 
-	// Should NOT be highlighted when noColor is true
-	if m.isNewMessage(5) {
+	if m.isNewMessage(newRow) {
 		t.Error("expected no highlight in noColor mode")
 	}
 }
@@ -104,21 +132,17 @@ func TestBreakdownModel_IsNewMessage_NoColor(t *testing.T) {
 func TestBreakdownModel_CleanupExpiredHighlights(t *testing.T) {
 	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
 
-	// Add an expired highlight (older than highlightDuration)
-	m.newMsgIndices[1] = time.Now().Add(-3 * time.Second) // highlightDuration is 2s
-
-	// Add a fresh highlight
-	m.newMsgIndices[2] = time.Now()
+	expired := bdMsg(1, 0, "")
+	fresh := bdMsg(2, 1, "")
+	m.newMsgKeys[breakdownMsgKey(expired)] = time.Now().Add(-3 * time.Second) // highlightDuration is 2s
+	m.newMsgKeys[breakdownMsgKey(fresh)] = time.Now()
 
 	m.cleanupExpiredHighlights()
 
-	// Expired one should be removed
-	if _, exists := m.newMsgIndices[1]; exists {
+	if _, exists := m.newMsgKeys[breakdownMsgKey(expired)]; exists {
 		t.Error("expected expired highlight to be cleaned up")
 	}
-
-	// Fresh one should remain
-	if _, exists := m.newMsgIndices[2]; !exists {
+	if _, exists := m.newMsgKeys[breakdownMsgKey(fresh)]; !exists {
 		t.Error("expected fresh highlight to remain")
 	}
 }
@@ -332,8 +356,8 @@ func TestBreakdownModel_DetectNewMessages_FirstLoad(t *testing.T) {
 	}
 	m.detectNewMessages(first)
 
-	if len(m.newMsgIndices) != 0 {
-		t.Errorf("first load flagged %d messages as new, want 0", len(m.newMsgIndices))
+	if len(m.newMsgKeys) != 0 {
+		t.Errorf("first load flagged %d messages as new, want 0", len(m.newMsgKeys))
 	}
 }
 
@@ -361,7 +385,7 @@ func TestBreakdownModel_TickSkipsRenderWhenIdle(t *testing.T) {
 
 func TestBreakdownModel_TickRendersWhileHighlightsActive(t *testing.T) {
 	m := tickReadyBreakdownModel()
-	m.newMsgIndices[1] = time.Now()
+	m.newMsgKeys[breakdownMsgKey(m.messages[0])] = time.Now()
 
 	updated, _ := m.Update(tickMsg(time.Now()))
 	m = updated.(BreakdownModel)
@@ -375,7 +399,7 @@ func TestBreakdownModel_TickRendersFinalFadeFrame(t *testing.T) {
 	m := tickReadyBreakdownModel()
 	// Expired highlight: this tick prunes it, but must still re-render once
 	// so the row doesn't stay highlighted forever
-	m.newMsgIndices[1] = time.Now().Add(-2 * highlightDuration)
+	m.newMsgKeys[breakdownMsgKey(m.messages[0])] = time.Now().Add(-2 * highlightDuration)
 
 	updated, _ := m.Update(tickMsg(time.Now()))
 	m = updated.(BreakdownModel)
@@ -383,8 +407,8 @@ func TestBreakdownModel_TickRendersFinalFadeFrame(t *testing.T) {
 	if strings.Contains(m.viewport.View(), "SENTINEL") {
 		t.Error("the tick that expires the last highlight must re-render once to un-highlight rows")
 	}
-	if len(m.newMsgIndices) != 0 {
-		t.Errorf("expired highlight not pruned: %d entries remain", len(m.newMsgIndices))
+	if len(m.newMsgKeys) != 0 {
+		t.Errorf("expired highlight not pruned: %d entries remain", len(m.newMsgKeys))
 	}
 
 	// Subsequent ticks are idle again

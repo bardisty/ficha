@@ -47,9 +47,9 @@ func (m Model) loadAnalysis() tea.Msg {
 	// updateCostChart merges chronologically on every reload.
 	analysis, err := analyzer.AnalyzeSessionWithCache(m.sessionPath, m.sessionID, analyzer.AllMessages, m.agentCache)
 	if err != nil {
-		return errorMsg(err)
+		return errorMsg{err: err, sessionPath: m.sessionPath}
 	}
-	return analysisMsg(analysis)
+	return analysisMsg{analysis: analysis, sessionPath: m.sessionPath}
 }
 
 // watcherStartedMsg is sent when the watcher is successfully created
@@ -67,7 +67,7 @@ type sessionWatcherRestartMsg struct{}
 
 // wrapErr lets the shared watcher commands report failures as this model's
 // error message.
-func (m Model) wrapErr(err error) tea.Msg { return errorMsg(err) }
+func (m Model) wrapErr(err error) tea.Msg { return errorMsg{err: err, sessionPath: m.sessionPath} }
 
 func (m Model) watchFile() tea.Msg { return watchFileCmd(m.sessionPath, m.wrapErr) }
 

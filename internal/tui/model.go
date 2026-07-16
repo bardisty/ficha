@@ -92,8 +92,20 @@ type Model struct {
 
 // Messages
 type (
-	analysisMsg *models.SessionAnalysis
-	errorMsg    error
+	// analysisMsg carries a completed reload plus the session it was loaded for.
+	// In follow mode a slow in-flight load for the previous session can land
+	// after a switch; the handler drops it when sessionPath doesn't match the
+	// current session, so it can't overwrite the new session's data (BRK-02).
+	analysisMsg struct {
+		analysis    *models.SessionAnalysis
+		sessionPath string
+	}
+	// errorMsg carries a reload/watcher failure and the session it belongs to;
+	// a stale error for the old session must not stamp over the new one.
+	errorMsg struct {
+		err         error
+		sessionPath string
+	}
 	// fileChangedMsg reports a session-file change seen by a specific watcher.
 	// The watcher identifies the message's origin: handlers drop messages from
 	// a superseded (closed) watcher so stale ones can't corrupt the
@@ -229,12 +241,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case analysisMsg:
+		if msg.sessionPath != "" && msg.sessionPath != m.sessionPath {
+			// A load for a previous session finished after a follow-mode switch;
+			// dropping it keeps it from overwriting the new session's data under
+			// the new header. Re-arm (idempotent) so the waiter isn't lost. An
+			// unstamped (empty) message applies — only hand-built test messages
+			// omit the path; real loads always stamp it.
+			return m, m.armFileWaiter()
+		}
 		// Detect changes and mark them for highlighting
 		// Compare current analysis (before update) with new analysis
-		if m.analysis != nil && msg != nil {
-			m.detectChanges(m.analysis, msg)
+		if m.analysis != nil && msg.analysis != nil {
+			m.detectChanges(m.analysis, msg.analysis)
 		}
-		m.analysis = msg
+		m.analysis = msg.analysis
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.err = nil
@@ -257,7 +277,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, armCmd
 
 	case errorMsg:
-		m.err = msg
+		if msg.sessionPath != "" && msg.sessionPath != m.sessionPath {
+			// Stale load/watcher error for a previous session; see analysisMsg.
+			return m, m.armFileWaiter()
+		}
+		m.err = msg.err
 		m.loading = false
 		// Re-arm (if needed) even after an error to continue monitoring
 		// Call before return: the arm must mutate the m the caller receives
@@ -320,8 +344,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionPath = msg.newSessionPath
 		m.switchNotifyAt = time.Now()
 
-		// Reset analysis state for clean switch
+		// Reset analysis state for clean switch. Clear err too so a stale header
+		// error from the old session doesn't persist under the new one during the
+		// load window (parity with breakdown's BRK-05 reset).
 		m.analysis = nil
+		m.err = nil
 		m.loading = true
 		m.changedAt = make(map[string]time.Time)
 		m.deltaTokens = make(map[string]int64)

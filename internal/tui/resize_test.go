@@ -30,7 +30,7 @@ func TestWatchZeroHeightTerminalDoesNotPanic(t *testing.T) {
 	}
 
 	// Panics here without the viewportHeight clamp.
-	updated, _ = m.Update(analysisMsg(analysis))
+	updated, _ = m.Update(analysisMsg{analysis: analysis})
 	_ = updated.(Model).View()
 }
 

@@ -85,7 +85,7 @@ func TestWatchPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 		if !m.loading {
 			t.Fatalf("cycle %d: poll-triggered reload did not set loading", i)
 		}
-		mm, cmd = m.Update(analysisMsg(nil))
+		mm, cmd = m.Update(analysisMsg{})
 		m = mm.(Model)
 		if cmd != nil {
 			t.Fatalf("cycle %d: poll-triggered reload completion armed an extra waiter", i)
@@ -93,7 +93,7 @@ func TestWatchPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 	}
 
 	// A failed reload must not arm one either
-	mm, cmd = m.Update(errorMsg(errors.New("parse failed")))
+	mm, cmd = m.Update(errorMsg{err: errors.New("parse failed")})
 	m = mm.(Model)
 	if cmd != nil {
 		t.Fatal("reload error armed an extra waiter")
@@ -103,12 +103,12 @@ func TestWatchPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 	// its completion, and only one
 	mm, _ = m.Update(fileChangedMsg{watcher: m.watcher})
 	m = mm.(Model)
-	mm, cmd = m.Update(analysisMsg(nil))
+	mm, cmd = m.Update(analysisMsg{})
 	m = mm.(Model)
 	if cmd == nil {
 		t.Fatal("file-triggered reload completion did not re-arm the waiter")
 	}
-	mm, cmd = m.Update(analysisMsg(nil))
+	mm, cmd = m.Update(analysisMsg{})
 	m = mm.(Model)
 	if cmd != nil {
 		t.Fatal("second completion after re-arm armed an extra waiter")
@@ -123,7 +123,7 @@ func TestWatchPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 	if m.err == nil {
 		t.Fatal("waiter error was not surfaced on the model")
 	}
-	if _, cmd = m.Update(analysisMsg(nil)); cmd != nil {
+	if _, cmd = m.Update(analysisMsg{}); cmd != nil {
 		t.Fatal("completion after waiter-error re-arm armed an extra waiter")
 	}
 }
@@ -152,7 +152,7 @@ func TestBreakdownPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 		}
 	}
 
-	mm, cmd = m.Update(breakdownErrorMsg(errors.New("parse failed")))
+	mm, cmd = m.Update(breakdownErrorMsg{err: errors.New("parse failed")})
 	m = mm.(BreakdownModel)
 	if cmd != nil {
 		t.Fatal("reload error armed an extra waiter")
@@ -205,14 +205,14 @@ func TestWatchQuitCompletesAfterMixedReloads(t *testing.T) {
 		growFile(t, agentPath)
 		mm, _ = m.Update(subagentPollMsg(time.Now()))
 		m = mm.(Model)
-		mm, cmd = m.Update(analysisMsg(nil))
+		mm, cmd = m.Update(analysisMsg{})
 		m = mm.(Model)
 		runArmedWaiter(cmd)
 	}
 	// ...and a file-triggered cycle
 	mm, _ = m.Update(fileChangedMsg{watcher: m.watcher})
 	m = mm.(Model)
-	mm, cmd = m.Update(analysisMsg(nil))
+	mm, cmd = m.Update(analysisMsg{})
 	m = mm.(Model)
 	runArmedWaiter(cmd)
 
@@ -274,7 +274,7 @@ func TestWatchSessionSwitchResetsWaiterAccounting(t *testing.T) {
 	growFile(t, agentPath)
 	mm, _ = m.Update(subagentPollMsg(time.Now()))
 	m = mm.(Model)
-	mm, _ = m.Update(analysisMsg(nil))
+	mm, _ = m.Update(analysisMsg{})
 	m = mm.(Model)
 
 	// Switch sessions: the old watcher closes (its waiter exits silently), so
@@ -292,7 +292,7 @@ func TestWatchSessionSwitchResetsWaiterAccounting(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("new watcher after session switch did not arm a waiter")
 	}
-	if _, c := m.Update(analysisMsg(nil)); c != nil {
+	if _, c := m.Update(analysisMsg{}); c != nil {
 		t.Fatal("completion after switch re-arm armed an extra waiter")
 	}
 }
@@ -336,7 +336,7 @@ func TestWatchStaleWatcherMessagesIgnored(t *testing.T) {
 		t.Fatal("watcherStartedMsg did not arm the file-change waiter")
 	}
 	// Complete the initial load so loading is false before the stale message
-	mm, _ = m.Update(analysisMsg(nil))
+	mm, _ = m.Update(analysisMsg{})
 	m = mm.(Model)
 
 	stale := newTestWatcher(t, sessionPath)
@@ -421,7 +421,7 @@ func TestWatchReplacementWatcherClosesSuperseded(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("superseded watcher was not closed")
 	}
-	if _, c := m.Update(analysisMsg(nil)); c != nil {
+	if _, c := m.Update(analysisMsg{}); c != nil {
 		t.Fatal("completion after replacement armed an extra waiter")
 	}
 }
