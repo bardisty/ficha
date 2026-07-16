@@ -38,7 +38,7 @@ func watchViewWithUnknownModel(t *testing.T, noColor bool) string {
 	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", false, noColor, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 60})
 	m = updated.(Model)
-	updated, _ = m.Update(analysisMsg(a))
+	updated, _ = m.Update(analysisMsg{analysis: a})
 	m = updated.(Model)
 	m.lastUpdated = goldenTime(11, 30, 0)
 	return m.View()

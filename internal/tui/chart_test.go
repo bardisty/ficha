@@ -147,10 +147,11 @@ func TestLoadAnalysisIncludesAgentMessages(t *testing.T) {
 
 	m := NewModel(sessionPath, sessionID, false, true, "", false)
 	msg := m.loadAnalysis()
-	analysis, ok := msg.(analysisMsg)
+	loaded, ok := msg.(analysisMsg)
 	if !ok {
 		t.Fatalf("loadAnalysis returned %T, want analysisMsg", msg)
 	}
+	analysis := loaded.analysis
 
 	agentRows := 0
 	for _, row := range analysis.Messages {

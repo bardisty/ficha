@@ -3,6 +3,7 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -240,6 +241,63 @@ func TestGetBreakdownMessages_CostCalculation(t *testing.T) {
 	// Verify model is preserved
 	if msg.Model != "claude-sonnet-4" {
 		t.Errorf("expected model 'claude-sonnet-4', got %q", msg.Model)
+	}
+}
+
+// BRK-03/D25(a): breakdown insights must be computed over the file-order merged
+// list, matching show/watch's parent-only file-order insights. For an agent-free
+// session the two lists are identical, so the insights must match exactly even
+// when timestamps are out of order (or zero) — a case where the old
+// timestamp-sorted computation diverged.
+func TestGetBreakdownMessages_InsightsMatchSessionFileOrder(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "insights-order"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+
+	// Six agent-free assistant messages. File order != timestamp order: the last
+	// file line has the earliest timestamp, and one line carries no timestamp
+	// (parses to the zero time, which sorts to the very front). The first file
+	// line is deliberately the most expensive so file-order FirstMessage/Highest
+	// differ from what a timestamp sort would pick.
+	content := `{"type":"assistant","timestamp":"2024-01-15T10:02:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":5000}}}
+{"type":"assistant","timestamp":"2024-01-15T10:03:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":100}}}
+{"type":"assistant","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":100}}}
+{"type":"assistant","timestamp":"2024-01-15T10:05:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":100}}}
+{"type":"assistant","timestamp":"2024-01-15T10:06:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":100}}}
+{"type":"assistant","timestamp":"2024-01-15T10:01:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":4000}}}`
+
+	if err := os.WriteFile(sessionPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write session: %v", err)
+	}
+
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
+	if err != nil {
+		t.Fatalf("GetBreakdownMessages: %v", err)
+	}
+	// The same surface show/watch use: parent-only, file order.
+	analysis, err := AnalyzeSession(sessionPath, sessionID, NoMessages)
+	if err != nil {
+		t.Fatalf("AnalyzeSession: %v", err)
+	}
+
+	if !reflect.DeepEqual(result.Insights, analysis.Insights) {
+		t.Errorf("breakdown insights diverge from show/watch for an agent-free session\n breakdown: %+v\n show/watch: %+v", result.Insights, analysis.Insights)
+	}
+
+	// Pin file-order semantics so a regression to timestamp-sorted insights is
+	// caught even if both surfaces drifted together: the first file line (the
+	// 5000-output message) must be FirstMessage, not the zero-timestamp line a
+	// sort would float to the front.
+	if result.Insights == nil || result.Insights.FirstMessage == nil {
+		t.Fatal("expected insights with a FirstMessage")
+	}
+	if result.Insights.FirstMessage.Index != 1 {
+		t.Fatalf("FirstMessage index = %d, want 1 (file order)", result.Insights.FirstMessage.Index)
+	}
+	firstCost := result.Insights.FirstMessage.Cost
+	lastCost := result.Insights.LastMessage.Cost
+	if firstCost <= lastCost {
+		t.Fatalf("expected file-order FirstMessage (5000-output) to cost more than LastMessage; got first=%.6f last=%.6f (insights look timestamp-sorted)", firstCost, lastCost)
 	}
 }
 

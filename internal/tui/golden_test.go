@@ -199,7 +199,7 @@ func goldenWatchView(t *testing.T, noColor bool) string {
 	// bottom and would otherwise clip the hero cost / token rows)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 60})
 	m = updated.(Model)
-	updated, _ = m.Update(analysisMsg(goldenViewAnalysis()))
+	updated, _ = m.Update(analysisMsg{analysis: goldenViewAnalysis()})
 	m = updated.(Model)
 	m.lastUpdated = goldenTime(11, 30, 0)
 	return m.View()

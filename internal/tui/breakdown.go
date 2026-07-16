@@ -49,8 +49,11 @@ type BreakdownModel struct {
 	autoScroll bool
 	ready      bool // viewport initialized
 
-	// Change tracking for highlight animation
-	newMsgIndices map[int]time.Time // message index -> when it was added
+	// Change tracking for highlight animation. Keyed by message identity, not
+	// position: on every reload the merged list is timestamp-sorted and reindexed
+	// 1..N, so a positional key would flag old rows that merely shifted when a new
+	// agent message inserts mid-list (BRK-04).
+	newMsgKeys map[string]time.Time // message identity -> when it was added
 
 	spinner   spinner.Model
 	watcher   *fsnotify.Watcher
@@ -91,8 +94,18 @@ type (
 		estimatedCosts int
 		hasUnknown     bool
 		hasAgents      bool
+		// sessionPath identifies the session this load was started for. In
+		// follow mode a slow in-flight load for the previous session can land
+		// after a switch; the handler drops it when it doesn't match the
+		// current session so it can't overwrite the new session's data (BRK-02).
+		sessionPath string
 	}
-	breakdownErrorMsg error
+	breakdownErrorMsg struct {
+		err error
+		// sessionPath as in breakdownMsgsMsg: a stale load error for the old
+		// session must not stamp itself over the new one after a switch.
+		sessionPath string
+	}
 )
 
 // NewBreakdownModel creates a new breakdown TUI model
@@ -105,21 +118,21 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 	closeOnce := &sync.Once{}
 
 	return BreakdownModel{
-		sessionPath:   sessionPath,
-		sessionID:     sessionID,
-		noColor:       noColor,
-		loading:       true,
-		autoScroll:    true,
-		spinner:       s,
-		done:          make(chan struct{}),
-		closing:       closing,
-		closeOnce:     closeOnce,
-		wg:            &sync.WaitGroup{},
-		newMsgIndices: make(map[int]time.Time),
-		projectDir:    projectDir,
-		followMode:    followMode,
-		agentCache:    analyzer.NewAgentParseCache(),
-		subagentSig:   subagentTreeSignature(filepath.Dir(sessionPath), sessionID),
+		sessionPath: sessionPath,
+		sessionID:   sessionID,
+		noColor:     noColor,
+		loading:     true,
+		autoScroll:  true,
+		spinner:     s,
+		done:        make(chan struct{}),
+		closing:     closing,
+		closeOnce:   closeOnce,
+		wg:          &sync.WaitGroup{},
+		newMsgKeys:  make(map[string]time.Time),
+		projectDir:  projectDir,
+		followMode:  followMode,
+		agentCache:  analyzer.NewAgentParseCache(),
+		subagentSig: subagentTreeSignature(filepath.Dir(sessionPath), sessionID),
 	}
 }
 
@@ -213,6 +226,14 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case breakdownMsgsMsg:
+		if msg.sessionPath != "" && msg.sessionPath != m.sessionPath {
+			// A load for a previous session finished after a follow-mode switch;
+			// dropping it keeps it from overwriting the new session's data under
+			// the new header. Re-arm (idempotent) so the waiter isn't lost. An
+			// unstamped (empty) message applies — only hand-built test messages
+			// omit the path; real loads always stamp it.
+			return m, m.armFileWaiter()
+		}
 		// Track new messages for highlighting
 		m.detectNewMessages(msg.messages)
 
@@ -244,7 +265,11 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, armCmd
 
 	case breakdownErrorMsg:
-		m.err = msg
+		if msg.sessionPath != "" && msg.sessionPath != m.sessionPath {
+			// Stale load error for a previous session; see breakdownMsgsMsg.
+			return m, m.armFileWaiter()
+		}
+		m.err = msg.err
 		m.loading = false
 		// Re-arm (if needed) even after an error to continue monitoring
 		// Call before return: the arm must mutate the m the caller receives
@@ -307,7 +332,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionPath = msg.newSessionPath
 		m.switchNotifyAt = time.Now()
 
-		// Reset state for clean switch
+		// Reset state for clean switch. hasUnknown and err must reset too, or the
+		// old session's "* = fallback pricing" footnote (and a stale header
+		// error) persist under the new session until its first load lands — or
+		// indefinitely if that load errors (BRK-05).
 		m.messages = nil
 		m.insights = nil
 		m.hasAgents = false
@@ -317,8 +345,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.skippedLines = 0
 		m.skippedAgents = 0
 		m.estimatedCosts = 0
+		m.hasUnknown = false
+		m.err = nil
 		m.loading = true
-		m.newMsgIndices = make(map[int]time.Time)
+		m.newMsgKeys = make(map[string]time.Time)
 		// Drop the previous session's cached agent parses
 		m.agentCache = analyzer.NewAgentParseCache()
 		// Fingerprint the new session's subagent tree; the pending reload
@@ -353,7 +383,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// otherwise be fully re-rendered every tick. Capture before cleanup:
 		// the tick that expires the last highlight still needs one final
 		// re-render to un-highlight its rows.
-		hadHighlights := len(m.newMsgIndices) > 0
+		hadHighlights := len(m.newMsgKeys) > 0
 		m.cleanupExpiredHighlights()
 		if hadHighlights && m.ready && len(m.messages) > 0 {
 			m.viewport.SetContent(clipToWidth(m.renderTableContent(), m.width))
@@ -373,41 +403,65 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// detectNewMessages compares old and new messages to find newly added ones
-func (m *BreakdownModel) detectNewMessages(newMessages []models.BreakdownMessage) {
-	oldCount := len(m.messages)
+// breakdownMsgKey identifies a message by content, not position, so highlight
+// tracking survives the per-reload timestamp sort and 1..N reindex. Two rows
+// with identical timestamp, agent, model, usage, and cost are indistinguishable
+// anyway; collisions only affect a 2s cosmetic highlight.
+func breakdownMsgKey(msg models.BreakdownMessage) string {
+	u := msg.Usage
+	var e5m, e1h int64
+	if u.CacheCreation != nil {
+		e5m = u.CacheCreation.Ephemeral5mInputTokens
+		e1h = u.CacheCreation.Ephemeral1hInputTokens
+	}
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d\x00%.10f",
+		msg.Timestamp.UTC().Format(time.RFC3339Nano), msg.AgentID, msg.Model,
+		u.InputTokens, u.OutputTokens, u.CacheCreationInputTokens, u.CacheReadInputTokens,
+		e5m, e1h, msg.Cost.TotalCost)
+}
 
+// detectNewMessages flags messages whose identity is absent from the currently
+// displayed set as new. Keying on identity (not index) means a mid-list agent
+// insertion highlights only the inserted row, not the old tail rows the sort
+// shifted past the old count (BRK-04).
+func (m *BreakdownModel) detectNewMessages(newMessages []models.BreakdownMessage) {
 	// Nothing to diff against on first load (or right after a session switch):
 	// flagging every row would flash the whole table as "new"
-	if oldCount == 0 {
+	if len(m.messages) == 0 {
 		return
 	}
 
-	now := time.Now()
+	seen := make(map[string]struct{}, len(m.messages))
+	for _, msg := range m.messages {
+		seen[breakdownMsgKey(msg)] = struct{}{}
+	}
 
-	// Any message with index > oldCount is new
+	now := time.Now()
 	for _, msg := range newMessages {
-		if msg.Index > oldCount {
-			m.newMsgIndices[msg.Index] = now
+		key := breakdownMsgKey(msg)
+		if _, ok := seen[key]; !ok {
+			m.newMsgKeys[key] = now
 		}
 	}
 }
 
-// cleanupExpiredHighlights removes highlight entries older than highlightDuration
+// cleanupExpiredHighlights removes highlight entries older than highlightDuration.
+// This also bounds the map: keys for messages whose content changed (or that
+// vanished) are pruned once their window lapses.
 func (m *BreakdownModel) cleanupExpiredHighlights() {
-	for idx, addedAt := range m.newMsgIndices {
+	for key, addedAt := range m.newMsgKeys {
 		if time.Since(addedAt) > highlightDuration {
-			delete(m.newMsgIndices, idx)
+			delete(m.newMsgKeys, key)
 		}
 	}
 }
 
 // isNewMessage checks if a message should be highlighted as new
-func (m *BreakdownModel) isNewMessage(index int) bool {
+func (m *BreakdownModel) isNewMessage(msg models.BreakdownMessage) bool {
 	if m.noColor {
 		return false
 	}
-	addedAt, exists := m.newMsgIndices[index]
+	addedAt, exists := m.newMsgKeys[breakdownMsgKey(msg)]
 	if !exists {
 		return false
 	}
@@ -646,7 +700,7 @@ func (m BreakdownModel) renderTableContent() string {
 
 	for i, msg := range m.messages {
 		isFirst := i == 0
-		sb.WriteString(m.renderRow(msg, m.isNewMessage(msg.Index), prevCost, isFirst))
+		sb.WriteString(m.renderRow(msg, m.isNewMessage(msg), prevCost, isFirst))
 		prevCost = msg.Cost.TotalCost
 		if i < len(m.messages)-1 {
 			sb.WriteString("\n")
@@ -757,14 +811,16 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	}
 	result, err := analyzer.GetBreakdownMessagesWithCache(m.sessionPath, m.sessionID, m.agentCache)
 	if err != nil {
-		return breakdownErrorMsg(err)
+		return breakdownErrorMsg{err: err, sessionPath: m.sessionPath}
 	}
 	messages := result.Messages
 
-	// Calculate total cost, min/max cost, and get insights
+	// Calculate total cost and min/max cost for the gradient. Insights are
+	// order-sensitive and come from the analyzer, computed over the file-order
+	// merged list (BRK-03); these aggregates are order-insensitive so the
+	// display-sorted list is fine.
 	var totalCost float64
 	var minCost, maxCost float64
-	var messageAnalyses []models.MessageAnalysis
 	hasUnknown := false
 	hasAgents := false
 
@@ -789,28 +845,20 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 				maxCost = msg.Cost.TotalCost
 			}
 		}
-
-		messageAnalyses = append(messageAnalyses, models.MessageAnalysis{
-			Timestamp: msg.Timestamp,
-			Model:     msg.Model,
-			Usage:     msg.Usage,
-			Cost:      msg.Cost,
-		})
 	}
-
-	insights := analyzer.CalculateInsights(messageAnalyses)
 
 	return breakdownMsgsMsg{
 		messages:       messages,
 		totalCost:      totalCost,
 		minCost:        minCost,
 		maxCost:        maxCost,
-		insights:       insights,
+		insights:       result.Insights,
 		skippedLines:   result.SkippedLines,
 		skippedAgents:  result.SkippedAgents,
 		estimatedCosts: result.EstimatedCostMessages,
 		hasUnknown:     hasUnknown,
 		hasAgents:      hasAgents,
+		sessionPath:    m.sessionPath,
 	}
 }
 
@@ -822,7 +870,9 @@ func (m BreakdownModel) loadBreakdownCmd() tea.Cmd {
 
 // wrapErr lets the shared watcher commands report failures as this model's
 // error message.
-func (m BreakdownModel) wrapErr(err error) tea.Msg { return breakdownErrorMsg(err) }
+func (m BreakdownModel) wrapErr(err error) tea.Msg {
+	return breakdownErrorMsg{err: err, sessionPath: m.sessionPath}
+}
 
 func (m BreakdownModel) watchFile() tea.Msg { return watchFileCmd(m.sessionPath, m.wrapErr) }
 
