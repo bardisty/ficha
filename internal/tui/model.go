@@ -214,18 +214,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Resize cost chart to match new width
-		newChartWidth := m.getChartWidth()
-		m.costChart.Resize(newChartWidth, chartHeight)
-		// Resize keeps the data but clears the canvas; redraw so the chart
-		// isn't blank until the next message arrives
-		if len(m.costHistory) > 0 {
-			if !m.noColor {
-				m.costChart.DrawBraille()
-			} else {
-				m.costChart.Draw()
-			}
-		}
+		// Re-window the cost chart to the new width. A plain Resize would keep the
+		// old width's pushed points (and its scale), so the drawn window and the
+		// min/max/count labels would disagree with the new width — rebuild from
+		// costHistory so the visible tail, scale, and labels all track the resize.
+		m.rebuildCostChart()
 
 		// Re-render content with new dimensions
 		if m.analysis != nil {
@@ -596,14 +589,30 @@ func (m Model) getChartWidth() int {
 // block then agent blocks (its documented order — never sorted in place here),
 // so a stable sort both interleaves agent spend where it happened and keeps
 // that order deterministic when timestamps tie.
+//
+// A missing timestamp unmarshals to the zero time.Time (real session data does
+// this — see timeRange in analyzer/session.go). Left as-is it sorts before every
+// real timestamp, so a mid-session point without a timestamp would jump to chart
+// position 0 and be the first dropped by the tail-keep truncation even when it is
+// the newest spend. Instead each zero-ts point inherits the previous message's
+// effective timestamp (in file order), so the stable sort leaves it adjacent to
+// its file neighbors. Leading zero-ts points (nothing precedes them) keep the
+// zero time, and an all-zero list falls back to pure file order as before.
 func mergedCostHistory(msgs []models.MessageAnalysis, max int) []float64 {
 	type point struct {
 		ts   time.Time
 		cost float64
 	}
 	points := make([]point, len(msgs))
+	var lastTS time.Time
 	for i, msg := range msgs {
-		points[i] = point{ts: msg.Timestamp, cost: msg.Cost.TotalCost}
+		ts := msg.Timestamp
+		if ts.IsZero() {
+			ts = lastTS
+		} else {
+			lastTS = ts
+		}
+		points[i] = point{ts: ts, cost: msg.Cost.TotalCost}
 	}
 	sort.SliceStable(points, func(i, j int) bool {
 		return points[i].ts.Before(points[j].ts)
@@ -618,6 +627,35 @@ func mergedCostHistory(msgs []models.MessageAnalysis, max int) []float64 {
 	return history
 }
 
+// visibleCostHistory returns the tail of costHistory the chart can actually draw
+// at the current width. The sparkline's ring buffer holds only chart-width
+// points, so this is the exact window the bars, scale, and labels must all agree
+// on (see rebuildCostChart / renderCostChart).
+func (m Model) visibleCostHistory() []float64 {
+	w := m.getChartWidth()
+	if len(m.costHistory) <= w {
+		return m.costHistory
+	}
+	return m.costHistory[len(m.costHistory)-w:]
+}
+
+// rebuildCostChart recreates the sparkline at the current width and pushes only
+// the visible window. Pushing the full history would let ntcharts' AutoMaxValue
+// ratchet the scale to a peak that has already rotated out of the ring buffer,
+// flat-lining the visible bars against an off-screen max (WDIFF-01); pushing only
+// what is drawn keeps the scale honest to the visible bars.
+func (m *Model) rebuildCostChart() {
+	chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
+	m.costChart = sparkline.New(m.getChartWidth(), chartHeight, sparkline.WithStyle(chartStyle))
+	m.costChart.PushAll(m.visibleCostHistory())
+
+	if !m.noColor {
+		m.costChart.DrawBraille()
+	} else {
+		m.costChart.Draw()
+	}
+}
+
 // updateCostChart rebuilds the sparkline from the analysis on every reload.
 // A full rebuild (rather than pushing the new tail) is what lets the list
 // carry agent messages, whose timestamps land mid-list; reloads only happen
@@ -629,14 +667,5 @@ func (m *Model) updateCostChart() {
 	}
 
 	m.costHistory = mergedCostHistory(m.analysis.Messages, maxCostHistorySize)
-
-	chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
-	m.costChart = sparkline.New(m.getChartWidth(), chartHeight, sparkline.WithStyle(chartStyle))
-	m.costChart.PushAll(m.costHistory)
-
-	if !m.noColor {
-		m.costChart.DrawBraille()
-	} else {
-		m.costChart.Draw()
-	}
+	m.rebuildCostChart()
 }

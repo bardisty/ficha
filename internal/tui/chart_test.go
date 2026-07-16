@@ -3,8 +3,11 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -120,6 +123,145 @@ func TestUpdateCostChart_DoesNotReorderAnalysisMessages(t *testing.T) {
 	if len(m.costHistory) != 3 || m.costHistory[1] != 0.20 {
 		t.Errorf("costHistory: got %v, want agent cost 0.20 interleaved at index 1", m.costHistory)
 	}
+}
+
+// An early expensive message must not pin the visible window's scale: once it
+// rotates out of the sparkline's ring buffer, the drawn bars must scale to the
+// visible max, and the min/max/count label must describe the visible window
+// (WDIFF-01 / WCOST-03) — not a peak that is off-screen.
+func TestUpdateCostChart_ScalesToVisibleWindow(t *testing.T) {
+	base := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	const n = 210
+	msgs := make([]models.MessageAnalysis, n)
+	for i := 0; i < n; i++ {
+		cost := 0.01 + float64(i%50)*0.001 // all small, well under the early peak
+		if i == 10 {
+			cost = 5.00 // early expensive message, far outside the last 68
+		}
+		msgs[i] = chartMsg(base.Add(time.Duration(i)*time.Second), "", cost)
+	}
+
+	m := NewModel("/test/path", "sess", false, true, "", false)
+	m.width = 100 // getChartWidth -> 68
+	m.analysis = &models.SessionAnalysis{Messages: msgs}
+	m.updateCostChart()
+
+	w := m.getChartWidth()
+	if w != 68 {
+		t.Fatalf("getChartWidth: got %d, want 68", w)
+	}
+	if len(m.costHistory) != n {
+		t.Fatalf("costHistory length: got %d, want %d", len(m.costHistory), n)
+	}
+	visible := m.visibleCostHistory()
+	if len(visible) != w {
+		t.Fatalf("visible window: got %d, want %d", len(visible), w)
+	}
+	// The $5 peak (index 10) is outside the last 68, so it must not set the scale.
+	if mv := m.costChart.MaxValue(); mv >= 5.0 {
+		t.Errorf("chart scale MaxValue: got %f, want < 5.0 — early peak still ratchets the visible window", mv)
+	}
+	label := m.renderCostChart()
+	if !strings.Contains(label, "(last 68 of 210 msgs)") {
+		t.Errorf("label: %q\nwant substring %q", label, "(last 68 of 210 msgs)")
+	}
+	if strings.Contains(label, "$5.0000") {
+		t.Errorf("label advertises the off-screen peak: %q", label)
+	}
+}
+
+// Resizing the terminal re-windows the chart: the drawn window, its scale, and
+// the shown/total count must all track the new width (WDIFF-01 resize path).
+func TestRenderCostChart_ResizeChangesWindow(t *testing.T) {
+	base := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	const n = 210
+	msgs := make([]models.MessageAnalysis, n)
+	for i := 0; i < n; i++ {
+		msgs[i] = chartMsg(base.Add(time.Duration(i)*time.Second), "", 0.01+float64(i%40)*0.001)
+	}
+
+	m := NewModel("/test/path", "sess", false, true, "", false)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = updated.(Model)
+	updated, _ = m.Update(analysisMsg{analysis: &models.SessionAnalysis{Messages: msgs}})
+	m = updated.(Model)
+
+	if !strings.Contains(m.renderCostChart(), "(last 68 of 210 msgs)") {
+		t.Errorf("width 100 label: %q\nwant substring %q", m.renderCostChart(), "(last 68 of 210 msgs)")
+	}
+
+	// Narrow the terminal: getChartWidth = 50-8 = 42, so the window shrinks.
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 50, Height: 40})
+	m = updated.(Model)
+	if w := m.getChartWidth(); w != 42 {
+		t.Fatalf("getChartWidth after resize: got %d, want 42", w)
+	}
+	if len(m.visibleCostHistory()) != 42 {
+		t.Fatalf("visible window after resize: got %d, want 42", len(m.visibleCostHistory()))
+	}
+	if !strings.Contains(m.renderCostChart(), "(last 42 of 210 msgs)") {
+		t.Errorf("width 50 label: %q\nwant substring %q", m.renderCostChart(), "(last 42 of 210 msgs)")
+	}
+}
+
+// A message with a missing timestamp must plot next to its file neighbors, not
+// jump to chart position 0 the way the zero time.Time would under a naive sort
+// (WDIFF-02).
+func TestMergedCostHistory_ZeroTimestampKeptWithNeighbors(t *testing.T) {
+	base := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	// Agent block (zero-ts) appended after the parent block, as the analyzer emits.
+	trailing := mergedCostHistory([]models.MessageAnalysis{
+		chartMsg(base, "", 0.10),
+		chartMsg(base.Add(20*time.Minute), "", 0.30),
+		chartMsg(time.Time{}, "x", 2.00), // $2 spike, no timestamp
+	}, maxCostHistorySize)
+	if want := []float64{0.10, 0.30, 2.00}; !floatsEqual(trailing, want) {
+		t.Errorf("trailing zero-ts: got %v, want %v (spike must not sort to position 0)", trailing, want)
+	}
+
+	// A zero-ts message mid-block keeps its file position between its neighbors.
+	mid := mergedCostHistory([]models.MessageAnalysis{
+		chartMsg(base, "", 0.10),
+		chartMsg(time.Time{}, "", 2.00),
+		chartMsg(base.Add(20*time.Minute), "", 0.30),
+	}, maxCostHistorySize)
+	if want := []float64{0.10, 2.00, 0.30}; !floatsEqual(mid, want) {
+		t.Errorf("mid zero-ts: got %v, want %v", mid, want)
+	}
+}
+
+// The newest spend must survive tail truncation even when its timestamp is
+// missing: inheriting the prior message's time keeps it at the end, not the
+// front where the zero time would land it and be dropped first (WDIFF-02).
+func TestMergedCostHistory_LateZeroTimestampSurvivesTruncation(t *testing.T) {
+	base := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	msgs := make([]models.MessageAnalysis, 10)
+	for i := 0; i < 9; i++ {
+		msgs[i] = chartMsg(base.Add(time.Duration(i)*time.Minute), "", float64(i))
+	}
+	msgs[9] = chartMsg(time.Time{}, "x", 9.9) // newest spend, missing timestamp
+
+	got := mergedCostHistory(msgs, 5) // keep only the newest 5
+
+	if len(got) != 5 {
+		t.Fatalf("history length: got %d, want 5", len(got))
+	}
+	if got[len(got)-1] != 9.9 {
+		t.Errorf("newest zero-ts spend dropped: got %v, want it last (9.9)", got)
+	}
+}
+
+func floatsEqual(a, b []float64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Regression pin for the chart's data source: the goldens feed analysisMsg

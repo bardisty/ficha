@@ -805,16 +805,22 @@ func (m Model) isEmptySession() bool {
 	return m.analysis.TotalCost.TotalCost == 0 && m.analysis.MessageCount == 0
 }
 
-// renderCostChart renders the cost trend sparkline with labels
+// renderCostChart renders the cost trend sparkline with labels. The min/max and
+// count describe exactly the window the sparkline draws — its last chart-width
+// points — so the labels can never advertise a peak that is off-screen (WDIFF-01
+// / WCOST-03). When the whole history fits the chart the count is a plain
+// "(N msgs)"; once it overflows the label discloses the shown/total split as
+// "(last N of M msgs)".
 func (m Model) renderCostChart() string {
 	var sb strings.Builder
 
-	// Find min and max for display
+	// Find min and max over the drawn window only
+	visible := m.visibleCostHistory()
 	var minCost, maxCost float64
-	if len(m.costHistory) > 0 {
-		minCost = m.costHistory[0]
-		maxCost = m.costHistory[0]
-		for _, cost := range m.costHistory {
+	if len(visible) > 0 {
+		minCost = visible[0]
+		maxCost = visible[0]
+		for _, cost := range visible {
 			if cost < minCost {
 				minCost = cost
 			}
@@ -832,14 +838,20 @@ func (m Model) renderCostChart() string {
 		}
 	}
 
+	// Count label: plain when nothing is truncated, shown/total when it is
+	var countInfo string
+	if len(visible) < len(m.costHistory) {
+		countInfo = fmt.Sprintf("(last %d of %d msgs)", len(visible), len(m.costHistory))
+	} else {
+		countInfo = fmt.Sprintf("(%d msgs)", len(visible))
+	}
+
 	// Add scale labels below the chart
+	scaleInfo := fmt.Sprintf("min: $%.4f  max: $%.4f  %s", minCost, maxCost, countInfo)
 	if !m.noColor {
-		scaleInfo := fmt.Sprintf("min: $%.4f  max: $%.4f  (%d msgs)",
-			minCost, maxCost, len(m.costHistory))
 		sb.WriteString("    " + dimStyle.Render(scaleInfo) + "\n")
 	} else {
-		sb.WriteString(fmt.Sprintf("    min: $%.4f  max: $%.4f  (%d msgs)\n",
-			minCost, maxCost, len(m.costHistory)))
+		sb.WriteString("    " + scaleInfo + "\n")
 	}
 
 	return sb.String()
