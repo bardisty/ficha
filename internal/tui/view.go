@@ -92,8 +92,12 @@ func (m Model) View() string {
 	}
 	sb.WriteString("  " + footerSep + "\n")
 
-	// Footer stats - only show if we have data
-	if m.analysis != nil && !m.isEmptySession() {
+	// Footer stats - shown for any non-empty session, and for an empty one that
+	// still has accounting to disclose (skipped input / estimated / fallback):
+	// the footer is watch's only channel for those warnings, so suppressing it
+	// on a zero-message session would hide exactly the sessions where every line
+	// was dropped, while `show` warns (WCOST-02, D17).
+	if m.analysis != nil && (!m.isEmptySession() || m.hasAccountingWarnings()) {
 		sb.WriteString("  " + m.renderFooter() + "\n")
 	} else {
 		sb.WriteString("\n")
@@ -150,21 +154,25 @@ func (m Model) renderAnalysis() string {
 		"Output", a.TotalCost.OutputCost, a.TotalUsage.OutputTokens,
 		"output_cost", "output_tokens", styles.OutputTokenColor, ""))
 
-	// Cache write rows - split tokens by TTL when detailed breakdown available
+	// Cache write rows - split tokens by TTL when detailed breakdown available.
+	// Each row reads its own per-TTL token delta so a write to one bucket can't
+	// flash a delta on the other (WCOST-01); tokenKey5m/tokenKey1h stay in
+	// lockstep with detectChanges' keying via cacheWriteTokenKeys.
 	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(a.TotalUsage)
+	tokenKey5m, tokenKey1h := cacheWriteTokenKeys(a.TotalUsage)
 	has5mCost := a.TotalCost.CacheWrite5mCost > 0
 	has1hCost := a.TotalCost.CacheWrite1hCost > 0
 
 	if has5mCost {
 		sb.WriteString(m.renderUnifiedCostRow(
 			"Cache write", a.TotalCost.CacheWrite5mCost, cache5mTokens,
-			"cache_write_5m", "cache_write_tokens", styles.CacheWriteTokenColor, "5m TTL"))
+			"cache_write_5m", tokenKey5m, styles.CacheWriteTokenColor, "5m TTL"))
 	}
 
 	if has1hCost {
 		sb.WriteString(m.renderUnifiedCostRow(
 			"Cache write", a.TotalCost.CacheWrite1hCost, cache1hTokens,
-			"cache_write_1h", "cache_write_tokens", styles.CacheWriteTokenColor, "1h TTL"))
+			"cache_write_1h", tokenKey1h, styles.CacheWriteTokenColor, "1h TTL"))
 	}
 
 	// Cache read - only show if present
@@ -334,6 +342,32 @@ func (m Model) renderFooter() string {
 		}
 	}
 	return footerLine
+}
+
+// cacheWriteTokenKeys returns the highlight/delta map keys for the 5m and 1h
+// cache-write rows. With the detailed bucket breakdown present each row gets its
+// own per-TTL key so its delta describes only its own column; a detail-less
+// legacy usage (all writes priced as 5m) has a single flat count and shares the
+// flat key. Must mirror detectChanges' cache-write delta keying.
+func cacheWriteTokenKeys(usage models.TokenUsage) (string, string) {
+	if usage.CacheCreation != nil {
+		return "cache_write_5m_tokens", "cache_write_1h_tokens"
+	}
+	return "cache_write_tokens", "cache_write_tokens"
+}
+
+// hasAccountingWarnings reports whether the analysis carries any disclosure the
+// footer must surface even when the session is otherwise empty: skipped input,
+// estimated-cost messages, or fallback-priced models. Without it, a session
+// that parses to zero messages but dropped every line would render a clean
+// empty state while `show` on the same session warns (WCOST-02).
+func (m Model) hasAccountingWarnings() bool {
+	a := m.analysis
+	if a == nil {
+		return false
+	}
+	return a.SkippedLines > 0 || a.SkippedAgents > 0 ||
+		a.EstimatedCostMessages > 0 || hasUnknownModel(a.CostByModel)
 }
 
 // hasUnknownModel reports whether any model in a cost-by-model map was priced
