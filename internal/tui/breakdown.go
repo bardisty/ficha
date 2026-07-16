@@ -59,6 +59,10 @@ type BreakdownModel struct {
 	closeOnce *sync.Once
 	wg        *sync.WaitGroup
 
+	// A file-change waiter is blocked on the watcher; gates armFileWaiter so
+	// poll-triggered reloads can't stack extra waiters (WATCH-01)
+	fileWaiterActive bool
+
 	// Auto-follow mode for tracking new sessions
 	projectDir     string          // Project directory to watch for new sessions
 	followMode     bool            // Whether to auto-follow new sessions
@@ -232,19 +236,35 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoBottom()
 			}
 		}
-		// Restart file watcher after data loads to avoid race condition
-		// where the old watcher's defer hasn't executed yet when we start a new one
-		return m, m.waitForFileChangeBreakdown()
+		// Re-arm the file watcher only when no waiter is in flight: this reload
+		// may have been poll-triggered, in which case the file-change waiter is
+		// still blocked on the watcher (WATCH-01)
+		// Call before return: the arm must mutate the m the caller receives
+		armCmd := m.armFileWaiter()
+		return m, armCmd
 
 	case breakdownErrorMsg:
 		m.err = msg
 		m.loading = false
-		// Restart file watcher even after error to continue monitoring
-		return m, m.waitForFileChangeBreakdown()
+		// Re-arm (if needed) even after an error to continue monitoring
+		// Call before return: the arm must mutate the m the caller receives
+		armCmd := m.armFileWaiter()
+		return m, armCmd
+
+	case fileWatchErrMsg:
+		// The file-change waiter exited with a watcher error; report it and
+		// arm a replacement so monitoring continues
+		m.err = msg.err
+		m.fileWaiterActive = false
+		// Call before return: the arm must mutate the m the caller receives
+		armCmd := m.armFileWaiter()
+		return m, armCmd
 
 	case watcherStartedMsg:
 		m.watcher = msg.watcher
-		return m, m.waitForFileChangeBreakdown()
+		// Call before return: the arm must mutate the m the caller receives
+		armCmd := m.armFileWaiter()
+		return m, armCmd
 
 	case sessionWatcherStartedMsg:
 		// Store the session watcher and start waiting for new sessions
@@ -256,8 +276,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForNewSession()
 
 	case fileChangedMsg:
+		// The waiter that reported this change has exited; the reload's
+		// breakdownMsgsMsg/breakdownErrorMsg arms its replacement
+		m.fileWaiterActive = false
 		m.loading = true
-		// Watcher restart moved to breakdownMsgsMsg handler to avoid race condition
 		return m, m.loadBreakdownCmd()
 
 	case sessionSwitchedMsg:
@@ -285,11 +307,14 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// covers anything already on disk
 		m.subagentSig = subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
 
-		// Stop old file watcher, will be restarted by watchFile
+		// Stop old file watcher, will be restarted by watchFile. Closing it
+		// unblocks the old waiter, which exits without a message, so the
+		// in-flight flag resets here for the new watcher's waiter
 		if m.watcher != nil {
 			m.watcher.Close()
 			m.watcher = nil
 		}
+		m.fileWaiterActive = false
 
 		// Update session watcher's current session
 		if m.sessionWatcher != nil {
@@ -783,8 +808,15 @@ func (m BreakdownModel) wrapErr(err error) tea.Msg { return breakdownErrorMsg(er
 
 func (m BreakdownModel) watchFile() tea.Msg { return watchFileCmd(m.sessionPath, m.wrapErr) }
 
-func (m BreakdownModel) waitForFileChangeBreakdown() tea.Cmd {
-	return waitForFileChangeCmd(m.wg, m.closing, m.watcher, m.done, m.sessionPath, m.wrapErr)
+// armFileWaiter starts a file-change waiter unless one is already blocked on
+// the watcher; see Model.armFileWaiter (WATCH-01). Returns nil when a waiter
+// is already in flight.
+func (m *BreakdownModel) armFileWaiter() tea.Cmd {
+	if m.watcher == nil || m.fileWaiterActive {
+		return nil
+	}
+	m.fileWaiterActive = true
+	return waitForFileChangeCmd(m.wg, m.closing, m.watcher, m.done, m.sessionPath)
 }
 
 // Per-message change symbols (distinct from session trend ▲/▼/═)

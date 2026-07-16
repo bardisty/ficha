@@ -291,34 +291,7 @@ func TestWaitForFileChangeRegistersWaitGroupBeforeScheduling(t *testing.T) {
 	// WaitGroup must still be registered when the command is constructed,
 	// or a quit-time Wait can observe zero while the command is pending
 	m := NewModel("/test/path", "test-session", false, false, "", false)
-	cmd := m.waitForFileChange()
-
-	waitDone := make(chan struct{})
-	go func() {
-		m.wg.Wait()
-		close(waitDone)
-	}()
-
-	select {
-	case <-waitDone:
-		t.Fatal("wg.Wait returned before the scheduled command ran — Add must precede Wait")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	if msg := cmd(); msg != nil {
-		t.Fatalf("expected nil msg from no-watcher command, got %v", msg)
-	}
-
-	select {
-	case <-waitDone:
-	case <-time.After(time.Second):
-		t.Fatal("wg.Wait did not return after the command completed")
-	}
-}
-
-func TestBreakdownWaitForFileChangeRegistersWaitGroupBeforeScheduling(t *testing.T) {
-	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
-	cmd := m.waitForFileChangeBreakdown()
+	cmd := waitForFileChangeCmd(m.wg, m.closing, nil, m.done, m.sessionPath)
 
 	waitDone := make(chan struct{})
 	go func() {

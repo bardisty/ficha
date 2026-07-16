@@ -206,3 +206,104 @@ func TestSubagentTreeSignature(t *testing.T) {
 		t.Error("signature unchanged after workflow metadata write")
 	}
 }
+
+func TestSubagentTreeSignature_SymlinkedWorkflowRunDir(t *testing.T) {
+	// Discovery (parser.DiscoverAgentSessions) follows a symlinked workflow run
+	// dir, so the poll signature must see writes inside it too: a symlink's own
+	// lstat size/mtime never change as the target's contents grow, which is
+	// exactly what the old WalkDir-based signature fingerprinted (BRK-01).
+	tmpDir := t.TempDir()
+	sessionID := "sess-symlink"
+	target := t.TempDir()
+
+	agentPath := filepath.Join(target, "agent-w1.jsonl")
+	if err := os.WriteFile(agentPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	wfDir := filepath.Join(tmpDir, sessionID, "subagents", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(wfDir, "wf_run-1")); err != nil {
+		t.Fatal(err)
+	}
+
+	sig1 := subagentTreeSignature(tmpDir, sessionID)
+	if sig1 == "" {
+		t.Fatal("symlinked run dir contributed nothing to the signature")
+	}
+
+	// Append inside the target (size change; mtime granularity can be coarse)
+	if err := os.WriteFile(agentPath, []byte("{}\n{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sig2 := subagentTreeSignature(tmpDir, sessionID)
+	if sig2 == sig1 {
+		t.Error("signature unchanged after append inside symlinked run dir")
+	}
+
+	// A new agent file appearing in the target must flip it too
+	if err := os.WriteFile(filepath.Join(target, "agent-w2.jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if sig := subagentTreeSignature(tmpDir, sessionID); sig == sig2 {
+		t.Error("signature unchanged after new agent file inside symlinked run dir")
+	}
+}
+
+func TestSubagentTreeSignature_SymlinkedSubagentsRoot(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess-symroot"
+	target := t.TempDir()
+
+	agentPath := filepath.Join(target, "agent-a1.jsonl")
+	if err := os.WriteFile(agentPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sessionDir := filepath.Join(tmpDir, sessionID)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(sessionDir, "subagents")); err != nil {
+		t.Fatal(err)
+	}
+
+	sig1 := subagentTreeSignature(tmpDir, sessionID)
+	if sig1 == "" {
+		t.Fatal("symlinked subagents root contributed nothing to the signature")
+	}
+
+	if err := os.WriteFile(agentPath, []byte("{}\n{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if sig := subagentTreeSignature(tmpDir, sessionID); sig == sig1 {
+		t.Error("signature unchanged after append under symlinked subagents root")
+	}
+}
+
+func TestSubagentTreeSignature_BrokenSymlink(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess-broken"
+
+	wfDir := filepath.Join(tmpDir, sessionID, "subagents", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(tmpDir, "does-not-exist"), filepath.Join(wfDir, "wf_run-1")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Must not panic; a broken symlink hides a possible run dir, so discovery
+	// discloses it (unreadable) and the signature must reflect that state...
+	sig1 := subagentTreeSignature(tmpDir, sessionID)
+	if sig1 == "" {
+		t.Error("broken symlink (possible hidden run dir) left the signature empty")
+	}
+
+	// ...without churning while nothing changes
+	if sig := subagentTreeSignature(tmpDir, sessionID); sig != sig1 {
+		t.Error("signature churned across calls with an unchanged broken symlink")
+	}
+}

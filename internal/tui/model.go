@@ -67,6 +67,10 @@ type Model struct {
 	closeOnce *sync.Once      // Ensure shutdown happens exactly once
 	wg        *sync.WaitGroup // Waits for goroutines to drain on shutdown
 
+	// A file-change waiter is blocked on the watcher; gates armFileWaiter so
+	// poll-triggered reloads can't stack extra waiters (WATCH-01)
+	fileWaiterActive bool
+
 	// Auto-follow mode for tracking new sessions
 	projectDir     string          // Project directory to watch for new sessions
 	followMode     bool            // Whether to auto-follow new sessions
@@ -239,20 +243,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoBottom()
 			}
 		}
-		// Restart file watcher after analysis completes to avoid race condition
-		// where the old watcher's defer hasn't executed yet when we start a new one
-		return m, m.waitForFileChange()
+		// Re-arm the file watcher only when no waiter is in flight: this reload
+		// may have been poll-triggered, in which case the file-change waiter is
+		// still blocked on the watcher (WATCH-01)
+		// Call before return: the arm must mutate the m the caller receives
+		armCmd := m.armFileWaiter()
+		return m, armCmd
 
 	case errorMsg:
 		m.err = msg
 		m.loading = false
-		// Restart file watcher even after error to continue monitoring
-		return m, m.waitForFileChange()
+		// Re-arm (if needed) even after an error to continue monitoring
+		// Call before return: the arm must mutate the m the caller receives
+		armCmd := m.armFileWaiter()
+		return m, armCmd
+
+	case fileWatchErrMsg:
+		// The file-change waiter exited with a watcher error; report it and
+		// arm a replacement so monitoring continues
+		m.err = msg.err
+		m.fileWaiterActive = false
+		// Call before return: the arm must mutate the m the caller receives
+		armCmd := m.armFileWaiter()
+		return m, armCmd
 
 	case watcherStartedMsg:
 		// Store the watcher and start listening for file changes
 		m.watcher = msg.watcher
-		return m, m.waitForFileChange()
+		// Call before return: the arm must mutate the m the caller receives
+		armCmd := m.armFileWaiter()
+		return m, armCmd
 
 	case sessionWatcherStartedMsg:
 		// Store the session watcher and start waiting for new sessions
@@ -264,8 +284,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForNewSession()
 
 	case fileChangedMsg:
+		// The waiter that reported this change has exited; the reload's
+		// analysisMsg/errorMsg arms its replacement
+		m.fileWaiterActive = false
 		m.loading = true
-		// Watcher restart moved to analysisMsg handler to avoid race condition
 		return m, m.loadAnalysis
 
 	case sessionSwitchedMsg:
@@ -292,11 +314,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
 		m.costChart = sparkline.New(m.getChartWidth(), chartHeight, sparkline.WithStyle(chartStyle))
 
-		// Stop old file watcher, will be restarted by watchFile
+		// Stop old file watcher, will be restarted by watchFile. Closing it
+		// unblocks the old waiter, which exits without a message, so the
+		// in-flight flag resets here for the new watcher's waiter
 		if m.watcher != nil {
 			m.watcher.Close()
 			m.watcher = nil
 		}
+		m.fileWaiterActive = false
 
 		// Update session watcher's current session
 		if m.sessionWatcher != nil {

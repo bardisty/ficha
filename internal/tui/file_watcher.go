@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bardisty/ficha/internal/parser"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/fsnotify/fsnotify"
 )
@@ -115,10 +116,14 @@ func subagentPollCmd() tea.Cmd {
 	})
 }
 
-// subagentTreeSignature fingerprints the session's subagent tree (recursive,
-// covering workflow run dirs) plus the top-level workflow metadata files, so
-// the poll detects changes with stats only — no file reads. Missing dirs and
-// stat errors contribute nothing; a session without subagents yields "".
+// subagentTreeSignature fingerprints the session's subagent transcripts plus
+// the top-level workflow metadata files, so the poll detects changes with
+// stats only — no file reads. The transcript list comes from the same
+// parser.DiscoverAgentSessions the analyzers load from, so poll coverage
+// cannot diverge from discovery coverage: a directory walk here once skipped
+// the symlinked workflow run dirs discovery follows (WalkDir lstat-visits
+// symlinks), silently freezing reloads for exactly those agents. Missing dirs
+// and stat errors contribute nothing; a session without subagents yields "".
 func subagentTreeSignature(projectDir, sessionID string) string {
 	var parts []string
 
@@ -126,16 +131,19 @@ func subagentTreeSignature(projectDir, sessionID string) string {
 		parts = append(parts, fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().UnixNano()))
 	}
 
-	sessionDir := filepath.Join(projectDir, sessionID)
-	_ = filepath.WalkDir(filepath.Join(sessionDir, "subagents"), func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil //nolint:nilerr // unreadable entries just drop out of the signature
-		}
-		if info, err := d.Info(); err == nil {
+	agentPaths, unreadableDirs := parser.DiscoverAgentSessions(projectDir, sessionID)
+	for _, path := range agentPaths {
+		if info, err := os.Stat(path); err == nil {
 			addFile(path, info)
 		}
-		return nil
-	})
+	}
+	// A directory turning (un)readable changes the surfaces' skipped-agent
+	// accounting even when no discovered path does, so it flips the signature.
+	if unreadableDirs > 0 {
+		parts = append(parts, fmt.Sprintf("unreadable|%d", unreadableDirs))
+	}
+
+	sessionDir := filepath.Join(projectDir, sessionID)
 
 	// Workflow run metadata: catches status flips (running → completed)
 	// without any transcript write.
@@ -168,11 +176,20 @@ func watchFileCmd(sessionPath string, onErr func(error) tea.Msg) tea.Msg {
 	return watcherStartedMsg{watcher: watcher}
 }
 
+// fileWatchErrMsg reports an error from an in-flight file-change waiter. It is
+// deliberately distinct from the models' load-error messages: on receiving it
+// the waiter is known to have exited, so Update clears the in-flight flag and
+// re-arms — whereas a load error leaves the waiter blocked, and re-arming
+// there would leak a goroutine (see armFileWaiter).
+type fileWatchErrMsg struct{ err error }
+
 // waitForFileChangeCmd waits for the session file to change (or for shutdown).
 // wg.Add happens here, before the command is returned, not inside the returned
 // goroutine: the quit handler calls wg.Wait, and an Add that races Wait can be
 // missed, so shutdown wouldn't actually wait for this goroutine to drain.
-func waitForFileChangeCmd(wg *sync.WaitGroup, closing *atomic.Bool, watcher *fsnotify.Watcher, done chan struct{}, sessionPath string, onErr func(error) tea.Msg) tea.Cmd {
+// Arm only through the models' armFileWaiter methods, which guarantee at most
+// one waiter is blocked on the watcher at a time.
+func waitForFileChangeCmd(wg *sync.WaitGroup, closing *atomic.Bool, watcher *fsnotify.Watcher, done chan struct{}, sessionPath string) tea.Cmd {
 	wg.Add(1)
 	return func() tea.Msg {
 		defer wg.Done()
@@ -185,7 +202,7 @@ func waitForFileChangeCmd(wg *sync.WaitGroup, closing *atomic.Bool, watcher *fsn
 
 		changed, err := awaitSessionFileChange(watcher, done, sessionPath)
 		if err != nil {
-			return onErr(err)
+			return fileWatchErrMsg{err: err}
 		}
 		if !changed {
 			return nil
