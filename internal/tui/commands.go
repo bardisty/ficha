@@ -75,8 +75,8 @@ func (m Model) watchFile() tea.Msg { return watchFileCmd(m.sessionPath, m.wrapEr
 // the watcher. Every reload — file-triggered, poll-triggered, manual "r",
 // session switch — ends in the analysisMsg/errorMsg handlers, but only
 // fileChangedMsg or fileWatchErrMsg means the previous waiter exited; arming
-// unconditionally there leaked one blocked goroutine per poll-triggered
-// reload (WATCH-01). Returns nil when a waiter is already in flight.
+// unconditionally there would leak one blocked goroutine per poll-triggered
+// reload. Returns nil when a waiter is already in flight.
 func (m *Model) armFileWaiter() tea.Cmd {
 	if m.watcher == nil || m.fileWaiterActive {
 		return nil

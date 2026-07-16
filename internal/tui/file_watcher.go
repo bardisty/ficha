@@ -120,10 +120,11 @@ func subagentPollCmd() tea.Cmd {
 // the top-level workflow metadata files, so the poll detects changes with
 // stats only — no file reads. The transcript list comes from the same
 // parser.DiscoverAgentSessions the analyzers load from, so poll coverage
-// cannot diverge from discovery coverage: a directory walk here once skipped
-// the symlinked workflow run dirs discovery follows (WalkDir lstat-visits
-// symlinks), silently freezing reloads for exactly those agents. Missing dirs
-// and stat errors contribute nothing; a session without subagents yields "".
+// cannot diverge from discovery coverage — a naive directory walk here would
+// miss the symlinked workflow run dirs discovery follows (WalkDir lstat-visits
+// symlinks and never descends them), silently freezing reloads for exactly
+// those agents. Missing dirs and stat errors contribute nothing; a session
+// without subagents yields "".
 func subagentTreeSignature(projectDir, sessionID string) string {
 	var parts []string
 
@@ -180,8 +181,12 @@ func watchFileCmd(sessionPath string, onErr func(error) tea.Msg) tea.Msg {
 // deliberately distinct from the models' load-error messages: on receiving it
 // the waiter is known to have exited, so Update clears the in-flight flag and
 // re-arms — whereas a load error leaves the waiter blocked, and re-arming
-// there would leak a goroutine (see armFileWaiter).
-type fileWatchErrMsg struct{ err error }
+// there would leak a goroutine (see armFileWaiter). Carries the waiter's
+// watcher for the same staleness check as fileChangedMsg.
+type fileWatchErrMsg struct {
+	err     error
+	watcher *fsnotify.Watcher
+}
 
 // waitForFileChangeCmd waits for the session file to change (or for shutdown).
 // wg.Add happens here, before the command is returned, not inside the returned
@@ -202,12 +207,12 @@ func waitForFileChangeCmd(wg *sync.WaitGroup, closing *atomic.Bool, watcher *fsn
 
 		changed, err := awaitSessionFileChange(watcher, done, sessionPath)
 		if err != nil {
-			return fileWatchErrMsg{err: err}
+			return fileWatchErrMsg{err: err, watcher: watcher}
 		}
 		if !changed {
 			return nil
 		}
-		return fileChangedMsg{}
+		return fileChangedMsg{watcher: watcher}
 	}
 }
 
