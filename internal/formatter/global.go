@@ -253,18 +253,21 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 			pctTotal = (p.TotalCost.TotalCost / analysis.TotalCost.TotalCost) * 100
 		}
 
-		// Truncate project name with middle ellipsis if needed
+		// Truncate project name with middle ellipsis if needed, then pad by
+		// display width: fmt's %-Ns counts runes, so a wide (CJK/emoji) name
+		// would under-pad and shift every column to its right.
 		name := truncateMiddle(p.DisplayName, projectWidth)
+		name += strings.Repeat(" ", projectWidth-runewidth.StringWidth(name))
 
 		if noColor {
 			costStr := fmt.Sprintf("$%.2f", p.TotalCost.TotalCost)
 			pctStr := fmt.Sprintf("%.1f%%", pctTotal)
 			if showDetails {
 				cumStr := fmt.Sprintf("$%.2f", cumulative)
-				sb.WriteString(fmt.Sprintf("  %3d   %-45s  %8d  %10s  %7s  %10s\n",
+				sb.WriteString(fmt.Sprintf("  %3d   %s  %8d  %10s  %7s  %10s\n",
 					i+1, name, p.SessionCount, costStr, pctStr, cumStr))
 			} else {
-				sb.WriteString(fmt.Sprintf("  %3d   %-45s  %8d  %10s  %7s\n",
+				sb.WriteString(fmt.Sprintf("  %3d   %s  %8d  %10s  %7s\n",
 					i+1, name, p.SessionCount, costStr, pctStr))
 			}
 		} else {
@@ -281,10 +284,10 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 			if showDetails {
 				cumStr := fmt.Sprintf("$%.2f", cumulative)
 				cumStyled := lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(fmt.Sprintf("%10s", cumStr))
-				sb.WriteString(fmt.Sprintf("  %s   %-45s  %s  %s  %s  %s\n",
+				sb.WriteString(fmt.Sprintf("  %s   %s  %s  %s  %s  %s\n",
 					numStyled, name, sessionsStyled, costStyled, pctStyled, cumStyled))
 			} else {
-				sb.WriteString(fmt.Sprintf("  %s   %-45s  %s  %s  %s\n",
+				sb.WriteString(fmt.Sprintf("  %s   %s  %s  %s  %s\n",
 					numStyled, name, sessionsStyled, costStyled, pctStyled))
 			}
 		}

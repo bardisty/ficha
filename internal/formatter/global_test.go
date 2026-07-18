@@ -93,6 +93,63 @@ func TestRenderProjectsTable_GradientIgnoresSortOrder(t *testing.T) {
 	}
 }
 
+// The PROJECT column pads by display width: fmt's %-45s counts runes, so a
+// CJK or emoji name (2 cells per rune) used to under-pad and shift every
+// column to its right on that row alone.
+func TestRenderProjectsTableWideNamesAlign(t *testing.T) {
+	names := []string{
+		"ascii-project",
+		"项目分析工具",                 // CJK: 6 runes, 12 cells
+		"🚀-rocket",               // emoji: 2 cells
+		strings.Repeat("分析", 30), // 60 cells: middle-truncated to the column
+	}
+	costs := make(map[string]float64, len(names))
+	for i, n := range names {
+		costs[n] = float64(i + 1)
+	}
+	analysis := globalAnalysisWithProjects(costs, names)
+
+	for _, tc := range []struct {
+		name        string
+		noColor     bool
+		showDetails bool
+	}{
+		{"no-color", true, false},
+		{"no-color-details", true, true},
+		{"color", false, false},
+		{"color-details", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.noColor {
+				forceProfile(t, termenv.Ascii)
+			} else {
+				forceProfile(t, termenv.ANSI256)
+			}
+			out := renderProjectsTable(analysis, tc.noColor, 10, tc.showDetails)
+
+			var headerWidth int
+			var rowWidths []int
+			for _, line := range strings.Split(out, "\n") {
+				switch {
+				case strings.Contains(line, "PROJECT"):
+					headerWidth = lipgloss.Width(line)
+				case strings.Contains(line, "$"):
+					rowWidths = append(rowWidths, lipgloss.Width(line))
+				}
+			}
+			if headerWidth == 0 || len(rowWidths) != len(names) {
+				t.Fatalf("expected a header and %d data rows, got header=%d rows=%d:\n%s",
+					len(names), headerWidth, len(rowWidths), out)
+			}
+			for i, w := range rowWidths {
+				if w != headerWidth {
+					t.Errorf("row %d is %d columns, header is %d:\n%s", i, w, headerWidth, out)
+				}
+			}
+		})
+	}
+}
+
 // truncateMiddle must cut on rune boundaries and measure display width, not
 // byte-slice UTF-8 (which corrupts multi-byte runes and miscounts width).
 func TestTruncateMiddle(t *testing.T) {
