@@ -305,8 +305,9 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 		SessionFile:  sessionPath,
 		MessageCount: len(messageAnalyses),
 		CostByModel:  make(map[string]models.CostBreakdown),
-		// A per-session analysis covers exactly one session; the summary
-		// aggregate overwrites this with its own (skip-adjusted) count.
+		// A per-session analysis covers exactly one session. The summary
+		// aggregate is a separate struct that carries its own skip-adjusted
+		// count (see AnalyzeMultipleSessions).
 		SessionCount: 1,
 	}
 	// The transcript lives directly under its project dir, so its parent is the
@@ -515,6 +516,12 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 	}
 
 	aggregate.SkippedSessions = skippedSessions
+	// Count only the sessions the totals actually cover — an unparseable
+	// session lands in SkippedSessions, so pairing it into the count would sit
+	// an inclusive number next to an exclusive total (global's per-project
+	// session_count subtracts the same way). Set here so any marshal of the
+	// aggregate carries a truthful session_count, not a zero value.
+	aggregate.SessionCount = successfulSessions
 
 	// Return error if all sessions failed to parse
 	if successfulSessions == 0 {
