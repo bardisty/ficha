@@ -169,6 +169,28 @@ func renderContextSection(analysis *models.SessionAnalysis, noColor bool) string
 	return sb.String()
 }
 
+// agentMsgs formats an agent's message count ("45 msgs", "1 msg").
+func agentMsgs(count int) string {
+	if count == 1 {
+		return "1 msg"
+	}
+	return fmt.Sprintf("%d msgs", count)
+}
+
+// agentMsgsWidth returns the msgs column width for a set of agent rows: at
+// least 8 (the historical fixed width, fitting "999 msgs"), grown to the
+// longest count so an oversized count widens the column for every row instead
+// of pushing a single row's cost out of alignment.
+func agentMsgsWidth(agents []models.AgentAnalysis) int {
+	width := 8
+	for _, a := range agents {
+		if l := len(agentMsgs(a.MessageCount)); l > width {
+			width = l
+		}
+	}
+	return width
+}
+
 // formatAgentBreakdownContent renders agent breakdown rows (content only, no header)
 // Layout: [AN] Model (ID) msgs cost
 // All rows align costs at column 45 (2 indent + 43 content)
@@ -192,10 +214,14 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 
 	// Each agent with [A<id>] Model msgs cost format — the marker carries the
 	// abbreviated real agent ID, matching the breakdown TUI's scheme.
-	// Format: 2(indent) + 10(marker) + 1 + 11(model) + 1 + 8(msgs) + 12(spaces) + cost
-	//       = 2 + 31 + 12 = 45 chars before cost (aligned with parent)
+	// Format: 2(indent) + 10(marker) + 1 + 11(model) + 1 + msgs + gap + cost
+	// where msgs + gap = 20 (normally 8 + 12; the gap shrinks as the msgs
+	// column grows to fit an oversized count), keeping cost at 45 chars
+	// (aligned with parent and subtotal).
 	// Workflow agents are grouped after regular agents; a dim header line marks
 	// each run's start.
+	msgsWidth := agentMsgsWidth(analysis.Agents)
+	msgsGap := strings.Repeat(" ", max(1, 20-msgsWidth))
 	prevWorkflow := ""
 	for _, agent := range analysis.Agents {
 		if agent.WorkflowID != prevWorkflow {
@@ -217,14 +243,11 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 		modelLabel := render.ClampModel(modelName, 11)
 
 		// Format message count with singular/plural
-		msgStr := fmt.Sprintf("%d msgs", agent.MessageCount)
-		if agent.MessageCount == 1 {
-			msgStr = "1 msg"
-		}
+		msgStr := agentMsgs(agent.MessageCount)
 
 		if noColor {
-			sb.WriteString(fmt.Sprintf("  %-10s %-11s %8s            %s\n",
-				marker, modelLabel, msgStr, render.Cost(agent.TotalCost.TotalCost)))
+			sb.WriteString(fmt.Sprintf("  %-10s %-11s %*s%s%s\n",
+				marker, modelLabel, msgsWidth, msgStr, msgsGap, render.Cost(agent.TotalCost.TotalCost)))
 		} else {
 			// Color the marker by hashing the full agent ID (matches breakdown)
 			agentColor := styles.GetAgentColor(agent.AgentID)
@@ -235,12 +258,12 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
 
 			// Dim the message count
-			msgStyled := dimStyle.Render(fmt.Sprintf("%8s", msgStr))
+			msgStyled := dimStyle.Render(fmt.Sprintf("%*s", msgsWidth, msgStr))
 
 			costStr := formatCostStyled(agent.TotalCost.TotalCost, 11, noColor)
 
-			sb.WriteString(fmt.Sprintf("  %s %s %s            %s\n",
-				markerStyled, modelStyled, msgStyled, costStr))
+			sb.WriteString(fmt.Sprintf("  %s %s %s%s%s\n",
+				markerStyled, modelStyled, msgStyled, msgsGap, costStr))
 		}
 	}
 

@@ -22,6 +22,15 @@ var (
 	headerStyle        = styles.HeaderStyle
 )
 
+// sessionsWord returns "session" or "sessions" for a count, keeping every
+// surface that prints one grammatically consistent.
+func sessionsWord(n int) string {
+	if n == 1 {
+		return "session"
+	}
+	return "sessions"
+}
+
 // renderHeaderPanel renders the mainframe-style header panel
 // Format:
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -45,10 +54,7 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 	var sessionWord string
 	if isSummary {
 		sessionCount = analysis.SessionCount
-		sessionWord = "sessions"
-		if sessionCount == 1 {
-			sessionWord = "session"
-		}
+		sessionWord = sessionsWord(sessionCount)
 		titlePart = fmt.Sprintf("Summary: %d %s", sessionCount, sessionWord)
 	} else {
 		titlePart = fmt.Sprintf("Session: %s", render.TruncateID(analysis.SessionID, 40))
