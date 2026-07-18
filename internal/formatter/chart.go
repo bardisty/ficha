@@ -17,25 +17,19 @@ const (
 
 // renderCostChart renders a sparkline chart showing session costs over time
 // Uses ntcharts braille rendering for high-resolution visualization (24 vertical levels)
+//
+// The sparkline's ring buffer holds exactly chartWidth points, so with more
+// sessions than that only the newest chartWidth are drawn. The bars, scale,
+// min/max, count, and date labels must all derive from that same visible tail
+// — pushing the full history would let ntcharts' AutoMaxValue pin the scale to
+// an evicted off-screen peak, and full-dataset labels would describe sessions
+// no bar represents (same fix as the watch TUI's visibleCostHistory).
 func renderCostChart(costs []float64, dates []time.Time, width int, noColor bool) string {
 	if len(costs) == 0 {
 		return ""
 	}
 
 	var sb strings.Builder
-
-	// Find min/max for labels
-	var minCost, maxCost float64
-	minCost = costs[0]
-	maxCost = costs[0]
-	for _, c := range costs {
-		if c < minCost {
-			minCost = c
-		}
-		if c > maxCost {
-			maxCost = c
-		}
-	}
 
 	// Calculate chart width (leave room for indent and some padding)
 	indent := "    " // 4-space indent to match section content
@@ -47,6 +41,28 @@ func renderCostChart(costs []float64, dates []time.Time, width int, noColor bool
 		chartWidth = 68 // Cap at reasonable width
 	}
 
+	// Window costs/dates to what the chart can actually draw
+	visibleCosts := costs
+	visibleDates := dates
+	if len(costs) > chartWidth {
+		visibleCosts = costs[len(costs)-chartWidth:]
+		if len(dates) > chartWidth {
+			visibleDates = dates[len(dates)-chartWidth:]
+		}
+	}
+
+	// Find min/max for labels over the drawn window only
+	minCost := visibleCosts[0]
+	maxCost := visibleCosts[0]
+	for _, c := range visibleCosts {
+		if c < minCost {
+			minCost = c
+		}
+		if c > maxCost {
+			maxCost = c
+		}
+	}
+
 	// Create sparkline chart with appropriate styling
 	var chart sparkline.Model
 	if !noColor {
@@ -56,8 +72,8 @@ func renderCostChart(costs []float64, dates []time.Time, width int, noColor bool
 		chart = sparkline.New(chartWidth, summaryChartHeight)
 	}
 
-	// Push all cost data
-	chart.PushAll(costs)
+	// Push only the visible window
+	chart.PushAll(visibleCosts)
 
 	// Render with appropriate mode
 	if !noColor {
@@ -74,19 +90,30 @@ func renderCostChart(costs []float64, dates []time.Time, width int, noColor bool
 		}
 	}
 
+	// Count label: plain when every session is drawn, shown/total when truncated
+	var countInfo string
+	if len(visibleCosts) < len(costs) {
+		countInfo = fmt.Sprintf("(last %d of %d sessions)", len(visibleCosts), len(costs))
+	} else {
+		countInfo = fmt.Sprintf("(%d sessions)", len(visibleCosts))
+	}
+
 	// Add scale labels below the chart
-	scaleInfo := fmt.Sprintf("min: %s  max: %s  (%d sessions)",
-		formatChartCost(minCost), formatChartCost(maxCost), len(costs))
+	scaleInfo := fmt.Sprintf("min: %s  max: %s  %s",
+		formatChartCost(minCost), formatChartCost(maxCost), countInfo)
 	if noColor {
 		sb.WriteString(indent + scaleInfo + "\n")
 	} else {
 		sb.WriteString(indent + dimStyle.Render(scaleInfo) + "\n")
 	}
 
-	// Add date labels
-	if len(dates) >= 2 {
-		startDate := dates[0].Format("02 JAN")
-		endDate := dates[len(dates)-1].Format("02 JAN")
+	// Add date labels spanning the drawn window, not the full dataset.
+	// "JAN" is not a Go layout token — it would render literally for every
+	// month — so format with "Jan" and uppercase (same idiom as the
+	// breakdown table's MODIFIED column).
+	if len(visibleDates) >= 2 {
+		startDate := strings.ToUpper(visibleDates[0].Format("02 Jan"))
+		endDate := strings.ToUpper(visibleDates[len(visibleDates)-1].Format("02 Jan"))
 
 		// Position dates at start and end of chart area
 		padding := chartWidth - len(startDate) - len(endDate)
