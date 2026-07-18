@@ -211,7 +211,11 @@ type SessionAnalysis struct {
 	// (see MessageAnalysis.EstimatedCost). Zero means all costs are exact.
 	EstimatedCostMessages int  `json:"estimated_cost_messages,omitempty"`
 	IsSummary             bool `json:"-"` // True for aggregate summaries
-	SessionCount          int  `json:"-"` // Number of sessions in summary
+	// Sessions this analysis covers: N (minus skipped) on the summary
+	// aggregate, always 1 on a per-session analysis. Exported so machine
+	// consumers can pair it with skipped_sessions to compute coverage, like
+	// global's session_count.
+	SessionCount int `json:"session_count"`
 }
 
 // WorkflowByID returns the metadata for a workflow run in this session, or a

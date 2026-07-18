@@ -128,10 +128,13 @@ type sessionBreakdownResult struct {
 func renderSessionBreakdown(results []models.SessionResult, noColor bool, expandAgents bool) sessionBreakdownResult {
 	var sb strings.Builder
 
-	// Sort by modified time
+	// Sort by modified time. Stable, matching sortedSuccessfulResults: the
+	// machine detail formats order rows with the same comparator, and the
+	// CUMULATIVE column accumulates over row order, so an unstable sort could
+	// let tie-mtime sessions order (and accumulate) differently across surfaces.
 	sorted := make([]models.SessionResult, len(results))
 	copy(sorted, results)
-	sort.Slice(sorted, func(i, j int) bool {
+	sort.SliceStable(sorted, func(i, j int) bool {
 		return sorted[i].Entry.Modified.Before(sorted[j].Entry.Modified)
 	})
 

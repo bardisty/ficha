@@ -14,11 +14,12 @@ import (
 // table (one header, uniform column count) so single-table parsers never choke.
 //
 // Both `show` (one session) and `summary` (the aggregate) render through here,
-// so the row carries skipped_sessions either way — always 0 for `show`, which
-// analyzed exactly one session and would have errored had it failed.
+// so the row carries skipped_sessions and session_count either way — for
+// `show` they are always 0 and 1: it analyzed exactly one session and would
+// have errored had it failed.
 func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (string, error) {
 	if includeMessages {
-		return formatMessagesCSV(analysis.Messages)
+		return formatMessagesCSV(analysis)
 	}
 
 	var sb strings.Builder
@@ -47,6 +48,7 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		"skipped_agents",
 		"skipped_lines",
 		"estimated_cost_messages",
+		"session_count",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing CSV header: %w", err)
@@ -75,6 +77,7 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		fmt.Sprintf("%d", analysis.SkippedAgents),
 		fmt.Sprintf("%d", analysis.SkippedLines),
 		fmt.Sprintf("%d", analysis.EstimatedCostMessages),
+		fmt.Sprintf("%d", analysis.SessionCount),
 	}
 	if err := w.Write(row); err != nil {
 		return "", fmt.Errorf("writing CSV row: %w", err)
@@ -91,7 +94,14 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 // formatMessagesCSV formats individual messages as CSV. Parent rows come first
 // (agent_id empty), then one block per agent sub-session; total_cost sums across
 // every row to the session total. Model IDs are raw, not canonicalized.
-func formatMessagesCSV(messages []models.MessageAnalysis) (string, error) {
+//
+// The trailing three columns are session-level accounting repeated verbatim on
+// every row (standard denormalized CSV): without them a consumer summing rows
+// could not tell the rows are incomplete (skipped agents/lines) or estimated —
+// the json --messages surface carries the same counters on the enclosing
+// session object. A session with zero messages emits a header-only table, so
+// its counters appear nowhere but stderr (the pre-existing empty-table shape).
+func formatMessagesCSV(analysis *models.SessionAnalysis) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
 
@@ -110,13 +120,20 @@ func formatMessagesCSV(messages []models.MessageAnalysis) (string, error) {
 		"cache_write_1h_cost",
 		"cache_read_cost",
 		"total_cost",
+		"skipped_agents",
+		"skipped_lines",
+		"estimated_cost_messages",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing messages CSV header: %w", err)
 	}
 
+	skippedAgents := fmt.Sprintf("%d", analysis.SkippedAgents)
+	skippedLines := fmt.Sprintf("%d", analysis.SkippedLines)
+	estimatedCostMessages := fmt.Sprintf("%d", analysis.EstimatedCostMessages)
+
 	// Write message rows
-	for _, msg := range messages {
+	for _, msg := range analysis.Messages {
 		row := []string{
 			csvCell(msg.AgentID),
 			msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
@@ -131,6 +148,9 @@ func formatMessagesCSV(messages []models.MessageAnalysis) (string, error) {
 			fmt.Sprintf("%.6f", msg.Cost.CacheWrite1hCost),
 			fmt.Sprintf("%.6f", msg.Cost.CacheReadCost),
 			fmt.Sprintf("%.6f", msg.Cost.TotalCost),
+			skippedAgents,
+			skippedLines,
+			estimatedCostMessages,
 		}
 		if err := w.Write(row); err != nil {
 			return "", fmt.Errorf("writing message row: %w", err)

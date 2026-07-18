@@ -305,6 +305,9 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 		SessionFile:  sessionPath,
 		MessageCount: len(messageAnalyses),
 		CostByModel:  make(map[string]models.CostBreakdown),
+		// A per-session analysis covers exactly one session; the summary
+		// aggregate overwrites this with its own (skip-adjusted) count.
+		SessionCount: 1,
 	}
 	// The transcript lives directly under its project dir, so its parent is the
 	// project path (same derivation used for agent discovery above). Guard the
