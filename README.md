@@ -107,12 +107,13 @@
 
   Counts describe only what the totals cover. session_count is the
   sessions that were analyzed, agent_count the agents that were: add
-  the matching skipped_* to recover what was on disk. Every surface
-  carries session_count: global at both levels, the summary aggregate
-  (the analyzed count its totals span), and show (always 1 — it
-  analyzed exactly one session). list and show agree on message_count
-  and agent_count for the same session, because both derive them from
-  the same parse.
+  the matching skipped_* to recover what was on disk. The analyzed
+  count is everywhere: session_count on global (both levels), the
+  summary aggregate (the count its totals span), and show (always 1 —
+  it analyzed exactly one session); global csv's per-project column
+  names it sessions. list and show agree on message_count and
+  agent_count for the same session, because both derive them from the
+  same parse.
 
   Agent spend is never hidden. show and summary both carry the split
   that adds up to the total they report:
