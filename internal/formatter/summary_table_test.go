@@ -1,7 +1,10 @@
 package formatter
 
 import (
+	"encoding/csv"
+	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -345,6 +348,75 @@ func TestSummaryTableModelColumnAlignsWithColor(t *testing.T) {
 	for i, w := range widths[1:] {
 		if w != widths[0] {
 			t.Errorf("colored row %d is %d columns, row 0 is %d", i+1, w, widths[0])
+		}
+	}
+}
+
+// Sessions whose file mtimes tie must appear in the same order — with the same
+// cumulative value on each row — in the SESSION BREAKDOWN table and the detail
+// CSV. Both surfaces sort by Modified with a stable sort, so ties keep input
+// order; an unstable sort on either side would let the surfaces disagree on
+// intermediate cumulative values (the final sum always matches). 40 rows so an
+// unstable sort has room to actually permute equal keys.
+func TestSummaryTableTieMtimeOrderMatchesDetailCSV(t *testing.T) {
+	tied := time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC)
+	const n = 40
+	results := make([]models.SessionResult, 0, n)
+	wantIDs := make([]string, 0, n)
+	for i := range n {
+		// Deliberately not ID-sorted input order.
+		id := fmt.Sprintf("%04x%04x", (i*7)%n, i)
+		r := sessionRow(id, "claude-opus-4-8", 5, 0.01*float64(i+1))
+		r.Entry.Modified = tied
+		results = append(results, r)
+		wantIDs = append(wantIDs, id)
+	}
+
+	// Table: extract session ID and trailing CUMULATIVE cell per data row.
+	rows := summaryTableRows(t, results, false)[1:]
+	idRe := regexp.MustCompile(`^ {2}\s*\d+ ([0-9a-f]{8}) `)
+	tableIDs := make([]string, 0, n)
+	tableCumulative := make([]float64, 0, n)
+	for _, row := range rows {
+		m := idRe.FindStringSubmatch(row)
+		if m == nil {
+			t.Fatalf("row does not match data-row shape: %q", row)
+		}
+		tableIDs = append(tableIDs, m[1])
+		fields := strings.Fields(row)
+		cum, err := strconv.ParseFloat(strings.TrimPrefix(fields[len(fields)-1], "$"), 64)
+		if err != nil {
+			t.Fatalf("parsing cumulative cell of row %q: %v", row, err)
+		}
+		tableCumulative = append(tableCumulative, cum)
+	}
+
+	// Detail CSV: session_id (col 1) and cumulative_cost (col 16).
+	out, err := FormatSummaryDetailCSV(results, false)
+	if err != nil {
+		t.Fatalf("FormatSummaryDetailCSV returned error: %v", err)
+	}
+	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
+	if err != nil {
+		t.Fatalf("output is not valid CSV: %v", err)
+	}
+	if len(records) != n+1 {
+		t.Fatalf("csv rows: got %d, want %d", len(records), n+1)
+	}
+	for i, rec := range records[1:] {
+		if rec[1] != wantIDs[i] {
+			t.Fatalf("csv row %d session_id: got %q, want %q (tie order must be stable)", i, rec[1], wantIDs[i])
+		}
+		if tableIDs[i] != wantIDs[i] {
+			t.Fatalf("table row %d session_id: got %q, want %q (tie order must match csv)", i, tableIDs[i], wantIDs[i])
+		}
+		csvCum, err := strconv.ParseFloat(rec[16], 64)
+		if err != nil {
+			t.Fatalf("csv row %d cumulative_cost %q: %v", i, rec[16], err)
+		}
+		// The table renders two decimals; compare at that precision.
+		if diff := tableCumulative[i] - csvCum; diff > 0.005 || diff < -0.005 {
+			t.Errorf("row %d cumulative: table %f vs csv %f", i, tableCumulative[i], csvCum)
 		}
 	}
 }

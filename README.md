@@ -107,9 +107,12 @@
 
   Counts describe only what the totals cover. session_count is the
   sessions that were analyzed, agent_count the agents that were: add
-  the matching skipped_* to recover what was on disk. list and show
-  agree on message_count and agent_count for the same session, because
-  both derive them from the same parse.
+  the matching skipped_* to recover what was on disk. Every surface
+  carries session_count: global at both levels, the summary aggregate
+  (the analyzed count its totals span), and show (always 1 — it
+  analyzed exactly one session). list and show agree on message_count
+  and agent_count for the same session, because both derive them from
+  the same parse.
 
   Agent spend is never hidden. show and summary both carry the split
   that adds up to the total they report:
@@ -142,6 +145,14 @@
 
   One agent_id key space throughout: the same ID joins these rows, the
   json agents[] array, and summary --details --expand-agents rows.
+
+  The accounting counters ride along in --messages csv too: each row
+  ends with the session-level skipped_agents, skipped_lines and
+  estimated_cost_messages, repeated verbatim (denormalized, like any
+  flat export of a parent/child shape) — so a consumer summing rows can
+  tell when the rows are incomplete or estimated without leaving the
+  file. json --messages carries the same counters once, on the session
+  object enclosing the messages array.
 
   Costs are floats, and csv prints six decimals. Reconcile a sum against
   a total with a tolerance, never with ==.

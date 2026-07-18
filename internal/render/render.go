@@ -150,22 +150,17 @@ func ShortAgentID(id string) string {
 }
 
 // PrimaryModel returns the display name of the dominant model (by highest
-// cost) in a cost-by-model map, or "-" when there is no model data. Ties break
-// by ID ascending, matching OrderModelsByCost — without it Go's randomized map
-// iteration would let equal-cost models swap the reported primary run to run.
+// cost, ties broken by ID ascending) in a cost-by-model map, or "-" only when
+// the map is empty. Delegating to OrderModelsByCost keeps the table's pick
+// identical to the machine formats' primaryModelID by construction — including
+// for all-zero-cost maps, where a hand-rolled max scan can fail to seed and
+// report no model while json/csv name one.
 func PrimaryModel(costByModel map[string]models.CostBreakdown) string {
-	var maxModel string
-	var maxCost float64
-	for model, cost := range costByModel {
-		if cost.TotalCost > maxCost || (cost.TotalCost == maxCost && maxModel != "" && model < maxModel) {
-			maxCost = cost.TotalCost
-			maxModel = model
-		}
-	}
-	if maxModel == "" {
+	ordered := OrderModelsByCost(costByModel)
+	if len(ordered) == 0 {
 		return "-"
 	}
-	return pricing.GetModelDisplayName(maxModel)
+	return pricing.GetModelDisplayName(ordered[0])
 }
 
 // OrderModelsByCost returns a cost-by-model map's IDs ordered by total cost

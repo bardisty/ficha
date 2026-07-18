@@ -29,6 +29,7 @@ func sampleAnalysis() *models.SessionAnalysis {
 		EndTime:      time.Date(2024, 1, 1, 11, 30, 0, 0, time.UTC),
 		Duration:     models.Duration(90 * time.Minute),
 		MessageCount: 10,
+		SessionCount: 1,
 		TotalUsage: models.TokenUsage{
 			InputTokens:              5000,
 			OutputTokens:             2000,
@@ -102,7 +103,7 @@ func TestFormatSessionCSV(t *testing.T) {
 		"message_count", "duration_seconds", "agent_count", "agent_message_count",
 		"parent_cost", "agents_cost", "workflow_count",
 		"skipped_sessions", "skipped_agents", "skipped_lines",
-		"estimated_cost_messages",
+		"estimated_cost_messages", "session_count",
 	}
 	header := records[0]
 	if len(header) != len(expectedHeader) {
@@ -164,10 +165,16 @@ func TestFormatSessionCSV(t *testing.T) {
 	if data[15] != "0.000000" {
 		t.Errorf("agents_cost (col 15): got %q, want %q", data[15], "0.000000")
 	}
+	if data[21] != "1" {
+		t.Errorf("session_count (col 21): got %q, want %q", data[21], "1")
+	}
 }
 
 func TestFormatSessionCSV_WithMessages(t *testing.T) {
 	analysis := sampleAnalysis()
+	analysis.SkippedAgents = 2
+	analysis.SkippedLines = 3
+	analysis.EstimatedCostMessages = 1
 	analysis.Messages = []models.MessageAnalysis{
 		{
 			Timestamp: time.Date(2024, 1, 1, 10, 5, 0, 0, time.UTC),
@@ -203,6 +210,7 @@ func TestFormatSessionCSV_WithMessages(t *testing.T) {
 		"cache_write_tokens", "cache_read_tokens",
 		"input_cost", "output_cost", "cache_write_5m_cost",
 		"cache_write_1h_cost", "cache_read_cost", "total_cost",
+		"skipped_agents", "skipped_lines", "estimated_cost_messages",
 	}
 	if len(msgRecords) < 2 {
 		t.Fatalf("Messages CSV: expected at least 2 rows (header + data), got %d", len(msgRecords))
@@ -237,6 +245,10 @@ func TestFormatSessionCSV_WithMessages(t *testing.T) {
 		"cache_write_1h_cost": "0.000000",
 		"cache_read_cost":     "0.000000",
 		"total_cost":          "0.004500",
+		// Session-level accounting repeated on every message row.
+		"skipped_agents":          "2",
+		"skipped_lines":           "3",
+		"estimated_cost_messages": "1",
 	} {
 		col := slices.Index(msgHeader, name)
 		if col == -1 {
@@ -460,6 +472,9 @@ func TestFormatSessionJSON(t *testing.T) {
 	if parsed.MessageCount != 10 {
 		t.Errorf("Message count mismatch: got %d, want %d", parsed.MessageCount, 10)
 	}
+	if parsed.SessionCount != 1 {
+		t.Errorf("SessionCount mismatch: got %d, want 1 (session_count must be exported)", parsed.SessionCount)
+	}
 
 	// Verify cost-related fields
 	if !almostEqual(parsed.TotalCost.InputCost, 0.015, 1e-9) {
@@ -643,6 +658,7 @@ func sampleGlobalAnalysis() *models.GlobalAnalysis {
 				TotalCost:    models.CostBreakdown{TotalCost: 5.0, InputCost: 2.0, OutputCost: 3.0},
 				SessionCount: 3,
 				MessageCount: 30,
+				FirstActive:  time.Date(2024, 1, 2, 9, 0, 0, 0, time.UTC),
 				LastActive:   time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC),
 			},
 			{
@@ -650,6 +666,7 @@ func sampleGlobalAnalysis() *models.GlobalAnalysis {
 				TotalCost:    models.CostBreakdown{TotalCost: 2.5, InputCost: 1.0, OutputCost: 1.5},
 				SessionCount: 2,
 				MessageCount: 15,
+				FirstActive:  time.Date(2024, 1, 3, 9, 0, 0, 0, time.UTC),
 				LastActive:   time.Date(2024, 1, 14, 10, 0, 0, 0, time.UTC),
 			},
 		},
@@ -679,15 +696,18 @@ func TestFormatGlobalCSV(t *testing.T) {
 		t.Fatalf("expected 3 rows (header + 2 data), got %d", len(records))
 	}
 
-	// Verify 15-column header
-	if len(records[0]) != 15 {
-		t.Fatalf("expected 15 columns, got %d", len(records[0]))
+	// Verify 16-column header
+	if len(records[0]) != 16 {
+		t.Fatalf("expected 16 columns, got %d", len(records[0]))
 	}
 	if records[0][0] != "project" {
 		t.Errorf("first header column: got %q, want %q", records[0][0], "project")
 	}
-	if records[0][14] != "estimated_cost_messages" {
-		t.Errorf("last header column: got %q, want %q", records[0][14], "estimated_cost_messages")
+	if records[0][10] != "first_active" || records[0][11] != "last_active" {
+		t.Errorf("activity columns: got %q, %q, want first_active, last_active", records[0][10], records[0][11])
+	}
+	if records[0][15] != "estimated_cost_messages" {
+		t.Errorf("last header column: got %q, want %q", records[0][15], "estimated_cost_messages")
 	}
 
 	// Verify first data row
@@ -696,6 +716,12 @@ func TestFormatGlobalCSV(t *testing.T) {
 	}
 	if records[1][1] != "3" {
 		t.Errorf("first project sessions: got %q, want %q", records[1][1], "3")
+	}
+	if records[1][10] != "2024-01-02T09:00:00Z" {
+		t.Errorf("first_active: got %q, want %q", records[1][10], "2024-01-02T09:00:00Z")
+	}
+	if records[1][11] != "2024-01-15T10:00:00Z" {
+		t.Errorf("last_active: got %q, want %q", records[1][11], "2024-01-15T10:00:00Z")
 	}
 }
 

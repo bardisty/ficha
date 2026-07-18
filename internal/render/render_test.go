@@ -253,6 +253,19 @@ func TestPrimaryModel(t *testing.T) {
 			map[string]models.CostBreakdown{},
 			"-",
 		},
+		{
+			"single zero-cost model still reports the model",
+			map[string]models.CostBreakdown{"claude-sonnet-4": {TotalCost: 0}},
+			"Sonnet 4",
+		},
+		{
+			"all-zero-cost tie breaks by ID ascending",
+			map[string]models.CostBreakdown{
+				"claude-sonnet-5": {TotalCost: 0},
+				"claude-opus-4-8": {TotalCost: 0},
+			},
+			"Opus 4.8",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
