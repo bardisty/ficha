@@ -8,6 +8,10 @@ Track your Claude Code API costs in real time.
 
 ## Install
 
+Prebuilt binaries for macOS, Linux (amd64/arm64), and Windows are on the [releases page](https://github.com/bardisty/ficha/releases) (checksums included).
+
+Or build from source with Go:
+
 ```sh
 go install github.com/bardisty/ficha@latest
 ```
