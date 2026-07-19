@@ -18,10 +18,15 @@ go install github.com/bardisty/ficha@latest
 
 ## Usage
 
+Run ficha from the same directory Claude Code is running in — it finds that project's sessions automatically:
+
 ```sh
+cd /path/to/your/project
 ficha          # view current session costs
 ficha watch    # live monitoring (auto-follows new sessions)
 ```
+
+To analyze a different project without cd'ing, pass its directory with `-p` / `--project`.
 
 ## Commands
 
