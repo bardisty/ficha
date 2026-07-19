@@ -1,3 +1,4 @@
 bin/
 ficha
 .audits/
+.claude/
