@@ -28,9 +28,12 @@ Run ficha from the same directory Claude Code is running in — it finds that pr
 
 ```sh
 cd /path/to/your/project
-ficha          # view current session costs
-ficha watch    # live monitoring (auto-follows new sessions)
+ficha            # view current session costs
+ficha watch      # live monitoring (auto-follows new sessions)
+ficha breakdown  # live per-message cost table
 ```
+
+`watch` and `breakdown` pair well in side-by-side terminals: session totals in one, per-message costs in the other.
 
 To analyze a different project without cd'ing, pass its directory with `-p` / `--project`.
 
