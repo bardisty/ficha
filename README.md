@@ -9,9 +9,13 @@ Track your Claude Code API costs, token usage, and context window in real time.
     <td width="50%" valign="top"><a href="docs/ficha-watch.webp"><img src="docs/ficha-watch.webp" alt="ficha watch — live session cost dashboard"></a></td>
     <td width="50%" valign="top"><a href="docs/ficha-breakdown.webp"><img src="docs/ficha-breakdown.webp" alt="ficha breakdown — per-message cost table"></a></td>
   </tr>
+  <tr>
+    <td valign="top"><em><code>ficha watch</code> — live dashboard: token counts by type (input, output, cache write/read), context-window usage, cache economics, cost trend, per-model and agent sub-session costs.</em></td>
+    <td valign="top"><em><code>ficha breakdown</code> — live, scrollable per-message table: cost, token counts, and originating agent for every message, parent and agents interleaved chronologically, updating as the session runs.</em></td>
+  </tr>
 </table>
 
-*Left: `ficha watch` — live dashboard: token counts by type (input, output, cache write/read), context-window usage, cache economics, cost trend, per-model and agent sub-session costs. Right: `ficha breakdown` — live, scrollable per-message table: cost, token counts, and originating agent for every message, parent and agents interleaved chronologically, updating as the session runs. Click to enlarge.*
+*Click a screenshot to enlarge.*
 
 ## Install
 
