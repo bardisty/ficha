@@ -54,8 +54,6 @@ To analyze a different project without cd'ing, pass its directory with `-p` / `-
 | `-p, --project <dir>` | Project directory (default: current dir) |
 | `--project-dir <name>` | Claude project dir name (bypass auto-detect) |
 | `-v, --verbose` | Show debug information |
-| `-l, --live` | Enable live mode (auto-updates) |
-| `--no-follow` | Disable auto-follow in live mode |
 | `--no-color` | Disable colored output |
 
 Per-command flags:
@@ -68,6 +66,8 @@ Per-command flags:
 | `global` | `--sort-by <key>` | Sort: cost, sessions, name, activity |
 | `global` | `-d, --details` | All projects + cumulative column (table) |
 | `show` | `--messages` | Per-message rows (json/csv only) |
+| `show` | `-l, --live` | Live mode (`ficha watch` is an alias for `show --live`) |
+| `show --live`, `watch`, `breakdown` | `--no-follow` | Disable auto-follow (pin to current session) |
 
 ## Examples
 
