@@ -15,8 +15,6 @@ Track your Claude Code API costs, token usage, and context window in real time.
   </tr>
 </table>
 
-*Click a screenshot to enlarge.*
-
 ## Install
 
 Prebuilt binaries for macOS, Linux (amd64/arm64), and Windows are on the [releases page](https://github.com/bardisty/ficha/releases) (checksums included).
