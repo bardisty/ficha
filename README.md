@@ -10,7 +10,7 @@ Track your Claude Code API costs in real time.
 
 ![ficha breakdown — per-message cost table](docs/ficha-breakdown.webp)
 
-*`ficha breakdown` — scrollable per-message table: cost, token counts, and originating agent for every message, parent and agents interleaved chronologically.*
+*`ficha breakdown` — live, scrollable per-message table: cost, token counts, and originating agent for every message, parent and agents interleaved chronologically, updating as the session runs.*
 
 ## Install
 
@@ -40,7 +40,7 @@ To analyze a different project without cd'ing, pass its directory with `-p` / `-
 | --- | --- |
 | `ficha [show]` | Show latest (or specified) session costs |
 | `ficha watch` | Live monitoring with auto-follow |
-| `ficha breakdown` | Per-message cost table (scrollable) |
+| `ficha breakdown` | Live per-message cost table (scrollable) |
 | `ficha list` | List all sessions |
 | `ficha summary` | Total costs across all sessions |
 | `ficha global` | Aggregated stats across ALL projects |
