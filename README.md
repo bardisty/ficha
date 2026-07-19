@@ -16,7 +16,7 @@ Track your Claude Code API costs, token usage, and context window in real time.
 
 Prebuilt binaries for macOS, Linux (amd64/arm64), and Windows are on the [releases page](https://github.com/bardisty/ficha/releases) (checksums included).
 
-Or build from source with Go:
+Or build from source (requires Go 1.25+):
 
 ```sh
 go install github.com/bardisty/ficha@latest
@@ -46,10 +46,12 @@ To analyze a different project without cd'ing, pass its directory with `-p` / `-
 | `ficha breakdown` | Live per-message cost table (scrollable) |
 | `ficha list` | List all sessions |
 | `ficha summary` | Total costs across all sessions |
-| `ficha global` | Aggregated stats across ALL projects |
+| `ficha global` | Aggregated stats across all projects |
 | `ficha version` | Print version information |
 
 ## Flags
+
+Global flags (work with every command):
 
 | Flag | Description |
 | --- | --- |
@@ -86,13 +88,19 @@ ficha list -p /path/to/dir    # list sessions for different project
 
 ## Machine output (json / csv)
 
-`-f` only picks the encoding: json/csv always export the complete dataset as a single object / uniform-column table, safe for `jq` and pandas. Every input ficha could not read is counted, never swallowed (`skipped_sessions`, `skipped_agents`, `skipped_lines`, `estimated_cost_messages`), agent spend is always split out (`parent_cost + agents_cost = total_cost`), and `cost_by_model` keys are canonical model IDs, so summing by key needs no normalization.
+`-f` only picks the encoding: json/csv always export the complete dataset as a single object / uniform-column table, safe for `jq` and pandas.
+
+- Unreadable input is counted, never swallowed: `skipped_sessions`, `skipped_agents`, `skipped_lines`, `estimated_cost_messages`.
+- Agent spend is always split out: `parent_cost + agents_cost = total_cost`.
+- `cost_by_model` keys are canonical model IDs — summing by key needs no normalization.
 
 The full export contract — flag interactions, record provenance, counters, per-message rows, csv safety — is in [docs/machine-output.md](docs/machine-output.md).
 
 ## How it works
 
 Reads session files from `~/.claude/projects/` and calculates costs using Anthropic's pricing. Tracks prompt caching savings (cache reads cost 90% less than regular input tokens).
+
+Costs are estimates: ficha multiplies token counts by bundled API list prices, so figures are API-equivalent value — on a subscription plan you aren't billed per token. Models without a bundled price fall back to Sonnet pricing and are flagged with a warning.
 
 Agent sub-sessions are included: both regular subagents and Claude Code Workflow agents (grouped by workflow run, with the run's name and status from its metadata).
 
