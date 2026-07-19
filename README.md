@@ -92,3 +92,6 @@ The full export contract — flag interactions, record provenance, counters, per
 Reads session files from `~/.claude/projects/` and calculates costs using Anthropic's pricing. Tracks prompt caching savings (cache reads cost 90% less than regular input tokens).
 
 Agent sub-sessions are included: both regular subagents and Claude Code Workflow agents (grouped by workflow run, with the run's name and status from its metadata).
+
+> [!NOTE]
+> Claude Code deletes session transcripts older than 30 days by default (`cleanupPeriodDays` in `~/.claude/settings.json`), so ficha can only report what still exists on disk. To keep longer history, raise the setting, e.g. `"cleanupPeriodDays": 365`. Avoid `0` — it has [known bugs](https://github.com/anthropics/claude-code/issues/59248).

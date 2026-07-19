@@ -1,7 +1,3 @@
 bin/
 ficha
-.claude/settings.local.json
-agent-outputs/
-references/
-.claudeignore
 .audits/
