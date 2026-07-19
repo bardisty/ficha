@@ -4,6 +4,8 @@ Track your Claude Code API costs in real time.
 
 ![ficha watch — live session cost dashboard](docs/ficha-watch.webp)
 
+*`ficha watch` — live dashboard: session totals, cache economics, cost trend, per-model and agent sub-session costs.*
+
 ## Install
 
 ```sh
@@ -30,6 +32,8 @@ ficha watch    # live monitoring (auto-follows new sessions)
 | `ficha version` | Print version information |
 
 ![ficha breakdown — per-message cost table](docs/ficha-breakdown.webp)
+
+*`ficha breakdown` — scrollable per-message table: cost, token counts, and originating agent for every message, parent and agents interleaved chronologically.*
 
 ## Flags
 
