@@ -109,3 +109,7 @@ Agent sub-sessions are included: both regular subagents and Claude Code Workflow
 
 > [!NOTE]
 > Claude Code deletes session transcripts older than 30 days by default (`cleanupPeriodDays` in `~/.claude/settings.json`), so ficha can only report what still exists on disk. To keep longer history, raise the setting, e.g. `"cleanupPeriodDays": 365`. Avoid `0` — it has [known bugs](https://github.com/anthropics/claude-code/issues/59248).
+
+## License
+
+[MIT](LICENSE)
