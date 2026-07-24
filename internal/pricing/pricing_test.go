@@ -15,6 +15,8 @@ func TestGetModelPricing(t *testing.T) {
 		{"fable 5 versioned", "claude-fable-5-20260301", 10.00, 50.00},
 		{"mythos 5 exact", "claude-mythos-5", 10.00, 50.00},
 		{"mythos 5 versioned", "claude-mythos-5-20260601", 10.00, 50.00},
+		{"opus 5 exact", "claude-opus-5", 5.00, 25.00},
+		{"opus 5 versioned", "claude-opus-5-20260601", 5.00, 25.00},
 		{"sonnet 5 exact", "claude-sonnet-5", 3.00, 15.00},
 		{"sonnet 5 versioned", "claude-sonnet-5-20260401", 3.00, 15.00},
 		{"opus 4.8 exact", "claude-opus-4-8", 5.00, 25.00},
@@ -94,6 +96,7 @@ func TestGetModelPricing(t *testing.T) {
 
 		// Serving-tier variants are a premium tier, not the base model — they must
 		// NOT bill at the base Opus row's $5/$25, but fall to default.
+		{"fast-mode opus 5 uses default", "claude-opus-5-fast", 3.00, 15.00},
 		{"fast-mode opus 4.6 uses default", "claude-opus-4-6-fast", 3.00, 15.00},
 		{"fast-mode opus 4.7 uses default", "claude-opus-4-7-fast", 3.00, 15.00},
 		{"bedrock fast-mode opus 4.6 uses default", "us.anthropic.claude-opus-4-6-fast-v1:0", 3.00, 15.00},
@@ -123,6 +126,9 @@ func TestGetModelDisplayName(t *testing.T) {
 		{"claude-mythos-5-20260601", "Mythos 5"},
 		{"claude-sonnet-5", "Sonnet 5"},
 		{"claude-sonnet-5-20260401", "Sonnet 5"},
+		{"claude-opus-5", "Opus 5"},
+		{"claude-opus-5-20260601", "Opus 5"},
+		{"claude-opus-5[1m]", "Opus 5"},
 		{"claude-opus-4-8", "Opus 4.8"},
 		{"claude-opus-4-8-20260601", "Opus 4.8"},
 		{"claude-opus-4-7", "Opus 4.7"},
@@ -213,6 +219,8 @@ func TestNormalizeModelID(t *testing.T) {
 		{"claude-mythos-5", "claude-mythos-5"},
 		{"claude-sonnet-5-20260401", "claude-sonnet-5"},
 		{"claude-sonnet-5", "claude-sonnet-5"},
+		{"claude-opus-5-20260601", "claude-opus-5"},
+		{"claude-opus-5", "claude-opus-5"},
 		{"claude-opus-4-8-20260601", "claude-opus-4-8"},
 		{"claude-opus-4-8", "claude-opus-4-8"},
 		{"claude-opus-4-7-20260301", "claude-opus-4-7"},
@@ -317,6 +325,7 @@ func TestIsKnownModel(t *testing.T) {
 		// All known models - exact matches
 		{"claude-fable-5", true},
 		{"claude-mythos-5", true},
+		{"claude-opus-5", true},
 		{"claude-sonnet-5", true},
 		{"claude-opus-4-0", true},
 		{"claude-sonnet-4-0", true},
@@ -341,6 +350,7 @@ func TestIsKnownModel(t *testing.T) {
 		// All known models - versioned variants
 		{"claude-fable-5-20260301", true},
 		{"claude-mythos-5-20260601", true},
+		{"claude-opus-5-20260601", true},
 		{"claude-sonnet-5-20260401", true},
 		{"claude-3-5-sonnet-latest", true},
 		{"claude-opus-4-8-20260601", true},
@@ -366,6 +376,7 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-opus-4-9", false},
 		{"claude-opus-4-9-20260101", false},
 		{"claude-opus-4-10-20260601", false},
+		{"claude-opus-5-1", false},
 		{"claude-sonnet-4-9", false},
 		{"claude-fable-5-5", false},
 
@@ -398,6 +409,7 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-opus-4-7-fast", false},
 		{"us.anthropic.claude-opus-4-6-fast-v1:0", false},
 		{"claude-opus-4-8-fast", false},
+		{"claude-opus-5-fast", false},
 
 		// Unknown models - should return false
 		{"unknown-model", false},
@@ -522,6 +534,8 @@ func TestGetModelPricingContextWindow(t *testing.T) {
 	}{
 		{"claude-fable-5", 1000000},
 		{"claude-mythos-5", 1000000},
+		{"claude-opus-5", 1000000},
+		{"claude-opus-5-20260601", 1000000},
 		{"claude-sonnet-5", 1000000},
 		{"claude-sonnet-5-20260401", 1000000},
 		{"claude-opus-4-8", 1000000},
@@ -654,6 +668,7 @@ func TestUnlistedFamilyVersionsNeverResolve(t *testing.T) {
 		"claude-opus-4-9", "claude-opus-4-9-20260101", "claude-opus-4-9@20260101",
 		"claude-opus-4-9[1m]", "us.anthropic.claude-opus-4-9-20260101-v1:0",
 		"claude-sonnet-4-9", "claude-sonnet-4-9@20260101", "claude-fable-5-5",
+		"claude-opus-5-1", "claude-opus-5-1-20260901", "claude-opus-5-fast",
 		"claude-opus-4-10-20260601", "anthropic.claude-9-fake-v1:0",
 		"claude-opus-4-5{2m}", "claude-opus-4-8[2m]", "claude-opus-4-8[foo]",
 		"claude-3-5-sonnet[beta]", "claude-opus-4-8[1m", "claude-opus-4-81m]",
