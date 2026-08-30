@@ -179,13 +179,13 @@ func TestStripUnixUserPrefix(t *testing.T) {
 	}{
 		{
 			name:     "simple project",
-			encoded:  "-home-bah-source-foo",
-			expected: "home-bah-source-foo",
+			encoded:  "-home-user-source-foo",
+			expected: "home-user-source-foo",
 		},
 		{
 			name:     "user home only",
-			encoded:  "-home-bah",
-			expected: "home-bah",
+			encoded:  "-home-user",
+			expected: "home-user",
 		},
 		{
 			name:     "Users style (macOS)",

@@ -186,7 +186,7 @@ func stripWindowsUserPrefix(encoded string) string {
 	return string(encoded[0]) + ":" + encoded[3:]
 }
 
-// stripUnixUserPrefix handles Unix paths like -home-bah-source-foo
+// stripUnixUserPrefix handles Unix paths like -home-user-source-foo
 // Only strips the leading dash (root /), keeps the rest as-is
 func stripUnixUserPrefix(encoded string) string {
 	if len(encoded) < 2 || encoded[0] != '-' {

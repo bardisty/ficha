@@ -447,8 +447,8 @@ type BreakdownMessage struct {
 
 // ProjectInfo represents a discovered Claude Code project directory
 type ProjectInfo struct {
-	EncodedPath  string // "-home-bah-source-foo"
-	FullPath     string // ~/.claude/projects/-home-bah-source-foo
+	EncodedPath  string // "-home-user-source-foo"
+	FullPath     string // ~/.claude/projects/-home-user-source-foo
 	OriginalPath string // /home/user/source/foo (decoded)
 	DisplayName  string // "foo" (basename)
 }
