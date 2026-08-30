@@ -449,7 +449,7 @@ type BreakdownMessage struct {
 type ProjectInfo struct {
 	EncodedPath  string // "-home-bah-source-foo"
 	FullPath     string // ~/.claude/projects/-home-bah-source-foo
-	OriginalPath string // /home/bah/source/foo (decoded)
+	OriginalPath string // /home/user/source/foo (decoded)
 	DisplayName  string // "foo" (basename)
 }
 
