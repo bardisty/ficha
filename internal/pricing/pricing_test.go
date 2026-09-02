@@ -11,6 +11,10 @@ func TestGetModelPricing(t *testing.T) {
 		expectedInput  float64
 		expectedOutput float64
 	}{
+		{"fable 5.1 exact", "claude-fable-5-1", 10.00, 50.00},
+		{"fable 5.1 versioned", "claude-fable-5-1-20260901", 10.00, 50.00},
+		{"mythos 5.1 exact", "claude-mythos-5-1", 10.00, 50.00},
+		{"mythos 5.1 versioned", "claude-mythos-5-1-20260901", 10.00, 50.00},
 		{"fable 5 exact", "claude-fable-5", 10.00, 50.00},
 		{"fable 5 versioned", "claude-fable-5-20260301", 10.00, 50.00},
 		{"mythos 5 exact", "claude-mythos-5", 10.00, 50.00},
@@ -60,6 +64,10 @@ func TestGetModelPricing(t *testing.T) {
 		{"unlisted opus 4.9 dated uses default", "claude-opus-4-9-20260101", 3.00, 15.00},
 		{"unlisted opus 4.10 dated uses default", "claude-opus-4-10-20260601", 3.00, 15.00},
 		{"unlisted fable 5.5 uses default", "claude-fable-5-5", 3.00, 15.00},
+		// "claude-fable-5-10" shares the "claude-fable-5-1" byte prefix but its
+		// next byte is not a boundary, so it must not inherit the 5.1 row.
+		{"unlisted fable 5.10 uses default", "claude-fable-5-10", 3.00, 15.00},
+		{"unlisted mythos 5.2 uses default", "claude-mythos-5-2", 3.00, 15.00},
 
 		// Vertex '@date' IDs. Before the segment-boundary fix these matched the
 		// shorter "claude-opus-4" prefix and billed at $15/$75.
@@ -96,6 +104,7 @@ func TestGetModelPricing(t *testing.T) {
 
 		// Serving-tier variants are a premium tier, not the base model — they must
 		// NOT bill at the base Opus row's $5/$25, but fall to default.
+		{"fast-mode fable 5.1 uses default", "claude-fable-5-1-fast", 3.00, 15.00},
 		{"fast-mode opus 5 uses default", "claude-opus-5-fast", 3.00, 15.00},
 		{"fast-mode opus 4.6 uses default", "claude-opus-4-6-fast", 3.00, 15.00},
 		{"fast-mode opus 4.7 uses default", "claude-opus-4-7-fast", 3.00, 15.00},
@@ -120,6 +129,12 @@ func TestGetModelDisplayName(t *testing.T) {
 		modelID      string
 		expectedName string
 	}{
+		{"claude-fable-5-1", "Fable 5.1"},
+		{"claude-fable-5-1-20260901", "Fable 5.1"},
+		{"claude-fable-5-1[1m]", "Fable 5.1"},
+		{"claude-mythos-5-1", "Mythos 5.1"},
+		{"claude-mythos-5-1-20260901", "Mythos 5.1"},
+		{"claude-mythos-5-1[1m]", "Mythos 5.1"},
 		{"claude-fable-5", "Fable 5"},
 		{"claude-fable-5-20260301", "Fable 5"},
 		{"claude-mythos-5", "Mythos 5"},
@@ -206,6 +221,48 @@ func TestCacheRates(t *testing.T) {
 	if cr < 0.29 || cr > 0.31 {
 		t.Errorf("CacheReadRate: got %f, want ~0.30", cr)
 	}
+
+	// An explicit CacheReadRate overrides the multiplier; writes are unaffected
+	override := ModelPricing{InputRate: 10.00, OutputRate: 50.00, CacheReadRate: 0.25}
+	if got := GetCacheReadRate(override); got != 0.25 {
+		t.Errorf("CacheReadRate override: got %f, want 0.25", got)
+	}
+	if got := GetCacheWrite5mRate(override); got < 12.49 || got > 12.51 {
+		t.Errorf("CacheWrite5mRate with override: got %f, want ~12.50", got)
+	}
+	if got := GetCacheWrite1hRate(override); got < 19.99 || got > 20.01 {
+		t.Errorf("CacheWrite1hRate with override: got %f, want ~20.00", got)
+	}
+}
+
+// TestCacheReadRateOverride pins which catalog rows carry an absolute cache-read
+// rate: Fable 5.1 bills $0.25/MTok, everything else derives 0.1x from input.
+func TestCacheReadRateOverride(t *testing.T) {
+	tests := []struct {
+		modelID          string
+		expectedOverride float64 // 0 = derived
+		expectedRate     float64
+	}{
+		{"claude-fable-5-1", 0.25, 0.25},
+		{"claude-fable-5-1-20260901", 0.25, 0.25},
+		{"claude-fable-5-1[1m]", 0.25, 0.25},
+		{"claude-mythos-5-1", 0, 1.00},
+		{"claude-fable-5", 0, 1.00},
+		{"claude-opus-5", 0, 0.50},
+		{"unknown-model", 0, 0.30},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.modelID, func(t *testing.T) {
+			p := GetModelPricing(tt.modelID)
+			if p.CacheReadRate != tt.expectedOverride {
+				t.Errorf("CacheReadRate field: got %f, want %f", p.CacheReadRate, tt.expectedOverride)
+			}
+			if got := GetCacheReadRate(p); got < tt.expectedRate-0.001 || got > tt.expectedRate+0.001 {
+				t.Errorf("GetCacheReadRate: got %f, want %f", got, tt.expectedRate)
+			}
+		})
+	}
 }
 
 func TestNormalizeModelID(t *testing.T) {
@@ -213,6 +270,10 @@ func TestNormalizeModelID(t *testing.T) {
 		input    string
 		expected string
 	}{
+		{"claude-fable-5-1-20260901", "claude-fable-5-1"},
+		{"claude-fable-5-1", "claude-fable-5-1"},
+		{"claude-mythos-5-1-20260901", "claude-mythos-5-1"},
+		{"claude-mythos-5-1", "claude-mythos-5-1"},
 		{"claude-fable-5-20260301", "claude-fable-5"},
 		{"claude-fable-5", "claude-fable-5"},
 		{"claude-mythos-5-20260601", "claude-mythos-5"},
@@ -252,6 +313,7 @@ func TestNormalizeModelID(t *testing.T) {
 		{"claude-opus-4-10-20260601", "claude-opus-4-10-20260601"},
 		{"claude-sonnet-4-9", "claude-sonnet-4-9"},
 		{"claude-fable-5-5", "claude-fable-5-5"},
+		{"claude-fable-5-10", "claude-fable-5-10"},
 		{"some-other-model", "some-other-model"},
 
 		// Vertex separates the release date with '@'. Treating it as a segment
@@ -323,6 +385,8 @@ func TestIsKnownModel(t *testing.T) {
 		expected bool
 	}{
 		// All known models - exact matches
+		{"claude-fable-5-1", true},
+		{"claude-mythos-5-1", true},
 		{"claude-fable-5", true},
 		{"claude-mythos-5", true},
 		{"claude-opus-5", true},
@@ -348,6 +412,8 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-3-haiku", true},
 
 		// All known models - versioned variants
+		{"claude-fable-5-1-20260901", true},
+		{"claude-mythos-5-1-20260901", true},
 		{"claude-fable-5-20260301", true},
 		{"claude-mythos-5-20260601", true},
 		{"claude-opus-5-20260601", true},
@@ -378,7 +444,10 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-opus-4-10-20260601", false},
 		{"claude-opus-5-1", false},
 		{"claude-sonnet-4-9", false},
+		{"claude-fable-5-2", false},
 		{"claude-fable-5-5", false},
+		{"claude-fable-5-10", false},
+		{"claude-mythos-5-2", false},
 
 		// Vertex, Bedrock, and 1M-beta forms of catalogued models are known.
 		{"claude-opus-4-5@20251101", true},
@@ -410,6 +479,7 @@ func TestIsKnownModel(t *testing.T) {
 		{"us.anthropic.claude-opus-4-6-fast-v1:0", false},
 		{"claude-opus-4-8-fast", false},
 		{"claude-opus-5-fast", false},
+		{"claude-fable-5-1-fast", false},
 
 		// Unknown models - should return false
 		{"unknown-model", false},
@@ -532,6 +602,9 @@ func TestGetModelPricingContextWindow(t *testing.T) {
 		modelID  string
 		expected int
 	}{
+		{"claude-fable-5-1", 1000000},
+		{"claude-fable-5-1-20260901", 1000000},
+		{"claude-mythos-5-1", 1000000},
 		{"claude-fable-5", 1000000},
 		{"claude-mythos-5", 1000000},
 		{"claude-opus-5", 1000000},
@@ -669,6 +742,8 @@ func TestUnlistedFamilyVersionsNeverResolve(t *testing.T) {
 		"claude-opus-4-9[1m]", "us.anthropic.claude-opus-4-9-20260101-v1:0",
 		"claude-sonnet-4-9", "claude-sonnet-4-9@20260101", "claude-fable-5-5",
 		"claude-opus-5-1", "claude-opus-5-1-20260901", "claude-opus-5-fast",
+		"claude-fable-5-2", "claude-fable-5-10", "claude-fable-5-1-fast",
+		"claude-mythos-5-2", "claude-mythos-5-1-fast",
 		"claude-opus-4-10-20260601", "anthropic.claude-9-fake-v1:0",
 		"claude-opus-4-5{2m}", "claude-opus-4-8[2m]", "claude-opus-4-8[foo]",
 		"claude-3-5-sonnet[beta]", "claude-opus-4-8[1m", "claude-opus-4-81m]",

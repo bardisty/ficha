@@ -181,6 +181,36 @@ func TestCalculateCostCacheSavings(t *testing.T) {
 	}
 }
 
+func TestCalculateCostPerModelCacheReadRate(t *testing.T) {
+	// Fable 5.1 overrides the 0.1x cache-read multiplier with $0.25/MTok;
+	// Fable 5 (same $10 input rate) is the control on the derived path.
+	usage := models.TokenUsage{CacheReadInputTokens: 1_000_000}
+
+	tests := []struct {
+		modelID          string
+		expectedReadCost float64
+		expectedSavings  float64
+	}{
+		{"claude-fable-5-1", 0.25, 9.75},
+		{"claude-fable-5", 1.00, 9.00},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.modelID, func(t *testing.T) {
+			cost := CalculateCost(usage, tt.modelID)
+			if !almostEqual(cost.CacheReadCost, tt.expectedReadCost, 0.001) {
+				t.Errorf("CacheReadCost: got %f, want %f", cost.CacheReadCost, tt.expectedReadCost)
+			}
+			if !almostEqual(cost.TotalCost, tt.expectedReadCost, 0.001) {
+				t.Errorf("TotalCost: got %f, want %f", cost.TotalCost, tt.expectedReadCost)
+			}
+			if !almostEqual(cost.CacheSavings, tt.expectedSavings, 0.001) {
+				t.Errorf("CacheSavings: got %f, want %f", cost.CacheSavings, tt.expectedSavings)
+			}
+		})
+	}
+}
+
 func TestCalculateMessageCost(t *testing.T) {
 	msg := &models.MessageAnalysis{
 		Model: "claude-sonnet-4-5",

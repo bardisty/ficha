@@ -10,14 +10,16 @@ import (
 type ModelPricing struct {
 	InputRate        float64 // Cost per million input tokens
 	OutputRate       float64 // Cost per million output tokens
+	CacheReadRate    float64 // Cost per million cache-read tokens; 0 = InputRate * CacheReadMultiplier
 	MaxContextTokens int     // Maximum context window size in tokens
 }
 
-// Cache multipliers (relative to input rate)
+// Cache multipliers (relative to input rate). Cache reads are the only bucket
+// a catalog row may override with an absolute rate (see ModelInfo.CacheReadRate).
 const (
 	CacheWrite5mMultiplier = 1.25 // 5-minute TTL cache write
 	CacheWrite1hMultiplier = 2.0  // 1-hour TTL cache write
-	CacheReadMultiplier    = 0.1  // Cache read
+	CacheReadMultiplier    = 0.1  // Cache read default
 )
 
 // ModelInfo is one row of the model catalog: the canonical ID (also the
@@ -28,6 +30,7 @@ type ModelInfo struct {
 	DisplayName      string
 	InputRate        float64 // Cost per million input tokens
 	OutputRate       float64 // Cost per million output tokens
+	CacheReadRate    float64 // Absolute cache-read rate; 0 = InputRate * CacheReadMultiplier
 	MaxContextTokens int
 }
 
@@ -36,6 +39,11 @@ type ModelInfo struct {
 // adding a model means adding one row here.
 var modelCatalog = []ModelInfo{
 	// Claude 5 family
+	// Fable 5.1 cache reads are $0.25/MTok (0.025x), not the 0.1x default.
+	{ID: "claude-fable-5-1", DisplayName: "Fable 5.1", InputRate: 10.00, OutputRate: 50.00, CacheReadRate: 0.25, MaxContextTokens: 1000000},
+	// Whether Mythos 5.1 shares Fable 5.1's cache-read rate is undocumented at
+	// launch; standard 0.1x until confirmed.
+	{ID: "claude-mythos-5-1", DisplayName: "Mythos 5.1", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},
 	{ID: "claude-fable-5", DisplayName: "Fable 5", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},
 	{ID: "claude-mythos-5", DisplayName: "Mythos 5", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},
 	{ID: "claude-opus-5", DisplayName: "Opus 5", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
@@ -81,6 +89,7 @@ func init() {
 		modelPricing[m.ID] = ModelPricing{
 			InputRate:        m.InputRate,
 			OutputRate:       m.OutputRate,
+			CacheReadRate:    m.CacheReadRate,
 			MaxContextTokens: m.MaxContextTokens,
 		}
 		displayNames[m.ID] = m.DisplayName
@@ -299,8 +308,12 @@ func GetCacheWrite1hRate(pricing ModelPricing) float64 {
 	return pricing.InputRate * CacheWrite1hMultiplier
 }
 
-// GetCacheReadRate returns the cache read rate
+// GetCacheReadRate returns the cache read rate: the row's absolute override
+// when set, otherwise the standard 0.1x of the input rate.
 func GetCacheReadRate(pricing ModelPricing) float64 {
+	if pricing.CacheReadRate > 0 {
+		return pricing.CacheReadRate
+	}
 	return pricing.InputRate * CacheReadMultiplier
 }
 
