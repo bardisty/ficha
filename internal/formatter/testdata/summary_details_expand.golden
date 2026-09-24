@@ -2,20 +2,20 @@
 |  Summary: 3 sessions  |  Duration: 2d                                    |
 +==========================================================================+
 
-----------------------------[ $0.246150 TOTAL ]-----------------------------
+----------------------------[ $0.229100 TOTAL ]-----------------------------
 
-  Input            $0.020050          9.1K tokens
-  Output           $0.100000          7.4K tokens
-  Cache write      $0.062500         20.0K tokens  5m TTL
+  Input            $0.017950          9.1K tokens
+  Output           $0.092000          7.4K tokens
+  Cache write      $0.056250         20.0K tokens  5m TTL
   Cache write      $0.010000          1.0K tokens  1h TTL
-  Cache read       $0.053600        122.0K tokens
-  Savings          $0.482400  (from cache reads)
+  Cache read       $0.052900        122.0K tokens
+  Savings          $0.476100  (from cache reads)
 
 -----------------------------[ COST BY MODEL ]------------------------------
 
     Opus 4.8     $0.158700
-    Sonnet 5     $0.051150
     Haiku 4.5    $0.036300
+    Sonnet 5     $0.034100
 
 ---------------------------[ SESSION BREAKDOWN ]----------------------------
 
@@ -24,18 +24,18 @@
                                                                         
                                                                         
                                                                         
-                                                                      █▄
-    min: $0.087  max: $0.159  (2 sessions)
+                                                                      █▃
+    min: $0.070  max: $0.159  (2 sessions)
     10 JAN                                                        12 JAN
 
      # SESSION   MODIFIED      MODEL           COST  CUMULATIVE
   ------------------------------------------------------------------------
      1 aaaa1111  10 JAN 12:00  Opus 4.8       $0.16       $0.16
-     2 bbbb2222  12 JAN 18:30  Haiku 4.5      $0.09       $0.25
-       `- [Agld1]    Sonnet 5     2 msgs  $0.05
+     2 bbbb2222  12 JAN 18:30  Haiku 4.5      $0.07       $0.23
+       `- [Agld1]    Sonnet 5     2 msgs  $0.03
      3 cccc3333  14 JAN 09:15  -            (error)           -
   ------------------------------------------------------------------------
-  Sum (2 sessions):                                       $0.25
+  Sum (2 sessions):                                       $0.23
 
 ============================================================================
 Messages: 7 (5 parent, 2 agents)  |  Sessions: 3
