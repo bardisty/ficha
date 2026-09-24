@@ -101,7 +101,7 @@ The full export contract — flag interactions, record provenance, counters, per
 
 ## How it works
 
-Reads session files from `~/.claude/projects/` and calculates costs using Anthropic's pricing. Tracks prompt caching savings (cache reads are billed at a steep discount: 90% off input for most models, 97.5% for Fable 5.1).
+Reads session files from `~/.claude/projects/` and calculates costs using Anthropic's pricing. Tracks prompt caching savings (cache reads are billed at a steep discount: 90% off input for most models, 95% for Opus 5.5, 97.5% for Fable 5.1).
 
 Costs are estimates: ficha multiplies token counts by bundled API list prices, so figures are API-equivalent value — on a subscription plan you aren't billed per token. Models without a bundled price fall back to Sonnet pricing and are flagged with a warning.
 
