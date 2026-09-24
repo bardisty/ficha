@@ -46,6 +46,8 @@ var modelCatalog = []ModelInfo{
 	{ID: "claude-mythos-5-1", DisplayName: "Mythos 5.1", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},
 	{ID: "claude-fable-5", DisplayName: "Fable 5", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},
 	{ID: "claude-mythos-5", DisplayName: "Mythos 5", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},
+	// Opus 5.5 cache reads are $0.20/MTok (0.05x), not the 0.1x default.
+	{ID: "claude-opus-5-5", DisplayName: "Opus 5.5", InputRate: 4.00, OutputRate: 20.00, CacheReadRate: 0.20, MaxContextTokens: 1000000},
 	{ID: "claude-opus-5", DisplayName: "Opus 5", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
 	// Sticker rates; the time-boxed intro pricing ($2/$10 through 2026-08-31) is not modeled.
 	{ID: "claude-sonnet-5", DisplayName: "Sonnet 5", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 1000000},
