@@ -39,18 +39,15 @@ type ModelInfo struct {
 // adding a model means adding one row here.
 var modelCatalog = []ModelInfo{
 	// Claude 5 family
-	// Fable 5.1 cache reads are $0.25/MTok (0.025x), not the 0.1x default.
+	// Fable 5.1 / Mythos 5.1 cache reads are $0.25/MTok (0.025x), not the 0.1x default.
 	{ID: "claude-fable-5-1", DisplayName: "Fable 5.1", InputRate: 10.00, OutputRate: 50.00, CacheReadRate: 0.25, MaxContextTokens: 1000000},
-	// Whether Mythos 5.1 shares Fable 5.1's cache-read rate is undocumented at
-	// launch; standard 0.1x until confirmed.
-	{ID: "claude-mythos-5-1", DisplayName: "Mythos 5.1", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},
+	{ID: "claude-mythos-5-1", DisplayName: "Mythos 5.1", InputRate: 10.00, OutputRate: 50.00, CacheReadRate: 0.25, MaxContextTokens: 1000000},
 	{ID: "claude-fable-5", DisplayName: "Fable 5", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},
 	{ID: "claude-mythos-5", DisplayName: "Mythos 5", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},
 	// Opus 5.5 cache reads are $0.20/MTok (0.05x), not the 0.1x default.
 	{ID: "claude-opus-5-5", DisplayName: "Opus 5.5", InputRate: 4.00, OutputRate: 20.00, CacheReadRate: 0.20, MaxContextTokens: 1000000},
 	{ID: "claude-opus-5", DisplayName: "Opus 5", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
-	// Sticker rates; the time-boxed intro pricing ($2/$10 through 2026-08-31) is not modeled.
-	{ID: "claude-sonnet-5", DisplayName: "Sonnet 5", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 1000000},
+	{ID: "claude-sonnet-5", DisplayName: "Sonnet 5", InputRate: 2.00, OutputRate: 10.00, MaxContextTokens: 1000000},
 	// Opus 4.x
 	{ID: "claude-opus-4-8", DisplayName: "Opus 4.8", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
 	{ID: "claude-opus-4-7", DisplayName: "Opus 4.7", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},

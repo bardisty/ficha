@@ -23,8 +23,8 @@ func TestGetModelPricing(t *testing.T) {
 		{"opus 5.5 versioned", "claude-opus-5-5-20260901", 4.00, 20.00},
 		{"opus 5 exact", "claude-opus-5", 5.00, 25.00},
 		{"opus 5 versioned", "claude-opus-5-20260601", 5.00, 25.00},
-		{"sonnet 5 exact", "claude-sonnet-5", 3.00, 15.00},
-		{"sonnet 5 versioned", "claude-sonnet-5-20260401", 3.00, 15.00},
+		{"sonnet 5 exact", "claude-sonnet-5", 2.00, 10.00},
+		{"sonnet 5 versioned", "claude-sonnet-5-20260401", 2.00, 10.00},
 		{"opus 4.8 exact", "claude-opus-4-8", 5.00, 25.00},
 		{"opus 4.8 versioned", "claude-opus-4-8-20260601", 5.00, 25.00},
 		{"opus 4.7 exact", "claude-opus-4-7", 5.00, 25.00},
@@ -243,8 +243,8 @@ func TestCacheRates(t *testing.T) {
 }
 
 // TestCacheReadRateOverride pins which catalog rows carry an absolute cache-read
-// rate: Fable 5.1 bills $0.25/MTok, Opus 5.5 $0.20/MTok, everything else
-// derives 0.1x from input.
+// rate: Fable 5.1 and Mythos 5.1 bill $0.25/MTok, Opus 5.5 $0.20/MTok,
+// everything else derives 0.1x from input.
 func TestCacheReadRateOverride(t *testing.T) {
 	tests := []struct {
 		modelID          string
@@ -254,12 +254,15 @@ func TestCacheReadRateOverride(t *testing.T) {
 		{"claude-fable-5-1", 0.25, 0.25},
 		{"claude-fable-5-1-20260901", 0.25, 0.25},
 		{"claude-fable-5-1[1m]", 0.25, 0.25},
-		{"claude-mythos-5-1", 0, 1.00},
+		{"claude-mythos-5-1", 0.25, 0.25},
+		{"claude-mythos-5-1-20260901", 0.25, 0.25},
+		{"claude-mythos-5-1[1m]", 0.25, 0.25},
 		{"claude-fable-5", 0, 1.00},
 		{"claude-opus-5-5", 0.20, 0.20},
 		{"claude-opus-5-5-20260901", 0.20, 0.20},
 		{"claude-opus-5-5[1m]", 0.20, 0.20},
 		{"claude-opus-5", 0, 0.50},
+		{"claude-sonnet-5", 0, 0.20},
 		{"unknown-model", 0, 0.30},
 	}
 
