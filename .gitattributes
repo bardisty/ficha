@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+# Golden snapshots are compared byte-for-byte against rendered output, which
+# always uses LF and may carry trailing spaces and ANSI escapes. Git must never
+# rewrite them, whatever core.autocrlf says on a Windows checkout.
+*.golden -text
+
+*.webp binary
