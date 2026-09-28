@@ -183,7 +183,7 @@ func TestCostByModelKeysAreNormalized(t *testing.T) {
 	}
 }
 
-// READ-01: Claude Code writes synthetic API-error lines (model "<synthetic>",
+// Claude Code writes synthetic API-error lines (model "<synthetic>",
 // all-zero usage) that can end a transcript. Captured as the positional last
 // message they zero the CONTEXT readout even though real context exists, so
 // last-message capture walks back to the last message that carries context.
@@ -235,7 +235,7 @@ func TestCostByModelMergesDecoratedIDsAndKeepsUnknownRaw(t *testing.T) {
 		assistantMsg("us.anthropic.claude-opus-4-8-20251101-v1:0", 1_000_000),
 		assistantMsg("claude-opus-4-9", 1_000_000),     // unknown family version
 		assistantMsg("claude-opus-4-9", 1_000_000),     // ... aggregates with itself
-		assistantMsg("claude-opus-4-9[2m]", 1_000_000), // unrecognized decorator (D16): its own row
+		assistantMsg("claude-opus-4-9[2m]", 1_000_000), // unrecognized decorator: its own row
 	}, false)
 
 	// 4 × Opus 4.8 @ $5/M = $20.00 in one row.
@@ -1051,9 +1051,9 @@ func TestAnalyzeSession_ForkFileStaysFileLocal(t *testing.T) {
 	}
 }
 
-// DEDUP-01: keeping work in the original session after forking pushes its
-// mtime past the fork's, and mtime-ordered attribution handed the fork the
-// shared history. The Created tie-break (session creation time from the
+// Keeping work in the original session after forking pushes its mtime past
+// the fork's, so mtime-ordered attribution would hand the fork the shared
+// history. The Created tie-break (session creation time from the
 // index) must keep the original first regardless of who was written to last.
 func TestAnalyzeMultipleSessions_ForkAttribution_OriginalMtimeLater(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -1210,7 +1210,7 @@ func TestAnalyzeMultipleSessions_AgentFilesStayFileLocal(t *testing.T) {
 	}
 }
 
-// SESS-01: a session whose parent transcript cannot be read still has agent
+// A session whose parent transcript cannot be read still has agent
 // sub-sessions on disk that `list` counts. Their spend never enters the
 // aggregate (the parent parse fails before agent analysis), so it must be
 // disclosed through SkippedAgents — not vanish behind a generic
@@ -1354,7 +1354,7 @@ func TestAnalyzeMultipleSessions_AggregatesAgentPartition(t *testing.T) {
 	}
 }
 
-// SESS-01: project_path must name the project directory (not the transcript
+// project_path must name the project directory (not the transcript
 // path), and session_file must carry the transcript. AnalyzeSession (the show
 // path) sets both.
 func TestAnalyzeSession_PopulatesProjectPathAndSessionFile(t *testing.T) {
@@ -1374,7 +1374,7 @@ func TestAnalyzeSession_PopulatesProjectPathAndSessionFile(t *testing.T) {
 	}
 }
 
-// SESS-01: the summary aggregate names the project (project_path) so machine
+// The summary aggregate names the project (project_path) so machine
 // consumers can join it to the per-session records, and its session_file is
 // empty because it spans many files. Each per-session record repeats the same
 // project_path and carries its own session_file.
@@ -1415,7 +1415,7 @@ func TestAnalyzeMultipleSessions_ProjectPathJoinsRecords(t *testing.T) {
 	}
 }
 
-// AGENT-01: a symlinked workflow run dir's spend must reach the session total
+// A symlinked workflow run dir's spend must reach the session total
 // and not inflate SkippedAgents; a broken-symlink run dir must be disclosed.
 func TestAnalyzeSession_SymlinkedWorkflowRunDirCounted(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -1675,9 +1675,9 @@ func makeUnreadableDir(t *testing.T, dir string) {
 	}
 }
 
-// AGENT-04: an unreadable subagents/ dir used to yield HasAgents=false and
-// SkippedAgents=0 — a session that silently lost every agent's cost looked
-// exactly like a session that never had one.
+// An unreadable subagents/ dir must count as skipped: HasAgents=false and
+// SkippedAgents=0 would make a session that silently lost every agent's cost
+// look exactly like a session that never had one.
 func TestAnalyzeSession_UnreadableSubagentsDirCountsAsSkipped(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionPath := filepath.Join(tmpDir, "sess.jsonl")

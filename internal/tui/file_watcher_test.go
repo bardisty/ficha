@@ -211,7 +211,7 @@ func TestSubagentTreeSignature_SymlinkedWorkflowRunDir(t *testing.T) {
 	// Discovery (parser.DiscoverAgentSessions) follows a symlinked workflow run
 	// dir, so the poll signature must see writes inside it too: a symlink's own
 	// lstat size/mtime never change as the target's contents grow, which is
-	// exactly what the old WalkDir-based signature fingerprinted (BRK-01).
+	// exactly what a WalkDir-based signature would fingerprint.
 	tmpDir := t.TempDir()
 	sessionID := "sess-symlink"
 	target := t.TempDir()

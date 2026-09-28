@@ -73,7 +73,7 @@ func TestBreakdownModel_DetectNewMessages(t *testing.T) {
 	}
 }
 
-// BRK-04: a newly discovered agent message whose timestamp precedes existing
+// A newly discovered agent message whose timestamp precedes existing
 // rows inserts mid-list; the sort then renumbers the old tail rows past the old
 // count. Identity-based detection must flag only the inserted agent row, not the
 // shifted parent rows.

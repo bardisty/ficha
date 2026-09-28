@@ -7,9 +7,9 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 )
 
-// TestWatchInsights_TrendGate pins ROLL-02 on the watch surface: renderInsights
-// gates the trend row on HasTrend, so no fabricated row appears one message
-// below models.MinMessagesForTrend.
+// TestWatchInsights_TrendGate pins the trend gate on the watch surface:
+// renderInsights gates the trend row on HasTrend, so no fabricated row appears
+// one message below models.MinMessagesForTrend.
 func TestWatchInsights_TrendGate(t *testing.T) {
 	below := &models.SessionAnalysis{
 		Insights: &models.MessageInsights{MessageCount: models.MinMessagesForTrend - 1},
@@ -33,7 +33,7 @@ func TestWatchInsights_TrendGate(t *testing.T) {
 	}
 }
 
-// TestWatchInsights_ScopeLabel pins ROLL-03 (D21=b) on the watch surface.
+// TestWatchInsights_ScopeLabel pins the scope label on the watch surface.
 func TestWatchInsights_ScopeLabel(t *testing.T) {
 	insights := &models.MessageInsights{
 		MessageCount: models.MinMessagesForTrend,
@@ -49,7 +49,7 @@ func TestWatchInsights_ScopeLabel(t *testing.T) {
 	}
 }
 
-// TestBreakdownInsights_TrendGate pins ROLL-02 on the breakdown surface.
+// TestBreakdownInsights_TrendGate pins the trend gate on the breakdown surface.
 func TestBreakdownInsights_TrendGate(t *testing.T) {
 	below := BreakdownModel{
 		noColor:  true,
@@ -76,7 +76,7 @@ func TestBreakdownInsights_TrendGate(t *testing.T) {
 	}
 }
 
-// TestBreakdownInsights_ScopeLabel pins ROLL-03 (D21=b) on the breakdown
+// TestBreakdownInsights_ScopeLabel pins the scope label on the breakdown
 // surface: its insights cover the merged parent+agent messages, so the scope is
 // labeled when agents are present and left off when they are not.
 func TestBreakdownInsights_ScopeLabel(t *testing.T) {

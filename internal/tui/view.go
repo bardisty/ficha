@@ -96,7 +96,7 @@ func (m Model) View() string {
 	// still has accounting to disclose (skipped input / estimated / fallback):
 	// the footer is watch's only channel for those warnings, so suppressing it
 	// on a zero-message session would hide exactly the sessions where every line
-	// was dropped, while `show` warns (WCOST-02, D17).
+	// was dropped, while `show` warns.
 	if m.analysis != nil && (!m.isEmptySession() || m.hasAccountingWarnings()) {
 		sb.WriteString("  " + m.renderFooter() + "\n")
 	} else {
@@ -156,7 +156,7 @@ func (m Model) renderAnalysis() string {
 
 	// Cache write rows - split tokens by TTL when detailed breakdown available.
 	// Each row reads its own per-TTL token delta so a write to one bucket can't
-	// flash a delta on the other (WCOST-01); tokenKey5m/tokenKey1h stay in
+	// flash a delta on the other; tokenKey5m/tokenKey1h stay in
 	// lockstep with detectChanges' keying via cacheWriteTokenKeys.
 	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(a.TotalUsage)
 	tokenKey5m, tokenKey1h := cacheWriteTokenKeys(a.TotalUsage)
@@ -360,7 +360,7 @@ func cacheWriteTokenKeys(usage models.TokenUsage) (string, string) {
 // footer must surface even when the session is otherwise empty: skipped input,
 // estimated-cost messages, or fallback-priced models. Without it, a session
 // that parses to zero messages but dropped every line would render a clean
-// empty state while `show` on the same session warns (WCOST-02).
+// empty state while `show` on the same session warns.
 func (m Model) hasAccountingWarnings() bool {
 	a := m.analysis
 	if a == nil {
@@ -841,10 +841,9 @@ func (m Model) isEmptySession() bool {
 
 // renderCostChart renders the cost trend sparkline with labels. The min/max and
 // count describe exactly the window the sparkline draws — its last chart-width
-// points — so the labels can never advertise a peak that is off-screen (WDIFF-01
-// / WCOST-03). When the whole history fits the chart the count is a plain
-// "(N msgs)"; once it overflows the label discloses the shown/total split as
-// "(last N of M msgs)".
+// points — so the labels can never advertise a peak that is off-screen. When
+// the whole history fits the chart the count is a plain "(N msgs)"; once it
+// overflows the label discloses the shown/total split as "(last N of M msgs)".
 func (m Model) renderCostChart() string {
 	var sb strings.Builder
 

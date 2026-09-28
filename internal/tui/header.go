@@ -50,7 +50,7 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 
 	// Fit the content to innerWidth *before* computing padding: full content
 	// wider than innerWidth would clamp padding to 0 and push the right border
-	// out of column on narrow terminals (HDR-01). Elide in order of least value
+	// out of column on narrow terminals. Elide in order of least value
 	// — drop the "(prev: …)" clause, then shorten "Updated: HH:MM:SS" to the
 	// bare time — and hard-clip via lipgloss MaxWidth as a final guarantee.
 	showPrev := p.prevSessionID != ""

@@ -353,7 +353,7 @@ func TestContextBar(t *testing.T) {
 	if n := len([]rune(bar)); n != 40 {
 		t.Errorf("bar rune length = %d, want 40 (38 bar + 2 brackets)", n)
 	}
-	// no-color uses the ASCII bar fallback (D4): '#' used, '-' free.
+	// no-color uses the ASCII bar fallback: '#' used, '-' free.
 	if !strings.ContainsRune(bar, '#') || !strings.ContainsRune(bar, '-') {
 		t.Errorf("bar should contain both used (#) and free (-) segments: %q", bar)
 	}

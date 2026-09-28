@@ -341,9 +341,9 @@ func TestAnalyzeAllProjects_CrossFileDedupPerProject(t *testing.T) {
 	}
 }
 
-// AGENT-05: session_count used to count every discovered session while
-// total_cost/message_count excluded the ones that failed to parse, and the
-// aggregate's skip counters never reached ProjectAnalysis at all.
+// session_count must exclude sessions that failed to parse, as
+// total_cost/message_count do, and the aggregate's skip counters must reach
+// ProjectAnalysis.
 func TestAnalyzeAllProjects_SkippedSessionAccounting(t *testing.T) {
 	tmpDir := t.TempDir()
 	projDir := filepath.Join(tmpDir, "proj")
@@ -445,8 +445,9 @@ func TestAnalyzeAllProjects_SkippedAgentsReachGlobal(t *testing.T) {
 	}
 }
 
-// AGG-02: FirstActive/LastActive came from file mtimes (each file's LAST write),
-// so a single-session project spanned 0s and disagreed with `summary`.
+// FirstActive/LastActive come from message timestamps, not file mtimes: an
+// mtime is each file's LAST write, so a single-session project would span 0s
+// and disagree with `summary`.
 func TestAnalyzeAllProjects_ActivityFromMessageTimestamps(t *testing.T) {
 	tmpDir := t.TempDir()
 	projDir := filepath.Join(tmpDir, "proj")

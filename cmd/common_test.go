@@ -103,13 +103,13 @@ func TestFormatNoProjectError(t *testing.T) {
 	// on Linux, so BasenameCrossOS is required for the basename comparison.
 	t.Run("windows-style originalPath suggested", func(t *testing.T) {
 		projects := []models.ProjectInfo{
-			{EncodedPath: "C--Users-Brian-source-foo", OriginalPath: `C:\Users\Brian\source\foo`},
+			{EncodedPath: "C--Users-user-source-foo", OriginalPath: `C:\Users\user\source\foo`},
 		}
-		err := formatNoProjectError("/mnt/c/Users/Brian/source/foo", projects)
+		err := formatNoProjectError("/mnt/c/Users/user/source/foo", projects)
 		if !strings.Contains(err.Error(), "Similar projects") {
 			t.Errorf("expected Windows-style originalPath to be suggested: %v", err)
 		}
-		if !strings.Contains(err.Error(), "C--Users-Brian-source-foo") {
+		if !strings.Contains(err.Error(), "C--Users-user-source-foo") {
 			t.Errorf("suggestion list should list the matching project: %v", err)
 		}
 	})

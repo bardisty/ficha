@@ -11,7 +11,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// The file-change waiter lifecycle invariant (WATCH-01): at most one waiter
+// The file-change waiter lifecycle invariant: at most one waiter
 // blocks on the watcher at a time. A reload's completion message re-arms only
 // when the waiter actually exited (fileChangedMsg / fileWatchErrMsg); reloads
 // triggered by the subagent poll, manual refresh, or session switch land in

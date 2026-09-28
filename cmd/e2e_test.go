@@ -147,8 +147,8 @@ func TestE2ECommands(t *testing.T) {
 			args: []string{"show", projFlag, e2eAlphaID, "-f", "csv"},
 			check: func(t *testing.T, out string) {
 				// mustCSV uses a default reader, which errors on a ragged table —
-				// so this passing is itself the proof that show no longer stacks a
-				// second per-message table with a different column count (CLI-2).
+				// so this passing is itself the proof that show doesn't stack a
+				// second per-message table with a different column count.
 				records := mustCSV(t, out)
 				if len(records) != 2 { // header + one session row
 					t.Fatalf("show csv: got %d rows, want 2 (header + session)", len(records))
@@ -583,7 +583,7 @@ func TestE2ECommands(t *testing.T) {
 			},
 		},
 		{
-			name: "global --top does not truncate json (D3: machine formats export all)",
+			name: "global --top does not truncate json (machine formats export all)",
 			args: []string{"global", "--top", "1", "-f", "json"},
 			check: func(t *testing.T, out string) {
 				var g models.GlobalAnalysis
@@ -594,7 +594,7 @@ func TestE2ECommands(t *testing.T) {
 			},
 		},
 		{
-			name: "global --top does not truncate csv (D3: machine formats export all)",
+			name: "global --top does not truncate csv (machine formats export all)",
 			args: []string{"global", "--top", "1", "-f", "csv"},
 			check: func(t *testing.T, out string) {
 				records := mustCSV(t, out)
@@ -687,10 +687,10 @@ func TestE2EWarningsGoToStderr(t *testing.T) {
 	}
 }
 
-// TestE2EReentrant guards the ARCH-3 fix: flag state must not leak between
-// invocations. The original bug was watch mutating a package-level live=true
-// that persisted; here we confirm a prior -f json run doesn't taint a later
-// default run, which only holds if each Execute gets a fresh config.
+// TestE2EReentrant: flag state must not leak between invocations. A
+// package-level flag one command mutates (watch setting live=true) would
+// persist into the next; here we confirm a prior -f json run doesn't taint a
+// later default run, which only holds if each Execute gets a fresh config.
 func TestE2EReentrant(t *testing.T) {
 	setupE2EFixture(t)
 
@@ -711,10 +711,10 @@ func TestE2EReentrant(t *testing.T) {
 	}
 }
 
-// TestE2EProjectPathJoinsShowAndSummary is the SESS-01 guard: project_path names
-// the project directory (not the transcript) and is identical on show, the
-// summary aggregate, and every per-session detail record, so machine consumers
-// can join them. session_file carries the transcript path (empty on the
+// TestE2EProjectPathJoinsShowAndSummary: project_path names the project
+// directory (not the transcript) and is identical on show, the summary
+// aggregate, and every per-session detail record, so machine consumers can
+// join them. session_file carries the transcript path (empty on the
 // aggregate, which spans many files).
 func TestE2EProjectPathJoinsShowAndSummary(t *testing.T) {
 	setupE2EFixture(t)
@@ -739,7 +739,7 @@ func TestE2EProjectPathJoinsShowAndSummary(t *testing.T) {
 		t.Errorf("show project_path %q should be the dir of session_file %q", show.ProjectPath, show.SessionFile)
 	}
 
-	// csv carries the same two columns with the same values (D3 parity).
+	// csv carries the same two columns with the same values as json.
 	csvOut, _, err := executeCLISplit(t, "show", projFlag, e2eAlphaID, "-f", "csv")
 	if err != nil {
 		t.Fatalf("show csv failed: %v", err)
@@ -923,7 +923,7 @@ func TestE2EGlobalExposesSkippedInputs(t *testing.T) {
 	if len(g.Projects) != 1 || g.Projects[0].SkippedSessions != 1 {
 		t.Errorf("per-project skipped_sessions missing: %+v", g.Projects)
 	}
-	// AGG-02: the span comes from message timestamps, not file mtimes.
+	// The span comes from message timestamps, not file mtimes.
 	if got := g.Duration.Duration(); got != 6*time.Hour {
 		t.Errorf("duration: got %v, want 6h0m0s (message timestamps, not mtimes)", got)
 	}
@@ -939,9 +939,9 @@ func TestE2EGlobalExposesSkippedInputs(t *testing.T) {
 	}
 }
 
-// TestE2EListShowCountParity pins DEDUP-01: `list` derived its message counts
-// from a laxer decode than the analysis, so a line show skipped was counted by
-// list. Both surfaces must now agree, and list must warn about the skip.
+// TestE2EListShowCountParity: if `list` derived its message counts from a
+// laxer decode than the analysis, a line show skips would still be counted by
+// list. Both surfaces must agree, and list must warn about the skip.
 func TestE2EListShowCountParity(t *testing.T) {
 	root := t.TempDir()
 	projDir := filepath.Join(root, "projects", "-home-test-parity")
@@ -990,7 +990,7 @@ func TestE2EListShowCountParity(t *testing.T) {
 	}
 }
 
-// TestE2EEstimatedCostSurface pins COST-04/D14: a session whose cache-write
+// TestE2EEstimatedCostSurface: a session whose cache-write
 // tokens carry no TTL detail (the older format) must say so — the json export
 // carries estimated_cost_messages and stderr warns — while fully detailed
 // data reports nothing, so exact totals never look approximate.
@@ -1049,10 +1049,10 @@ func TestE2EEstimatedCostSurface(t *testing.T) {
 	}
 }
 
-// TestE2ESummarySessionCountExcludesUnparseable pins ROLL-01: summary's
-// "Summary: N sessions" once counted a discovered-but-unparseable session that
-// contributed nothing to the totals, so it disagreed with global's per-project
-// session_count for the same directory. Both surfaces must now report the same
+// TestE2ESummarySessionCountExcludesUnparseable: summary's "Summary: N
+// sessions" must not count a discovered-but-unparseable session that
+// contributes nothing to the totals, or it disagrees with global's per-project
+// session_count for the same directory. Both surfaces must report the same
 // count, and the skipped-session warning must still disclose the remainder.
 func TestE2ESummarySessionCountExcludesUnparseable(t *testing.T) {
 	root := t.TempDir()

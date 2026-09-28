@@ -127,8 +127,8 @@ func TestUpdateCostChart_DoesNotReorderAnalysisMessages(t *testing.T) {
 
 // An early expensive message must not pin the visible window's scale: once it
 // rotates out of the sparkline's ring buffer, the drawn bars must scale to the
-// visible max, and the min/max/count label must describe the visible window
-// (WDIFF-01 / WCOST-03) — not a peak that is off-screen.
+// visible max, and the min/max/count label must describe the visible window —
+// not a peak that is off-screen.
 func TestUpdateCostChart_ScalesToVisibleWindow(t *testing.T) {
 	base := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
 	const n = 210
@@ -171,7 +171,7 @@ func TestUpdateCostChart_ScalesToVisibleWindow(t *testing.T) {
 }
 
 // Resizing the terminal re-windows the chart: the drawn window, its scale, and
-// the shown/total count must all track the new width (WDIFF-01 resize path).
+// the shown/total count must all track the new width.
 func TestRenderCostChart_ResizeChangesWindow(t *testing.T) {
 	base := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
 	const n = 210
@@ -205,8 +205,7 @@ func TestRenderCostChart_ResizeChangesWindow(t *testing.T) {
 }
 
 // A message with a missing timestamp must plot next to its file neighbors, not
-// jump to chart position 0 the way the zero time.Time would under a naive sort
-// (WDIFF-02).
+// jump to chart position 0 the way the zero time.Time would under a naive sort.
 func TestMergedCostHistory_ZeroTimestampKeptWithNeighbors(t *testing.T) {
 	base := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
 
@@ -233,7 +232,7 @@ func TestMergedCostHistory_ZeroTimestampKeptWithNeighbors(t *testing.T) {
 
 // The newest spend must survive tail truncation even when its timestamp is
 // missing: inheriting the prior message's time keeps it at the end, not the
-// front where the zero time would land it and be dropped first (WDIFF-02).
+// front where the zero time would land it and be dropped first.
 func TestMergedCostHistory_LateZeroTimestampSurvivesTruncation(t *testing.T) {
 	base := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
 	msgs := make([]models.MessageAnalysis, 10)

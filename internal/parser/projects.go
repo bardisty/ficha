@@ -160,7 +160,7 @@ func formatDisplayNameFromEncoded(encoded string) string {
 }
 
 // stripUserPrefix removes the common user directory prefix from an encoded path.
-// Windows: C--Users-Brian- or C--Users-Brian--
+// Windows: C--Users-username- or C--Users-username--
 // Unix: -home-username- or -Users-username-
 // Note: uses runtime.GOOS dispatch, so cross-OS config transfers decode incorrectly.
 func stripUserPrefix(encoded string) string {
@@ -170,7 +170,7 @@ func stripUserPrefix(encoded string) string {
 	return stripUnixUserPrefix(encoded)
 }
 
-// stripWindowsUserPrefix handles Windows paths like C--Users-Brian-source-foo
+// stripWindowsUserPrefix handles Windows paths like C--Users-user-source-foo
 // Only strips the drive encoding (C-- → C:), keeps the rest as-is
 func stripWindowsUserPrefix(encoded string) string {
 	if len(encoded) < 4 {

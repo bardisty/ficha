@@ -11,7 +11,7 @@ import (
 
 var errTestStale = errors.New("stale-session load error")
 
-// BRK-02: in follow mode a slow in-flight load for the previous session can
+// In follow mode a slow in-flight load for the previous session can
 // land after the switch. Load results are stamped with the session they were
 // loaded for; the handler must drop a result whose sessionPath no longer
 // matches the current session so it can't overwrite the new session's data
@@ -68,7 +68,7 @@ func TestBreakdownStaleLoadDroppedAfterSwitch(t *testing.T) {
 	}
 }
 
-// BRK-05: switching away from a session that used fallback pricing must clear
+// Switching away from a session that used fallback pricing must clear
 // hasUnknown (and any header error), so the "* = fallback pricing" footnote and
 // a stale error don't bleed into the new session during its loading window.
 func TestBreakdownSwitchClearsUnknownFootnote(t *testing.T) {

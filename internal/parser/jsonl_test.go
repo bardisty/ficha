@@ -322,7 +322,7 @@ func TestExtractUsageReconcilesCacheCreation(t *testing.T) {
 			wantFlat:  800, want5m: 800, want1h: 0, wantDetail: true, wantEstimated: true,
 		},
 		{
-			// COST-03: a present-but-empty object must not zero out billed
+			// A present-but-empty object must not zero out billed
 			// write tokens
 			name:      "empty cache_creation object keeps the flat count",
 			usageJSON: `{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":800,"cache_creation":{}}`,
@@ -339,7 +339,7 @@ func TestExtractUsageReconcilesCacheCreation(t *testing.T) {
 			wantFlat:  0, wantDetail: false,
 		},
 		{
-			// COST-02: clamping happens here, once, so cost and token
+			// Clamping happens here, once, so cost and token
 			// aggregation see identical values
 			name:      "negative counts are clamped before reconciliation",
 			usageJSON: `{"input_tokens":1000,"output_tokens":-500000,"cache_creation_input_tokens":-300}`,
@@ -351,7 +351,7 @@ func TestExtractUsageReconcilesCacheCreation(t *testing.T) {
 			wantFlat:  800, want5m: 500, want1h: 300, wantDetail: true, wantEstimated: true,
 		},
 		{
-			// USAGE-01: two buckets that each fit in int64 but sum past
+			// Two buckets that each fit in int64 but sum past
 			// MaxInt64 must not wrap the bucket sum negative. Per-field clamping
 			// to maxTokenField (1e15) caps each bucket so the sum stays
 			// non-negative and the buckets-sum-to-flat invariant holds.

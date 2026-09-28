@@ -24,9 +24,9 @@ type BreakdownResult struct {
 	// so order-sensitive insights (trend windows, first/last, HighestCost
 	// tie-break) share the ordering semantics show/watch use over their
 	// parent-only file-order list. For an agent-free session this list equals the
-	// parent list, so the figures match those surfaces exactly (BRK-03/D25(a)).
+	// parent list, so the figures match those surfaces exactly.
 	// The set still differs when agents ran (parent + agents); the breakdown's
-	// scope label discloses that (D21).
+	// scope label discloses that.
 	Insights *models.MessageInsights
 }
 
@@ -108,7 +108,7 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 	// (parent block, then agent blocks in discovery order) before the display
 	// sort below reorders it by timestamp. This keeps breakdown's trend/Peak
 	// aligned with show/watch, which compute over their parent-only file-order
-	// list — for an agent-free session the two lists are identical (BRK-03).
+	// list — for an agent-free session the two lists are identical.
 	fileOrderAnalyses := make([]models.MessageAnalysis, len(allMessages))
 	for i, msg := range allMessages {
 		fileOrderAnalyses[i] = models.MessageAnalysis{
