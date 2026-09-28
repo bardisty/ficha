@@ -3,6 +3,7 @@ package parser
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -32,27 +33,48 @@ func TestIsDriveRoot(t *testing.T) {
 	}
 }
 
+// Only the drive-root case is OS-independent: stripUserPrefix decodes the
+// host OS's encoding, so the path cases follow runtime.GOOS. Both decoders are
+// covered on every OS by TestStripWindowsUserPrefix and TestStripUnixUserPrefix.
 func TestFormatDisplayNameFromEncoded(t *testing.T) {
-	tests := []struct {
+	type testCase struct {
 		name     string
 		encoded  string
 		expected string
-	}{
+	}
+	tests := []testCase{
 		{
 			name:     "drive root",
 			encoded:  "F--",
 			expected: "F:",
 		},
-		{
-			name:     "unix path",
-			encoded:  "-home-user-foo",
-			expected: "home-user-foo",
-		},
-		{
-			name:     "long path not truncated",
-			encoded:  "-home-user-source-my-long-project-name",
-			expected: "home-user-source-my-long-project-name",
-		},
+	}
+	if runtime.GOOS == "windows" {
+		tests = append(tests,
+			testCase{
+				name:     "windows path",
+				encoded:  "C--Users-user-foo",
+				expected: "C:Users-user-foo",
+			},
+			testCase{
+				name:     "long path not truncated",
+				encoded:  "C--Users-user-source-my-long-project-name",
+				expected: "C:Users-user-source-my-long-project-name",
+			},
+		)
+	} else {
+		tests = append(tests,
+			testCase{
+				name:     "unix path",
+				encoded:  "-home-user-foo",
+				expected: "home-user-foo",
+			},
+			testCase{
+				name:     "long path not truncated",
+				encoded:  "-home-user-source-my-long-project-name",
+				expected: "home-user-source-my-long-project-name",
+			},
+		)
 	}
 
 	for _, tt := range tests {

@@ -8,13 +8,20 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -27,11 +34,50 @@ jobs:
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      # Same gate developers run locally (fmt + lint + test); lint includes govet.
-      - name: make check
-        run: make check
+      # The fmt + lint half of `make check`; lint includes govet. Tests run in the
+      # next step instead of through `make check` so they get the race detector
+      # without running the suite twice.
+      - name: Format and lint
+        run: make fmt lint
 
-      # `make check` runs `gofmt -w` before linting, so unformatted code would be
-      # silently rewritten rather than failing. Catch it by requiring a clean tree.
+      # -race needs cgo, so keep CGO_ENABLED=0 out of this step's environment.
+      - name: Test with race detector
+        run: go test -race ./...
+
+      # `make fmt` runs `gofmt -w`, so unformatted code would be silently
+      # rewritten rather than failing. Catch it by requiring a clean tree.
       - name: Ensure gofmt left the tree clean
         run: git diff --exit-code
+
+      - name: Cross-compile every release target
+        run: make build-all
+
+      # govulncheck needs a newer Go than go.mod, and setup-go exports
+      # GOTOOLCHAIN=local, so the install opts back into toolchain switching.
+      # The scan itself must run under the job's toolchain: `go run` would
+      # check the newer toolchain's standard library instead of the one ficha
+      # is built with.
+      - name: govulncheck
+        run: |
+          GOTOOLCHAIN=auto go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          govulncheck ./...
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
