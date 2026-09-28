@@ -100,7 +100,8 @@ func init() {
 	})
 }
 
-// Default pricing for unknown models (use Sonnet pricing as safe default)
+// Default pricing for unknown models: the Sonnet 4.x rates. The real rate can
+// be off in either direction, which is why unknown models carry a warning.
 var defaultPricing = ModelPricing{
 	InputRate:        3.00,
 	OutputRate:       15.00,
