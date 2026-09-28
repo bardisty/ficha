@@ -41,7 +41,7 @@ body:
     id: output
     attributes:
       label: Output with -v
-      description: Rerun the command with `-v` and paste the output. Transcripts contain your prompts and code, and `-v` prints paths, so redact anything you don't want public.
+      description: Rerun the command with `-v` and paste everything it prints, warnings included. Transcripts contain your prompts and code, and ficha's output can include file paths, so redact anything you don't want public.
       render: text
   - type: checkboxes
     id: redacted
