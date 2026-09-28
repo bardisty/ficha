@@ -38,7 +38,8 @@ Download the file for your machine, make it executable, and move it somewhere on
 ```sh
 chmod +x ficha-darwin-arm64
 xattr -d com.apple.quarantine ficha-darwin-arm64   # macOS only, see below
-mv ficha-darwin-arm64 ~/.local/bin/ficha
+sudo mkdir -p /usr/local/bin
+sudo mv ficha-darwin-arm64 /usr/local/bin/ficha
 ```
 
 The macOS binaries aren't notarized, so Gatekeeper blocks them on first run. The `xattr` line clears the quarantine flag that browsers set on download. If you fetched the file with `curl` there is no flag to clear, and the command complains and does nothing.
