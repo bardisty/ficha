@@ -41,15 +41,20 @@ xattr -d com.apple.quarantine ficha-darwin-arm64   # macOS only, see below
 mv ficha-darwin-arm64 ~/.local/bin/ficha
 ```
 
-The macOS binaries are not signed or notarized, so Gatekeeper blocks them on first run. The `xattr` line clears the quarantine flag that browsers set on download. If you fetched the file with `curl` there is no flag to clear, and the command complains and does nothing.
+The macOS binaries aren't notarized, so Gatekeeper blocks them on first run. The `xattr` line clears the quarantine flag that browsers set on download. If you fetched the file with `curl` there is no flag to clear, and the command complains and does nothing.
+
+On Windows, rename the file to `ficha.exe` and put it in a folder on your `PATH`.
 
 ### Verifying a download
 
-`checksums.txt` lists the SHA-256 of every asset. With the binary and the checksums file in the same directory:
+`checksums.txt` lists the SHA-256 of every binary. Check yours before you rename it, with `checksums.txt` in the same directory:
 
 ```sh
-sha256sum -c --ignore-missing checksums.txt
+sha256sum -c --ignore-missing checksums.txt        # Linux
+shasum -a 256 -c --ignore-missing checksums.txt    # macOS
 ```
+
+On Windows, `Get-FileHash ficha-windows-amd64.exe` in PowerShell prints the hash to compare against that file's line in `checksums.txt`.
 
 Releases from v0.24.0 onward also carry a build provenance attestation, which ties each binary to the GitHub Actions run that built it from a tagged commit:
 
@@ -101,12 +106,12 @@ Global flags, accepted by every command:
 | `-f, --format <fmt>` | Output format: table, json, csv |
 | `-p, --project <dir>` | Project directory (default: current dir) |
 | `--project-dir <name>` | Claude project dir name (bypass auto-detect) |
-| `-l, --live` | Live mode (`ficha watch` is an alias for `show --live`) |
+| `-l, --live` | Live mode for `show` (`ficha watch` is an alias for `show --live`) |
 | `--no-follow` | Pin to the current session instead of following new ones (live mode only) |
 | `-v, --verbose` | Show debug information |
 | `--no-color` | Disable colored output |
 
-Two of these have limits. `watch`, `breakdown` and `--live` render a terminal UI, so they reject `-f json` and `-f csv`. `version` prints plain text and ignores `--format`. `--no-follow` only means something in live mode; elsewhere it prints a warning and does nothing.
+`watch`, `breakdown` and `--live` render a terminal UI, so they reject `-f json` and `-f csv`. `version` prints plain text and ignores `--format`. Outside live mode, `--no-follow` prints a warning and does nothing.
 
 Per-command flags:
 
@@ -159,13 +164,14 @@ The figures are API-equivalent estimates from list prices. On a Claude subscript
 
 A few things ficha does not model:
 
-- Long-context premium pricing. When a 1M-context request goes past the model's base window, the tokens above it cost more. ficha widens the context window it reports but prices every token at the base rate.
-- Fast mode and batch discounts.
+- Long-context premium pricing. On models older than Claude 4.6, a 1M-context request whose input passes 200K tokens is billed at a higher rate. ficha widens the context window it reports but prices every token at the base rate. Claude 4.6 and later have no premium.
+- Fast mode, which Anthropic bills at a premium.
+- Web search, which Anthropic charges per search on top of the tokens.
 - Bedrock and Vertex billing. Their model IDs are recognized and priced at Anthropic's first-party rates. Both platforms bill on their own terms, so treat the figures as a proxy.
 
-Unknown models are priced at $3 input and $15 output per million tokens with a 200K context, and ficha prints a warning naming the model so you know a number is a placeholder. When a new model ships, its prices need a ficha update. Open a [pricing update issue](https://github.com/bardisty/ficha/issues/new?template=pricing_update.yml) with the model ID and the published rates, or send a PR. It's one catalog row plus tests, and [CONTRIBUTING.md](CONTRIBUTING.md) walks through it.
+Unknown models are priced at $3 input and $15 output per million tokens with a 200K context, and ficha prints a warning naming the model so you know a number is a placeholder. When a new model ships, its prices need a ficha update. Open a [pricing update issue](https://github.com/bardisty/ficha/issues/new?template=pricing_update.yml) with the model ID and the published rates, or send a PR. It's one catalog row plus tests, and [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-models-pricing) walks through it.
 
-Claude Code's transcript format is undocumented and can change between releases. ficha counts what it could not parse instead of guessing, so if the `skipped_*` counters jump after a Claude Code update, that is the signal to file a bug.
+Claude Code's transcript format is undocumented and can change between releases. ficha counts what it could not parse instead of guessing, so if the skip warnings or the `skipped_*` counters jump after a Claude Code update, that is the signal to file a bug.
 
 > [!NOTE]
 > Claude Code deletes session transcripts older than 30 days by default (`cleanupPeriodDays` in `~/.claude/settings.json`), so ficha can only report what still exists on disk. To keep longer history, raise the setting, e.g. `"cleanupPeriodDays": 365`. Avoid `0`, which has [known bugs](https://github.com/anthropics/claude-code/issues/59248).

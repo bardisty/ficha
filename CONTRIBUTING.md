@@ -18,7 +18,7 @@ Install it from source like that rather than grabbing the prebuilt release. The 
 make check
 ```
 
-That runs `gofmt -w`, then the linter, then the tests. CI runs the same target and then fails if gofmt changed anything, so run it before you push. CI also runs the tests on Linux, macOS and Windows, with `-race` on Linux.
+That runs `gofmt -w`, then the linter, then the tests. CI runs the same checks and then fails if gofmt changed anything, so run it before you push. CI also runs the tests on Linux, macOS and Windows, with `-race` on Linux.
 
 If you changed how something renders, regenerate the golden files and read the diff before committing:
 
@@ -37,7 +37,7 @@ Comments explain why, and note caveats the code can't express on its own. They n
 
 Semantic versioning. The version lives in the `VERSION` file.
 
-VERSION bumps are for CLI changes only. Docs, the README, `.claude/` tooling, and repo hygiene never bump it.
+VERSION bumps are for CLI changes only. Docs, CI, tooling, and repo hygiene never bump it.
 
 - PATCH (0.0.X): CLI bug fixes, and refactors with no behavior change.
 - MINOR (0.X.0): new features, commands, and flags, without breaking anything.
@@ -73,6 +73,6 @@ For maintainers.
    git tag vX.Y.Z && git push origin vX.Y.Z
    ```
 
-The release workflow checks the tag against `VERSION` and fails if they disagree, reruns the test gate, builds the five static binaries, writes `checksums.txt`, attests build provenance, and publishes the GitHub release with generated notes.
+The release workflow reruns lint and the tests, and refuses a tag that doesn't match `VERSION`. Then it builds the five static binaries, writes `checksums.txt`, attests build provenance, and publishes the GitHub release with generated notes.
 
-A published tag is never moved or deleted. Go's checksum database records it the first time anyone runs `go install`, and a rewritten tag breaks every later install with a checksum mismatch. Fix a bad release by shipping a new patch version.
+A published tag is never moved or deleted. Go's module proxy and checksum database record it the first time anyone runs `go install`. After that, a moved tag either keeps serving the old code or fails installs with a checksum mismatch. Fix a bad release by shipping a new patch version.

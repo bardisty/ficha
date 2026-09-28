@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Unknown models are priced at a placeholder rate ($3/$15 per MTok) and ficha warns about them. Fill this in and the fix is one catalog row. If you'd rather send it yourself, CONTRIBUTING.md has the steps.
+        Unknown models are priced at a placeholder rate ($3/$15 per MTok) and ficha warns about them. Fill this in and the fix is one catalog row. If you'd rather send it yourself, [CONTRIBUTING.md](https://github.com/bardisty/ficha/blob/main/CONTRIBUTING.md#adding-a-models-pricing) has the steps.
   - type: input
     id: model-id
     attributes:
@@ -18,7 +18,7 @@ body:
     id: source
     attributes:
       label: Pricing source
-      description: A link to the page on https://platform.claude.com/docs/en/about-claude/pricing (or Anthropic's announcement) that lists the rates.
+      description: A link to Anthropic's pricing page, https://platform.claude.com/docs/en/about-claude/pricing, or to the announcement that lists the rates.
     validations:
       required: true
   - type: input
