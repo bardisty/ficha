@@ -1526,12 +1526,17 @@ func TestReadAgentDir(t *testing.T) {
 	if _, unreadable := readAgentDir(barred); unreadable != 1 {
 		t.Errorf("unreadable dir: unreadable=%d, want 1", unreadable)
 	}
+}
 
-	notADir := filepath.Join(tmpDir, "file")
+// Kept apart from TestReadAgentDir, which skips wherever chmod 000 can't bar
+// reads (Windows, root): this case needs no permissions trick, and Windows is
+// where listing a file looks like a missing path.
+func TestReadAgentDir_PlainFileCountsAsUnreadable(t *testing.T) {
+	notADir := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(notADir, []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if _, unreadable := readAgentDir(notADir); unreadable != 1 {
-		t.Errorf("ENOTDIR: unreadable=%d, want 1", unreadable)
+		t.Errorf("plain file: unreadable=%d, want 1", unreadable)
 	}
 }
