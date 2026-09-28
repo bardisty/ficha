@@ -1,4 +1,4 @@
-.PHONY: build build-linux build-windows build-all clean test install lint fmt vet check update-golden
+.PHONY: all build build-linux build-linux-arm64 build-windows build-darwin build-darwin-arm64 build-all test update-golden test-coverage install clean deps tidy run lint fmt vet check help
 
 # Binary name
 BINARY=ficha
@@ -8,9 +8,11 @@ BIN_DIR=bin
 
 # Go parameters
 GOCMD=go
-GOBUILD=$(GOCMD) build
+# Static (no cgo) so the Linux binaries run on musl distros too; -trimpath keeps
+# the builder's filesystem paths out of the binary. Tests keep cgo because
+# -race needs it.
+GOBUILD=CGO_ENABLED=0 $(GOCMD) build -trimpath
 GOTEST=$(GOCMD) test
-GOGET=$(GOCMD) get
 GOMOD=$(GOCMD) mod
 
 # Version from VERSION file

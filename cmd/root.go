@@ -34,7 +34,7 @@ Examples:
   ficha --live             Watch session in real-time`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Version:       Version,
+		Version:       version(),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// Resolve output sinks once, before any command writes: cobra walks
 			// up to the root's SetOut/SetErr, so this honors test redirection.
