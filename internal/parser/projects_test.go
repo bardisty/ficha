@@ -73,8 +73,8 @@ func TestFormatDisplayNameFromPath(t *testing.T) {
 	}{
 		{
 			name:     "shows full path with drive",
-			path:     "C:\\Users\\Brian\\source\\my-project",
-			expected: "C:/Users/Brian/source/my-project",
+			path:     "C:\\Users\\user\\source\\my-project",
+			expected: "C:/Users/user/source/my-project",
 		},
 		{
 			name:     "unix path (no drive)",
@@ -88,8 +88,8 @@ func TestFormatDisplayNameFromPath(t *testing.T) {
 		},
 		{
 			name:     "user home path",
-			path:     "C:\\Users\\Brian",
-			expected: "C:/Users/Brian",
+			path:     "C:\\Users\\user",
+			expected: "C:/Users/user",
 		},
 		{
 			name:     "unix home path",
@@ -103,8 +103,8 @@ func TestFormatDisplayNameFromPath(t *testing.T) {
 		},
 		{
 			name:     "deep path",
-			path:     "C:\\Users\\Brian\\AppData\\Roaming\\Heynote\\notes",
-			expected: "C:/Users/Brian/AppData/Roaming/Heynote/notes",
+			path:     "C:\\Users\\user\\AppData\\Roaming\\app\\notes",
+			expected: "C:/Users/user/AppData/Roaming/app/notes",
 		},
 	}
 
@@ -126,28 +126,28 @@ func TestStripWindowsUserPrefix(t *testing.T) {
 	}{
 		{
 			name:     "simple project",
-			encoded:  "C--Users-Brian-hyper-key",
-			expected: "C:Users-Brian-hyper-key",
+			encoded:  "C--Users-user-my-app",
+			expected: "C:Users-user-my-app",
 		},
 		{
 			name:     "project in source",
-			encoded:  "C--Users-Brian-source-fun",
-			expected: "C:Users-Brian-source-fun",
+			encoded:  "C--Users-user-source-foo",
+			expected: "C:Users-user-source-foo",
 		},
 		{
 			name:     "dot folder",
-			encoded:  "C--Users-Brian--config-yasb",
-			expected: "C:Users-Brian--config-yasb",
+			encoded:  "C--Users-user--config-app",
+			expected: "C:Users-user--config-app",
 		},
 		{
 			name:     "user home only",
-			encoded:  "C--Users-Brian",
-			expected: "C:Users-Brian",
+			encoded:  "C--Users-user",
+			expected: "C:Users-user",
 		},
 		{
 			name:     "non-Users path",
-			encoded:  "D--Source-action-based-filing",
-			expected: "D:Source-action-based-filing",
+			encoded:  "D--Source-foo-bar-baz",
+			expected: "D:Source-foo-bar-baz",
 		},
 		{
 			name:     "drive root encoded",
@@ -189,8 +189,8 @@ func TestStripUnixUserPrefix(t *testing.T) {
 		},
 		{
 			name:     "Users style (macOS)",
-			encoded:  "-Users-brian-projects-bar",
-			expected: "Users-brian-projects-bar",
+			encoded:  "-Users-user-projects-bar",
+			expected: "Users-user-projects-bar",
 		},
 		{
 			name:     "tmp path",

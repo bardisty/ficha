@@ -39,7 +39,7 @@ func TestAccountingFootnote(t *testing.T) {
 	}
 }
 
-// AGENT-07: an agent the breakdown could not read must show up in its footer.
+// An agent the breakdown could not read must show up in its footer.
 // The breakdown TUI owns the screen — stderr warnings never reach it.
 func TestBreakdownFooterShowsSkippedAgents(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
@@ -84,9 +84,9 @@ func TestWatchFooterShowsSkippedAgents(t *testing.T) {
 	}
 }
 
-// WCOST-02: a session that parses to zero messages but skipped input must still
-// disclose it. The empty state used to suppress the footer entirely, hiding the
-// only channel watch has for skip accounting. Driven end-to-end from a real
+// A session that parses to zero messages but skipped input must still disclose
+// it. Suppressing the footer in the empty state would hide the only channel
+// watch has for skip accounting. Driven end-to-end from a real
 // fixture whose single line is unparseable (0 messages, SkippedLines=1) so the
 // empty-session + nonzero-skips path exercises the actual load.
 func TestWatchEmptySessionDisclosesSkippedLines(t *testing.T) {

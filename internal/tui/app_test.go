@@ -139,7 +139,7 @@ func TestDetectChanges(t *testing.T) {
 	}
 }
 
-// WCOST-01: each cache-write TTL row must highlight only its own bucket's
+// Each cache-write TTL row must highlight only its own bucket's
 // delta. With the detailed breakdown present, detectChanges keys deltas per TTL
 // (cache_write_5m_tokens / cache_write_1h_tokens); a detail-less legacy usage
 // keeps the single flat cache_write_tokens key.
@@ -356,7 +356,7 @@ func TestRenderHeaderPanelAlignment(t *testing.T) {
 
 	// Cover the whole clamped panel-width range (minPanelWidth..design width),
 	// both with and without a prev-session clause: the header content is widest
-	// there and used to overflow the frame, drifting the right border (HDR-01).
+	// there, and overflowing the frame would drift the right border.
 	// Elision must keep all three lines the same display width at every width.
 	widths := []int{minPanelWidth, 42, 50, 57, 60, 74, defaultPanelWidth, 100}
 	for _, noColor := range []bool{false, true} {

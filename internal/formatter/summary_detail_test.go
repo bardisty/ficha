@@ -291,8 +291,8 @@ func TestFormatSummaryDetailCSV_Expand(t *testing.T) {
 	}
 }
 
-// TestFormatSummaryDetailCSV_UniformColumns guards the CLI-2/CLI-3 invariant that
-// the detail CSV is a single table: every row (header, session, agent) has the
+// TestFormatSummaryDetailCSV_UniformColumns guards the invariant that the
+// detail CSV is a single table: every row (header, session, agent) has the
 // same column count, so encoding/csv in the default (non-variadic) mode parses it.
 func TestFormatSummaryDetailCSV_UniformColumns(t *testing.T) {
 	out, err := FormatSummaryDetailCSV(sampleSummaryResults(), true)

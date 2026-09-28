@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// H3: session_watcher tests
-
 func TestUuidPattern(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -100,12 +100,12 @@ func TestBasenameCrossOS(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"windows path", `C:\Users\Brian\source\foo`, "foo"},
-		{"windows path forward slashes", "C:/Users/Brian/source/foo", "foo"},
+		{"windows path", `C:\Users\user\source\foo`, "foo"},
+		{"windows path forward slashes", "C:/Users/user/source/foo", "foo"},
 		{"windows drive root", `C:\`, "/"},
 		{"unix path unchanged", "/home/user/foo", "foo"},
 		{"bare name", "foo", "foo"},
-		{"trailing backslash", `C:\Users\Brian\`, "Brian"},
+		{"trailing backslash", `C:\Users\user\`, "user"},
 		{"empty", "", "."},
 	}
 
@@ -125,22 +125,22 @@ func TestBasenameCrossOS(t *testing.T) {
 func TestFindProjectDir_WindowsOriginalPathBasename(t *testing.T) {
 	allProjects := []models.ProjectInfo{
 		{
-			EncodedPath:  "C--Users-Brian-source-foo",
-			FullPath:     "/mnt/c/Users/Brian/.claude/projects/C--Users-Brian-source-foo",
-			OriginalPath: `C:\Users\Brian\source\foo`,
-			DisplayName:  "C:/Users/Brian/source/foo",
+			EncodedPath:  "C--Users-user-source-foo",
+			FullPath:     "/mnt/c/Users/user/.claude/projects/C--Users-user-source-foo",
+			OriginalPath: `C:\Users\user\source\foo`,
+			DisplayName:  "C:/Users/user/source/foo",
 		},
 	}
 
-	match, err := FindProjectDir("/mnt/c/Users/Brian/source/foo", allProjects)
+	match, err := FindProjectDir("/mnt/c/Users/user/source/foo", allProjects)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if match.MatchMethod != "suffix" {
 		t.Errorf("expected suffix match, got %s", match.MatchMethod)
 	}
-	if match.EncodedPath != "C--Users-Brian-source-foo" {
-		t.Errorf("expected C--Users-Brian-source-foo, got %s", match.EncodedPath)
+	if match.EncodedPath != "C--Users-user-source-foo" {
+		t.Errorf("expected C--Users-user-source-foo, got %s", match.EncodedPath)
 	}
 }
 
@@ -149,16 +149,16 @@ func TestLooksLikePath(t *testing.T) {
 		value    string
 		expected bool
 	}{
-		{`.\proj`, true},              // Windows-style relative
-		{`..\projects\C--foo`, true},  // Windows-style parent-relative
-		{"./proj", true},              // Unix relative
-		{"../proj", true},             // Unix parent-relative
-		{"foo/bar", true},             // embedded separator
-		{".", true},                   // current dir
-		{"..", true},                  // parent dir
-		{"-home-user-foo", false},     // encoded project name
-		{"C--Users-Brian-foo", false}, // encoded Windows project name
-		{"plainname", false},          // bare token
+		{`.\proj`, true},             // Windows-style relative
+		{`..\projects\C--foo`, true}, // Windows-style parent-relative
+		{"./proj", true},             // Unix relative
+		{"../proj", true},            // Unix parent-relative
+		{"foo/bar", true},            // embedded separator
+		{".", true},                  // current dir
+		{"..", true},                 // parent dir
+		{"-home-user-foo", false},    // encoded project name
+		{"C--Users-user-foo", false}, // encoded Windows project name
+		{"plainname", false},         // bare token
 	}
 
 	for _, tt := range tests {

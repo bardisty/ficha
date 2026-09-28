@@ -83,7 +83,7 @@ func TestCalculateCost(t *testing.T) {
 			modelID:       "claude-sonnet-4-5",
 			expectedTotal: 1.5 + 1.5 + 0.9375 + 1.5, // input + output + 5m + 1h (uses CacheCreation detail)
 		},
-		// Model tier tests (Task 3: M7)
+		// Model tier tests
 		{
 			name: "claude-3-haiku pricing tier",
 			usage: models.TokenUsage{
@@ -129,7 +129,7 @@ func TestCalculateCost(t *testing.T) {
 			modelID:       "claude-opus-4-1",
 			expectedTotal: 15.00 + 75.00, // $15.00/M input + $75.00/M output = $90.00
 		},
-		// Unknown model fallback test (Task 5: L5)
+		// Unknown model fallback test
 		{
 			name: "unknown model falls back to Sonnet pricing",
 			usage: models.TokenUsage{
@@ -139,7 +139,7 @@ func TestCalculateCost(t *testing.T) {
 			modelID:       "unknown-model-xyz",
 			expectedTotal: 3.00 + 15.00, // default Sonnet pricing: $3/M input + $15/M output = $18
 		},
-		// Standalone 1h cache write test (Task 6: L6)
+		// Standalone 1h cache write test
 		{
 			name: "standalone 1h cache write only",
 			usage: models.TokenUsage{

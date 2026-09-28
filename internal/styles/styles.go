@@ -20,9 +20,9 @@ const (
 	LineHorizontal = "─"
 )
 
-// ASCII fallbacks selected in no-color mode (decision D4). All are one display
-// cell wide, matching their box-drawing counterparts, so swapping them in a
-// no-color path leaves column alignment untouched. Non-UTF-8 terminals get
+// ASCII fallbacks selected in no-color mode. All are one display cell wide,
+// matching their box-drawing counterparts, so swapping them in a no-color
+// path leaves column alignment untouched. Non-UTF-8 terminals get
 // clean chrome instead of mojibake for panels, separators, and progress bars.
 const (
 	AsciiCorner     = "+" // box corners ╔╗╚╝

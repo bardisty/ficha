@@ -22,9 +22,9 @@ A golden diff you didn't intend means you regressed the layout.
   because `FormatSessionTable` renders `EndTime.Local()` in its footer.
 - Colored goldens force the lipgloss renderer to `termenv.ANSI256`; noColor
   goldens force `termenv.Ascii`. Never rely on the ambient terminal profile.
-- The `summary_details*` goldens render from a temp-dir JSONL fixture because
-  `FormatSummaryTableWithDetails` re-analyzes sessions from disk (ARCH-1;
-  Session 8 removes that). Their costs come from the live pricing catalog, so
-  a pricing-table change legitimately changes them.
+- The `summary_details*` goldens render from a temp-dir JSONL fixture run
+  through `analyzer.AnalyzeMultipleSessions`, the same path `cmd/summary`
+  uses. Their costs come from the live pricing catalog, so a pricing-table
+  change legitimately changes them.
 - Editors must not strip trailing whitespace here — chart and padded lines
   end in spaces.

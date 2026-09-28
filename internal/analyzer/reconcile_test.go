@@ -61,8 +61,8 @@ func TestCacheReconciliationInvariant(t *testing.T) {
 		t.Errorf("CacheWrite1hCost %.12f != recomputed %.12f", analysis.TotalCost.CacheWrite1hCost, recomputed.CacheWrite1hCost)
 	}
 
-	// COST-02: the corrupt line's negative counts must not survive into token
-	// aggregates the way they never reached costs.
+	// The corrupt line's negative counts must not survive into token
+	// aggregates, just as they never reach costs.
 	if analysis.TotalUsage.OutputTokens != 4*50 {
 		t.Errorf("OutputTokens: got %d, want %d (negative clamped)", analysis.TotalUsage.OutputTokens, 4*50)
 	}
@@ -75,7 +75,7 @@ func TestCacheReconciliationInvariant(t *testing.T) {
 	}
 }
 
-// COST-04/D14: the 5m fallback assumption stays, but the surfaces must be able
+// The 5m fallback assumption stays, but the surfaces must be able
 // to say how often it fired — per session (incl. agents), per agent, on the
 // multi-session aggregate, and on the breakdown result.
 func TestEstimatedCostMessagesFlow(t *testing.T) {

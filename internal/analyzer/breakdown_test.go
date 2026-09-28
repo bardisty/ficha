@@ -244,11 +244,11 @@ func TestGetBreakdownMessages_CostCalculation(t *testing.T) {
 	}
 }
 
-// BRK-03/D25(a): breakdown insights must be computed over the file-order merged
-// list, matching show/watch's parent-only file-order insights. For an agent-free
+// Breakdown insights must be computed over the file-order merged list,
+// matching show/watch's parent-only file-order insights. For an agent-free
 // session the two lists are identical, so the insights must match exactly even
-// when timestamps are out of order (or zero) — a case where the old
-// timestamp-sorted computation diverged.
+// when timestamps are out of order (or zero) — a case where a timestamp-sorted
+// computation would diverge.
 func TestGetBreakdownMessages_InsightsMatchSessionFileOrder(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionID := "insights-order"
@@ -468,7 +468,7 @@ func TestGetBreakdownMessages_WithWorkflowAgents(t *testing.T) {
 	}
 }
 
-// AGENT-07: the breakdown TUI is the only surface for its own numbers, so an
+// The breakdown TUI is the only surface for its own numbers, so an
 // agent it could not read must reach the footer. Both sources count: an agent
 // file that fails to parse, and a directory that cannot be listed at all.
 func TestGetBreakdownMessages_SkippedAgents(t *testing.T) {

@@ -48,7 +48,7 @@ type Model struct {
 	lastUpdated time.Time
 
 	// agentCache memoizes agent sub-session parses so a reload triggered by a
-	// parent-file write doesn't re-parse every unchanged agent (see TUI-3).
+	// parent-file write doesn't re-parse every unchanged agent.
 	agentCache *analyzer.AgentParseCache
 
 	// Change tracking for highlight animation
@@ -96,7 +96,7 @@ type (
 	// analysisMsg carries a completed reload plus the session it was loaded for.
 	// In follow mode a slow in-flight load for the previous session can land
 	// after a switch; the handler drops it when sessionPath doesn't match the
-	// current session, so it can't overwrite the new session's data (BRK-02).
+	// current session, so it can't overwrite the new session's data.
 	analysisMsg struct {
 		analysis    *models.SessionAnalysis
 		sessionPath string
@@ -340,7 +340,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Reset analysis state for clean switch. Clear err too so a stale header
 		// error from the old session doesn't persist under the new one during the
-		// load window (parity with breakdown's BRK-05 reset).
+		// load window (parity with breakdown's session-switch reset).
 		m.analysis = nil
 		m.err = nil
 		m.loading = true
@@ -659,7 +659,7 @@ func (m Model) visibleCostHistory() []float64 {
 // rebuildCostChart recreates the sparkline at the current width and pushes only
 // the visible window. Pushing the full history would let ntcharts' AutoMaxValue
 // ratchet the scale to a peak that has already rotated out of the ring buffer,
-// flat-lining the visible bars against an off-screen max (WDIFF-01); pushing only
+// flat-lining the visible bars against an off-screen max; pushing only
 // what is drawn keeps the scale honest to the visible bars.
 func (m *Model) rebuildCostChart() {
 	chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)

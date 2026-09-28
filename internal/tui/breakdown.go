@@ -41,7 +41,7 @@ type BreakdownModel struct {
 	lastUpdated    time.Time
 
 	// agentCache memoizes agent sub-session parses so a reload triggered by a
-	// parent-file write doesn't re-parse every unchanged agent (see TUI-3).
+	// parent-file write doesn't re-parse every unchanged agent.
 	agentCache *analyzer.AgentParseCache
 
 	// Viewport for scrolling
@@ -52,7 +52,7 @@ type BreakdownModel struct {
 	// Change tracking for highlight animation. Keyed by message identity, not
 	// position: on every reload the merged list is timestamp-sorted and reindexed
 	// 1..N, so a positional key would flag old rows that merely shifted when a new
-	// agent message inserts mid-list (BRK-04).
+	// agent message inserts mid-list.
 	newMsgKeys map[string]time.Time // message identity -> when it was added
 
 	spinner   spinner.Model
@@ -97,7 +97,7 @@ type (
 		// sessionPath identifies the session this load was started for. In
 		// follow mode a slow in-flight load for the previous session can land
 		// after a switch; the handler drops it when it doesn't match the
-		// current session so it can't overwrite the new session's data (BRK-02).
+		// current session so it can't overwrite the new session's data.
 		sessionPath string
 	}
 	breakdownErrorMsg struct {
@@ -335,7 +335,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reset state for clean switch. hasUnknown and err must reset too, or the
 		// old session's "* = fallback pricing" footnote (and a stale header
 		// error) persist under the new session until its first load lands — or
-		// indefinitely if that load errors (BRK-05).
+		// indefinitely if that load errors.
 		m.messages = nil
 		m.insights = nil
 		m.hasAgents = false
@@ -423,7 +423,7 @@ func breakdownMsgKey(msg models.BreakdownMessage) string {
 // detectNewMessages flags messages whose identity is absent from the currently
 // displayed set as new. Keying on identity (not index) means a mid-list agent
 // insertion highlights only the inserted row, not the old tail rows the sort
-// shifted past the old count (BRK-04).
+// shifted past the old count.
 func (m *BreakdownModel) detectNewMessages(newMessages []models.BreakdownMessage) {
 	// Nothing to diff against on first load (or right after a session switch):
 	// flagging every row would flash the whole table as "new"
@@ -680,7 +680,7 @@ func (m BreakdownModel) renderTableHeader() string {
 }
 
 // renderTableSeparator renders the table separator rule: box-drawing when
-// colored, an ASCII fallback in no-color (D4).
+// colored, an ASCII fallback in no-color.
 func (m BreakdownModel) renderTableSeparator() string {
 	rule := styles.LineHorizontal
 	if m.noColor {
@@ -817,7 +817,7 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 
 	// Calculate total cost and min/max cost for the gradient. Insights are
 	// order-sensitive and come from the analyzer, computed over the file-order
-	// merged list (BRK-03); these aggregates are order-insensitive so the
+	// merged list; these aggregates are order-insensitive so the
 	// display-sorted list is fine.
 	var totalCost float64
 	var minCost, maxCost float64

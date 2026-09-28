@@ -1112,7 +1112,7 @@ func TestParseWorkflowMeta(t *testing.T) {
 	}
 }
 
-// === Skipped-input accounting (AGENT-04, DEDUP-01) ===
+// === Skipped-input accounting ===
 
 // makeUnreadableDir strips every permission bit from dir and restores them when
 // the test ends. A chmod failure is fatal (the dir should exist); only an
@@ -1214,7 +1214,7 @@ func TestDiscoverAgentSessions_UnreadableWorkflowRunDir(t *testing.T) {
 	}
 }
 
-// AGENT-01: a workflow run dir reached through a symlink (e.g. a bulky run
+// A workflow run dir reached through a symlink (e.g. a bulky run
 // relocated to another disk and linked back) must be discovered. fs.DirEntry's
 // IsDir() is lstat-based and false for a symlink-to-dir, so without the os.Stat
 // follow the run's agents would silently vanish from every cost surface.
@@ -1249,7 +1249,7 @@ func TestDiscoverAgentSessions_SymlinkedWorkflowRunDir(t *testing.T) {
 	}
 }
 
-// AGENT-01: a broken symlink where a run dir might be hides a possible run, so
+// A broken symlink where a run dir might be hides a possible run, so
 // it is disclosed via unreadableDirs (mapped to SkippedAgents upstream), not
 // silently skipped like a stray file.
 func TestDiscoverAgentSessions_BrokenSymlinkWorkflowRunDir(t *testing.T) {
@@ -1335,8 +1335,8 @@ func TestDiscoverAgentSessions_MissingDirIsNotUnreadable(t *testing.T) {
 	}
 }
 
-// DEDUP-01: `list` counted lines the analysis parse rejects, because it decoded
-// a laxer struct. A line is now counted iff the analysis would keep it.
+// A line is counted iff the analysis would keep it; decoding a laxer struct
+// would make `list` count lines the analysis parse rejects.
 func TestCountMessagesInFile_MatchesAnalysisParse(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.jsonl")
