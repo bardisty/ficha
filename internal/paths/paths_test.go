@@ -422,13 +422,22 @@ func TestCanonicalizePath(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if result != realDir {
-			t.Errorf("expected %q, got %q", realDir, result)
+		// The temp dir itself can sit behind a symlink (macOS /var ->
+		// /private/var) or an 8.3 short name (Windows RUNNER~1), which
+		// CanonicalizePath also resolves, so compare canonical forms.
+		want, err := filepath.EvalSymlinks(realDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result != want {
+			t.Errorf("expected %q, got %q", want, result)
 		}
 	})
 
 	t.Run("nonexistent path fallback", func(t *testing.T) {
-		path := "/nonexistent/path/to/project"
+		// Built from a temp dir so it is absolute on every OS; a literal
+		// "/nonexistent/..." has no drive letter and is relative on Windows.
+		path := filepath.Join(t.TempDir(), "nonexistent", "path", "to", "project")
 		result, err := CanonicalizePath(path)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)

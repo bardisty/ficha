@@ -4,19 +4,64 @@ on:
   push:
     tags: ['v*']
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
-  release:
+  # The same gate as CI's check job, so a tag on a red commit never ships.
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      # Build from source with the job's Go toolchain. The pinned release's
+      # prebuilt binary is built with an older Go than go.mod targets, and
+      # golangci-lint refuses to run when its build Go trails the target version.
+      - name: Install golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Format and lint
+        run: make fmt lint
+
+      # -race needs cgo, so keep CGO_ENABLED=0 out of this step's environment.
+      - name: Test with race detector
+        run: go test -race ./...
+
+      # `make fmt` runs `gofmt -w`, so unformatted code would be silently
+      # rewritten rather than failing. Catch it by requiring a clean tree.
+      - name: Ensure gofmt left the tree clean
+        run: git diff --exit-code
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # create the release and upload assets
+      id-token: write # OIDC token for the Sigstore signing certificate
+      attestations: write # store the build provenance attestation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No cache: a job holding a write token must not restore state that
+      # another workflow run could have written.
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
 
       # The binary's version is injected from the VERSION file via ldflags, so a
       # tag that disagrees with VERSION would ship a binary that misreports its
@@ -34,6 +79,10 @@ jobs:
 
       - name: Generate checksums
         run: cd bin && sha256sum ficha-* > checksums.txt
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'bin/ficha-*'
 
       - name: Create GitHub release
         env:
