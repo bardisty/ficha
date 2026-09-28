@@ -2,6 +2,8 @@ module github.com/bardisty/ficha
 
 go 1.25.6
 
+toolchain go1.25.14
+
 require (
 	github.com/NimbleMarkets/ntcharts v0.5.1
 	github.com/charmbracelet/bubbles v1.0.0
