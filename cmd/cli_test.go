@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -42,9 +43,36 @@ func TestVersionFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--version failed: %v", err)
 	}
-	want := "ficha " + Version + "\n"
+	want := "ficha " + version() + "\n"
 	if out != want {
 		t.Errorf("got %q, want %q", out, want)
+	}
+}
+
+func TestResolveVersion(t *testing.T) {
+	stamped := func(v string) *debug.BuildInfo {
+		return &debug.BuildInfo{Main: debug.Module{Path: "github.com/bardisty/ficha", Version: v}}
+	}
+	tests := []struct {
+		name    string
+		ldflags string
+		info    *debug.BuildInfo
+		ok      bool
+		want    string
+	}{
+		{"ldflags win over build info", "0.24.0", stamped("v0.23.0"), true, "0.24.0"},
+		{"go install tag, v stripped", "dev", stamped("v0.24.0"), true, "0.24.0"},
+		{"pseudo-version kept", "dev", stamped("v0.24.1-0.20260928120000-abcdef123456"), true, "0.24.1-0.20260928120000-abcdef123456"},
+		{"devel falls back", "dev", stamped("(devel)"), true, "dev"},
+		{"empty falls back", "dev", stamped(""), true, "dev"},
+		{"no build info", "dev", nil, false, "dev"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveVersion(tt.ldflags, tt.info, tt.ok); got != tt.want {
+				t.Errorf("resolveVersion(%q, %v, %v) = %q, want %q", tt.ldflags, tt.info, tt.ok, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -55,7 +83,7 @@ func TestVersionSubcommandIgnoresFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version -f xml should not error (format is ignored): %v", err)
 	}
-	want := "ficha " + Version + "\n"
+	want := "ficha " + version() + "\n"
 	if out != want {
 		t.Errorf("got %q, want %q", out, want)
 	}
