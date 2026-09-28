@@ -1,0 +1,41 @@
+name: Pricing update
+description: A model is missing from the catalog or its rates are wrong
+labels: [pricing]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Unknown models are priced at a placeholder rate ($3/$15 per MTok) and ficha warns about them. Fill this in and the fix is one catalog row. If you'd rather send it yourself, CONTRIBUTING.md has the steps.
+  - type: input
+    id: model-id
+    attributes:
+      label: Model ID
+      description: Exactly as it appears in the transcript or in ficha's "unknown model" warning.
+      placeholder: claude-opus-5-5-20260301
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Pricing source
+      description: A link to the page on https://platform.claude.com/docs/en/about-claude/pricing (or Anthropic's announcement) that lists the rates.
+    validations:
+      required: true
+  - type: input
+    id: rates
+    attributes:
+      label: Rates per million tokens
+      description: Input, output, and cache read. If the cache read rate is not 10% of input, say so.
+      placeholder: input $4, output $20, cache read $0.20
+    validations:
+      required: true
+  - type: input
+    id: context
+    attributes:
+      label: Context window
+      placeholder: 1M
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Aliases, dated IDs, or a rate you're not sure about.

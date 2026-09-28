@@ -1,4 +1,7 @@
 bin/
-ficha
+/ficha
+coverage.out
+coverage.html
 .audits/
 .claude/
+.orca/
