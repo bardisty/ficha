@@ -308,10 +308,20 @@ func classifyWorkflowRunEntry(entry os.DirEntry, workflowsDir string) (isDir, un
 //
 // os.ReadDir returns the entries it managed to read alongside the error, so a
 // partially-readable directory still contributes the agents it named.
+//
+// Windows reports listing a plain file as ERROR_PATH_NOT_FOUND, which
+// os.IsNotExist accepts. Stat tells that case apart from a path that is really
+// gone, so a file where the directory should be counts on every OS, as ENOTDIR
+// already makes it count on Linux and macOS.
 func readAgentDir(dir string) (entries []os.DirEntry, unreadable int) {
 	entries, err := os.ReadDir(dir)
-	if err == nil || os.IsNotExist(err) {
+	if err == nil {
 		return entries, 0
+	}
+	if os.IsNotExist(err) {
+		if info, statErr := os.Stat(dir); statErr != nil || info.IsDir() {
+			return entries, 0
+		}
 	}
 	return entries, 1
 }
