@@ -2,24 +2,64 @@
 
 Track your Claude Code API costs, token usage, and context window in real time.
 
+ficha is an independent project. It is not affiliated with or endorsed by Anthropic.
+
 ## Screenshots
 
 <table>
   <tr>
-    <td width="50%" valign="top"><a href="docs/ficha-watch.webp"><img src="docs/ficha-watch.webp" alt="ficha watch — live session cost dashboard"></a></td>
-    <td width="50%" valign="top"><a href="docs/ficha-breakdown.webp"><img src="docs/ficha-breakdown.webp" alt="ficha breakdown — per-message cost table"></a></td>
+    <td width="50%" valign="top"><a href="docs/ficha-watch.webp"><img src="docs/ficha-watch.webp" alt="ficha watch, the live session cost dashboard"></a></td>
+    <td width="50%" valign="top"><a href="docs/ficha-breakdown.webp"><img src="docs/ficha-breakdown.webp" alt="ficha breakdown, the per-message cost table"></a></td>
   </tr>
   <tr>
-    <td valign="top"><em><code>ficha watch</code> — live dashboard: token counts by type (input, output, cache write/read), context-window usage, cache economics, cost trend, per-model and agent sub-session costs.</em></td>
-    <td valign="top"><em><code>ficha breakdown</code> — live, scrollable per-message table: cost, token counts, and originating agent for every message, parent and agents interleaved chronologically, updating as the session runs.</em></td>
+    <td valign="top"><em><code>ficha watch</code> is the live dashboard: token counts by type (input, output, cache write/read), context-window usage, cache economics, cost trend, per-model and agent sub-session costs.</em></td>
+    <td valign="top"><em><code>ficha breakdown</code> is a live, scrollable per-message table: cost, token counts, and originating agent for every message, with parent and agents interleaved chronologically and updating as the session runs.</em></td>
   </tr>
 </table>
 
 ## Install
 
-Prebuilt binaries for macOS, Linux (amd64/arm64), and Windows are on the [releases page](https://github.com/bardisty/ficha/releases) (checksums included).
+### Prebuilt binaries
 
-Or build from source (requires Go 1.25+):
+Each release on the [releases page](https://github.com/bardisty/ficha/releases) ships one raw binary per platform, plus `checksums.txt`:
+
+| File | Platform |
+| --- | --- |
+| `ficha-darwin-arm64` | macOS, Apple silicon |
+| `ficha-darwin-amd64` | macOS, Intel |
+| `ficha-linux-amd64` | Linux, x86-64 |
+| `ficha-linux-arm64` | Linux, ARM64 |
+| `ficha-windows-amd64.exe` | Windows, x86-64 |
+
+There is no Windows ARM64 build. From v0.24.0 the Linux binaries are statically linked, so they also run on Alpine and other musl-based systems.
+
+Download the file for your machine, make it executable, and move it somewhere on your `PATH`:
+
+```sh
+chmod +x ficha-darwin-arm64
+xattr -d com.apple.quarantine ficha-darwin-arm64   # macOS only, see below
+mv ficha-darwin-arm64 ~/.local/bin/ficha
+```
+
+The macOS binaries are not signed or notarized, so Gatekeeper blocks them on first run. The `xattr` line clears the quarantine flag that browsers set on download. If you fetched the file with `curl` there is no flag to clear, and the command complains and does nothing.
+
+### Verifying a download
+
+`checksums.txt` lists the SHA-256 of every asset. With the binary and the checksums file in the same directory:
+
+```sh
+sha256sum -c --ignore-missing checksums.txt
+```
+
+Releases from v0.24.0 onward also carry a build provenance attestation, which ties each binary to the GitHub Actions run that built it from a tagged commit:
+
+```sh
+gh attestation verify ficha-darwin-arm64 --repo bardisty/ficha
+```
+
+### From source
+
+Requires Go 1.25.6 or newer.
 
 ```sh
 go install github.com/bardisty/ficha@latest
@@ -27,7 +67,7 @@ go install github.com/bardisty/ficha@latest
 
 ## Usage
 
-Run ficha from the same directory Claude Code is running in — it finds that project's sessions automatically:
+Run ficha from the same directory Claude Code is running in. It finds that project's sessions automatically:
 
 ```sh
 cd /path/to/your/project
@@ -54,15 +94,19 @@ To analyze a different project without cd'ing, pass its directory with `-p` / `-
 
 ## Flags
 
-Global flags (work with every command):
+Global flags, accepted by every command:
 
 | Flag | Description |
 | --- | --- |
 | `-f, --format <fmt>` | Output format: table, json, csv |
 | `-p, --project <dir>` | Project directory (default: current dir) |
 | `--project-dir <name>` | Claude project dir name (bypass auto-detect) |
+| `-l, --live` | Live mode (`ficha watch` is an alias for `show --live`) |
+| `--no-follow` | Pin to the current session instead of following new ones (live mode only) |
 | `-v, --verbose` | Show debug information |
 | `--no-color` | Disable colored output |
+
+Two of these have limits. `watch`, `breakdown` and `--live` render a terminal UI, so they reject `-f json` and `-f csv`. `version` prints plain text and ignores `--format`. `--no-follow` only means something in live mode; elsewhere it prints a warning and does nothing.
 
 Per-command flags:
 
@@ -74,8 +118,6 @@ Per-command flags:
 | `global` | `--sort-by <key>` | Sort: cost, sessions, name, activity |
 | `global` | `-d, --details` | All projects + cumulative column (table) |
 | `show` | `--messages` | Per-message rows (json/csv only) |
-| `show` | `-l, --live` | Live mode (`ficha watch` is an alias for `show --live`) |
-| `show --live`, `watch`, `breakdown` | `--no-follow` | Disable auto-follow (pin to current session) |
 
 ## Examples
 
@@ -91,24 +133,46 @@ ficha list -p /path/to/dir    # list sessions for different project
 
 ## Machine output (json / csv)
 
-`-f` only picks the encoding: json/csv always export the complete dataset as a single object / uniform-column table, safe for `jq` and pandas.
+`-f` only picks the encoding. json and csv always export the complete dataset, as a single object or a uniform-column table, safe for `jq` and pandas.
 
 - Unreadable input is counted, never swallowed: `skipped_sessions`, `skipped_agents`, `skipped_lines`, `estimated_cost_messages`.
 - Agent spend is always split out: `parent_cost + agents_cost = total_cost`.
-- `cost_by_model` keys are canonical model IDs — summing by key needs no normalization.
+- `cost_by_model` keys are canonical model IDs, so summing by key needs no normalization.
 
-The full export contract — flag interactions, record provenance, counters, per-message rows, csv safety — is in [docs/machine-output.md](docs/machine-output.md).
+The full export contract is in [docs/machine-output.md](docs/machine-output.md). It covers flag interactions, record provenance, the counters, per-message rows, and csv safety.
+
+## Privacy
+
+ficha only reads. It opens the transcripts Claude Code writes under `~/.claude/projects/`, or under `$CLAUDE_CONFIG_DIR/projects/` if you have set that variable. `CLAUDE_CONFIG_DIR` is Claude Code's own override, and ficha honors it so the two always agree on where sessions live. It makes no network requests, runs no subprocesses, and writes no files. Nothing in the non-test code imports `net/http` or `os/exec` or opens a file for writing, and I intend to keep it that way.
+
+Those transcripts contain your prompts and whatever code Claude read, so they are sensitive. The only thing that leaves your machine is what you choose to paste from ficha's output.
 
 ## How it works
 
-Reads session files from `~/.claude/projects/` and calculates costs using Anthropic's pricing. Tracks prompt caching savings (cache reads are billed at a steep discount: 90% off input for most models, 95% for Opus 5.5, 97.5% for Fable 5.1 and Mythos 5.1).
+ficha parses the JSONL transcripts and multiplies each message's token counts by the bundled list price for its model, with cache writes and cache reads priced separately. Cache reads carry a steep discount, and ficha tracks the savings: 90% off the input rate on most models, 95% on Opus 5.5, and 97.5% on Fable 5.1 and Mythos 5.1.
 
-Costs are estimates: ficha multiplies token counts by bundled API list prices, so figures are API-equivalent value — on a subscription plan you aren't billed per token. Models without a bundled price fall back to Sonnet pricing and are flagged with a warning.
+Agent sub-sessions are included, both regular subagents and Claude Code Workflow agents. Workflow agents are grouped by workflow run, with the run's name and status taken from its metadata.
 
-Agent sub-sessions are included: both regular subagents and Claude Code Workflow agents (grouped by workflow run, with the run's name and status from its metadata).
+### What the numbers mean
+
+The figures are API-equivalent estimates from list prices. On a Claude subscription you aren't billed per token, so read the total as what the same work would have cost through the API, not as a bill.
+
+A few things ficha does not model:
+
+- Long-context premium pricing. When a 1M-context request goes past the model's base window, the tokens above it cost more. ficha widens the context window it reports but prices every token at the base rate.
+- Fast mode and batch discounts.
+- Bedrock and Vertex billing. Their model IDs are recognized and priced at Anthropic's first-party rates. Both platforms bill on their own terms, so treat the figures as a proxy.
+
+Unknown models are priced at $3 input and $15 output per million tokens with a 200K context, and ficha prints a warning naming the model so you know a number is a placeholder. When a new model ships, its prices need a ficha update. Open a [pricing update issue](https://github.com/bardisty/ficha/issues/new?template=pricing_update.yml) with the model ID and the published rates, or send a PR. It's one catalog row plus tests, and [CONTRIBUTING.md](CONTRIBUTING.md) walks through it.
+
+Claude Code's transcript format is undocumented and can change between releases. ficha counts what it could not parse instead of guessing, so if the `skipped_*` counters jump after a Claude Code update, that is the signal to file a bug.
 
 > [!NOTE]
-> Claude Code deletes session transcripts older than 30 days by default (`cleanupPeriodDays` in `~/.claude/settings.json`), so ficha can only report what still exists on disk. To keep longer history, raise the setting, e.g. `"cleanupPeriodDays": 365`. Avoid `0` — it has [known bugs](https://github.com/anthropics/claude-code/issues/59248).
+> Claude Code deletes session transcripts older than 30 days by default (`cleanupPeriodDays` in `~/.claude/settings.json`), so ficha can only report what still exists on disk. To keep longer history, raise the setting, e.g. `"cleanupPeriodDays": 365`. Avoid `0`, which has [known bugs](https://github.com/anthropics/claude-code/issues/59248).
+
+## Contributing
+
+Bug reports and PRs are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, the `make check` gate, versioning, and how to add a model's pricing.
 
 ## License
 

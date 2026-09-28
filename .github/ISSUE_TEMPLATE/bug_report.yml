@@ -1,0 +1,52 @@
+name: Bug report
+description: Something ficha does wrong
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: ficha version
+      description: Output of `ficha version`.
+      placeholder: ficha 0.24.0
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+      placeholder: macOS 15 arm64, Ubuntu 24.04 amd64, Windows 11 amd64
+    validations:
+      required: true
+  - type: input
+    id: claude-code-version
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version`. The transcript format changes between releases, so this matters.
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command you ran
+      placeholder: ficha summary -d -f csv
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what you expected instead
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output with -v
+      description: Rerun the command with `-v` and paste the output. Transcripts contain your prompts and code, and `-v` prints paths, so redact anything you don't want public.
+      render: text
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: Redaction
+      options:
+        - label: I have removed prompts, code, and personal paths from anything pasted above.
+          required: true
