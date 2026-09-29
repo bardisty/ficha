@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -12,13 +13,18 @@ import (
 // uuidPattern matches UUID-formatted session IDs (with or without .jsonl extension)
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$`)
 
-// SessionWatcher watches a project directory for new session files
+// SessionWatcher watches a project directory for other sessions: new
+// session files, and writes to existing ones.
 type SessionWatcher struct {
 	projectDir     string
 	currentSession string
-	sessionMu      sync.RWMutex // Protects currentSession
-	watcher        *fsnotify.Watcher
-	done           chan struct{}
+	// known holds the session IDs present when watching started plus every
+	// one created since. Only a Create of an ID outside it is a new session;
+	// a Create of a known ID is an atomic replace, which is just activity.
+	known     map[string]bool
+	sessionMu sync.RWMutex // Protects currentSession and known
+	watcher   *fsnotify.Watcher
+	done      chan struct{}
 	// restartCh signals waiters to restart (used when session changes)
 	restartCh chan struct{}
 	restartMu sync.Mutex
@@ -30,6 +36,7 @@ func NewSessionWatcher(projectDir, currentSession string) *SessionWatcher {
 	return &SessionWatcher{
 		projectDir:     filepath.Clean(projectDir),
 		currentSession: currentSession,
+		known:          make(map[string]bool),
 		done:           make(chan struct{}),
 		restartCh:      make(chan struct{}),
 	}
@@ -73,6 +80,19 @@ func (sw *SessionWatcher) Start() error {
 		return err
 	}
 
+	// Snapshot after Add so no session slips between the two unseen. One
+	// created in that instant lands in the snapshot and its Create then
+	// reads as activity, so it is hinted rather than followed.
+	if entries, err := os.ReadDir(sw.projectDir); err == nil {
+		sw.sessionMu.Lock()
+		for _, e := range entries {
+			if uuidPattern.MatchString(e.Name()) {
+				sw.known[strings.TrimSuffix(e.Name(), ".jsonl")] = true
+			}
+		}
+		sw.sessionMu.Unlock()
+	}
+
 	return nil
 }
 
@@ -89,24 +109,43 @@ func (sw *SessionWatcher) Stop() {
 	})
 }
 
-// sessionRestartedMsg is a sentinel value indicating the waiter should restart
+// sessionRestartedPath is a sentinel path telling the waiter to restart
 const sessionRestartedPath = "\x00RESTART\x00"
 
-// WaitForNewSession blocks until a new or different session is detected or shutdown
-// Returns the new session path and ID, or empty strings if shutdown
-// Returns sessionRestartedPath if the session was changed externally (caller should re-call)
-// Detects both:
-// - New session files being created (user started fresh session)
-// - Writes to existing session files that aren't the current one (user switched back)
+// sessionEvent is another session in the project changing. created marks a
+// brand-new session file; otherwise an existing session was written to.
+// path is "" on shutdown and sessionRestartedPath when the current session
+// was changed externally (the caller should wait again).
+type sessionEvent struct {
+	path    string
+	id      string
+	created bool
+}
+
+// WaitForNewSession blocks until a new session file is created, returning
+// its path and ID, or empty strings on shutdown, or sessionRestartedPath.
+// Writes to other existing sessions are skipped: with two sessions active in
+// one project, following writes would flip between them on every message.
 func (sw *SessionWatcher) WaitForNewSession() (string, string) {
+	for {
+		ev := sw.WaitForSessionEvent()
+		if ev.path == "" || ev.path == sessionRestartedPath || ev.created {
+			return ev.path, ev.id
+		}
+	}
+}
+
+// WaitForSessionEvent blocks until another session in the project is created
+// or written to, the current session is changed externally, or shutdown.
+func (sw *SessionWatcher) WaitForSessionEvent() sessionEvent {
 	// Check done channel before starting to avoid unnecessary work
 	select {
 	case <-sw.done:
-		return "", ""
+		return sessionEvent{}
 	default:
 	}
 	if sw.watcher == nil {
-		return "", ""
+		return sessionEvent{}
 	}
 
 	// Get current restart channel under lock
@@ -117,60 +156,48 @@ func (sw *SessionWatcher) WaitForNewSession() (string, string) {
 	for {
 		select {
 		case <-sw.done:
-			return "", ""
+			return sessionEvent{}
 		case <-restartCh:
 			// Session was changed externally, signal caller to restart
-			return sessionRestartedPath, ""
+			return sessionEvent{path: sessionRestartedPath}
 		case event, ok := <-sw.watcher.Events:
 			if !ok {
-				return "", ""
+				return sessionEvent{}
 			}
-			// Handle Create events (new session) or Write events (switched to existing session)
-			if event.Op&fsnotify.Create == fsnotify.Create || event.Op&fsnotify.Write == fsnotify.Write {
-				path, id := sw.handleSessionFile(event.Name)
-				if path != "" {
-					return path, id
+			if event.Op&(fsnotify.Create|fsnotify.Write) != 0 {
+				if ev := sw.handleSessionFile(event.Name, event.Op); ev.path != "" {
+					return ev
 				}
 			}
 		case _, ok := <-sw.watcher.Errors:
 			if !ok {
-				return "", ""
+				return sessionEvent{}
 			}
 			// Ignore errors, continue watching
 		}
 	}
 }
 
-// handleSessionFile processes a file event to see if it indicates a session switch
-// Returns the path and session ID if we should switch, empty strings otherwise
-func (sw *SessionWatcher) handleSessionFile(filePath string) (string, string) {
-	// Get just the filename
-	filename := filepath.Base(filePath)
-
-	// Must be a .jsonl file at the project root (not in a subdirectory)
-	// Session files are directly in projectDir, agent files are in subdirectories
+// handleSessionFile classifies a file event: another session's file at the
+// project root yields an event, anything else (the current session, agent
+// files in subdirectories, non-session files) a zero one.
+func (sw *SessionWatcher) handleSessionFile(filePath string, op fsnotify.Op) sessionEvent {
+	// Session files sit directly in projectDir; agent files are in subdirectories
 	if filepath.Clean(filepath.Dir(filePath)) != sw.projectDir {
-		return "", ""
+		return sessionEvent{}
 	}
-
-	// Must match UUID pattern
+	filename := filepath.Base(filePath)
 	if !uuidPattern.MatchString(filename) {
-		return "", ""
+		return sessionEvent{}
 	}
-
-	// Extract session ID (remove .jsonl extension)
 	sessionID := strings.TrimSuffix(filename, ".jsonl")
 
-	// Skip if this is our current session (we don't need to switch to ourselves)
-	sw.sessionMu.RLock()
-	current := sw.currentSession
-	sw.sessionMu.RUnlock()
-
-	if sessionID == current {
-		return "", ""
+	sw.sessionMu.Lock()
+	defer sw.sessionMu.Unlock()
+	created := op&fsnotify.Create != 0 && !sw.known[sessionID]
+	sw.known[sessionID] = true
+	if sessionID == sw.currentSession {
+		return sessionEvent{}
 	}
-
-	// This is a different session that's being written to or created
-	// That means the user has switched to it - we should follow
-	return filePath, sessionID
+	return sessionEvent{path: filePath, id: sessionID, created: created}
 }

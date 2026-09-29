@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -305,5 +306,38 @@ func TestSubagentTreeSignature_BrokenSymlink(t *testing.T) {
 	// ...without churning while nothing changes
 	if sig := subagentTreeSignature(tmpDir, sessionID); sig != sig1 {
 		t.Error("signature churned across calls with an unchanged broken symlink")
+	}
+}
+
+// A removal with no re-creation inside the grace period is an error, not a
+// silent wait on a file that is gone.
+func TestAwaitSessionFileChange_RemovedStaysGone(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	writeSessionFile(t, path)
+	watcher, err := newSessionFileWatcher(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watcher.Close()
+	done := make(chan struct{})
+	defer close(done)
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := awaitSessionFileChange(watcher, done, path)
+		errCh <- err
+	}()
+	time.Sleep(50 * time.Millisecond)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, errSessionFileGone) {
+			t.Errorf("err = %v, want errSessionFileGone", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("removal went unreported")
 	}
 }

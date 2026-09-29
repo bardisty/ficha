@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"github.com/NimbleMarkets/ntcharts/sparkline"
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/parser"
+	"github.com/bardisty/ficha/internal/paths"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -77,12 +80,22 @@ type Model struct {
 	// poll-triggered reloads can't stack extra waiters
 	fileWaiterActive bool
 
-	// Auto-follow mode for tracking new sessions
-	projectDir     string          // Project directory to watch for new sessions
-	followMode     bool            // Whether to auto-follow new sessions
-	prevSessionID  string          // Previous session ID (shown after switch)
-	sessionWatcher *SessionWatcher // Watches for new session files
-	switchNotifyAt time.Time       // When session switch notification started
+	// Session following. The session watcher runs in every mode: following
+	// switches to a newly created session, and pinned shows it as a hint.
+	projectDir      string          // Project directory to watch for new sessions
+	project         string          // Project name for the header and title; "" when unknown
+	followMode      bool            // Whether to auto-follow new sessions
+	prevSessionID   string          // Session watched before the last switch
+	prevSessionPath string          // Its file, for the go-back key
+	sessionWatcher  *SessionWatcher // Watches for other sessions' files
+	switched        *switchNotice   // Shown until the next keypress
+	hint            *sessionHint    // Another session's activity, not followed
+	windowTitle     string          // Last title sent, to send only changes
+
+	// lastActivity is the newest message timestamp (parent or agent), else
+	// the session file's mtime (activityFromFile); the header ages it.
+	lastActivity     time.Time
+	activityFromFile bool
 
 	// Cost trend chart
 	costChart   sparkline.Model // Sparkline chart for cost trend
@@ -96,6 +109,21 @@ type Model struct {
 	height int
 }
 
+// switchNotice describes the last session switch for the notify row.
+type switchNotice struct {
+	auto      bool    // followed a new session, rather than a key press
+	prevTotal float64 // the previous session's total when it was left
+	hadTotal  bool    // prevTotal is known (the previous session had loaded)
+}
+
+// sessionHint is activity in another session the view didn't switch to.
+type sessionHint struct {
+	path    string
+	id      string
+	created bool
+	at      time.Time
+}
+
 // Messages
 type (
 	// analysisMsg carries a completed reload plus the session it was loaded for.
@@ -105,6 +133,7 @@ type (
 	analysisMsg struct {
 		analysis    *models.SessionAnalysis
 		sessionPath string
+		modTime     time.Time // session file mtime; zero when unknown
 	}
 	// errorMsg carries a reload/watcher failure and the session it belongs to;
 	// a stale error for the old session must not stamp over the new one.
@@ -153,13 +182,30 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 		costHistory: make([]float64, 0),
 		agentCache:  analyzer.NewAgentParseCache(),
 		subagentSig: subagentTreeSignature(filepath.Dir(sessionPath), sessionID),
+		project:     projectName(projectDir),
 	}
+}
+
+// projectName is the last element of the project's real directory, or ""
+// when the storage directory doesn't record it.
+func projectName(projectDir string) string {
+	if projectDir == "" {
+		return ""
+	}
+	p := parser.ProjectOriginalPath(projectDir)
+	if p == "" {
+		return ""
+	}
+	return paths.BasenameCrossOS(p)
 }
 
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// The switch notice explains a total that changed under the reader;
+		// any key acknowledges it.
+		m.switched = nil
 		switch msg.String() {
 		case "q", "ctrl+c":
 			shutdownWatchers(m.closeOnce, m.closing, m.done, m.watcher, m.sessionWatcher, m.wg)
@@ -167,6 +213,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			m.loading = true
 			return m, m.loadAnalysis
+
+		case "p":
+			// Going back is a deliberate choice of session, so it pins.
+			if m.prevSessionPath != "" {
+				m.followMode = false
+				return m.switchTo(m.prevSessionPath, m.prevSessionID, false)
+			}
+
+		case "n":
+			if m.hintVisible() {
+				return m.switchTo(m.hint.path, m.hint.id, false)
+			}
+
+		case "f":
+			m.followMode = !m.followMode
 
 		case "up", "k":
 			m.viewport.ScrollUp(1)
@@ -232,6 +293,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.err = nil
+		m.lastActivity = lastActivity(msg.analysis, msg.modTime)
+		m.activityFromFile = !m.lastActivity.IsZero() && m.lastActivity.Equal(msg.modTime)
 
 		// Update cost chart with new message costs
 		m.updateCostChart()
@@ -245,7 +308,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// still blocked on the watcher
 		// Call before return: the arm must mutate the m the caller receives
 		armCmd := m.armFileWaiter()
-		return m, armCmd
+		return m, tea.Batch(armCmd, m.titleCmd())
 
 	case errorMsg:
 		if msg.sessionPath != "" && msg.sessionPath != m.sessionPath {
@@ -270,8 +333,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// reload as well as arming a replacement waiter
 		m.err = msg.err
 		m.fileWaiterActive = false
-		m.loading = true
 		armCmd := m.armFileWaiter()
+		if errors.Is(msg.err, errSessionFileGone) {
+			// Nothing to reload: keep the last data up, marked stale, until
+			// the file is re-created (the waiter reports that) or r retries.
+			return m, armCmd
+		}
+		m.loading = true
 		return m, tea.Batch(m.loadAnalysis, armCmd)
 
 	case watcherStartedMsg:
@@ -309,61 +377,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadAnalysis
 
 	case sessionSwitchedMsg:
-		// Store previous session ID and switch to new session
-		m.prevSessionID = m.sessionID
-		m.sessionID = msg.newSessionID
-		m.sessionPath = msg.newSessionPath
-		m.switchNotifyAt = time.Now()
+		return m.switchTo(msg.newSessionPath, msg.newSessionID, true)
 
-		// Reset analysis state for clean switch. Clear err too so a stale header
-		// error from the old session doesn't persist under the new one during the
-		// load window (parity with breakdown's session-switch reset).
-		m.analysis = nil
-		m.err = nil
-		m.loading = true
-		m.changedAt = make(map[string]time.Time)
-		m.deltaTokens = make(map[string]int64)
-		m.deltaCount = 0
-		// Drop the previous session's cached agent parses
-		m.agentCache = analyzer.NewAgentParseCache()
-		// Fingerprint the new session's subagent tree; the pending reload
-		// covers anything already on disk
-		m.subagentSig = subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
-
-		// A new session opens at the top, like the first one, and drops the old
-		// session's warning rows from the layout.
-		if m.ready {
-			m.viewport.SetContent("")
-			m.viewport.GotoTop()
-			m.layoutViewport()
+	case sessionActivityMsg:
+		// Reported before a key switch landed on this session: stale.
+		if msg.id == m.sessionID {
+			return m, m.waitForNewSession()
 		}
-
-		// Reset cost chart for new session
-		m.costHistory = make([]float64, 0)
-		m.costChart = newCostChart(m.getChartWidth(), m.noColor)
-
-		// Stop old file watcher, will be restarted by watchFile. Closing it
-		// unblocks the old waiter, which exits without a message, so the
-		// in-flight flag resets here for the new watcher's waiter
-		if m.watcher != nil {
-			m.watcher.Close()
-			m.watcher = nil
+		if msg.created && m.followMode {
+			return m.switchTo(msg.path, msg.id, true)
 		}
-		m.fileWaiterActive = false
-
-		// Update session watcher's current session
-		if m.sessionWatcher != nil {
-			m.sessionWatcher.SetCurrentSession(m.sessionID)
-		}
-
-		// Reload analysis, restart file watcher, and restart session watcher
-		// We must explicitly restart waitForNewSession because the goroutine that
-		// detected this switch has already exited after returning sessionSwitchedMsg
-		cmds := []tea.Cmd{m.loadAnalysis, func() tea.Msg { return m.watchFile() }}
-		if m.sessionWatcher != nil {
-			cmds = append(cmds, m.waitForNewSession())
-		}
-		return m, tea.Batch(cmds...)
+		// A new session's first writes follow its Create; keep calling it new.
+		created := msg.created || (m.hint != nil && m.hint.id == msg.id && m.hint.created)
+		m.hint = &sessionHint{path: msg.path, id: msg.id, created: created, at: m.clock()}
+		return m, m.waitForNewSession()
 
 	case tickMsg:
 		// Clean up stale change tracking entries to prevent unbounded map growth
@@ -386,6 +413,115 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// switchTo moves the view to another session. auto marks a follow-mode
+// switch to a new session, as opposed to a key press. The previous session
+// is remembered for the go-back key.
+func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
+	notice := &switchNotice{auto: auto}
+	if m.analysis != nil {
+		notice.prevTotal = m.analysis.TotalCost.TotalCost
+		notice.hadTotal = true
+	}
+	m.switched = notice
+	m.prevSessionID, m.prevSessionPath = m.sessionID, m.sessionPath
+	m.sessionID, m.sessionPath = id, path
+	if m.hint != nil && m.hint.id == id {
+		m.hint = nil
+	}
+
+	// Reset analysis state for clean switch. Clear err too so a stale header
+	// error from the old session doesn't persist under the new one during the
+	// load window (parity with breakdown's session-switch reset).
+	m.analysis = nil
+	m.err = nil
+	m.loading = true
+	m.lastActivity = time.Time{}
+	m.changedAt = make(map[string]time.Time)
+	m.deltaTokens = make(map[string]int64)
+	m.deltaCount = 0
+	// Drop the previous session's cached agent parses
+	m.agentCache = analyzer.NewAgentParseCache()
+	// Fingerprint the new session's subagent tree; the pending reload
+	// covers anything already on disk
+	m.subagentSig = subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
+
+	// A new session opens at the top, like the first one, and drops the old
+	// session's warning rows from the layout.
+	if m.ready {
+		m.viewport.SetContent("")
+		m.viewport.GotoTop()
+		m.layoutViewport()
+	}
+
+	// Reset cost chart for new session
+	m.costHistory = make([]float64, 0)
+	m.costChart = newCostChart(m.getChartWidth(), m.noColor)
+
+	// Stop old file watcher, will be restarted by watchFile. Closing it
+	// unblocks the old waiter, which exits without a message, so the
+	// in-flight flag resets here for the new watcher's waiter
+	if m.watcher != nil {
+		m.watcher.Close()
+		m.watcher = nil
+	}
+	m.fileWaiterActive = false
+
+	cmds := []tea.Cmd{m.loadAnalysis, func() tea.Msg { return m.watchFile() }}
+	if m.sessionWatcher != nil {
+		m.sessionWatcher.SetCurrentSession(m.sessionID)
+		// An automatic switch was reported by the session waiter, which has
+		// exited, so start another. A key press leaves that waiter blocked;
+		// SetCurrentSession wakes it and sessionWatcherRestartMsg re-arms it.
+		if auto {
+			cmds = append(cmds, m.waitForNewSession())
+		}
+	}
+	return m, tea.Batch(cmds...)
+}
+
+// hintVisible reports whether the hint is still on screen: it fades once
+// the other session has been quiet for idleAfter, and n stops acting on it.
+func (m Model) hintVisible() bool {
+	return m.hint != nil && m.clock().Sub(m.hint.at) < idleAfter
+}
+
+// lastActivity is the newest message timestamp in the analysis (agents
+// included), falling back to the file's mtime for a session with no
+// timestamped message yet, so a long-dead empty session still reads idle.
+func lastActivity(a *models.SessionAnalysis, modTime time.Time) time.Time {
+	var newest time.Time
+	if a != nil {
+		newest = a.EndTime
+		for _, msg := range a.Messages {
+			if msg.Timestamp.After(newest) {
+				newest = msg.Timestamp
+			}
+		}
+	}
+	if newest.IsZero() {
+		return modTime
+	}
+	return newest
+}
+
+// titleCmd sets the terminal title to "ficha · webapp · $30.05" when it
+// changed, so a tab bar tells several watch panes apart.
+func (m *Model) titleCmd() tea.Cmd {
+	if m.analysis == nil {
+		return nil
+	}
+	name := m.project
+	if name == "" {
+		name = render.TruncateID(m.sessionID, sessionIDDisplayLen)
+	}
+	title := "ficha " + styles.Bullet + " " + name + " " + styles.Bullet + " " + render.Cost(m.analysis.TotalCost.TotalCost)
+	if title == m.windowTitle {
+		return nil
+	}
+	m.windowTitle = title
+	return tea.SetWindowTitle(title)
 }
 
 // layoutViewport sizes the viewport to the rows the header and footer leave.

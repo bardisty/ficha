@@ -1,0 +1,345 @@
+package tui
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/muesli/termenv"
+
+	"github.com/bardisty/ficha/internal/models"
+)
+
+const (
+	sessA = "aaaaaaaa-0000-0000-0000-000000000000"
+	sessB = "bbbbbbbb-0000-0000-0000-000000000000"
+)
+
+func followModel(t *testing.T, follow bool) Model {
+	t.Helper()
+	forceProfile(t, termenv.Ascii)
+	m := NewModel("/p/"+sessA+".jsonl", sessA, false, true, "", follow)
+	m = sized(t, m, 80, 24)
+	return load(t, m, tallAnalysis(30.05))
+}
+
+func send(t *testing.T, m Model, msg tea.Msg) Model {
+	t.Helper()
+	updated, _ := m.Update(msg)
+	return updated.(Model)
+}
+
+func TestSessionActivityFollowAndHint(t *testing.T) {
+	tests := []struct {
+		name       string
+		follow     bool
+		created    bool
+		wantSwitch bool
+		wantHint   string
+	}{
+		{"following: a new session switches", true, true, true, ""},
+		{"following: a write to another session only hints", true, false, false, "newer activity in bbbbbbbb " + "• n to switch"},
+		{"pinned: a new session only hints", false, true, false, "new session bbbbbbbb started • n to switch"},
+		{"pinned: a write only hints", false, false, false, "newer activity in bbbbbbbb"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := followModel(t, tt.follow)
+			m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB, created: tt.created})
+			if switched := m.sessionID == sessB; switched != tt.wantSwitch {
+				t.Fatalf("switched = %v, want %v", switched, tt.wantSwitch)
+			}
+			if tt.wantHint != "" && !strings.Contains(m.View(), tt.wantHint) {
+				t.Errorf("notify row missing %q:\n%s", tt.wantHint, m.View())
+			}
+		})
+	}
+}
+
+// The switch notice names the old total and stays until a key is pressed;
+// p goes back and pins.
+func TestSwitchNoticeAndGoBack(t *testing.T) {
+	m := followModel(t, true)
+	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB, created: true})
+
+	want := "→ new session bbbbbbbb (previous aaaaaaaa: $30.05) • p to go back"
+	if !strings.Contains(m.View(), want) {
+		t.Fatalf("missing switch notice %q:\n%s", want, m.View())
+	}
+	m.now = func() time.Time { return time.Now().Add(10 * time.Minute) }
+	if !strings.Contains(m.View(), want) {
+		t.Error("switch notice expired without a keypress")
+	}
+
+	m = load(t, m, tallAnalysis(0.04))
+	m = key(t, m, "p")
+	if m.sessionID != sessA || m.followMode {
+		t.Fatalf("after p: session %s follow=%v, want %s pinned", m.sessionID, m.followMode, sessA)
+	}
+	if !strings.Contains(m.View(), "switched to aaaaaaaa (previous bbbbbbbb: $0.0400)") {
+		t.Errorf("go-back notice missing:\n%s", m.View())
+	}
+	if !strings.Contains(m.View(), "PINNED") {
+		t.Errorf("header doesn't say PINNED after going back:\n%s", m.View())
+	}
+
+	m = key(t, m, "j")
+	if m.switched != nil {
+		t.Error("a keypress didn't clear the switch notice")
+	}
+	m = key(t, m, "f")
+	if !m.followMode || !strings.Contains(m.View(), "FOLLOWING") {
+		t.Errorf("f didn't resume following:\n%s", m.View())
+	}
+}
+
+// n switches to the session a hint names.
+func TestHintSwitchKey(t *testing.T) {
+	m := followModel(t, false)
+	m = key(t, m, "n")
+	if m.sessionID != sessA {
+		t.Fatal("n without a hint switched sessions")
+	}
+	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB, created: true})
+	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB})
+	if !strings.Contains(m.View(), "new session bbbbbbbb started") {
+		t.Errorf("a new session's first write turned it into mere activity:\n%s", m.View())
+	}
+	m = key(t, m, "n")
+	if m.sessionID != sessB || m.hint != nil {
+		t.Errorf("after n: session %s hint %v, want %s and no hint", m.sessionID, m.hint, sessB)
+	}
+}
+
+func TestWatchHeaderStates(t *testing.T) {
+	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	base := liveHeaderParams{
+		sessionID: sessA, noColor: true, width: 76, project: "webapp", mode: "FOLLOWING", now: now,
+	}
+	tests := []struct {
+		name string
+		edit func(*liveHeaderParams)
+		want string
+	}{
+		{"live", func(p *liveHeaderParams) { p.lastActivity = now.Add(-12 * time.Second) },
+			"webapp │ aaaaaaaa │ ● FOLLOWING │ last msg 12s ago"},
+		{"idle after 5m", func(p *liveHeaderParams) { p.lastActivity = now.Add(-7 * time.Minute) },
+			"webapp │ aaaaaaaa │ ○ FOLLOWING │ idle 7m"},
+		{"pinned", func(p *liveHeaderParams) { p.mode = "PINNED"; p.lastActivity = now.Add(-3 * time.Hour) },
+			"webapp │ aaaaaaaa │ ○ PINNED │ idle 3h"},
+		{"no messages yet", func(p *liveHeaderParams) {}, "webapp │ aaaaaaaa │ ● FOLLOWING │ no messages yet"},
+		{"empty, recently touched", func(p *liveHeaderParams) { p.noMessages = true; p.lastActivity = now.Add(-time.Minute) },
+			"webapp │ aaaaaaaa │ ● FOLLOWING │ no messages yet"},
+		{"empty and long dead", func(p *liveHeaderParams) { p.noMessages = true; p.lastActivity = now.Add(-72 * time.Hour) },
+			"webapp │ aaaaaaaa │ ○ FOLLOWING │ idle 3d"},
+		{"loading", func(p *liveHeaderParams) { p.loading = true }, "webapp │ aaaaaaaa │ ● FOLLOWING │ Loading..."},
+		{"no project", func(p *liveHeaderParams) { p.project = ""; p.lastActivity = now }, "aaaaaaaa │ ● FOLLOWING │ last msg 0s ago"},
+		{"narrow drops the prefix, then shortens the project", func(p *liveHeaderParams) {
+			p.width = 54
+			p.project = "a-very-long-project-name"
+			p.lastActivity = now.Add(-12 * time.Second)
+		}, "a-very-long-… │ aaaaaaaa │ ● FOLLOWING │ 12s ago"},
+		{"narrower drops the project", func(p *liveHeaderParams) {
+			p.width = 44
+			p.project = "a-very-long-project-name"
+			p.lastActivity = now.Add(-12 * time.Second)
+		}, "║  aaaaaaaa │ ● FOLLOWING │ 12s ago"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := base
+			tt.edit(&p)
+			got := renderLiveHeaderPanel(p)
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("header missing %q:\n%s", tt.want, got)
+			}
+			assertPanelLinesAligned(t, got, tt.name)
+		})
+	}
+}
+
+// A removed session file is an error in the notify row; the last data stays
+// on screen and no reload is attempted.
+func TestWatchSessionFileRemoved(t *testing.T) {
+	m := followModel(t, true)
+	w := newTestWatcher(t, t.TempDir()+"/s.jsonl")
+	m = send(t, m, watcherStartedMsg{watcher: w})
+
+	updated, cmd := m.Update(fileWatchErrMsg{err: errSessionFileGone, watcher: w})
+	m = updated.(Model)
+	if m.loading {
+		t.Error("removed file triggered a reload")
+	}
+	if cmd == nil {
+		t.Error("removed file didn't re-arm the waiter (a re-create must still be seen)")
+	}
+	view := m.View()
+	if !strings.Contains(view, "! session file removed, showing last data • r to retry") &&
+		!strings.Contains(view, "⚠ session file removed, showing last data • r to retry") {
+		t.Errorf("notify row missing the removal:\n%s", view)
+	}
+	if !strings.Contains(view, "$30.05 TOTAL") {
+		t.Errorf("last data dropped:\n%s", view)
+	}
+	if strings.Contains(view, "Error") {
+		t.Errorf("header still shows a bare Error:\n%s", view)
+	}
+}
+
+func TestDescribeErr(t *testing.T) {
+	tests := []struct {
+		err  error
+		want string
+	}{
+		{errSessionFileGone, "session file removed"},
+		{fmt.Errorf("opening: %w", fs.ErrNotExist), "session file removed"},
+		{fmt.Errorf("opening: %w", fs.ErrPermission), "session file unreadable (permission denied)"},
+		{errors.New("event queue overflow"), "event queue overflow"},
+	}
+	for _, tt := range tests {
+		if got := describeErr(tt.err); got != tt.want {
+			t.Errorf("describeErr(%v) = %q, want %q", tt.err, got, tt.want)
+		}
+	}
+}
+
+// The window title carries the project and total, and is only re-sent when
+// it changes.
+func TestWatchWindowTitle(t *testing.T) {
+	m := NewModel("/p/"+sessA+".jsonl", sessA, false, true, "", true)
+	m.project = "webapp"
+	m = sized(t, m, 80, 24)
+	m = load(t, m, tallAnalysis(30.05))
+	if want := "ficha • webapp • $30.05"; m.windowTitle != want {
+		t.Errorf("title = %q, want %q", m.windowTitle, want)
+	}
+	if cmd := m.titleCmd(); cmd != nil {
+		t.Error("unchanged title re-sent")
+	}
+}
+
+func TestLastActivity(t *testing.T) {
+	end := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	mod := end.Add(-time.Hour)
+	a := &models.SessionAnalysis{EndTime: end, Messages: []models.MessageAnalysis{{Timestamp: end.Add(time.Minute)}}}
+	if got := lastActivity(a, mod); !got.Equal(end.Add(time.Minute)) {
+		t.Errorf("got %v, want the newest message", got)
+	}
+	if got := lastActivity(&models.SessionAnalysis{}, mod); !got.Equal(mod) {
+		t.Errorf("got %v, want the file mtime for a session with no messages", got)
+	}
+}
+
+// After following a new session, the view must keep watching for the next
+// one: the waiter that reported the switch has exited, so the switch has to
+// start another.
+func TestFollowKeepsWatchingAfterSwitch(t *testing.T) {
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, sessA+".jsonl")
+	if err := os.WriteFile(pathA, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sw := NewSessionWatcher(dir, sessA)
+	if err := sw.Start(); err != nil {
+		t.Fatal(err)
+	}
+	m := NewModel(pathA, sessA, false, true, "", true)
+	m.sessionWatcher = sw
+	t.Cleanup(func() { shutdownWatchers(m.closeOnce, m.closing, m.done, m.watcher, sw, m.wg) })
+
+	pathB := filepath.Join(dir, sessB+".jsonl")
+	_, cmd := m.Update(sessionActivityMsg{path: pathB, id: sessB, created: true})
+
+	msgs := make(chan tea.Msg, 8)
+	var run func(tea.Cmd)
+	run = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		go func() {
+			msg := c()
+			if batch, ok := msg.(tea.BatchMsg); ok {
+				for _, sub := range batch {
+					run(sub)
+				}
+				return
+			}
+			msgs <- msg
+		}()
+	}
+	run(cmd)
+
+	sessC := "cccccccc-0000-0000-0000-000000000000"
+	time.Sleep(50 * time.Millisecond)
+	if err := os.WriteFile(filepath.Join(dir, sessC+".jsonl"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case msg := <-msgs:
+			if ev, ok := msg.(sessionActivityMsg); ok && ev.id == sessC && ev.created {
+				return
+			}
+			if w, ok := msg.(watcherStartedMsg); ok {
+				w.watcher.Close()
+			}
+		case <-deadline:
+			t.Fatal("no session event for a session created after the switch")
+		}
+	}
+}
+
+func TestMessageAge(t *testing.T) {
+	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		ago  time.Duration
+		want string
+	}{
+		{-5 * time.Second, "0s ago"}, // clock skew
+		{12 * time.Second, "12s ago"},
+		{59 * time.Second, "59s ago"},
+		{7 * time.Minute, "7m ago"},
+		{3 * time.Hour, "3h ago"},
+	}
+	for _, tt := range tests {
+		if got := messageAge(now.Add(-tt.ago), now); got != tt.want {
+			t.Errorf("messageAge(-%v) = %q, want %q", tt.ago, got, tt.want)
+		}
+	}
+}
+
+// A write to B reported just before a key switch to B lands after it; it
+// must not hint at the session already on screen or clobber the go-back.
+func TestStaleActivityForCurrentSessionIgnored(t *testing.T) {
+	m := followModel(t, false)
+	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB})
+	m = key(t, m, "n")
+	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB})
+	if m.hint != nil {
+		t.Errorf("hint names the current session: %+v", m.hint)
+	}
+	if m.prevSessionID != sessA {
+		t.Errorf("go-back target = %s, want %s", m.prevSessionID, sessA)
+	}
+}
+
+// Once a hint fades from the screen, n no longer acts on it.
+func TestExpiredHintIgnoredByN(t *testing.T) {
+	m := followModel(t, false)
+	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB})
+	m.now = func() time.Time { return time.Now().Add(idleAfter + time.Minute) }
+	if strings.Contains(m.View(), "n to switch") {
+		t.Fatal("expired hint still shown")
+	}
+	m = key(t, m, "n")
+	if m.sessionID != sessA {
+		t.Error("n switched to a hint no longer on screen")
+	}
+}
