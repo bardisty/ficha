@@ -23,17 +23,10 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Format and lint
-        run: make fmt lint
-
-      # -race needs cgo, so keep CGO_ENABLED=0 out of this step's environment.
-      - name: Test with race detector
-        run: go test -race ./...
-
-      # `make fmt` runs `gofmt -w`, so unformatted code would be silently
-      # rewritten rather than failing. Catch it by requiring a clean tree.
-      - name: Ensure gofmt left the tree clean
-        run: git diff --exit-code
+      # The same target as CI's check job, so the two gates can't drift apart.
+      # Its cross-compile repeats the release job's build, which is cheap.
+      - name: make ci
+        run: make ci
 
   release:
     needs: test

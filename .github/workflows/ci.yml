@@ -26,23 +26,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # The fmt + lint half of `make check`; lint includes govet. Tests run in the
-      # next step instead of through `make check` so they get the race detector
-      # without running the suite twice.
-      - name: Format and lint
-        run: make fmt lint
-
-      # -race needs cgo, so keep CGO_ENABLED=0 out of this step's environment.
-      - name: Test with race detector
-        run: go test -race ./...
-
-      # `make fmt` runs `gofmt -w`, so unformatted code would be silently
-      # rewritten rather than failing. Catch it by requiring a clean tree.
-      - name: Ensure gofmt left the tree clean
-        run: git diff --exit-code
-
-      - name: Cross-compile every release target
-        run: make build-all
+      # Format check, lint, race tests and the cross-compiles, through the
+      # same target contributors run. -race needs cgo, so keep CGO_ENABLED=0
+      # out of this step's environment; with CI set, make fails rather than
+      # dropping -race.
+      - name: make ci
+        run: make ci
 
       # govulncheck needs a newer Go than go.mod, and setup-go exports
       # GOTOOLCHAIN=local, so the install opts back into toolchain switching.
