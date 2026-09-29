@@ -10,24 +10,27 @@ import (
 // Breakdown column widths, in display columns. Every cell is ASCII or
 // single-width, so padding by byte or rune count is padding by column.
 const (
-	bdIndexWidth = 5
-	bdTimeWidth  = 8
-	bdModelWidth = 10
-	bdCostWidth  = 10 // fits "$9999.99  "; see render.CostCell
-	bdInWidth    = 6
-	bdOutWidth   = 5
-	bdCacheWidth = 6
-	bdGap        = 2
-	bdIndent     = 2
+	bdMinIndexWidth = 3
+	bdTimeWidth     = 8
+	bdModelWidth    = 10
+	bdCostWidth     = 10 // fits "$9999.99  "; see render.CostCell
+	bdInWidth       = 6
+	bdOutWidth      = 5
+	bdCacheWidth    = 6
+	bdGap           = 2
+	bdIndent        = 2
 )
 
 // breakdownLayout is the set of columns a breakdown frame draws. #, TIME,
 // MODEL and COST always show. AGENT shows when any row came from an agent,
-// sized to its widest cell. The token columns give way one by one, whole,
-// when the terminal is too narrow for all of them: a row cut at the right
-// edge would leave half a number that reads as a different one.
+// sized to its widest cell. When the terminal is too narrow for everything,
+// columns give way one by one, whole: a row cut at the right edge would leave
+// half a number that reads as a different one, and on a narrow enough
+// terminal would cut COST, the column the table is for.
 type breakdownLayout struct {
-	agentWidth int // 0 when no row came from an agent
+	indexWidth int
+	agentWidth int  // 0 when AGENT isn't drawn
+	runTags    bool // AGENT cells carry workflow run tags
 	in, out    bool
 	cacheWrite bool
 	cacheRead  bool
@@ -39,29 +42,41 @@ type breakdownCells struct {
 	in, out, cacheWrite, cacheRead  string
 }
 
-// newBreakdownLayout fits the columns to termWidth. IN goes first (a few
+// newBreakdownLayout fits the columns to termWidth. markerWidth is the
+// widest agent marker and cellWidth the widest marker plus run tag, both 0
+// when no row came from an agent. The token columns go first: IN (a few
 // tokens per message, rarely what a reader is after), then C_WR, C_RD and
-// OUT. termWidth <= 0 means unknown, and keeps every column.
-func newBreakdownLayout(agentWidth, termWidth int) breakdownLayout {
-	if agentWidth > 0 {
-		agentWidth = max(agentWidth, len("AGENT"))
+// OUT. Then the run tags, then AGENT itself. termWidth <= 0 means unknown,
+// and keeps every column.
+func newBreakdownLayout(indexWidth, markerWidth, cellWidth, termWidth int) breakdownLayout {
+	l := breakdownLayout{
+		indexWidth: max(indexWidth, bdMinIndexWidth),
+		in:         true, out: true, cacheWrite: true, cacheRead: true,
 	}
-	l := breakdownLayout{agentWidth: agentWidth, in: true, out: true, cacheWrite: true, cacheRead: true}
-	if termWidth <= 0 {
-		return l
+	if markerWidth > 0 {
+		l.agentWidth = max(cellWidth, len("AGENT"))
+		l.runTags = cellWidth > markerWidth
 	}
+	fits := func() bool { return termWidth <= 0 || l.width() <= termWidth }
 	for _, drop := range []*bool{&l.in, &l.cacheWrite, &l.cacheRead, &l.out} {
-		if l.width() <= termWidth {
-			break
+		if fits() {
+			return l
 		}
 		*drop = false
+	}
+	if !fits() && l.runTags {
+		l.runTags = false
+		l.agentWidth = max(markerWidth, len("AGENT"))
+	}
+	if !fits() {
+		l.agentWidth = 0
 	}
 	return l
 }
 
 // width is the display width of a row drawn with this layout, indent included.
 func (l breakdownLayout) width() int {
-	w := bdIndent + bdIndexWidth + bdGap + bdTimeWidth + bdGap + bdModelWidth + bdGap + bdCostWidth
+	w := bdIndent + l.indexWidth + bdGap + bdTimeWidth + bdGap + bdModelWidth + bdGap + bdCostWidth
 	if l.agentWidth > 0 {
 		w += bdGap + l.agentWidth
 	}
@@ -107,7 +122,7 @@ func (l breakdownLayout) join(c breakdownCells) string {
 // cell's four-decimal edge, like the numbers under it.
 func (l breakdownLayout) header() string {
 	return l.join(breakdownCells{
-		index:      fmt.Sprintf("%-*s", bdIndexWidth, "#"),
+		index:      fmt.Sprintf("%-*s", l.indexWidth, "#"),
 		time:       fmt.Sprintf("%-*s", bdTimeWidth, "TIME"),
 		agent:      fmt.Sprintf("%-*s", l.agentWidth, "AGENT"),
 		model:      fmt.Sprintf("%-*s", bdModelWidth, "MODEL"),

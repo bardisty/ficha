@@ -27,7 +27,7 @@ const idleAfter = 5 * time.Minute
 //
 // and turns to "○ FOLLOWING │ idle 7m" once no message has landed for
 // idleAfter. Without it, the header keeps the older
-// "Session: … │ ● LIVE │ Updated: …" form, which breakdown still uses.
+// "Session: … │ ● LIVE │ Updated: …" form.
 type liveHeaderParams struct {
 	sessionID     string
 	prevSessionID string

@@ -294,6 +294,8 @@ func goldenBreakdownView(t *testing.T, noColor bool) string {
 func goldenBreakdownViewSized(t *testing.T, noColor bool, width, height int) string {
 	t.Helper()
 	m := NewBreakdownModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", noColor, "", false)
+	// 5s after the last fixture message, so the header reads "last msg 5s ago"
+	m.now = func() time.Time { return goldenTime(11, 30, 0) }
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	m = updated.(BreakdownModel)
 	updated, _ = m.Update(breakdownMsgsMsg{

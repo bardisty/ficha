@@ -2,7 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,6 +51,22 @@ type BreakdownModel struct {
 	viewport   viewport.Model
 	autoScroll bool
 	ready      bool // viewport initialized
+	// pausedAt is the message count when auto-scroll last turned off; rows
+	// past it arrived while the reader was scrolled up.
+	pausedAt int
+	// pausePending: auto-scroll went off before any load landed, so the next
+	// load's rows are the baseline, not new arrivals.
+	pausePending bool
+	// lineRows maps each viewport content line to the display Index of the
+	// message on it, or 0 for a day divider.
+	lineRows []int
+
+	// Header state: project name, and the newest message timestamp (else the
+	// session file's mtime, with activityFromFile set) that the header ages.
+	project          string
+	lastActivity     time.Time
+	activityFromFile bool
+	now              func() time.Time // tests pin the clock; nil means time.Now
 
 	// Change tracking for highlight animation. Keyed by message identity, not
 	// position: on every reload the merged list is timestamp-sorted and reindexed
@@ -96,6 +114,7 @@ type (
 		hasUnknown     bool
 		hasAgents      bool
 		workflows      []models.WorkflowMeta
+		modTime        time.Time // session file mtime at load; zero if unknown
 		// sessionPath identifies the session this load was started for. In
 		// follow mode a slow in-flight load for the previous session can land
 		// after a switch; the handler drops it when it doesn't match the
@@ -131,6 +150,7 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 		followMode:  followMode,
 		agentCache:  analyzer.NewAgentParseCache(),
 		subagentSig: subagentTreeSignature(filepath.Dir(sessionPath), sessionID),
+		project:     projectName(projectDir),
 	}
 }
 
@@ -164,59 +184,53 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "up", "k":
-			m.autoScroll = false
+			m.setFollow(false)
 			m.viewport.ScrollUp(1)
 
 		case "down", "j":
 			m.viewport.ScrollDown(1)
 			// Re-enable auto-scroll if at bottom
 			if m.viewport.AtBottom() {
-				m.autoScroll = true
+				m.setFollow(true)
 			}
 
 		case "pgup":
-			m.autoScroll = false
+			m.setFollow(false)
 			m.viewport.HalfPageUp()
 
 		case "pgdown":
 			m.viewport.HalfPageDown()
 			if m.viewport.AtBottom() {
-				m.autoScroll = true
+				m.setFollow(true)
 			}
 
 		case "g", "home":
-			m.autoScroll = false
+			m.setFollow(false)
 			m.viewport.GotoTop()
 
 		case "G", "end":
 			m.viewport.GotoBottom()
-			m.autoScroll = true
+			m.setFollow(true)
 		}
 
 	case tea.WindowSizeMsg:
-		// Header: panel(3 lines) + blank/notify(1) + insights(1) + blank(1) + table header(1) + separator(1)
-		// Always use 8 to avoid layout shift when insights load after initial render
-		headerHeight := 8
-		footerHeight := 4 // Double-line separator(1) + stats(1) + single-line(1) + help(1)
-
+		m.width = msg.Width
+		m.height = msg.Height
+		// The chrome's row count depends on the size (see headerRows), so the
+		// viewport gets exactly the rows View leaves it.
+		vpHeight := viewportHeight(msg.Height, m.headerRows(), breakdownFooterRows)
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width, viewportHeight(msg.Height, headerHeight, footerHeight))
-			m.viewport.YPosition = headerHeight
+			m.viewport = viewport.New(msg.Width, vpHeight)
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width
-			m.viewport.Height = viewportHeight(msg.Height, headerHeight, footerHeight)
+			m.viewport.Height = vpHeight
 		}
-		m.width = msg.Width
-		m.height = msg.Height
-
-		// Re-render content with new dimensions
-		if len(m.messages) > 0 {
-			m.viewport.SetContent(clipToWidth(m.renderTableContent(), m.width))
-			if m.autoScroll {
-				m.viewport.GotoBottom()
-			}
-		}
+		m.viewport.YPosition = m.headerRows()
+		m.refreshViewport()
+		// A taller viewport can leave the old offset past the end of the
+		// content; re-setting it clamps it.
+		m.viewport.SetYOffset(m.viewport.YOffset)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -234,6 +248,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Track new messages for highlighting
 		m.detectNewMessages(msg.messages)
+		if m.pausePending {
+			m.pausedAt = len(msg.messages)
+			m.pausePending = false
+		}
 
 		m.messages = msg.messages
 		m.totalCost = msg.totalCost
@@ -246,16 +264,11 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.hasUnknown = msg.hasUnknown
 		m.hasAgents = msg.hasAgents
 		m.runTags = workflowRunTags(msg.workflows)
+		m.lastActivity, m.activityFromFile = breakdownLastActivity(msg.messages, msg.modTime)
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.err = nil
-
-		if m.ready {
-			m.viewport.SetContent(clipToWidth(m.renderTableContent(), m.width))
-			if m.autoScroll {
-				m.viewport.GotoBottom()
-			}
-		}
+		m.refreshViewport()
 		// Re-arm the file watcher only when no waiter is in flight: this reload
 		// may have been poll-triggered, in which case the file-change waiter is
 		// still blocked on the watcher
@@ -270,6 +283,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = msg.err
 		m.loading = false
+		m.refreshViewport()
 		// Re-arm (if needed) even after an error to continue monitoring
 		// Call before return: the arm must mutate the m the caller receives
 		armCmd := m.armFileWaiter()
@@ -349,6 +363,18 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.loading = true
 		m.newMsgKeys = make(map[string]time.Time)
+		m.lastActivity = time.Time{}
+		m.activityFromFile = false
+		// The new session opens following its newest row, whatever the
+		// reader had scrolled to in the old one.
+		m.autoScroll = true
+		m.pausedAt = 0
+		m.pausePending = false
+		m.lineRows = nil
+		if m.ready {
+			m.viewport.SetContent("")
+			m.viewport.GotoTop()
+		}
 		// Drop the previous session's cached agent parses
 		m.agentCache = analyzer.NewAgentParseCache()
 		// Fingerprint the new session's subagent tree; the pending reload
@@ -385,8 +411,8 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// re-render to un-highlight its rows.
 		hadHighlights := len(m.newMsgKeys) > 0
 		m.cleanupExpiredHighlights()
-		if hadHighlights && m.ready && len(m.messages) > 0 {
-			m.viewport.SetContent(clipToWidth(m.renderTableContent(), m.width))
+		if hadHighlights && len(m.messages) > 0 {
+			m.refreshViewport()
 		}
 		return m, tickCmd()
 
@@ -468,131 +494,147 @@ func (m *BreakdownModel) isNewMessage(msg models.BreakdownMessage) bool {
 	return time.Since(addedAt) < highlightDuration
 }
 
-// View renders the breakdown TUI
+// View renders the breakdown TUI. Its row count must match headerRows and
+// breakdownFooterRows exactly, or the frame outgrows the terminal.
 func (m BreakdownModel) View() string {
-	var sb strings.Builder
-	panelWidth := panelWidthFor(m.width)
-
-	// Header panel
-	sb.WriteString(m.renderHeaderPanel(panelWidth))
-
-	// Show switch notification after session switch
-	showSwitchNotify := !m.switchNotifyAt.IsZero() && time.Since(m.switchNotifyAt) < switchNotifyDuration
-	if showSwitchNotify {
-		sb.WriteString("\n")
-		if m.noColor {
-			sb.WriteString("  [Switched to new session]")
-		} else {
-			sb.WriteString("  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session"))
-		}
+	if m.tooSmall() {
+		return clipToWidth("  terminal too small", m.width)
 	}
+	panelWidth := m.panelWidth()
+	compact := m.compact()
 
-	sb.WriteString("\n")
-
-	// Compact insights line
-	if m.insights != nil && len(m.messages) > 0 {
-		sb.WriteString(m.renderCompactInsights())
-		sb.WriteString("\n")
-	}
-	sb.WriteString("\n")
-
-	// Table header
-	sb.WriteString(m.renderTableHeader())
-	sb.WriteString("\n")
-
-	// Separator
-	sb.WriteString(m.renderTableSeparator())
-	sb.WriteString("\n")
-
-	// Viewport with scrollable content
-	if m.ready {
-		sb.WriteString(m.viewport.View())
-	}
-	sb.WriteString("\n")
-
-	// Double-line footer separator
-	footerSep := strings.Repeat(styles.BoxHorizontal, panelWidth)
-	if !m.noColor {
-		footerSep = panelBorderStyle.Render(footerSep)
-	}
-	sb.WriteString("  " + footerSep + "\n")
-
-	// Footer with colored cost
-	scrollMode := "AUTO"
-	if !m.autoScroll {
-		scrollMode = "MANUAL"
-	}
-	if !m.noColor {
-		msgPart := fmt.Sprintf("Messages: %d", len(m.messages))
-		costStyled := lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(render.Cost(m.totalCost))
-		scrollPart := fmt.Sprintf("Scroll: %s", scrollMode)
-
-		// Use lighter gray (250) for text
-		lightGray := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
-		sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-		sep := " " + styles.BoxVerticalSep + " "
-
-		sb.WriteString("  ")
-		sb.WriteString(lightGray.Render(msgPart))
-		sb.WriteString(sepStyle.Render(sep))
-		sb.WriteString(lightGray.Render("Total: "))
-		sb.WriteString(costStyled)
-		sb.WriteString(sepStyle.Render(sep))
-		sb.WriteString(lightGray.Render(scrollPart))
-		// Surface parse warnings so an incomplete breakdown doesn't look complete
-		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts); note != "" {
-			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
-			sb.WriteString(sepStyle.Render(sep))
-			sb.WriteString(warnStyle.Render(note))
-		}
-		// Explain the MODEL-column asterisk: those rows are fallback-priced
-		if m.hasUnknown {
-			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
-			sb.WriteString(sepStyle.Render(sep))
-			sb.WriteString(warnStyle.Render(unknownModelFootnote()))
-		}
+	var lines []string
+	if compact {
+		lines = append(lines, "  "+fitStatusHeader(m.headerParams(panelWidth), panelWidth))
 	} else {
-		sep := " " + styles.BoxVerticalSep + " "
-		sb.WriteString(fmt.Sprintf("  Messages: %d%sTotal: %s%sScroll: %s",
-			len(m.messages), sep, render.Cost(m.totalCost), sep, scrollMode))
+		lines = append(lines, strings.Split(m.renderHeaderPanel(panelWidth), "\n")...)
+	}
+	// The insights row is reserved even before insights load, and the notify
+	// row even when there's nothing to say, so nothing below them moves.
+	insights := ""
+	if m.insights != nil && len(m.messages) > 0 {
+		insights = m.renderCompactInsights()
+	}
+	notify := m.renderNotifyRow()
+	switch {
+	case !compact:
+		lines = append(lines, insights, notify)
+	case notify != "":
+		// The compact frame has no notify row; an error or switch notice
+		// outranks the insights for the moment it shows.
+		lines = append(lines, notify)
+	default:
+		lines = append(lines, insights)
+	}
+	lines = append(lines, m.renderTableHeader())
+	if !compact {
+		lines = append(lines, m.renderTableSeparator())
+	}
+	if m.ready {
+		lines = append(lines, m.viewport.View())
+	} else {
+		lines = append(lines, "")
+	}
+	lines = append(lines, m.renderFooterRule(panelWidth), m.renderStatsLine(), m.renderHelpLine())
+
+	return clipToWidth(strings.Join(lines, "\n"), m.width)
+}
+
+// renderNotifyRow is a load error in words, or the switch notice for a few
+// seconds after following a new session, and blank otherwise.
+func (m BreakdownModel) renderNotifyRow() string {
+	if m.err != nil {
+		text := styles.Warning + " " + describeErr(m.err)
+		if len(m.messages) > 0 {
+			text += ", showing last data"
+		}
+		if m.noColor {
+			return "  " + text
+		}
+		return "  " + lipgloss.NewStyle().Foreground(styles.ErrorColor).Render(text)
+	}
+	if m.switchNotifyAt.IsZero() || time.Since(m.switchNotifyAt) >= switchNotifyDuration {
+		return ""
+	}
+	if m.noColor {
+		return "  [Switched to new session]"
+	}
+	return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session")
+}
+
+// renderStatsLine is the footer's totals, plus anything the totals can't
+// account for.
+func (m BreakdownModel) renderStatsLine() string {
+	sep := " " + styles.BoxVerticalSep + " "
+	if m.noColor {
+		line := fmt.Sprintf("  Messages: %d%sTotal: %s", len(m.messages), sep, render.Cost(m.totalCost))
 		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts); note != "" {
-			sb.WriteString(sep + note)
+			line += sep + note
 		}
 		if m.hasUnknown {
-			sb.WriteString(sep + unknownModelFootnote())
+			line += sep + unknownModelFootnote()
 		}
+		return line
 	}
-	sb.WriteString("\n")
 
-	// Single-line separator before help
-	helpSep := strings.Repeat(styles.LineHorizontal, panelWidth)
-	if !m.noColor {
-		helpSep = dimStyle.Render(helpSep)
+	lightGray := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	sepStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(sep)
+	warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
+
+	var sb strings.Builder
+	sb.WriteString("  ")
+	sb.WriteString(lightGray.Render(fmt.Sprintf("Messages: %d", len(m.messages))))
+	sb.WriteString(sepStyled)
+	sb.WriteString(lightGray.Render("Total: "))
+	sb.WriteString(lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(render.Cost(m.totalCost)))
+	// Surface parse warnings so an incomplete breakdown doesn't look complete
+	if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts); note != "" {
+		sb.WriteString(sepStyled)
+		sb.WriteString(warnStyle.Render(note))
 	}
-	sb.WriteString("  " + helpSep + "\n")
+	// Explain the MODEL-column asterisk: those rows are fallback-priced
+	if m.hasUnknown {
+		sb.WriteString(sepStyled)
+		sb.WriteString(warnStyle.Render(unknownModelFootnote()))
+	}
+	return sb.String()
+}
 
-	// Help - use lighter gray
+// renderHelpLine is the key-hint row.
+func (m BreakdownModel) renderHelpLine() string {
 	helpText := helpLine("q: quit", "g/G: top/bottom", styles.ScrollKeys+": scroll")
 	if !m.noColor {
 		helpText = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(helpText)
 	}
-	sb.WriteString("  " + helpText)
-
-	return clipToWidth(sb.String(), m.width)
+	return "  " + helpText
 }
 
-// renderHeaderPanel renders the mainframe-style header panel with session info
+// renderHeaderPanel renders the boxed live header, in the same form as watch's.
 func (m BreakdownModel) renderHeaderPanel(width int) string {
-	return renderLiveHeaderPanel(liveHeaderParams{
-		sessionID:     m.sessionID,
-		prevSessionID: m.prevSessionID,
-		loading:       m.loading,
-		err:           m.err,
-		lastUpdated:   m.lastUpdated,
-		spinnerView:   m.spinner.View(),
-		noColor:       m.noColor,
-		width:         width,
-	})
+	return renderLiveHeaderPanel(m.headerParams(width))
+}
+
+// headerParams fills the shared live header the way watch does, so the two
+// TUIs' headers read the same.
+func (m BreakdownModel) headerParams(width int) liveHeaderParams {
+	mode := "PINNED"
+	if m.followMode {
+		mode = "FOLLOWING"
+	}
+	return liveHeaderParams{
+		sessionID:    m.sessionID,
+		loading:      m.loading,
+		err:          m.err,
+		lastUpdated:  m.lastUpdated,
+		spinnerView:  m.spinner.View(),
+		noColor:      m.noColor,
+		width:        width,
+		project:      m.project,
+		mode:         mode,
+		lastActivity: m.lastActivity,
+		noMessages:   m.activityFromFile,
+		now:          m.clock(),
+	}
 }
 
 // renderCompactInsights renders a single line of insights
@@ -611,6 +653,11 @@ func (m BreakdownModel) renderCompactInsights() string {
 			peakStr += " " + marker
 		}
 		peakStr += fmt.Sprintf(" (%.1fx avg)", m.insights.CostMultiplier())
+		// Too narrow for the whole of it: the row number and cost are what
+		// find the row, so they are what stays.
+		if m.width > 0 && lipgloss.Width(peakStr) > m.width-2 {
+			peakStr = fmt.Sprintf("Peak: #%d %s", peak.Index, render.Cost(peak.Cost))
+		}
 		if !m.noColor {
 			parts = append(parts, lipgloss.NewStyle().Foreground(styles.WarningColor).Render(peakStr))
 		} else {
@@ -707,17 +754,19 @@ func (m BreakdownModel) renderTableHeader() string {
 // renderTableSeparator renders the table separator rule, dimmed unless color
 // is off.
 func (m BreakdownModel) renderTableSeparator() string {
-	sep := "  " + strings.Repeat(styles.LineHorizontal, panelWidthFor(m.width))
+	sep := "  " + strings.Repeat(styles.LineHorizontal, m.panelWidth())
 	if !m.noColor {
 		return tableBorderStyle.Render(sep)
 	}
 	return sep
 }
 
-// renderTableContent renders all message rows for the viewport
-func (m BreakdownModel) renderTableContent() string {
+// renderTableContent renders all message rows for the viewport, and for each
+// line the display Index of the message on it (0 for a day divider).
+func (m BreakdownModel) renderTableContent() (string, []int) {
 	var sb strings.Builder
 	layout := m.layout()
+	lineRows := make([]int, 0, len(m.messages))
 
 	for i, msg := range m.messages {
 		// Rows carry only a time, so mark where the local day changes. A
@@ -726,14 +775,16 @@ func (m BreakdownModel) renderTableContent() string {
 			!render.SameLocalDay(m.messages[i-1].Timestamp, msg.Timestamp) {
 			sb.WriteString(m.renderDayMarker(msg.Timestamp))
 			sb.WriteString("\n")
+			lineRows = append(lineRows, 0)
 		}
 		sb.WriteString(m.renderRow(msg, m.isNewMessage(msg), layout))
+		lineRows = append(lineRows, msg.Index)
 		if i < len(m.messages)-1 {
 			sb.WriteString("\n")
 		}
 	}
 
-	return sb.String()
+	return sb.String(), lineRows
 }
 
 // renderDayMarker renders the divider row placed above the first message of a
@@ -767,11 +818,11 @@ func (m BreakdownModel) runTag(msg models.BreakdownMessage) string {
 	return workflowRunTag("")
 }
 
-// agentCell is the full AGENT cell text: the marker, then the run tag for a
-// workflow agent.
-func (m BreakdownModel) agentCell(msg models.BreakdownMessage) string {
+// agentCell is the AGENT cell text: the marker, then the run tag for a
+// workflow agent when withTag is set.
+func (m BreakdownModel) agentCell(msg models.BreakdownMessage, withTag bool) string {
 	marker := agentMarker(msg.AgentID)
-	if tag := m.runTag(msg); tag != "" && marker != "" {
+	if tag := m.runTag(msg); withTag && tag != "" && marker != "" {
 		return marker + " " + tag
 	}
 	return marker
@@ -779,11 +830,13 @@ func (m BreakdownModel) agentCell(msg models.BreakdownMessage) string {
 
 // layout picks the columns this frame draws. See breakdownLayout.
 func (m BreakdownModel) layout() breakdownLayout {
-	agentWidth := 0
+	markerWidth, cellWidth, lastIndex := 0, 0, 0
 	for _, msg := range m.messages {
-		agentWidth = max(agentWidth, len(m.agentCell(msg)))
+		markerWidth = max(markerWidth, len(agentMarker(msg.AgentID)))
+		cellWidth = max(cellWidth, len(m.agentCell(msg, true)))
+		lastIndex = max(lastIndex, msg.Index)
 	}
-	return newBreakdownLayout(agentWidth, m.width)
+	return newBreakdownLayout(len(strconv.Itoa(lastIndex)), markerWidth, cellWidth, m.width)
 }
 
 // renderRow renders a single message row
@@ -798,9 +851,9 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, layou
 	marker := agentMarker(msg.AgentID)
 
 	c := breakdownCells{
-		index: fmt.Sprintf("%-*d", bdIndexWidth, msg.Index),
+		index: fmt.Sprintf("%-*d", layout.indexWidth, msg.Index),
 		time:  fmt.Sprintf("%-*s", bdTimeWidth, render.Clock(msg.Timestamp)),
-		agent: fmt.Sprintf("%-*s", layout.agentWidth, m.agentCell(msg)),
+		agent: fmt.Sprintf("%-*s", layout.agentWidth, m.agentCell(msg, layout.runTags)),
 		model: fmt.Sprintf("%-*s", bdModelWidth, modelLabel),
 		cost:  render.CostCell(msg.Cost.TotalCost, bdCostWidth),
 		in:    fmt.Sprintf("%*s", bdInWidth, render.Number(msg.Usage.InputTokens)),
@@ -857,6 +910,10 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 		return breakdownErrorMsg{err: err, sessionPath: m.sessionPath}
 	}
 	messages := result.Messages
+	var modTime time.Time
+	if info, err := os.Stat(m.sessionPath); err == nil {
+		modTime = info.ModTime()
+	}
 
 	// Calculate total cost and min/max cost for the gradient. Insights are
 	// order-sensitive and come from the analyzer, computed over the file-order
@@ -902,6 +959,7 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 		hasUnknown:     hasUnknown,
 		hasAgents:      hasAgents,
 		workflows:      result.Workflows,
+		modTime:        modTime,
 		sessionPath:    m.sessionPath,
 	}
 }
