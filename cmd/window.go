@@ -64,7 +64,7 @@ func parseWindowBound(s string, now time.Time, end bool) (time.Time, error) {
 	if t, err := time.ParseInLocation("2006-01-02", s, time.Local); err == nil {
 		return day(t), nil
 	}
-	for _, layout := range []string{"2006-01-02T15:04", "2006-01-02 15:04", time.RFC3339} {
+	for _, layout := range []string{"2006-01-02T15:04", "2006-01-02 15:04", "2006-01-02T15:04Z07:00", time.RFC3339} {
 		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
 			return t, nil
 		}
@@ -75,13 +75,24 @@ func parseWindowBound(s string, now time.Time, end bool) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("want %s", windowHelp)
 }
 
+// maxAge bounds an age well past any transcript, and short of where
+// time.Duration overflows.
+const maxAge = 100 * 365 * 24 * time.Hour
+
 // parseAge reads "7d" and "2w" as well as Go durations ("12h", "30m").
 func parseAge(s string) (time.Duration, bool) {
+	d, ok := parseAgeUnbounded(s)
+	return d, ok && d <= maxAge
+}
+
+func parseAgeUnbounded(s string) (time.Duration, bool) {
+	// Checked against maxAge in days first: n days as a Duration can
+	// overflow before the comparison.
 	if n, err := strconv.Atoi(strings.TrimSuffix(s, "d")); err == nil && strings.HasSuffix(s, "d") && n >= 0 {
-		return time.Duration(n) * 24 * time.Hour, true
+		return time.Duration(n) * 24 * time.Hour, n <= int(maxAge/(24*time.Hour))
 	}
 	if n, err := strconv.Atoi(strings.TrimSuffix(s, "w")); err == nil && strings.HasSuffix(s, "w") && n >= 0 {
-		return time.Duration(n) * 7 * 24 * time.Hour, true
+		return time.Duration(n) * 7 * 24 * time.Hour, n <= int(maxAge/(7*24*time.Hour))
 	}
 	if d, err := time.ParseDuration(s); err == nil && d >= 0 {
 		return d, true

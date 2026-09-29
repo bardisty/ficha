@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +33,7 @@ func TestParseWindowBound(t *testing.T) {
 		{"30m", false, now.Add(-30 * time.Minute)},
 		{"2026-09-01T14:00", false, time.Date(2026, 9, 1, 14, 0, 0, 0, time.UTC)},
 		{"2026-09-01T14:00:00+02:00", false, time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)},
+		{"2026-09-01T14:00Z", false, time.Date(2026, 9, 1, 14, 0, 0, 0, time.UTC)},
 	}
 	for _, tt := range tests {
 		got, err := parseWindowBound(tt.in, now, tt.end)
@@ -42,7 +45,7 @@ func TestParseWindowBound(t *testing.T) {
 			t.Errorf("%q (end=%v) = %v, want %v", tt.in, tt.end, got, tt.want)
 		}
 	}
-	for _, bad := range []string{"", "last week", "-7d", "7x", "2026-13-01"} {
+	for _, bad := range []string{"", "last week", "-7d", "7x", "2026-13-01", "200000d", "99999999w", "9999999h"} {
 		if _, err := parseWindowBound(bad, now, false); err == nil {
 			t.Errorf("%q should be rejected", bad)
 		}
@@ -147,4 +150,62 @@ type summaryWindowJSON struct {
 		Since string `json:"since"`
 		Until string `json:"until"`
 	} `json:"window"`
+}
+
+// A session with nothing in the window leaves the report, even when it has an
+// unreadable line; the warning about that line stays. An empty window gives
+// global's json an empty projects list, not null.
+func TestE2EWindowDropsOldSessionsWithSkips(t *testing.T) {
+	root := setupE2EFixture(t)
+	orig := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = orig })
+
+	// alpha (Feb 1) gains an unreadable line.
+	path := filepath.Join(root, "projects", e2eProjDir, e2eAlphaID+".jsonl")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("{\"broken\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	out, stderr, err := executeCLISplit(t, "summary", projFlag, "--since", "2026-02-02", "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s summaryWindowJSON
+	mustJSON(t, out, &s)
+	if s.SessionCount != 1 {
+		t.Errorf("alpha has nothing after Feb 2 and should drop out: session_count %d", s.SessionCount)
+	}
+	if !strings.Contains(stderr, "unparseable line") {
+		t.Errorf("the unreadable line should still be reported:\n%s", stderr)
+	}
+
+	// global: the project with only alpha and beta, from Feb 3, is gone, and
+	// its old dates don't stretch the span.
+	out, _, err = executeCLISplit(t, "global", "--since", "2026-02-03", "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var g struct {
+		SessionCount int       `json:"session_count"`
+		FirstActive  time.Time `json:"first_active"`
+		Projects     []any     `json:"projects"`
+	}
+	mustJSON(t, out, &g)
+	if g.SessionCount != 1 || len(g.Projects) != 1 || g.FirstActive.Before(time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("global --since 2026-02-03: %+v", g)
+	}
+
+	out, _, err = executeCLISplit(t, "global", "--since", "2027-01-01", "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"projects": []`) {
+		t.Errorf("an empty window should give an empty projects list:\n%s", out)
+	}
 }

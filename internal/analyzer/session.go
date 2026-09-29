@@ -133,6 +133,8 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 				continue // Skip agents that can't be parsed
 			}
 			if !window.IsZero() && agentAnalysis.MessageCount == 0 {
+				// Its unreadable lines could have held messages in the window.
+				analysis.SkippedLines += agentAnalysis.SkippedLines
 				continue
 			}
 			agentAnalysis.WorkflowID = parser.ExtractWorkflowRunID(agentPath)
@@ -439,9 +441,9 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 // AnalyzeMultipleSessionsInWindow is AnalyzeMultipleSessions counting only
 // the messages inside window (see analyzeParsedSession). A session with
 // nothing inside it drops out of results and the counts, as if it weren't
-// there, unless it has lines or agents that couldn't be read, whose
-// messages might have been. The aggregate carries the window. Every session
-// falling outside it isn't an error: the aggregate is then empty.
+// there, though its unreadable lines and agents stay in the skip counters.
+// The aggregate carries the window. Every session falling outside it isn't
+// an error: the aggregate is then empty.
 func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window models.TimeWindow) (*models.SessionAnalysis, []models.SessionResult, error) {
 	if len(entries) == 0 {
 		return nil, nil, fmt.Errorf("no sessions to analyze")
@@ -522,7 +524,12 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 		}
 		sessionAnalysis := analyzeParsedSession(parsed[idx], entry.FullPath, entry.SessionID, NoMessages, nil, seen, window)
 		parsedSessions++
-		if !window.IsZero() && sessionAnalysis.MessageCount == 0 && sessionAnalysis.SkippedLines == 0 && sessionAnalysis.SkippedAgents == 0 {
+		if !window.IsZero() && sessionAnalysis.MessageCount == 0 {
+			// Nothing inside the window, so it isn't in the report. What
+			// couldn't be read is still counted: its timestamps are unknown,
+			// so the warning holds for any window.
+			aggregate.SkippedAgents += sessionAnalysis.SkippedAgents
+			aggregate.SkippedLines += sessionAnalysis.SkippedLines
 			results[idx] = models.SessionResult{Entry: entry, Analysis: nil}
 			outside[idx] = true
 			continue

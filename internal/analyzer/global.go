@@ -60,7 +60,10 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 	close(jobs)
 	wg.Wait()
 
+	// Projects starts empty, not nil, so json has [] to iterate even when a
+	// window leaves nothing in it.
 	global := &models.GlobalAnalysis{
+		Projects:    []models.ProjectAnalysis{},
 		CostByModel: make(map[string]models.CostBreakdown),
 	}
 	if !window.IsZero() {
@@ -188,6 +191,11 @@ func analyzeProject(project models.ProjectInfo, window models.TimeWindow) (*mode
 	}
 
 	// No session carried a usable message timestamp — fall back to file mtimes.
+	// A window's messages all have timestamps, so with one there's nothing to
+	// fall back from, and mtimes outside it would misstate the span.
+	if !window.IsZero() {
+		return analysis, nil
+	}
 	for _, session := range sessions {
 		if session.Modified.After(analysis.LastActive) {
 			analysis.LastActive = session.Modified
