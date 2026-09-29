@@ -170,6 +170,8 @@ On the `summary` aggregate that split spans every session, alongside `agent_coun
 
 On `summary` and `global`, `--since` and `--until` limit every format to the messages timestamped inside the window, parent and agents alike, so a session that crosses a bound counts only its part inside. Sessions, agents and projects with nothing inside drop out of the records and the counts. A message with no timestamp can't be placed, so a window leaves it out. json names the window as `window: {since, until}` (timestamps as below, either one absent when open) on the `summary` aggregate and the `global` object; csv doesn't carry it.
 
+With `--since`, ficha doesn't read a session whose transcript and agent files were all last written more than a day before that bound, because none of their messages can fall inside it. The skip counters then leave out any malformed lines in those files. A file ficha can't open, or a directory it can't list, still counts.
+
 ## Timestamps
 
 Every timestamp in json and csv is UTC to the second, with a `Z`: `2026-09-29T17:18:43Z`. That covers message timestamps, `start_time` and `end_time`, `first_active` and `last_active`, list's `modified`, and `window.since` and `until`, whatever your local time zone. jq's `fromdate` reads the format. Relative `--since` bounds such as `2h` lose their fraction of a second.

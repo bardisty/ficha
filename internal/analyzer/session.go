@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -462,6 +463,10 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 // there, though its unreadable lines and agents stay in the skip counters.
 // The aggregate carries the window. Every session falling outside it isn't
 // an error: the aggregate is then empty.
+//
+// With a Since bound, a session whose files were all last written a day or
+// more before it isn't parsed at all (see writtenBefore), so the skip
+// counters leave out that session's unreadable lines.
 func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window models.TimeWindow) (*models.SessionAnalysis, []models.SessionResult, error) {
 	if len(entries) == 0 {
 		return nil, nil, fmt.Errorf("no sessions to analyze")
@@ -484,8 +489,13 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 	skippedSessions := 0
 	successfulSessions := 0
 	parsedSessions := 0
+	oldSessions := 0
 	outside := make([]bool, len(entries))
 	seen := make(map[parser.DedupKey]struct{})
+	var cutoff time.Time
+	if !window.Since.IsZero() {
+		cutoff = window.Since.Add(-windowSkipSlack)
+	}
 
 	// Parse every parent up front: processing order derives from each
 	// session's earliest message timestamp, which only the parse can provide.
@@ -496,6 +506,14 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 	sortKeys := make([]time.Time, len(entries))
 	for i, entry := range entries {
 		sortKeys[i] = entry.Modified
+		if !cutoff.IsZero() && writtenBefore(entry, cutoff) {
+			// It can hold no message inside the window. Skipping it leaves
+			// its keys out of seen, which is safe: a fork's copies of its
+			// lines keep their timestamps, so the window drops them too.
+			outside[i] = true
+			oldSessions++
+			continue
+		}
 		result, err := parser.ParseJSONLFileWithResult(entry.FullPath)
 		if err != nil {
 			continue
@@ -527,6 +545,9 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 
 	for _, idx := range order {
 		entry := entries[idx]
+		if outside[idx] {
+			continue
+		}
 		if parsed[idx] == nil {
 			// The parent transcript could not be read, so its agent
 			// sub-sessions — readable or not — were never analyzed and their
@@ -605,7 +626,7 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 	aggregate.SessionCount = successfulSessions
 
 	// Return error if all sessions failed to parse
-	if parsedSessions == 0 {
+	if parsedSessions == 0 && oldSessions == 0 {
 		return nil, nil, fmt.Errorf("all %d sessions failed to parse", len(entries))
 	}
 
@@ -621,6 +642,44 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 	}
 
 	return aggregate, results, nil
+}
+
+// windowSkipSlack allows for a clock that ran ahead of the file system's
+// when Claude Code wrote a transcript's timestamps.
+const windowSkipSlack = 24 * time.Hour
+
+// writtenBefore reports whether entry's transcript and all of its agent
+// files were last written before t. A line can't carry a timestamp later
+// than the write that added it, so such a session has no message at or after
+// t. A file it can't open or an agent directory it can't list makes it
+// false: the parse has to meet those to count them as skipped.
+func writtenBefore(entry models.SessionEntry, t time.Time) bool {
+	if !modifiedBefore(entry.FullPath, t) {
+		return false
+	}
+	agentPaths, unreadableDirs := parser.DiscoverAgentSessions(filepath.Dir(entry.FullPath), entry.SessionID)
+	if unreadableDirs > 0 {
+		return false
+	}
+	for _, path := range agentPaths {
+		if !modifiedBefore(path, t) {
+			return false
+		}
+	}
+	return true
+}
+
+// modifiedBefore reports whether path is a regular file that opens and was
+// last written before t. Anything else, such as a symlink to a directory,
+// fails the parse, and has to reach it to be counted.
+func modifiedBefore(path string, t time.Time) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	return err == nil && info.Mode().IsRegular() && info.ModTime().Before(t)
 }
 
 // SkipDetails lists the sessions in results that contributed to the skip
