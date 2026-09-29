@@ -57,7 +57,7 @@ test:
 
 # Regenerate golden files after an intentional rendering change, then review the diff
 update-golden:
-	$(GOTEST) ./internal/formatter ./internal/tui -run 'TestGolden' -update
+	$(GOTEST) ./internal/formatter ./internal/tui ./cmd -run 'TestGolden' -update
 
 # Run tests with coverage
 test-coverage:

@@ -1,0 +1,14 @@
+[] object
+[].agent_count number
+[].agent_message_count number
+[].agent_paths array
+[].agent_paths[] string
+[].created string
+[].full_path string
+[].message_count number
+[].modified string
+[].project_path string
+[].session_id string
+[].skipped_agents number
+[].skipped_lines number
+[].skipped_sessions number
