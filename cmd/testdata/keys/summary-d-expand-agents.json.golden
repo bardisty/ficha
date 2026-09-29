@@ -63,7 +63,7 @@ sessions[].estimated_cost_messages number
 sessions[].has_agents boolean
 sessions[].insights object
 sessions[].insights.average_cost number
-sessions[].insights.cost_trend number
+sessions[].insights.cost_trend string
 sessions[].insights.first_message object
 sessions[].insights.first_message.cost number
 sessions[].insights.first_message.index number

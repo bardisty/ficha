@@ -61,7 +61,7 @@ estimated_cost_messages number
 has_agents boolean
 insights object
 insights.average_cost number
-insights.cost_trend number
+insights.cost_trend string
 insights.first_message object
 insights.first_message.cost number
 insights.first_message.index number

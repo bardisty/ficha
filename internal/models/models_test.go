@@ -263,3 +263,59 @@ func TestContextWindowSize(t *testing.T) {
 		})
 	}
 }
+
+func TestTrendDirectionJSONUsesNames(t *testing.T) {
+	for _, d := range []TrendDirection{TrendStable, TrendIncreasing, TrendDecreasing} {
+		b, err := json.Marshal(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := `"` + d.String() + `"`; string(b) != want {
+			t.Errorf("%v marshals to %s, want %s", d, b, want)
+		}
+		var back TrendDirection
+		if err := json.Unmarshal(b, &back); err != nil || back != d {
+			t.Errorf("%s unmarshals to %v (err %v), want %v", b, back, err, d)
+		}
+	}
+	var d TrendDirection
+	if err := json.Unmarshal([]byte(`"sideways"`), &d); err == nil {
+		t.Error("an unknown trend name should fail to unmarshal")
+	}
+}
+
+// Below MinMessagesForTrend no trend is computed, and a zero-valued
+// cost_trend would read as "stable". A computed stable trend, which is also
+// the zero value, must still be written.
+func TestInsightsJSONOmitsUncomputedTrend(t *testing.T) {
+	keys := func(i MessageInsights) map[string]any {
+		t.Helper()
+		b, err := json.Marshal(&i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+
+	short := keys(MessageInsights{MessageCount: MinMessagesForTrend - 1, AverageCost: 0.5})
+	for _, k := range []string{"cost_trend", "recent_avg_cost", "trend_window"} {
+		if _, ok := short[k]; ok {
+			t.Errorf("%d messages: %s should be absent, got %v", MinMessagesForTrend-1, k, short[k])
+		}
+	}
+	if short["average_cost"] != 0.5 || short["message_count"] != float64(MinMessagesForTrend-1) {
+		t.Errorf("the other insights should stay: %v", short)
+	}
+
+	stable := keys(MessageInsights{MessageCount: MinMessagesForTrend, CostTrend: TrendStable, TrendWindow: 3})
+	if stable["cost_trend"] != "stable" || stable["trend_window"] != float64(3) {
+		t.Errorf("a computed stable trend should be written: %v", stable)
+	}
+	if v, ok := stable["recent_avg_cost"]; !ok || v != float64(0) {
+		t.Errorf("recent_avg_cost should be written with a trend, even at 0: %v", stable)
+	}
+}
