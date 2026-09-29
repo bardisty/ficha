@@ -1,0 +1,1 @@
+agent_id,timestamp,model,input_tokens,output_tokens,cache_write_tokens,cache_read_tokens,input_cost,output_cost,cache_write_5m_cost,cache_write_1h_cost,cache_read_cost,total_cost,skipped_agents,skipped_lines,estimated_cost_messages

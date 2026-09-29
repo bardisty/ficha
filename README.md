@@ -169,6 +169,8 @@ ficha completion fish > ~/.config/fish/completions/ficha.fish     # fish
 
 The full export contract is in [docs/machine-output.md](docs/machine-output.md). It covers flag interactions, record provenance, the counters, per-message rows, and csv safety.
 
+Before 1.0, a minor release can rename or remove keys. [Compatibility](docs/machine-output.md#compatibility) says how those changes are announced and how to pin a version.
+
 ## Privacy
 
 ficha only reads. It opens the transcripts Claude Code writes under `~/.claude/projects/`, or under `$CLAUDE_CONFIG_DIR/projects/` if you have set that variable. `CLAUDE_CONFIG_DIR` is Claude Code's own override, and ficha honors it so the two always agree on where sessions live. It makes no network requests, runs no subprocesses, and writes no files. Nothing in the non-test code imports `net/http` or `os/exec` or opens a file for writing, and I intend to keep it that way.
