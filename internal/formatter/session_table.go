@@ -78,10 +78,14 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	}
 
 	// Cost by model section
-	sb.WriteString("\n")
-	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, noColor))
-	sb.WriteString("\n\n")
-	sb.WriteString(formatCostByModelContent(analysis, noColor))
+	// A scope made only of synthetic lines has messages but no model with a
+	// cost, and a heading over nothing reads as a rendering fault.
+	if len(analysis.CostByModel) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, noColor))
+		sb.WriteString("\n\n")
+		sb.WriteString(formatCostByModelContent(analysis, noColor))
+	}
 
 	// Agent breakdown (shown when agents exist). The summary aggregate sets
 	// HasAgents/AgentsCost without collecting the per-agent records, and every

@@ -59,11 +59,13 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 		sb.WriteString(renderSavingsRow(analysis.TotalCost.CacheSavings, noColor))
 	}
 
-	// Cost by model section
-	sb.WriteString("\n")
-	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, noColor))
-	sb.WriteString("\n\n")
-	sb.WriteString(formatCostByModelContent(analysis, noColor))
+	// Cost by model section, left out for the same reason as in show
+	if len(analysis.CostByModel) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, noColor))
+		sb.WriteString("\n\n")
+		sb.WriteString(formatCostByModelContent(analysis, noColor))
+	}
 
 	// Get session breakdown data (needed for both chart and table)
 	breakdownResult := renderSessionBreakdown(results, noColor, expandAgents)

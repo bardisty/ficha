@@ -28,6 +28,10 @@ const (
 // addCost accumulates cost under key. The zero CostBreakdown is Add's identity,
 // so a missing key needs no special case.
 func addCost(dst map[string]models.CostBreakdown, key string, cost models.CostBreakdown) {
+	// Synthetic lines are priced at zero, so their row would always read $0.
+	if key == pricing.SyntheticModel {
+		return
+	}
 	existing := dst[key]
 	existing.Add(cost)
 	dst[key] = existing
