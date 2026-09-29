@@ -18,6 +18,8 @@ make check
 
 That runs `gofmt -w`, then the linter, then the tests. CI runs the same checks and then fails if gofmt changed anything, so run it before you push. CI also runs the tests on Linux, macOS and Windows, with `-race` on Linux.
 
+`make test` prints one line per package. Pass `go test` flags through `TESTFLAGS` when you want more, as in `make test TESTFLAGS=-v` or `make test TESTFLAGS='-run TestGolden'`.
+
 If you changed how something renders, regenerate the golden files and read the diff before committing:
 
 ```sh
