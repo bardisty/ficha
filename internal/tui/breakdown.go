@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/bardisty/ficha/internal/analyzer"
@@ -41,6 +42,7 @@ type BreakdownModel struct {
 	hasUnknown     bool              // Any message priced from the fallback table (marked in the rows)
 	hasAgents      bool              // Any agent row in the merged list — drives the insight scope label
 	runTags        map[string]string // Workflow run ID -> AGENT-column run tag
+	runNames       map[string]string // AGENT-column run tag -> workflow name
 	err            error
 	loading        bool
 	lastUpdated    time.Time
@@ -342,6 +344,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.hasUnknown = msg.hasUnknown
 		m.hasAgents = msg.hasAgents
 		m.runTags = workflowRunTags(msg.workflows)
+		m.runNames = make(map[string]string, len(msg.workflows))
+		for _, run := range msg.workflows {
+			m.runNames[m.runTags[run.RunID]] = runName(run)
+		}
 		m.lastActivity, m.activityFromFile = breakdownLastActivity(msg.messages, msg.modTime)
 		m.loading = false
 		m.lastUpdated = time.Now()
@@ -506,6 +512,7 @@ func (m BreakdownModel) switchTo(path, id string, back bool) (tea.Model, tea.Cmd
 	m.insights = nil
 	m.hasAgents = false
 	m.runTags = nil
+	m.runNames = nil
 	m.totalCost = 0
 	m.minCost = 0
 	m.maxCost = 0
@@ -669,7 +676,7 @@ func (m BreakdownModel) View() string {
 	} else {
 		lines = append(lines, "")
 	}
-	lines = append(lines, m.renderFooterRule(panelWidth), m.renderStatsLine(), m.renderHelpLine())
+	lines = append(lines, m.renderFooterRule(panelWidth), m.renderStatsLine(layout), m.renderHelpLine())
 
 	return clipToWidth(strings.Join(lines, "\n"), m.width)
 }
@@ -722,8 +729,84 @@ func (m BreakdownModel) renderNotifyRow() string {
 }
 
 // renderStatsLine is the footer's totals, plus anything the totals can't
-// account for.
-func (m BreakdownModel) renderStatsLine() string {
+// account for, then a key to the run tags on screen when it fits.
+func (m BreakdownModel) renderStatsLine(layout breakdownLayout) string {
+	line := m.renderStatsTotals()
+	if !layout.runTags {
+		return line
+	}
+	sep := " " + styles.BoxVerticalSep + " "
+	if !m.noColor {
+		sep = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(sep)
+	}
+	return line + m.fitRunTagKey(line, sep)
+}
+
+// fitRunTagKey returns as many of the on-screen run tags' key entries as fit
+// after line, led by sep, or "" when none does. Each entry goes whole: half a
+// workflow name would be a wrong one.
+func (m BreakdownModel) fitRunTagKey(line, sep string) string {
+	entries := m.runTagKey()
+	for n := len(entries); n > 0; n-- {
+		key := strings.Join(entries[:n], ", ")
+		if !m.noColor {
+			key = dimStyle.Render(key)
+		}
+		if m.width <= 0 || lipgloss.Width(line+sep+key) <= m.width {
+			return sep + key
+		}
+	}
+	return ""
+}
+
+// runTagKey spells out the run tags on the visible rows, in the order they
+// first appear: "ac = audit-codebase". breakdown is the only view that
+// abbreviates a workflow's name, so it's where the name has to be. The
+// caller checks that the layout draws the tags.
+func (m BreakdownModel) runTagKey() []string {
+	if !m.ready {
+		return nil
+	}
+	var entries []string
+	seen := make(map[string]bool)
+	top := m.viewport.YOffset
+	for _, index := range m.lineRows[min(top, len(m.lineRows)):min(top+m.viewport.Height, len(m.lineRows))] {
+		if index < 1 || index > len(m.messages) {
+			continue
+		}
+		tag := m.runTag(m.messages[index-1])
+		if tag == "" || seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		name := m.runNames[tag]
+		if name == "" {
+			name = "workflow"
+		}
+		entries = append(entries, tag+" = "+name)
+	}
+	return entries
+}
+
+// runName is a workflow run's name for the run-tag key, or its run ID when
+// the metadata had none, as watch's group heading does. Both come from files
+// on disk, so anything unprintable goes: a newline would add a row to the
+// fixed frame, and an escape would reach the terminal.
+func runName(run models.WorkflowMeta) string {
+	name := run.Name
+	if name == "" {
+		name = run.RunID
+	}
+	return strings.Map(func(r rune) rune {
+		if !unicode.IsPrint(r) {
+			return -1
+		}
+		return r
+	}, name)
+}
+
+// renderStatsTotals is the stats line's totals and footnotes.
+func (m BreakdownModel) renderStatsTotals() string {
 	sep := " " + styles.BoxVerticalSep + " "
 	if m.noColor {
 		line := fmt.Sprintf("  Messages: %d%sTotal: %s", len(m.messages), sep, render.Cost(m.totalCost))

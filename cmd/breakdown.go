@@ -19,6 +19,9 @@ Features:
   - Follows new sessions as they start (f toggles; a session ID pins)
   - Stays on the newest rows until you scroll up
   - Agent rows marked in an AGENT column, with the IDs watch shows
+  - A workflow agent's AGENT cell ends in its run's initials, such as
+    rc for a review-changes run; the footer names those on screen when
+    it has room
   - p jumps to the most expensive rows
   - Minus (-) goes back to the previous session after a switch
   - With no session in the project yet, waits for the first one
