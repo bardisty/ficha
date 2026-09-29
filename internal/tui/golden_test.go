@@ -89,7 +89,7 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 	messages := make([]models.MessageAnalysis, len(msgCosts))
 	for i, c := range msgCosts {
 		messages[i] = models.MessageAnalysis{
-			Timestamp: goldenTime(10, 5*i, 0),
+			Timestamp: goldenTime(11, 4+5*i, 0),
 			Model:     "claude-opus-4-8",
 			Usage:     models.TokenUsage{InputTokens: 100, OutputTokens: 200},
 			Cost:      models.CostBreakdown{TotalCost: c},
@@ -199,8 +199,8 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 // analysis, pins the time-dependent state, and returns View().
 // First load records no change highlights (m.analysis is nil in detectChanges'
 // guard), so the rendered frame is deterministic once lastUpdated and the
-// clock are pinned. The clock sits 1m after the fixture's last message, so
-// the 10m rate window holds its last two.
+// clock are pinned. The clock sits 12s after the session's end, so the 10m
+// rate window holds the last two chart messages.
 func goldenWatchView(t *testing.T, noColor bool) string {
 	t.Helper()
 	// Height 60: tall enough that the whole analysis body fits the viewport,
@@ -210,8 +210,9 @@ func goldenWatchView(t *testing.T, noColor bool) string {
 
 func goldenWatchViewSized(t *testing.T, noColor bool, width, height int) string {
 	t.Helper()
-	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", false, noColor, "", false)
-	m.now = func() time.Time { return goldenTime(10, 26, 0) }
+	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", false, noColor, "", true)
+	m.project = "webapp"
+	m.now = func() time.Time { return goldenTime(11, 30, 12) }
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	m = updated.(Model)
 	updated, _ = m.Update(analysisMsg{analysis: goldenViewAnalysis()})

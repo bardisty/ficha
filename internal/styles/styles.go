@@ -30,6 +30,7 @@ var (
 	BarFree        string // ░ empty progress-bar cell
 	Bullet         string // • help-line separator
 	LiveDot        string // ● live indicator
+	IdleDot        string // ○ idle indicator
 	Warning        string // ⚠ warning prefix
 	Arrow          string // → "from -> to"
 	RowUp          string // ↑ per-message cost rose
@@ -64,6 +65,7 @@ func SetASCII(ascii bool) {
 		TreeBranch, TreeLast, GroupRule = "+-", "`-", "--"
 		ScrollKeys, Ellipsis = "j/k", "..."
 		MoreAbove, MoreBelow = "^", "v"
+		IdleDot = "o"
 		return
 	}
 	BoxTopLeft, BoxTopRight, BoxBottomLeft, BoxBottomRight = "╔", "╗", "╚", "╝"
@@ -75,6 +77,7 @@ func SetASCII(ascii bool) {
 	TreeBranch, TreeLast, GroupRule = "├─", "└─", "──"
 	ScrollKeys, Ellipsis = "↑↓", "…"
 	MoreAbove, MoreBelow = "↑", "↓"
+	IdleDot = "○"
 }
 
 // ASCII reports whether the ASCII glyph set is active.

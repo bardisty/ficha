@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 	"time"
 
@@ -92,7 +94,7 @@ func (m Model) renderFooterLines(panelWidth int) []string {
 		}
 	}
 
-	helpText := helpLine("q: quit", "r: refresh", "g/G: top/bottom", styles.ScrollKeys+": scroll")
+	helpText := helpLine("q: quit", "r: refresh", "f: follow", "g/G: top/bottom", styles.ScrollKeys+": scroll")
 	if !m.noColor {
 		helpText = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(helpText)
 	}
@@ -308,4 +310,65 @@ func clipRows(rows []string, width int) []string {
 		}
 	}
 	return rows
+}
+
+// renderNotifyRow renders the row under the header, or "" when there is
+// nothing to say. An error wins over the switch notice, which wins over a
+// hint about another session.
+func (m Model) renderNotifyRow(width int) string {
+	style := func(c lipgloss.Color, s string) string {
+		if m.noColor {
+			return s
+		}
+		return lipgloss.NewStyle().Foreground(c).Bold(true).Render(s)
+	}
+
+	var text string
+	color := styles.HighlightColor
+	switch {
+	case m.err != nil:
+		color = styles.ErrorColor
+		text = styles.Warning + " " + describeErr(m.err)
+		if m.analysis != nil {
+			text += ", showing last data"
+		}
+		text += " " + styles.Bullet + " r to retry"
+	case m.switched != nil:
+		lead := "switched to " + render.TruncateID(m.sessionID, sessionIDDisplayLen)
+		if m.switched.auto {
+			lead = "new session " + render.TruncateID(m.sessionID, sessionIDDisplayLen)
+		}
+		text = styles.Arrow + " " + lead
+		if m.switched.hadTotal {
+			text += fmt.Sprintf(" (previous %s: %s)",
+				render.TruncateID(m.prevSessionID, sessionIDDisplayLen), render.Cost(m.switched.prevTotal))
+		}
+		text += " " + styles.Bullet + " p to go back"
+	case m.hintVisible():
+		id := render.TruncateID(m.hint.id, sessionIDDisplayLen)
+		if m.hint.created {
+			text = "new session " + id + " started"
+		} else {
+			text = "newer activity in " + id
+		}
+		text += " " + styles.Bullet + " n to switch"
+	default:
+		return ""
+	}
+	if lipgloss.Width(text) > width {
+		text = withEllipsis(text, width)
+	}
+	return style(color, text)
+}
+
+// describeErr turns a load or watch error into notify-row text. A missing
+// file gets words a user can act on instead of an "open …: no such file".
+func describeErr(err error) string {
+	switch {
+	case errors.Is(err, errSessionFileGone), errors.Is(err, fs.ErrNotExist):
+		return "session file removed"
+	case errors.Is(err, fs.ErrPermission):
+		return "session file unreadable (permission denied)"
+	}
+	return err.Error()
 }

@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
@@ -61,15 +60,9 @@ func (m Model) View() string {
 	// FIXED HEADER (4 lines)
 	sb.WriteString(m.renderHeaderPanel(panelWidth))
 
-	// Show switch notification on next line if applicable
-	showSwitchNotify := !m.switchNotifyAt.IsZero() && time.Since(m.switchNotifyAt) < switchNotifyDuration
-	if showSwitchNotify {
-		sb.WriteString("\n")
-		if m.noColor {
-			sb.WriteString("  [Switched to new session]")
-		} else {
-			sb.WriteString("  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session"))
-		}
+	// Notify row: errors, the last session switch, other sessions' activity
+	if row := m.renderNotifyRow(panelWidth); row != "" {
+		sb.WriteString("\n  " + row)
 	}
 	sb.WriteString("\n")
 
@@ -565,15 +558,23 @@ func (m Model) renderInsightsContent() string {
 // ║  Session: xxx (prev: yyy)  │  ● LIVE  │  Updated: HH:MM:SS              ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 func (m Model) renderHeaderPanel(width int) string {
+	mode := "PINNED"
+	if m.followMode {
+		mode = "FOLLOWING"
+	}
 	return renderLiveHeaderPanel(liveHeaderParams{
-		sessionID:     m.sessionID,
-		prevSessionID: m.prevSessionID,
-		loading:       m.loading,
-		err:           m.err,
-		lastUpdated:   m.lastUpdated,
-		spinnerView:   m.spinner.View(),
-		noColor:       m.noColor,
-		width:         width,
+		sessionID:    m.sessionID,
+		loading:      m.loading,
+		err:          m.err,
+		lastUpdated:  m.lastUpdated,
+		spinnerView:  m.spinner.View(),
+		noColor:      m.noColor,
+		width:        width,
+		project:      m.project,
+		mode:         mode,
+		lastActivity: m.lastActivity,
+		noMessages:   m.activityFromFile,
+		now:          m.clock(),
 	})
 }
 

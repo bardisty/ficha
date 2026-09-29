@@ -15,9 +15,19 @@ import (
 // full UUID that the static `show` header prints.
 const sessionIDDisplayLen = 8
 
-// liveHeaderParams is the per-frame state the shared live header renders. Both
-// the watch and breakdown models fill it the same way so their headers stay
-// identical.
+// idleAfter is how long without a new message before the header calls the
+// session idle.
+const idleAfter = 5 * time.Minute
+
+// liveHeaderParams is the per-frame state the shared live header renders.
+//
+// With mode set, the header reads
+//
+//	webapp │ 68994c84 │ ● FOLLOWING │ last msg 12s ago
+//
+// and turns to "○ FOLLOWING │ idle 7m" once no message has landed for
+// idleAfter. Without it, the header keeps the older
+// "Session: … │ ● LIVE │ Updated: …" form, which breakdown still uses.
 type liveHeaderParams struct {
 	sessionID     string
 	prevSessionID string
@@ -27,6 +37,12 @@ type liveHeaderParams struct {
 	spinnerView   string // m.spinner.View(); only shown while loading
 	noColor       bool
 	width         int
+
+	project      string    // project directory name; omitted when ""
+	mode         string    // "FOLLOWING" or "PINNED"; "" selects the older form
+	lastActivity time.Time // newest message timestamp; zero when none yet
+	noMessages   bool      // lastActivity is the file's mtime: no message yet
+	now          time.Time
 }
 
 // renderLiveHeaderPanel renders the boxed live header shared by the watch and
@@ -53,16 +69,21 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 	// out of column on narrow terminals. Elide in order of least value
 	// — drop the "(prev: …)" clause, then shorten "Updated: HH:MM:SS" to the
 	// bare time — and hard-clip via lipgloss MaxWidth as a final guarantee.
-	showPrev := p.prevSessionID != ""
-	timeOnly := false
-	content := buildLiveHeaderContent(p, showPrev, timeOnly)
-	if lipgloss.Width(content) > innerWidth && showPrev {
-		showPrev = false
+	var content string
+	if p.mode != "" {
+		content = fitStatusHeader(p, innerWidth)
+	} else {
+		showPrev := p.prevSessionID != ""
+		timeOnly := false
 		content = buildLiveHeaderContent(p, showPrev, timeOnly)
-	}
-	if lipgloss.Width(content) > innerWidth {
-		timeOnly = true
-		content = buildLiveHeaderContent(p, showPrev, timeOnly)
+		if lipgloss.Width(content) > innerWidth && showPrev {
+			showPrev = false
+			content = buildLiveHeaderContent(p, showPrev, timeOnly)
+		}
+		if lipgloss.Width(content) > innerWidth {
+			timeOnly = true
+			content = buildLiveHeaderContent(p, showPrev, timeOnly)
+		}
 	}
 	if lipgloss.Width(content) > innerWidth {
 		content = lipgloss.NewStyle().MaxWidth(innerWidth).Render(content)
@@ -170,4 +191,88 @@ func buildLiveHeaderContent(p liveHeaderParams, showPrev, timeOnly bool) string 
 	}
 	sepStyled := panelBorderStyle.Render(sep)
 	return sessionStyled + "  " + sepStyled + "  " + liveStyled + "  " + sepStyled + "  " + statusStyled
+}
+
+// fitStatusHeader builds the mode-style header content and fits it to width,
+// giving up detail in order of least value: the "last msg" prefix, then
+// project name characters, then the project name altogether.
+func fitStatusHeader(p liveHeaderParams, width int) string {
+	short := false
+	project := p.project
+	content := buildStatusHeader(p, project, short)
+	if lipgloss.Width(content) > width {
+		short = true
+		content = buildStatusHeader(p, project, short)
+	}
+	if over := lipgloss.Width(content) - width; over > 0 && project != "" {
+		// Keep at least a few characters: a stub is still recognizable
+		// next to the other panes' headers.
+		if keep := lipgloss.Width(project) - over; keep >= 4 {
+			project = withEllipsis(project, keep)
+		} else {
+			project = ""
+		}
+		content = buildStatusHeader(p, project, short)
+	}
+	return content
+}
+
+// buildStatusHeader renders "project │ id │ ● MODE │ status". short drops
+// the "last msg" prefix from the status.
+func buildStatusHeader(p liveHeaderParams, project string, short bool) string {
+	style := func(st lipgloss.Style, s string) string {
+		if p.noColor {
+			return s
+		}
+		return st.Render(s)
+	}
+
+	idle := !p.lastActivity.IsZero() && p.now.Sub(p.lastActivity) >= idleAfter
+
+	dot := styles.LiveDot
+	modeStyle := liveIndicatorStyle
+	switch {
+	case p.err != nil:
+		modeStyle = lipgloss.NewStyle().Bold(true).Foreground(styles.ErrorColor)
+	case idle:
+		dot = styles.IdleDot
+		modeStyle = dimStyle
+	}
+
+	var status string
+	switch {
+	case p.loading:
+		status = "Loading..."
+		if !p.noColor {
+			status = p.spinnerView + " Loading..."
+		}
+	case p.lastActivity.IsZero(), p.noMessages && !idle:
+		status = "no messages yet"
+	case idle:
+		status = style(dimStyle, "idle "+strings.TrimSuffix(render.Ago(p.lastActivity, p.now), " ago"))
+	case short:
+		status = messageAge(p.lastActivity, p.now)
+	default:
+		status = "last msg " + messageAge(p.lastActivity, p.now)
+	}
+
+	var segs []string
+	if project != "" {
+		segs = append(segs, style(sectionHeaderStyle, project))
+	}
+	segs = append(segs,
+		render.TruncateID(p.sessionID, sessionIDDisplayLen),
+		style(modeStyle, dot+" "+p.mode),
+		status)
+	return strings.Join(segs, style(panelBorderStyle, " "+styles.BoxVerticalSep+" "))
+}
+
+// messageAge is render.Ago with seconds under a minute: in a live view,
+// "12s ago" against "50s ago" is the difference between busy and stalling,
+// where Ago says "just now" for both.
+func messageAge(t, now time.Time) string {
+	if d := now.Sub(t); d < time.Minute {
+		return fmt.Sprintf("%ds ago", max(int(d/time.Second), 0))
+	}
+	return render.Ago(t, now)
 }

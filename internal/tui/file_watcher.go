@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -35,8 +36,18 @@ func newSessionFileWatcher(sessionPath string) (*fsnotify.Watcher, error) {
 	return watcher, nil
 }
 
+// errSessionFileGone reports that the watched session file was removed or
+// renamed away. Without it the view would keep showing stale totals as live.
+var errSessionFileGone = errors.New("session file removed")
+
+// goneGrace is how long a removed session file may take to reappear before
+// it counts as gone, so a delete-and-rewrite reads as a change, not an error.
+const goneGrace = 250 * time.Millisecond
+
 // awaitSessionFileChange blocks until sessionPath is written or (re)created,
-// the done channel closes, or the watcher fails. The watcher observes the
+// the done channel closes, or the watcher fails. A Remove or Rename of the
+// path returns errSessionFileGone unless the file is re-created within
+// goneGrace, which reports as a change. The watcher observes the
 // parent directory, so sibling-file events are filtered out by name. Create
 // counts as a change alongside Write because it covers atomic replace (rename
 // onto the path) and delete+recreate. Coalesces rapid events with a debounce
@@ -56,7 +67,15 @@ func awaitSessionFileChange(watcher *fsnotify.Watcher, done chan struct{}, sessi
 			if !ok {
 				return false, nil
 			}
-			if !isTargetChange(event) {
+			if filepath.Clean(event.Name) == target && event.Op&(fsnotify.Remove|fsnotify.Rename) != 0 {
+				back, stop := awaitRecreate(watcher, done, isTargetChange)
+				if stop {
+					return false, nil
+				}
+				if !back {
+					return false, errSessionFileGone
+				}
+			} else if !isTargetChange(event) {
 				continue
 			}
 			// Debounce: wait for writes to settle before signaling reload
@@ -94,6 +113,32 @@ func awaitSessionFileChange(watcher *fsnotify.Watcher, done chan struct{}, sessi
 				return false, nil
 			}
 			return false, err
+		}
+	}
+}
+
+// awaitRecreate waits up to goneGrace for an event matching isBack. stop
+// reports shutdown or a closed watcher.
+func awaitRecreate(watcher *fsnotify.Watcher, done chan struct{}, isBack func(fsnotify.Event) bool) (back, stop bool) {
+	timer := time.NewTimer(goneGrace)
+	defer timer.Stop()
+	for {
+		select {
+		case <-done:
+			return false, true
+		case <-timer.C:
+			return false, false
+		case ev, ok := <-watcher.Events:
+			if !ok {
+				return false, true
+			}
+			if isBack(ev) {
+				return true, false
+			}
+		case _, ok := <-watcher.Errors:
+			if !ok {
+				return false, true
+			}
 		}
 	}
 }
@@ -251,6 +296,35 @@ func waitForNewSessionCmd(wg *sync.WaitGroup, sw *SessionWatcher) tea.Cmd {
 			newSessionPath: path,
 			newSessionID:   id,
 		}
+	}
+}
+
+// sessionActivityMsg reports another session in the project changing: a
+// newly created session file, or a write to an existing one.
+type sessionActivityMsg struct {
+	path    string
+	id      string
+	created bool
+}
+
+// waitForSessionEventCmd is waitForNewSessionCmd for a model that also wants
+// activity in other existing sessions, reported as sessionActivityMsg.
+func waitForSessionEventCmd(wg *sync.WaitGroup, sw *SessionWatcher) tea.Cmd {
+	if sw == nil {
+		return nil
+	}
+	wg.Add(1)
+	return func() tea.Msg {
+		defer wg.Done()
+
+		ev := sw.WaitForSessionEvent()
+		switch ev.path {
+		case "":
+			return nil // Shutdown or error
+		case sessionRestartedPath:
+			return sessionWatcherRestartMsg{}
+		}
+		return sessionActivityMsg(ev)
 	}
 }
 

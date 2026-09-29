@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"time"
 
 	"github.com/bardisty/ficha/internal/analyzer"
@@ -18,8 +19,8 @@ func (m Model) Init() tea.Cmd {
 		subagentPollCmd(),
 	}
 
-	// Start session watcher if follow mode is enabled
-	if m.followMode && m.projectDir != "" {
+	// The session watcher runs in pinned mode too, to hint at newer sessions
+	if m.projectDir != "" {
 		cmds = append(cmds, m.startSessionWatcher())
 	}
 
@@ -49,7 +50,11 @@ func (m Model) loadAnalysis() tea.Msg {
 	if err != nil {
 		return errorMsg{err: err, sessionPath: m.sessionPath}
 	}
-	return analysisMsg{analysis: analysis, sessionPath: m.sessionPath}
+	msg := analysisMsg{analysis: analysis, sessionPath: m.sessionPath}
+	if info, err := os.Stat(m.sessionPath); err == nil {
+		msg.modTime = info.ModTime()
+	}
+	return msg
 }
 
 // watcherStartedMsg is sent when the watcher is successfully created
@@ -90,5 +95,5 @@ func (m Model) startSessionWatcher() tea.Cmd {
 }
 
 func (m Model) waitForNewSession() tea.Cmd {
-	return waitForNewSessionCmd(m.wg, m.sessionWatcher)
+	return waitForSessionEventCmd(m.wg, m.sessionWatcher)
 }
