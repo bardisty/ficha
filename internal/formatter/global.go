@@ -260,10 +260,10 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 			pctTotal = (p.TotalCost.TotalCost / analysis.TotalCost.TotalCost) * 100
 		}
 
-		// Truncate project name with middle ellipsis if needed, then pad by
+		// Truncate project name from the left if needed, then pad by
 		// display width: fmt's %-Ns counts runes, so a wide (CJK/emoji) name
 		// would under-pad and shift every column to its right.
-		name := truncateMiddle(p.DisplayName, projectWidth)
+		name := truncateLeft(p.DisplayName, projectWidth)
 		name += strings.Repeat(" ", projectWidth-runewidth.StringWidth(name))
 
 		if noColor {
@@ -324,43 +324,33 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 	return sb.String()
 }
 
-// truncateMiddle truncates a string in the middle, showing start...end.
-// Operates on runes and display width so multi-byte and wide (CJK) characters
-// are never split mid-character.
-func truncateMiddle(s string, maxWidth int) string {
+// truncateLeft fits a project name into maxWidth display columns by cutting
+// from the left, so the distinctive tail survives ("…/source/webapp"): every
+// name shares its leading home or root prefix. The cut doesn't snap to a
+// separator: the partial directory it leaves ("…ing-service/worktrees/x") is
+// often exactly what tells two rows apart. Operates on runes and display
+// width, so wide (CJK) characters are never split.
+func truncateLeft(s string, maxWidth int) string {
 	if runewidth.StringWidth(s) <= maxWidth {
 		return s
 	}
-	// Reserve 3 cells for "..."
-	available := maxWidth - 3
+	ell := styles.Ellipsis
+	available := maxWidth - runewidth.StringWidth(ell)
 	if available < 1 {
-		// No room for start...end; hard-truncate to width
 		return runewidth.Truncate(s, maxWidth, "")
 	}
-	// Split roughly 60/40 favoring the end (project name is usually more distinctive)
-	startWidth := available * 2 / 5
-	endWidth := available - startWidth
 
 	runes := []rune(s)
-	start, w := 0, 0
-	for _, r := range runes {
-		rw := runewidth.RuneWidth(r)
-		if w+rw > startWidth {
-			break
-		}
-		w += rw
-		start++
-	}
-	end, w := len(runes), 0
+	start, w := len(runes), 0
 	for i := len(runes) - 1; i >= 0; i-- {
 		rw := runewidth.RuneWidth(runes[i])
-		if w+rw > endWidth {
+		if w+rw > available {
 			break
 		}
 		w += rw
-		end--
+		start = i
 	}
-	return string(runes[:start]) + "..." + string(runes[end:])
+	return ell + string(runes[start:])
 }
 
 // FormatGlobalJSON formats global analysis as JSON

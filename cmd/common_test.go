@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -84,8 +85,16 @@ func TestFormatNoProjectError(t *testing.T) {
 			{EncodedPath: "-home-user-myproject", OriginalPath: "/home/user/myproject"},
 		}
 		err := formatNoProjectError("/other/path/myproject", projects)
-		if !strings.Contains(err.Error(), "Similar projects") {
-			t.Errorf("error should contain 'Similar projects': %v", err)
+		want := "Similar projects:\n  ficha -p /home/user/myproject"
+		if runtime.GOOS == "windows" {
+			// A Unix path isn't absolute on Windows
+			want = "Similar projects:\n  ficha --project-dir=-home-user-myproject"
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should suggest the -p command for the similar project: %v", err)
+		}
+		if runtime.GOOS != "windows" && strings.Contains(err.Error(), "-home-user-myproject") {
+			t.Errorf("the suggestion should not ask for the encoded name: %v", err)
 		}
 	})
 
@@ -110,8 +119,13 @@ func TestFormatNoProjectError(t *testing.T) {
 		if !strings.Contains(err.Error(), "Similar projects") {
 			t.Errorf("expected Windows-style originalPath to be suggested: %v", err)
 		}
-		if !strings.Contains(err.Error(), "C--Users-user-source-foo") {
-			t.Errorf("suggestion list should list the matching project: %v", err)
+		// Not absolute on Linux, so -p couldn't resolve it: the encoded name can
+		want := "ficha --project-dir=C--Users-user-source-foo"
+		if runtime.GOOS == "windows" {
+			want = `ficha -p 'C:\Users\user\source\foo'`
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("suggestion should be %q: %v", want, err)
 		}
 	})
 }

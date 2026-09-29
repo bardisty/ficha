@@ -91,50 +91,30 @@ func TestFormatDisplayNameFromPath(t *testing.T) {
 	tests := []struct {
 		name     string
 		path     string
+		home     string
 		expected string
 	}{
-		{
-			name:     "shows full path with drive",
-			path:     "C:\\Users\\user\\source\\my-project",
-			expected: "C:/Users/user/source/my-project",
-		},
-		{
-			name:     "unix path (no drive)",
-			path:     "/home/user/projects/my-project",
-			expected: "home/user/projects/my-project",
-		},
-		{
-			name:     "empty path",
-			path:     "",
-			expected: "",
-		},
-		{
-			name:     "user home path",
-			path:     "C:\\Users\\user",
-			expected: "C:/Users/user",
-		},
-		{
-			name:     "unix home path",
-			path:     "/home/user",
-			expected: "home/user",
-		},
-		{
-			name:     "drive root",
-			path:     "H:\\",
-			expected: "H:",
-		},
-		{
-			name:     "deep path",
-			path:     "C:\\Users\\user\\AppData\\Roaming\\app\\notes",
-			expected: "C:/Users/user/AppData/Roaming/app/notes",
-		},
+		{"unix path under home", "/home/user/source/webapp", "/home/user", "~/source/webapp"},
+		{"unix home itself", "/home/user", "/home/user", "~"},
+		{"trailing slash", "/home/user/source/webapp/", "/home/user", "~/source/webapp"},
+		{"sibling of home is not under it", "/home/username/app", "/home/user", "/home/username/app"},
+		{"unix path outside home", "/opt/tools/app", "/home/user", "/opt/tools/app"},
+		{"no home known", "/home/user/app", "", "/home/user/app"},
+		{"windows path under home", "C:\\Users\\user\\source\\my-project", "C:\\Users\\user", "~/source/my-project"},
+		{"windows home matches case-insensitively", "c:\\users\\User\\src\\app", "C:\\Users\\user", "~/src/app"},
+		{"windows path outside home", "D:\\work\\app", "C:\\Users\\user", "D:/work/app"},
+		{"windows path, unix home", "C:\\Users\\user\\AppData\\notes", "/home/user", "C:/Users/user/AppData/notes"},
+		{"drive root", "H:\\", "/home/user", "H:"},
+		{"bare drive", "H:", "/home/user", "H:"},
+		{"filesystem root", "/", "/home/user", "/"},
+		{"empty path", "", "/home/user", ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatDisplayNameFromPath(tt.path)
+			result := formatDisplayNameFromPath(tt.path, tt.home)
 			if result != tt.expected {
-				t.Errorf("formatDisplayNameFromPath(%q) = %q, want %q", tt.path, result, tt.expected)
+				t.Errorf("formatDisplayNameFromPath(%q, %q) = %q, want %q", tt.path, tt.home, result, tt.expected)
 			}
 		})
 	}

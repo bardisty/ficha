@@ -40,13 +40,17 @@ func DiscoverAllProjects() ([]models.ProjectInfo, error) {
 
 		fullPath := filepath.Join(projectsDir, encodedPath)
 
-		// Try to get original path from sessions-index.json
+		// The index is authoritative when present; current Claude Code no
+		// longer writes one, so fall back to the transcripts' cwd.
 		originalPath := getOriginalPathFromIndex(fullPath)
+		if originalPath == "" {
+			originalPath = originalPathFromTranscripts(fullPath)
+		}
 
 		// Generate display name from original path if available, else from encoded
 		var displayName string
 		if originalPath != "" {
-			displayName = formatDisplayNameFromPath(originalPath)
+			displayName = formatDisplayNameFromPath(originalPath, homeDir())
 		}
 		// Fall back to encoded path if no original path or if display name is empty
 		if displayName == "" {
@@ -107,9 +111,11 @@ func getOriginalPathFromIndex(projectDir string) string {
 	return ""
 }
 
-// formatDisplayNameFromPath creates a display name from a real file path.
-// Shows drive:full/path with forward slashes.
-func formatDisplayNameFromPath(path string) string {
+// formatDisplayNameFromPath creates a display name from a real file path:
+// forward slashes, with the home directory shortened to "~"
+// ("~/source/webapp"). A path outside home keeps its root ("/opt/tools",
+// "D:/work/app"), and a drive root shows as "H:".
+func formatDisplayNameFromPath(path, home string) string {
 	if path == "" {
 		return ""
 	}
@@ -123,28 +129,47 @@ func formatDisplayNameFromPath(path string) string {
 		return path
 	}
 
-	// Extract drive letter if present (Windows paths)
-	var drivePrefix string
-	workPath := path
-	if len(path) >= 2 && path[1] == ':' {
-		drivePrefix = string(path[0]) + ":"
-		workPath = path[2:]
-	}
-
-	// Normalize path separators to forward slashes
-	normalized := strings.ReplaceAll(workPath, "\\", "/")
-	// Remove leading/trailing slashes
-	normalized = strings.Trim(normalized, "/")
-
+	normalized := strings.TrimRight(strings.ReplaceAll(path, "\\", "/"), "/")
 	if normalized == "" {
-		return drivePrefix
+		return "/"
 	}
-
-	// Return full path with drive prefix
-	if drivePrefix != "" {
-		return drivePrefix + "/" + normalized
+	if rest, ok := underHome(normalized, home); ok {
+		return "~" + rest
 	}
 	return normalized
+}
+
+// underHome reports whether a forward-slash path lies inside home, returning
+// the remainder after it ("/source/webapp", or "" for home itself). A
+// Windows-style path (drive letter) compares case-insensitively, as its
+// filesystem does.
+func underHome(path, home string) (string, bool) {
+	home = strings.TrimRight(strings.ReplaceAll(home, "\\", "/"), "/")
+	if home == "" || len(path) < len(home) {
+		return "", false
+	}
+	head, rest := path[:len(home)], path[len(home):]
+	if rest != "" && rest[0] != '/' {
+		return "", false
+	}
+	if head == home || (hasDriveLetter(home) && strings.EqualFold(head, home)) {
+		return rest, true
+	}
+	return "", false
+}
+
+func hasDriveLetter(p string) bool {
+	return len(p) >= 2 && isLetter(p[0]) && p[1] == ':'
+}
+
+// homeDir is the current user's home directory, or "" when unknown (then no
+// display name is shortened).
+func homeDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
 }
 
 // formatDisplayNameFromEncoded creates a display name from an encoded folder name.
