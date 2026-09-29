@@ -29,20 +29,29 @@ func TestIsWSLPath(t *testing.T) {
 	}
 }
 
-// Only the Windows build can be looking at the wrong profile, so only it
-// gets the hint, and only when CLAUDE_CONFIG_DIR leaves it on the default.
-func TestWSLHintOnlyOnWindows(t *testing.T) {
+// Only the Windows build on its default config is looking at the wrong
+// profile. wslHint and waitingProject both go by windowsDefaultInWSL, so the
+// hint shows exactly where watch and breakdown decline to wait.
+func TestWindowsDefaultInWSL(t *testing.T) {
 	const wslDir = `\\wsl.localhost\Ubuntu\home\you`
-	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	got := wslHint(wslDir)
-	if (got != "") != (runtime.GOOS == "windows") {
-		t.Errorf("wslHint on %s = %q", runtime.GOOS, got)
-	}
-	if got := wslHint(`C:\Users\you\work`); got != "" {
-		t.Errorf("wslHint for a Windows path = %q, want none", got)
-	}
-	t.Setenv("CLAUDE_CONFIG_DIR", `\\wsl.localhost\Ubuntu\home\you\.claude`)
-	if got := wslHint(wslDir); got != "" {
-		t.Errorf("wslHint with CLAUDE_CONFIG_DIR set = %q, want none", got)
+	onWindows := runtime.GOOS == "windows"
+	for _, tc := range []struct {
+		name, dir, configDir string
+		want                 bool
+	}{
+		{"WSL dir, default config", wslDir, "", onWindows},
+		{"Windows dir, default config", `C:\Users\you\work`, "", false},
+		{"WSL dir, CLAUDE_CONFIG_DIR into WSL", wslDir, `\\wsl.localhost\Ubuntu\home\you\.claude`, false},
+		{"WSL dir, CLAUDE_CONFIG_DIR on Windows", wslDir, `C:\Users\you\.claude-work`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CLAUDE_CONFIG_DIR", tc.configDir)
+			if got := windowsDefaultInWSL(tc.dir); got != tc.want {
+				t.Errorf("windowsDefaultInWSL(%q) on %s = %v, want %v", tc.dir, runtime.GOOS, got, tc.want)
+			}
+			if got := wslHint(tc.dir); (got != "") != tc.want {
+				t.Errorf("wslHint(%q) on %s = %q, want a hint: %v", tc.dir, runtime.GOOS, got, tc.want)
+			}
+		})
 	}
 }

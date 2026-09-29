@@ -313,22 +313,22 @@ func noSessionsError(cfg *config, project resolvedProject) error {
 	return fmt.Errorf("Claude Code has no sessions for %s yet%s", project.label, wslHint(project.label))
 }
 
-// wslHint explains the Windows build run from a directory inside WSL. That
-// build reads the Windows profile's .claude, while Claude Code running in WSL
-// writes to the WSL home, so the sessions it's looking for are out of reach.
-// With CLAUDE_CONFIG_DIR set, the user chose where ficha looks, and the hint's
-// claim may not hold.
+// wslHint explains the Windows build run from a directory inside WSL, when
+// windowsDefaultInWSL says its sessions are out of reach.
 func wslHint(dir string) string {
-	if !windowsBuildInWSL(dir) || os.Getenv("CLAUDE_CONFIG_DIR") != "" {
+	if !windowsDefaultInWSL(dir) {
 		return ""
 	}
 	return "\nClaude Code in WSL keeps its sessions in your WSL home directory, where the Windows build of ficha doesn't look. Run the Linux build inside WSL."
 }
 
-// windowsBuildInWSL reports whether this is the Windows build, looking at a
-// directory inside WSL.
-func windowsBuildInWSL(dir string) bool {
-	return runtime.GOOS == "windows" && isWSLPath(dir)
+// windowsDefaultInWSL reports whether this is the Windows build, reading the
+// Windows profile's .claude, from a directory inside WSL. Claude Code running
+// in WSL writes to the WSL home, so that directory's sessions are out of
+// reach. With CLAUDE_CONFIG_DIR set, the user chose where ficha looks, and
+// that may not hold.
+func windowsDefaultInWSL(dir string) bool {
+	return runtime.GOOS == "windows" && isWSLPath(dir) && os.Getenv("CLAUDE_CONFIG_DIR") == ""
 }
 
 // isWSLPath reports whether dir is a Windows path into a WSL distribution:
