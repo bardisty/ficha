@@ -461,6 +461,7 @@ func FormatGlobalCSV(analysis *models.GlobalAnalysis) (string, error) {
 		"skipped_agents",
 		"skipped_lines",
 		"estimated_cost_messages",
+		"unpriced_models",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing CSV header: %w", err)
@@ -485,6 +486,7 @@ func FormatGlobalCSV(analysis *models.GlobalAnalysis) (string, error) {
 			fmt.Sprintf("%d", p.SkippedAgents),
 			fmt.Sprintf("%d", p.SkippedLines),
 			fmt.Sprintf("%d", p.EstimatedCostMessages),
+			unpricedModelsCell(p.UnpricedModels),
 		}
 		if err := w.Write(row); err != nil {
 			return "", fmt.Errorf("writing CSV row: %w", err)

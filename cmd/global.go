@@ -107,7 +107,11 @@ func runGlobal(cfg *config) error {
 		details:  details,
 	}.write(&warnings, cfg.verbose)
 	warnEstimatedCosts(&warnings, analysis.EstimatedCostMessages)
-	warnUnknownModels(&warnings, analysis.CostByModel)
+	analysis.UnpricedModels = unpricedModels(analysis.CostByModel)
+	for i := range analysis.Projects {
+		analysis.Projects[i].UnpricedModels = unpricedModels(analysis.Projects[i].CostByModel)
+	}
+	warnUnknownModels(&warnings, analysis.UnpricedModels)
 
 	// Apply custom sort if requested
 	if cfg.globalSortBy != "cost" {

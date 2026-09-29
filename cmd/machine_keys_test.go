@@ -22,7 +22,7 @@ const (
 	keysProjDir = "-home-test-keys"
 	// keysFullID has everything a session can carry: a title, insights with a
 	// highest-cost message, a skipped line, an estimated cost, a regular agent
-	// and a workflow agent.
+	// and a workflow agent on a model ficha can't price.
 	keysFullID = "11111111-aaaa-bbbb-cccc-000000000001"
 	// keysNoAgentsDirID has a plain file where its subagents directory
 	// belongs, so its agents count as skipped.
@@ -80,7 +80,7 @@ func setupKeysFixture(t *testing.T) {
 		estimatedMsg("2026-02-01T10:02:40Z", "r2", "claude-sonnet-5", 100, 100, 100),
 	))
 	write(filepath.Join(keysFullID, "subagents", "workflows", "wf_keys-run", "agent-w1.jsonl"), lines(
-		e2eMsg("2026-02-01T10:03:30Z", "w1", "claude-sonnet-5", 100, 100, 0, 0, 0),
+		e2eMsg("2026-02-01T10:03:30Z", "w1", "claude-zeta-9", 100, 100, 0, 0, 0),
 	))
 	write(filepath.Join(keysFullID, "workflows", "wf_keys-run.json"),
 		`{"runId":"wf_keys-run","workflowName":"keys-flow","status":"completed"}`)

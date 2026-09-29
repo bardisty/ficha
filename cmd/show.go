@@ -102,7 +102,8 @@ func runShow(cfg *config, args []string, live bool) error {
 	}
 	skipWarning{counts: "totals", agents: analysis.SkippedAgents, lines: analysis.SkippedLines}.write(&warnings, cfg.verbose)
 	warnEstimatedCosts(&warnings, analysis.EstimatedCostMessages)
-	warnUnknownModels(&warnings, analysis.CostByModel)
+	markUnpriced(analysis)
+	warnUnknownModels(&warnings, analysis.UnpricedModels)
 
 	analysis.Project = parser.ProjectDisplayName(projectDir)
 

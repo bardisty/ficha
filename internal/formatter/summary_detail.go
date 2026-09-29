@@ -125,6 +125,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 		"estimated_cost_messages",
 		"parent_cost",
 		"agents_cost",
+		"unpriced_models",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing summary detail CSV header: %w", err)
@@ -159,6 +160,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 			fmt.Sprintf("%d", a.EstimatedCostMessages),
 			fmt.Sprintf("%.6f", a.ParentCost.TotalCost),
 			fmt.Sprintf("%.6f", a.AgentsCost.TotalCost),
+			unpricedModelsCell(a.UnpricedModels),
 		}
 		if err := w.Write(sessionRow); err != nil {
 			return "", fmt.Errorf("writing summary detail session row: %w", err)
@@ -192,6 +194,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 				fmt.Sprintf("%d", agent.EstimatedCostMessages),
 				"", // parent_cost and agents_cost split a session row's total
 				"",
+				unpricedModelsCell(agent.UnpricedModels),
 			}
 			if err := w.Write(agentRow); err != nil {
 				return "", fmt.Errorf("writing summary detail agent row: %w", err)

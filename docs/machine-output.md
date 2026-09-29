@@ -91,7 +91,15 @@ Every input ficha could not read is counted, never swallowed. Three counters tra
 
 ## Estimated costs
 
-Costs that could not be computed exactly are counted the same way. A message whose cache-write tokens carry no TTL attribution (sessions from before the `cache_creation` breakdown existed) is priced at the 5m write rate — the cheapest tier, so its cost is a lower-bound estimate. `estimated_cost_messages` counts them (json omitted when zero, csv column, stderr warning); zero means every cost is exact.
+Costs that could not be computed exactly are counted the same way. A message whose cache-write tokens carry no TTL attribution (sessions from before the `cache_creation` breakdown existed) is priced at the 5m write rate — the cheapest tier, so its cost is a lower-bound estimate. `estimated_cost_messages` counts them (json omitted when zero, csv column, stderr warning). Zero means no cache write was estimated. It doesn't cover models ficha has no price for. Those are in `unpriced_models`.
+
+## Unpriced models
+
+A model missing from ficha's price list is priced at a fallback rate, which the stderr warning states, so every cost that includes it is a guess. `unpriced_models` names those models, sorted, spelled exactly as their `cost_by_model` keys so you can look up how much of the total each one accounts for. json leaves it out when every model is priced. The stderr warning names the same models.
+
+It's on every record that has a `cost_by_model`: `show` and each of its `agents`, the `summary` aggregate, each `summary -d` session and its agents, the `global` object and each of its projects. A session's list covers its agents' models too.
+
+csv has an `unpriced_models` column on `show`, `summary`, `summary -d` rows (session and agent) and `global` project rows. Each cell is a json array, `[]` when every model is priced, because an unpriced ID is raw transcript text and can hold anything, a comma or a space included. Read it with `json.loads` or `jq`'s `fromjson`. `show --messages` rows don't carry it. They name each message's model, and the session's `unpriced_models` in `show -f csv` or json says which of those are unpriced.
 
 ## Reconciled token usage
 
@@ -157,6 +165,6 @@ claude-sonnet-4-5@20251119   ├─▶  claude-sonnet-4-5
 ...claude-sonnet-4-5-v1:0   ─┘
 ```
 
-A model ficha cannot price keeps its raw ID as the key, and is named on stderr, so nothing unpriced is silently folded into a priced row. Per-message rows (`show --messages`) keep the raw ID either way.
+A model ficha cannot price keeps its raw ID as the key, and is named in `unpriced_models` and on stderr, so nothing unpriced is silently folded into a priced row. Per-message rows (`show --messages`) keep the raw ID either way.
 
 `<synthetic>` is the model Claude Code writes on lines it records itself, such as API errors. Those lines cost nothing, so they have no `cost_by_model` or `parent_cost_by_model` key and no stderr warning. They still count in `message_count`, the same in `list` and `show`, and per-message rows keep them with `model: "<synthetic>"` and zero cost.

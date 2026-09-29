@@ -120,7 +120,7 @@ func runListTable(cfg *config) error {
 	skips.write(&warnings, cfg.verbose)
 	if aggregate != nil {
 		warnEstimatedCosts(&warnings, aggregate.EstimatedCostMessages)
-		warnUnknownModels(&warnings, aggregate.CostByModel)
+		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
 
 	output := formatter.FormatSessionListTable(results, cfg.noColor, formatter.ListTableOptions{

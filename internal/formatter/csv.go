@@ -2,6 +2,7 @@ package formatter
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -49,6 +50,7 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		"skipped_lines",
 		"estimated_cost_messages",
 		"session_count",
+		"unpriced_models",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing CSV header: %w", err)
@@ -78,6 +80,7 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 		fmt.Sprintf("%d", analysis.SkippedLines),
 		fmt.Sprintf("%d", analysis.EstimatedCostMessages),
 		fmt.Sprintf("%d", analysis.SessionCount),
+		unpricedModelsCell(analysis.UnpricedModels),
 	}
 	if err := w.Write(row); err != nil {
 		return "", fmt.Errorf("writing CSV row: %w", err)
@@ -89,6 +92,21 @@ func FormatSessionCSV(analysis *models.SessionAnalysis, includeMessages bool) (s
 	}
 
 	return sb.String(), nil
+}
+
+// unpricedModelsCell writes model IDs as a json array, "[]" when there are
+// none. An unknown ID is raw transcript text, so it can be empty or hold any
+// separator; a json array keeps every ID intact, and a cell opening with "["
+// can't be read as a formula.
+func unpricedModelsCell(ids []string) string {
+	if ids == nil {
+		ids = []string{}
+	}
+	var sb strings.Builder
+	enc := json.NewEncoder(&sb)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(ids) // a []string always encodes
+	return strings.TrimSuffix(sb.String(), "\n")
 }
 
 // formatMessagesCSV formats individual messages as CSV. Parent rows come first

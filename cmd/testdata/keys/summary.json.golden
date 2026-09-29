@@ -70,6 +70,8 @@ total_usage.cache_creation_input_tokens number
 total_usage.cache_read_input_tokens number
 total_usage.input_tokens number
 total_usage.output_tokens number
+unpriced_models array
+unpriced_models[] string
 window object
 window.since string
 window.until string
