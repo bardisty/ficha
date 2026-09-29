@@ -1,4 +1,4 @@
-.PHONY: all build build-linux build-linux-arm64 build-windows build-darwin build-darwin-arm64 build-all test update-golden test-coverage install clean deps tidy run lint fmt vet check help
+.PHONY: all build build-linux build-linux-arm64 build-windows build-darwin build-darwin-arm64 build-all test update-golden test-coverage install clean deps tidy run lint fmt vet check screenshots help
 
 # Binary name
 BINARY=ficha
@@ -101,6 +101,17 @@ vet:
 # Run all checks
 check: fmt lint test
 
+# Regenerate the README screenshots from a synthetic fixture. Needs vhs
+# (charmbracelet/vhs), which brings ttyd and ffmpeg, and python3.
+screenshots: build
+	rm -rf $(BIN_DIR)/screenshots
+	python3 docs/screenshots/mkfixture.py $(BIN_DIR)/screenshots/fixture
+	vhs docs/screenshots/watch.tape
+	vhs docs/screenshots/breakdown.tape
+	for v in watch breakdown; do \
+		ffmpeg -loglevel error -y -i $(BIN_DIR)/screenshots/$$v.png -c:v libwebp -lossless 1 -compression_level 6 docs/ficha-$$v.webp || exit 1; \
+	done
+
 # Help
 help:
 	@echo "Available targets:"
@@ -123,3 +134,4 @@ help:
 	@echo "  fmt             - Format all Go files"
 	@echo "  vet             - Run go vet"
 	@echo "  check           - Run fmt, lint, and test"
+	@echo "  screenshots     - Regenerate the README screenshots (needs vhs)"
