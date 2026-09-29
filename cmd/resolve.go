@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -131,6 +132,11 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 	}
 	if len(allProjects) == 0 {
 		cfg.tracef("projects dir is missing or empty")
+		// From WSL, noDataError's advice to start Claude Code in a project is
+		// wrong: the user did, in WSL, where this build doesn't look.
+		if hint := wslHint(canonical); hint != "" {
+			return resolvedProject{}, fmt.Errorf("no Claude Code data in %s (default ~/.claude).%s", projectsDir, hint)
+		}
 		return resolvedProject{}, noDataError(projectsDir)
 	}
 
@@ -215,11 +221,17 @@ func noProjectError(cfg *config, projPath, canonical, parent string, allProjects
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Claude Code has no sessions for %s. Sessions are recorded per directory Claude Code was started in.", canonical)
+	hint := wslHint(canonical)
+	sb.WriteString(hint)
 	if parent != "" {
 		fmt.Fprintf(&sb, "\nFound sessions for parent directory %s. Run: %s -p %s", parent, cfg.command(), shellQuote(parent))
 	}
 	sb.WriteString(similar.String())
-	sb.WriteString("\nRun 'ficha global' to see every project.")
+	// Every project this build can list is on the Windows side, so for a
+	// directory in WSL the list is no help.
+	if hint == "" {
+		sb.WriteString("\nRun 'ficha global' to see every project.")
+	}
 	return errors.New(sb.String())
 }
 
@@ -298,7 +310,32 @@ func noSessionsError(cfg *config, project resolvedProject) error {
 		return fmt.Errorf("%s has no Claude Code sessions. --project-dir takes a directory under %s. For sessions started in %s, run: %s -p %s",
 			cfg.projectDir, projectsDir, cfg.projectDir, cfg.command(), shellQuote(cfg.projectDir))
 	}
-	return fmt.Errorf("Claude Code has no sessions for %s yet", project.label)
+	return fmt.Errorf("Claude Code has no sessions for %s yet%s", project.label, wslHint(project.label))
+}
+
+// wslHint explains the Windows build run from a directory inside WSL, when
+// windowsDefaultInWSL says its sessions are out of reach.
+func wslHint(dir string) string {
+	if !windowsDefaultInWSL(dir) {
+		return ""
+	}
+	return "\nClaude Code in WSL keeps its sessions in your WSL home directory, where the Windows build of ficha doesn't look. Run the Linux build inside WSL."
+}
+
+// windowsDefaultInWSL reports whether this is the Windows build, reading the
+// Windows profile's .claude, from a directory inside WSL. Claude Code running
+// in WSL writes to the WSL home, so that directory's sessions are out of
+// reach. With CLAUDE_CONFIG_DIR set, the user chose where ficha looks, and
+// that may not hold.
+func windowsDefaultInWSL(dir string) bool {
+	return runtime.GOOS == "windows" && isWSLPath(dir) && os.Getenv("CLAUDE_CONFIG_DIR") == ""
+}
+
+// isWSLPath reports whether dir is a Windows path into a WSL distribution:
+// \\wsl.localhost\<distro>\... or the older \\wsl$\<distro>\... form.
+func isWSLPath(dir string) bool {
+	dir = strings.ToLower(strings.ReplaceAll(dir, "/", `\`))
+	return strings.HasPrefix(dir, `\\wsl.localhost\`) || strings.HasPrefix(dir, `\\wsl$\`)
 }
 
 // isWithin reports whether path is inside dir, comparing the symlink-resolved,

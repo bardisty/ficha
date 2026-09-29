@@ -19,6 +19,10 @@ ficha is an independent project. It is not affiliated with or endorsed by Anthro
 
 ## Install
 
+Install ficha where Claude Code runs, since it reads the transcripts Claude Code keeps in that machine's home directory. Over SSH or in a dev container, that means the remote machine or the container. If Claude Code runs in WSL, use the Linux binary inside WSL, not the Windows one.
+
+If Claude Code runs on Windows and you want ficha's reports from inside WSL, set `CLAUDE_CONFIG_DIR` for that one command, as in `CLAUDE_CONFIG_DIR=/mnt/c/Users/<you>/.claude ficha global`. For a single project, run it from a folder with the same name as the Windows project, such as the project's own folder under `/mnt/c`. ficha matches it by name and prints a note saying so. `show`, `list`, `summary` and `global` work this way, but `watch` and `breakdown` never see new messages across the mount, so run those on Windows. Don't export the variable from your shell profile. Claude Code in WSL reads it too, and would start keeping its own settings and sessions in the Windows folder.
+
 ### Prebuilt binaries
 
 Each release on the [releases page](https://github.com/bardisty/ficha/releases) ships one raw binary per platform, plus `checksums.txt`:
@@ -67,7 +71,7 @@ The macOS binaries aren't notarized. curl doesn't mark what it downloads as quar
 
 #### Windows
 
-In PowerShell, 5.1 or 7:
+This build is for Claude Code running on Windows itself. If Claude Code runs in WSL, use the Linux block inside WSL. In PowerShell, 5.1 or 7:
 
 ```powershell
 $url = 'https://github.com/bardisty/ficha/releases/latest/download'
