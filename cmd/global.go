@@ -26,7 +26,7 @@ Examples:
   ficha global --top 20          Show top 20 projects
   ficha global --sort-by name    Sort by project name
   ficha global -f json           Output every project as JSON`,
-		Args: cobra.NoArgs,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGlobal(cfg)
 		},

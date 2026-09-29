@@ -18,6 +18,13 @@ import (
 // ErrSessionNotFound is returned when a specific session ID cannot be matched
 var ErrSessionNotFound = errors.New("session not found")
 
+// sessionLookupError marks an error from finding the project or session to
+// show, as opposed to one from analyzing it. The message is unchanged.
+type sessionLookupError struct{ err error }
+
+func (e *sessionLookupError) Error() string { return e.err.Error() }
+func (e *sessionLookupError) Unwrap() error { return e.err }
+
 // loadProjectSessions loads all sessions for the current project.
 // It handles project path resolution, disk scanning, index loading, and source merging.
 // countMessages controls whether per-file message counts are computed during
@@ -210,6 +217,14 @@ func warnUnknownModels(w io.Writer, costByModel map[string]models.CostBreakdown)
 // selectSession finds the appropriate session based on CLI args.
 // Returns the session, project directory, whether a session ID was explicitly provided, and any error.
 func selectSession(cfg *config, args []string) (*models.SessionEntry, string, bool, error) {
+	session, projectDir, explicit, err := findSession(cfg, args)
+	if err != nil {
+		return nil, "", false, &sessionLookupError{err}
+	}
+	return session, projectDir, explicit, nil
+}
+
+func findSession(cfg *config, args []string) (*models.SessionEntry, string, bool, error) {
 	// Analysis paths (show/watch/breakdown) recompute counts from their own
 	// parse, so skip the discovery-time message-count scan.
 	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, false)
@@ -222,7 +237,7 @@ func selectSession(cfg *config, args []string) (*models.SessionEntry, string, bo
 		session, err := findSessionByPartialID(sessions, args[0])
 		if err != nil {
 			if errors.Is(err, ErrSessionNotFound) {
-				return nil, "", false, fmt.Errorf("session not found: %s", args[0])
+				return nil, "", false, fmt.Errorf("%w: %s", ErrSessionNotFound, args[0])
 			}
 			return nil, "", false, err
 		}
