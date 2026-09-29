@@ -80,8 +80,9 @@ func runningAgentsKey(a *models.SessionAnalysis, now time.Time) string {
 // under its heading, in the order the analyzer lists them, which is by first
 // message. Above agentListCap agents, two or more finished plain agents fold
 // into one line ahead of the rest, and a run that has ended folds to its
-// heading, which carries the run's subtotal. A run whose status can't be read has ended once all its agents
-// have finished. Running and just-started agents never fold.
+// heading, which carries the run's subtotal. A run whose status can't be
+// read has ended once all its agents have finished. Running and just-started
+// agents never fold.
 func agentRows(a *models.SessionAnalysis, now time.Time) []agentRow {
 	var plain []models.AgentAnalysis
 	runs := map[string][]models.AgentAnalysis{}
