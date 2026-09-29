@@ -11,37 +11,48 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 )
 
-func TestNewBreakdownLayout_ShedsTokenColumnsWhole(t *testing.T) {
+func TestNewBreakdownLayout_ShedsColumnsWhole(t *testing.T) {
+	all := breakdownLayout{indexWidth: 3, agentWidth: 13, runTags: true, in: true, out: true, cacheWrite: true, cacheRead: true}
+	with := func(f func(*breakdownLayout)) breakdownLayout {
+		l := all
+		f(&l)
+		return l
+	}
 	tests := []struct {
-		name       string
-		agentWidth int
-		termWidth  int
-		want       breakdownLayout
+		name        string
+		markerWidth int
+		cellWidth   int
+		termWidth   int
+		want        breakdownLayout
 	}{
-		{"unknown width keeps all", 13, 0, breakdownLayout{agentWidth: 13, in: true, out: true, cacheWrite: true, cacheRead: true}},
-		{"wide keeps all", 13, 120, breakdownLayout{agentWidth: 13, in: true, out: true, cacheWrite: true, cacheRead: true}},
-		{"exact fit keeps all", 13, 87, breakdownLayout{agentWidth: 13, in: true, out: true, cacheWrite: true, cacheRead: true}},
-		{"one short drops IN", 13, 86, breakdownLayout{agentWidth: 13, out: true, cacheWrite: true, cacheRead: true}},
-		{"half of 160 drops IN", 10, 79, breakdownLayout{agentWidth: 10, out: true, cacheWrite: true, cacheRead: true}},
-		{"then C_WR", 13, 78, breakdownLayout{agentWidth: 13, out: true, cacheRead: true}},
-		{"then C_RD", 13, 64, breakdownLayout{agentWidth: 13, out: true}},
-		{"then OUT", 13, 60, breakdownLayout{agentWidth: 13}},
-		{"no agents: no AGENT column", 0, 80, breakdownLayout{in: true, out: true, cacheWrite: true, cacheRead: true}},
-		{"AGENT is at least its header", 3, 0, breakdownLayout{agentWidth: 5, in: true, out: true, cacheWrite: true, cacheRead: true}},
+		{"unknown width keeps all", 10, 13, 0, all},
+		{"wide keeps all", 10, 13, 120, all},
+		{"exact fit keeps all", 10, 13, 85, all},
+		{"one short drops IN", 10, 13, 84, with(func(l *breakdownLayout) { l.in = false })},
+		{"then C_WR", 10, 13, 76, with(func(l *breakdownLayout) { l.in, l.cacheWrite = false, false })},
+		{"then C_RD", 10, 13, 68, with(func(l *breakdownLayout) { l.in, l.cacheWrite, l.cacheRead = false, false, false })},
+		{"then OUT", 10, 13, 60, with(func(l *breakdownLayout) { l.in, l.cacheWrite, l.cacheRead, l.out = false, false, false, false })},
+		{"then run tags", 10, 13, 53, breakdownLayout{indexWidth: 3, agentWidth: 10}},
+		{"then AGENT, so COST stays", 10, 13, 50, breakdownLayout{indexWidth: 3}},
+		{"narrower still: clipped", 10, 13, 30, breakdownLayout{indexWidth: 3}},
+		{"half of 160 without run tags drops IN", 10, 10, 79, breakdownLayout{indexWidth: 3, agentWidth: 10, out: true, cacheWrite: true, cacheRead: true}},
+		{"no agents: no AGENT column", 0, 0, 80, breakdownLayout{indexWidth: 3, in: true, out: true, cacheWrite: true, cacheRead: true}},
+		{"AGENT is at least its header", 3, 3, 0, breakdownLayout{indexWidth: 3, agentWidth: 5, in: true, out: true, cacheWrite: true, cacheRead: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := newBreakdownLayout(tt.agentWidth, tt.termWidth)
+			got := newBreakdownLayout(2, tt.markerWidth, tt.cellWidth, tt.termWidth)
 			if got != tt.want {
-				t.Errorf("newBreakdownLayout(%d, %d) = %+v, want %+v", tt.agentWidth, tt.termWidth, got, tt.want)
-			}
-			if tt.termWidth > 0 && got.width() > tt.termWidth && (got.in || got.out || got.cacheWrite || got.cacheRead) {
-				t.Errorf("layout is %d wide at %d columns with a token column still to give up", got.width(), tt.termWidth)
+				t.Errorf("newBreakdownLayout(2, %d, %d, %d) = %+v, want %+v", tt.markerWidth, tt.cellWidth, tt.termWidth, got, tt.want)
 			}
 			if w := len(got.header()); w != got.width() {
 				t.Errorf("header is %d wide, layout says %d", w, got.width())
 			}
 		})
+	}
+	// The # column grows with the row count.
+	if got := newBreakdownLayout(5, 0, 0, 0).indexWidth; got != 5 {
+		t.Errorf("indexWidth for 5-digit rows = %d, want 5", got)
 	}
 }
 
