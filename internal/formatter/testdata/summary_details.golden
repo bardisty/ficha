@@ -2,20 +2,20 @@
 |  Summary: 3 sessions  |  Duration: 2d                                    |
 +==========================================================================+
 
-----------------------------[ $0.229100 TOTAL ]-----------------------------
+-----------------------------[ $0.2291 TOTAL ]------------------------------
 
-  Input            $0.017950          9.1K tokens
-  Output           $0.092000          7.4K tokens
-  Cache write      $0.056250         20.0K tokens  5m TTL
-  Cache write      $0.010000          1.0K tokens  1h TTL
-  Cache read       $0.052900        122.0K tokens
-  Savings          $0.476100  (from cache reads)
+  Input              $0.0180          9.1K tokens
+  Output             $0.0920          7.4K tokens
+  Cache write        $0.0563         20.0K tokens  5m TTL
+  Cache write        $0.0100          1.0K tokens  1h TTL
+  Cache read         $0.0529        122.0K tokens
+  Savings            $0.4761  (from cache reads)
 
 -----------------------------[ COST BY MODEL ]------------------------------
 
-    Opus 4.8     $0.158700
-    Haiku 4.5    $0.036300
-    Sonnet 5     $0.034100
+    Opus 4.8     $0.1587
+    Haiku 4.5    $0.0363
+    Sonnet 5     $0.0341
 
 ---------------------------[ SESSION BREAKDOWN ]----------------------------
 
@@ -25,16 +25,16 @@
                                                                         
                                                                         
                                                                       █▃
-    min: $0.070  max: $0.159  (2 sessions)
+    min: $0.0704  max: $0.1587  (2 sessions)
     10 JAN                                                        12 JAN
 
-     # SESSION   MODIFIED      MODEL          AGENTS      COST CUMULATIVE
+     # SESSION   MODIFIED      MODEL           AGENTS      COST CUMULATIVE
   ------------------------------------------------------------------------
-     1 aaaa1111  10 JAN 12:00  Opus 4.8            -     $0.16      $0.16
-     2 bbbb2222  12 JAN 18:30  Haiku 4.5   1 [$0.03]     $0.07      $0.23
-     3 cccc3333  14 JAN 09:15  -                   -   (error)          -
+     1 aaaa1111  10 JAN 12:00  Opus 4.8             -   $0.1587    $0.1587
+     2 bbbb2222  12 JAN 18:30  Haiku 4.5  1 [$0.0341]   $0.0704    $0.2291
+     3 cccc3333  14 JAN 09:15  -                    -   (error)          -
   ------------------------------------------------------------------------
-  Sum (2 sessions):                                                 $0.23
+  Sum (2 sessions):                                                $0.2291
 
 ============================================================================
 Messages: 7 (5 parent, 2 agents)  |  Sessions: 3

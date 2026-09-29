@@ -135,35 +135,37 @@ func TestSummaryTableAgentsColumnNeverShiftsRow(t *testing.T) {
 // The AGENTS cell degrades its bracketed cost ($X.XX → $X.X → $X) as the
 // subtotal grows, then cuts with an ellipsis as the last resort — the cell is
 // always exactly 10 display columns.
-func TestFormatAgentsColumnDegradesAndClamps(t *testing.T) {
+func TestAgentsCellPrecision(t *testing.T) {
 	cases := []struct {
 		count int
 		cost  float64
 		want  string
 	}{
-		{1, 0.05, " 1 [$0.05]"},
-		{1, 100.00, "1 [$100.0]"},
-		{10, 10.00, "10 [$10.0]"},
-		{12, 123.45, " 12 [$123]"},
-		{100, 12345.67, "100 [$123…"},
+		{0, 0, "-"},
+		{1, 0.0341, "1 [$0.0341]"},
+		{1, 0.004, "1 [$0.0040]"},
+		{1, 100.00, "1 [$100.00]  "},
+		{12, 12.34, "12 [$12.34]  "},
+		{100, 12345.67, "100 [$12345.67]  "},
 	}
 	for _, tc := range cases {
 		a := &models.SessionAnalysis{
-			HasAgents:  true,
+			HasAgents:  tc.count > 0,
 			AgentCount: tc.count,
 			AgentsCost: models.CostBreakdown{TotalCost: tc.cost},
 		}
-		if got := formatAgentsColumn(a, true); got != tc.want {
-			t.Errorf("formatAgentsColumn(%d, $%.2f) = %q, want %q", tc.count, tc.cost, got, tc.want)
+		if got := agentsCell(a); got != tc.want {
+			t.Errorf("agentsCell(%d, $%v) = %q, want %q", tc.count, tc.cost, got, tc.want)
 		}
 	}
 }
 
 // The styled path pads and dims independently of the plain path; both must
-// emit exactly 10 display columns for any count/subtotal magnitude.
+// fill exactly the column width for any count/subtotal magnitude.
 func TestFormatAgentsColumnWidthWithColor(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
-	cases := []struct {
+	var analyses []*models.SessionAnalysis
+	for _, tc := range []struct {
 		count int
 		cost  float64
 	}{
@@ -173,18 +175,23 @@ func TestFormatAgentsColumnWidthWithColor(t *testing.T) {
 		{10, 10.00},
 		{12, 123.45},
 		{100, 12345.67},
-	}
-	for _, tc := range cases {
-		a := &models.SessionAnalysis{
+	} {
+		analyses = append(analyses, &models.SessionAnalysis{
 			HasAgents:  tc.count > 0,
 			AgentCount: tc.count,
 			AgentsCost: models.CostBreakdown{TotalCost: tc.cost},
-		}
+		})
+	}
+	width := agentsColumnWidth(analyses)
+	if width != len("100 [$12345.67]  ") {
+		t.Errorf("column width %d should fit the widest cell", width)
+	}
+	for _, a := range analyses {
 		for _, noColor := range []bool{true, false} {
-			got := formatAgentsColumn(a, noColor)
-			if w := lipgloss.Width(got); w != 10 {
-				t.Errorf("formatAgentsColumn(%d, $%.2f, noColor=%v) is %d columns, want 10: %q",
-					tc.count, tc.cost, noColor, w, got)
+			got := formatAgentsColumn(a, width, noColor)
+			if w := lipgloss.Width(got); w != width {
+				t.Errorf("formatAgentsColumn(%d, noColor=%v) is %d columns, want %d: %q",
+					a.AgentCount, noColor, w, width, got)
 			}
 		}
 	}

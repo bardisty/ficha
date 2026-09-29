@@ -145,10 +145,9 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 }
 
 // renderHeroCost renders the total cost integrated into a section header
-// Format: ─────────────────────[ $12.665834 TOTAL ]─────────────────────
+// Format: ─────────────────────[ $12.67 TOTAL ]─────────────────────
 func renderHeroCost(cost float64, width int, noColor bool) string {
-	costFull := fmt.Sprintf("$%.6f", cost)
-	costStr := costFull + " TOTAL"
+	costStr := render.Cost(cost) + " TOTAL"
 	bracketedCost := "[ " + costStr + " ]"
 	costLen := len(bracketedCost)
 	sideLen := (width - costLen) / 2
@@ -171,22 +170,11 @@ func renderHeroCost(cost float64, width int, noColor bool) string {
 		return leftLine + bracketedCost + rightLine
 	}
 
-	// Cost with dimmed trailing decimals
-	var costStyled string
-	dotIdx := strings.Index(costFull, ".")
-	if dotIdx != -1 && len(costFull) > dotIdx+3 {
-		mainPart := costFull[:dotIdx+3]  // "$12.66"
-		extraPart := costFull[dotIdx+3:] // "5834"
-		costStyled = heroCostStyle.Render(mainPart) + dimStyle.Render(extraPart) + heroCostStyle.Render(" TOTAL")
-	} else {
-		costStyled = heroCostStyle.Render(costStr)
-	}
-
-	return dimStyle.Render(leftLine) + "[ " + costStyled + " ]" + dimStyle.Render(rightLine)
+	return dimStyle.Render(leftLine) + "[ " + heroCostStyle.Render(costStr) + " ]" + dimStyle.Render(rightLine)
 }
 
 // renderUnifiedCostRow renders a single row with cost and token info combined
-// Format: "  Label          $0.371042     53.9K tokens"
+// Format: "  Label            $0.3710      53.9K tokens"
 func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor lipgloss.Color, extra string, noColor bool) string {
 	// Format label with optional color
 	var labelStr string
@@ -222,7 +210,7 @@ func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor l
 // value green.
 func renderSavingsRow(savings float64, noColor bool) string {
 	if noColor {
-		return fmt.Sprintf("  %-14s %11s  (from cache reads)\n", "Savings", render.Cost(savings))
+		return fmt.Sprintf("  %-14s %s  (from cache reads)\n", "Savings", render.CostCell(savings, 11))
 	}
 	return fmt.Sprintf("  %s %s  %s\n",
 		savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),

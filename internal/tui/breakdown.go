@@ -527,9 +527,8 @@ func (m BreakdownModel) View() string {
 		scrollMode = "MANUAL"
 	}
 	if !m.noColor {
-		// Build footer with highlighted cost (6 decimals, trailing dimmed)
 		msgPart := fmt.Sprintf("Messages: %d", len(m.messages))
-		costStyled := render.CostWithDimDecimals(m.totalCost, styles.SuccessColor, 0)
+		costStyled := lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(render.Cost(m.totalCost))
 		scrollPart := fmt.Sprintf("Scroll: %s", scrollMode)
 
 		// Use lighter gray (250) for text
@@ -556,8 +555,8 @@ func (m BreakdownModel) View() string {
 			sb.WriteString(warnStyle.Render(unknownModelFootnote(false)))
 		}
 	} else {
-		sb.WriteString(fmt.Sprintf("  Messages: %d | Total: $%.6f | Scroll: %s",
-			len(m.messages), m.totalCost, scrollMode))
+		sb.WriteString(fmt.Sprintf("  Messages: %d | Total: %s | Scroll: %s",
+			len(m.messages), render.Cost(m.totalCost), scrollMode))
 		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts, true); note != "" {
 			sb.WriteString(" | " + note)
 		}
@@ -616,7 +615,7 @@ func (m BreakdownModel) renderCompactInsights() string {
 		mult := m.insights.CostMultiplier()
 		peakStr := fmt.Sprintf("Peak: #%d %s @ %s (%.1fx avg)",
 			m.insights.HighestCost.Index,
-			formatCompactCost(m.insights.HighestCost.Cost),
+			render.Cost(m.insights.HighestCost.Cost),
 			render.ClockShort(m.insights.HighestCost.Timestamp),
 			mult)
 		if !m.noColor {
@@ -669,10 +668,10 @@ func (m BreakdownModel) renderCompactInsights() string {
 
 // renderTableHeader renders the table header row
 func (m BreakdownModel) renderTableHeader() string {
-	// Width: cost(10) + space(1) + trend(1) = 12 for COST column
-	// " COST" shifts header 1 char right to align with $ in values (assumes <$10 per message)
-	header := fmt.Sprintf("  %-5s  %-8s  %-10s  %-12s  %6s  %5s  %6s  %6s",
-		"#", "TIME", "MODEL", " COST", "IN", "OUT", "C_WR", "C_RD")
+	// The COST field is the 10-column cost cell plus a space and the change
+	// arrow; the label right-aligns over the cell's four-decimal edge.
+	header := fmt.Sprintf("  %-5s  %-8s  %-10s  %10s    %6s  %5s  %6s  %6s",
+		"#", "TIME", "MODEL", "COST", "IN", "OUT", "C_WR", "C_RD")
 	if !m.noColor {
 		return headerStyle.Render(header)
 	}
@@ -717,6 +716,9 @@ func (m BreakdownModel) renderTableContent() string {
 	return sb.String()
 }
 
+// breakdownCostWidth fits a per-message cost up to "$9999.99  ".
+const breakdownCostWidth = 10
+
 // renderDayMarker renders the divider row placed above the first message of a
 // new local day.
 func (m BreakdownModel) renderDayMarker(t time.Time) string {
@@ -739,8 +741,7 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevC
 		modelLabel = render.ClampModel(modelName, 9) + unknownModelMarker
 	}
 	modelStr := fmt.Sprintf("%-10s", modelLabel)
-	// Cost: 6 decimal places, 10 char width (e.g., "$0.093528" = 9 chars)
-	costStr := fmt.Sprintf("%-10s", fmt.Sprintf("$%.6f", msg.Cost.TotalCost))
+	costStr := render.CostCell(msg.Cost.TotalCost, breakdownCostWidth)
 	inStr := fmt.Sprintf("%6s", render.Number(msg.Usage.InputTokens))
 	outStr := fmt.Sprintf("%5s", render.Number(msg.Usage.OutputTokens))
 	cacheWriteStr := fmt.Sprintf("%6s", render.Number(msg.Usage.CacheCreationInputTokens))
@@ -780,8 +781,7 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevC
 		trendStyled = dimStyle.Render(trendSymbol)
 	}
 
-	// Format cost with dimmed trailing decimals (main $X.XX colored, XXXX dimmed)
-	costStyled := render.CostWithDimDecimals(msg.Cost.TotalCost, costColor, 10)
+	costStyled := render.CostColored(msg.Cost.TotalCost, costColor, breakdownCostWidth)
 
 	// For new messages, override with highlight style
 	if isNew {
@@ -925,19 +925,6 @@ func getRowTrendIndicator(currentCost, previousCost float64, isFirst bool) (symb
 		return changeDown, models.TrendDecreasing
 	}
 	return changeStable, models.TrendStable
-}
-
-// Compact formatting helpers
-
-// formatCompactCost formats a cost value compactly (e.g., "$0.0512")
-func formatCompactCost(cost float64) string {
-	if cost >= 100 {
-		return fmt.Sprintf("$%.2f", cost)
-	}
-	if cost >= 10 {
-		return fmt.Sprintf("$%.3f", cost)
-	}
-	return fmt.Sprintf("$%.4f", cost)
 }
 
 func (m BreakdownModel) startSessionWatcher() tea.Cmd {

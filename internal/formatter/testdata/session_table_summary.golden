@@ -2,19 +2,19 @@
 |  Summary: 3 sessions  |  Duration: 4d                                    |
 +==========================================================================+
 
-----------------------------[ $26.700000 TOTAL ]----------------------------
+------------------------------[ $26.70 TOTAL ]------------------------------
 
-  Input            $0.550000         98.8K tokens
-  Output           $3.050000         54.3K tokens
-  Cache write      $6.000000        320.0K tokens  5m TTL
-  Cache write      $2.400000         80.0K tokens  1h TTL
-  Cache read      $14.700000         9.80M tokens
-  Savings        $132.300000  (from cache reads)
+  Input              $0.5500         98.8K tokens
+  Output             $3.05           54.3K tokens
+  Cache write        $6.00          320.0K tokens  5m TTL
+  Cache write        $2.40           80.0K tokens  1h TTL
+  Cache read        $14.70           9.80M tokens
+  Savings          $132.30    (from cache reads)
 
 -----------------------------[ COST BY MODEL ]------------------------------
 
-    Opus 4.8     $24.100000
-    Haiku 4.5    $2.600000
+    Opus 4.8     $24.10
+    Haiku 4.5    $2.60
 
 ============================================================================
 Messages: 61 (48 parent, 13 agents)  |  Sessions: 3

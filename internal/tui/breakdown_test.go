@@ -10,31 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestFormatCompactCost(t *testing.T) {
-	tests := []struct {
-		name     string
-		cost     float64
-		expected string
-	}{
-		{"zero", 0, "$0.0000"},
-		{"small cost", 0.0512, "$0.0512"},
-		{"one dollar", 1.0, "$1.0000"},
-		{"ten dollars", 10.5, "$10.500"},
-		{"hundred dollars", 123.45, "$123.45"},
-		{"large cost", 999.99, "$999.99"},
-		{"very small", 0.0001, "$0.0001"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := formatCompactCost(tt.cost)
-			if result != tt.expected {
-				t.Errorf("formatCompactCost(%f) = %q, want %q", tt.cost, result, tt.expected)
-			}
-		})
-	}
-}
-
 // bdMsg builds a message with a fixed timestamp (minutes offset) and optional
 // agent ID. Its identity — what highlight tracking keys on — is stable across
 // reloads regardless of the row's Index, so tests can add rows and reorder them.
@@ -177,8 +152,8 @@ func TestBreakdownModel_RenderRow(t *testing.T) {
 	if !strings.Contains(row, "Sonnet 4") {
 		t.Error("row should contain model name 'Sonnet 4'")
 	}
-	if !strings.Contains(row, "$0.051200") {
-		t.Error("row should contain cost with 6 decimal places")
+	if !strings.Contains(row, "$0.0512") || strings.Contains(row, "$0.05120") {
+		t.Error("row should contain the cost with 4 decimal places")
 	}
 	if !strings.Contains(row, "1.2K") {
 		t.Error("row should contain input tokens")
