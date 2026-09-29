@@ -802,6 +802,17 @@ func TestE2EProjectPathJoinsShowAndSummary(t *testing.T) {
 
 // --- assertion helpers ---
 
+// withoutDebug drops -v's resolution trace, for tests about other stderr.
+func withoutDebug(stderr string) string {
+	var kept []string
+	for _, line := range strings.SplitAfter(stderr, "\n") {
+		if !strings.HasPrefix(line, "Debug: ") {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "")
+}
+
 func mustContainAll(t *testing.T, s string, subs ...string) {
 	t.Helper()
 	for _, sub := range subs {
@@ -1132,9 +1143,9 @@ func TestE2EUsageErrors(t *testing.T) {
 		{"unrelated word points at help", []string{"frobnicate"}, `unknown command "frobnicate" for "ficha". Run 'ficha --help' to see the commands.`},
 		{"directory points at -p", []string{dir}, "unknown command " + strconv.Quote(dir) + ` for "ficha". To analyze that directory, run: ficha -p ` + shellQuote(dir)},
 		{"unmatched word in the project", []string{projFlag, "frobnicate"}, `unknown command "frobnicate" for "ficha". Run 'ficha --help' to see the commands.`},
-		{"hex arg is still a session lookup", []string{projFlag, "abc123"}, "session not found: abc123"},
-		{"uppercase hex is a session lookup", []string{projFlag, "ABC123"}, "session not found: ABC123"},
-		{"pasted filename is a session lookup", []string{projFlag, "abc123.jsonl"}, "session not found: abc123.jsonl"},
+		{"hex arg is still a session lookup", []string{projFlag, "abc123"}, "session not found: abc123. Run 'ficha list " + projFlag + "' to see this project's sessions."},
+		{"uppercase hex is a session lookup", []string{projFlag, "ABC123"}, "session not found: ABC123. Run 'ficha list " + projFlag + "' to see this project's sessions."},
+		{"pasted filename is a session lookup", []string{projFlag, "abc123.jsonl"}, "session not found: abc123.jsonl. Run 'ficha list " + projFlag + "' to see this project's sessions."},
 		{"stray arg on a no-arg command", []string{"list", "extra"}, `ficha list takes no arguments, got "extra"`},
 		{"non-numeric int flag", []string{"global", "--top", "abc"}, `invalid --top value "abc": must be a whole number`},
 		{"overflowing int flag", []string{"global", "--top", "99999999999999999999"}, `invalid --top value "99999999999999999999": is out of range`},
@@ -1288,6 +1299,19 @@ func TestE2ECompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The counts in the descriptions are the ones `list` shows.
+	listOut, _, err := executeCLISplit(t, "list", projFlag, "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []models.SessionEntry
+	mustJSON(t, listOut, &entries)
+	for _, e := range entries {
+		if want := map[string]int{e2eAlphaID: 2, e2eBetaID: 4}[e.SessionID]; e.MessageCount != want {
+			t.Errorf("list counts %d messages for %s, completion says %d", e.MessageCount, e.SessionID, want)
+		}
+	}
+
 	const (
 		noFile    = ":4"  // ShellCompDirectiveNoFileComp
 		keepOrder = ":36" // NoFileComp | KeepOrder
@@ -1300,7 +1324,8 @@ func TestE2ECompletion(t *testing.T) {
 		wantDirective string
 	}{
 		{"show offers sessions newest first", []string{"show", projFlag, ""},
-			[]string{"bbbbbbbb\tmodified 5m ago · 2 msgs", "aaaaaaaa\tmodified 3h ago · 2 msgs"}, keepOrder},
+			// beta's 4 are its 2 plus one each from its regular and workflow agents.
+			[]string{"bbbbbbbb\tmodified 5m ago · 4 msgs", "aaaaaaaa\tmodified 3h ago · 2 msgs"}, keepOrder},
 		{"prefix narrows the sessions", []string{"watch", projFlag, "aa"},
 			[]string{"aaaaaaaa\tmodified 3h ago · 2 msgs"}, keepOrder},
 		{"typing past 8 chars completes the full ID", []string{"breakdown", projFlag, "aaaaaaaa-1"},
@@ -1475,7 +1500,7 @@ func TestE2EWarningsNameTheirSessions(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if stderr != tt.want {
+			if stderr = withoutDebug(stderr); stderr != tt.want {
 				t.Errorf("stderr:\n got: %q\nwant: %q", stderr, tt.want)
 			}
 		})
@@ -1546,7 +1571,7 @@ func TestE2EVerboseNamesUnreadableSession(t *testing.T) {
 	want := "Warning: 1 session(s) could not be parsed\n" +
 		"Warning: 1 agent sub-session(s) could not be read\n" +
 		"  33333333: unreadable, 1 agent\n"
-	if stderr != want {
+	if stderr = withoutDebug(stderr); stderr != want {
 		t.Errorf("stderr:\n got: %q\nwant: %q", stderr, want)
 	}
 }

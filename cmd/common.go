@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
@@ -40,11 +41,11 @@ func loadProjectSessions(cfg *config, countMessages bool) ([]models.SessionEntry
 // displays those counts, so every analysis path passes false and lets the
 // analyzer recompute counts from its own parse (avoids scanning each file twice).
 func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.SessionEntry, string, error) {
-	// Resolve project directory
-	projDir, err := resolveProjectDirectory(cfg)
+	project, err := resolveProjectDirectory(cfg)
 	if err != nil {
 		return nil, "", err
 	}
+	projDir := project.dir
 
 	// Scan disk for session files
 	diskSessions, err := parser.DiscoverSessionsFromDisk(projDir, countMessages)
@@ -64,8 +65,10 @@ func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.Sessi
 	sessions, orphanCount := parser.MergeSessionSources(index, diskSessions, projDir, countMessages)
 
 	if len(sessions) == 0 {
-		return nil, "", fmt.Errorf("no sessions found in %s", projDir)
+		cfg.tracef("no transcripts in %s", filepath.Base(projDir))
+		return nil, "", noSessionsError(cfg, project)
 	}
+	cfg.tracef("using %s (%d sessions)", filepath.Base(projDir), len(sessions))
 
 	// Sessions missing from an index are only worth a note when there is an
 	// index: current Claude Code doesn't write one, so without it every
@@ -75,96 +78,6 @@ func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.Sessi
 	}
 
 	return sessions, projDir, nil
-}
-
-// resolveProjectDirectory determines which Claude project directory to use.
-// Priority: --project-dir flag > --project/-p flag > current directory
-// Uses fallback matching when exact encoded path doesn't exist.
-func resolveProjectDirectory(cfg *config) (string, error) {
-	// If --project-dir is set, use it directly (bypass all auto-detection)
-	if cfg.projectDir != "" {
-		return paths.ResolveProjectDir(cfg.projectDir)
-	}
-
-	// Get the source path (from --project or cwd)
-	projPath, err := getProjectPath(cfg)
-	if err != nil {
-		return "", err
-	}
-
-	// Try exact match first (fast path, duplicated in paths.FindProjectDir for same reason)
-	exactDir, err := paths.GetProjectDirForPath(projPath)
-	if err != nil {
-		return "", err
-	}
-
-	if info, statErr := os.Stat(exactDir); statErr == nil && info.IsDir() {
-		return exactDir, nil
-	}
-
-	// Exact match failed - try fallback matching
-	allProjects, err := parser.DiscoverAllProjects()
-	if err != nil {
-		return "", fmt.Errorf("discovering projects: %w", err)
-	}
-
-	match, err := paths.FindProjectDir(projPath, allProjects)
-	if err != nil {
-		// Enhance error messages with helpful suggestions
-		if errors.Is(err, paths.ErrNoProjectFound) {
-			return "", formatNoProjectError(projPath, allProjects)
-		}
-		return "", err
-	}
-
-	// Print match info if matched by suffix
-	if match.MatchInfo != "" {
-		fmt.Fprintf(cfg.stderr, "Note: %s\n", match.MatchInfo)
-	}
-
-	return match.ProjectDir, nil
-}
-
-// similarProjectCommand is the command to paste for a suggested project:
-// -p with its real path, which normally resolves by exact match (unless the
-// directory has since moved or a symlink changed). A path from another OS (a
-// Windows transcript read under WSL) isn't absolute here and can't resolve,
-// so it gets the encoded directory name instead.
-func similarProjectCommand(proj models.ProjectInfo) string {
-	if filepath.IsAbs(proj.OriginalPath) {
-		return "ficha -p " + shellQuote(proj.OriginalPath)
-	}
-	return "ficha --project-dir=" + shellQuote(proj.EncodedPath)
-}
-
-// formatNoProjectError creates a helpful error message when no project is found
-func formatNoProjectError(projPath string, allProjects []models.ProjectInfo) error {
-	basename := strings.ToLower(filepath.Base(projPath))
-
-	// Find similar projects by prefix basename match
-	var suggestions []string
-	const maxSuggestions = 5
-	for _, proj := range allProjects {
-		if proj.OriginalPath != "" {
-			projBasename := strings.ToLower(paths.BasenameCrossOS(proj.OriginalPath))
-			if strings.HasPrefix(projBasename, basename) || strings.HasPrefix(basename, projBasename) {
-				suggestions = append(suggestions, "  "+similarProjectCommand(proj))
-				if len(suggestions) >= maxSuggestions {
-					break
-				}
-			}
-		}
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("no Claude sessions found for: %s", projPath))
-
-	if len(suggestions) > 0 {
-		sb.WriteString("\n\nSimilar projects:\n")
-		sb.WriteString(strings.Join(suggestions, "\n"))
-	}
-
-	return errors.New(sb.String())
 }
 
 // selectSession finds the appropriate session based on CLI args.
@@ -180,17 +93,27 @@ func selectSession(cfg *config, args []string) (*models.SessionEntry, string, bo
 func findSession(cfg *config, args []string) (*models.SessionEntry, string, bool, error) {
 	// Analysis paths (show/watch/breakdown) recompute counts from their own
 	// parse, so skip the discovery-time message-count scan.
+	explicitSessionID := len(args) > 0
 	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, false)
 	if err != nil {
+		// A session ID copied from elsewhere may belong to a project other
+		// than this directory's, and saying where beats a bare project error.
+		if explicitSessionID {
+			if elsewhere := locateSession(cfg, args[0], ""); elsewhere != nil {
+				return nil, "", false, elsewhere
+			}
+		}
 		return nil, "", false, err
 	}
 
-	explicitSessionID := len(args) > 0
 	if explicitSessionID {
 		session, err := findSessionByPartialID(sessions, args[0])
 		if err != nil {
 			if errors.Is(err, ErrSessionNotFound) {
-				return nil, "", false, fmt.Errorf("%w: %s", ErrSessionNotFound, args[0])
+				if elsewhere := locateSession(cfg, args[0], projectDir); elsewhere != nil {
+					return nil, "", false, elsewhere
+				}
+				return nil, "", false, &sessionNotFoundError{fmt.Sprintf("session not found: %s. Run 'ficha list%s' to see this project's sessions.", args[0], cfg.typedProjectArgs())}
 			}
 			return nil, "", false, err
 		}
@@ -208,21 +131,19 @@ func findSession(cfg *config, args []string) (*models.SessionEntry, string, bool
 	return &sessions[0], projectDir, false, nil
 }
 
-// findSessionByPartialID finds a session by partial ID match.
-// Returns the matching session, or an error if multiple sessions match.
+// findSessionByPartialID finds a session by partial ID match, ignoring case
+// and a pasted .jsonl extension. Returns the matching session, or an error if
+// multiple sessions match.
 func findSessionByPartialID(sessions []models.SessionEntry, partialID string) (*models.SessionEntry, error) {
-	if len(sessions) == 0 {
-		return nil, ErrSessionNotFound
-	}
-
+	id := normalizeSessionID(partialID)
 	// Empty ID would match all sessions via prefix matching - reject it
-	if partialID == "" {
+	if len(sessions) == 0 || id == "" {
 		return nil, ErrSessionNotFound
 	}
 
 	// Try exact match first
 	for i := range sessions {
-		if sessions[i].SessionID == partialID {
+		if strings.ToLower(sessions[i].SessionID) == id {
 			return &sessions[i], nil
 		}
 	}
@@ -230,7 +151,7 @@ func findSessionByPartialID(sessions []models.SessionEntry, partialID string) (*
 	// Try prefix match - collect all matches
 	var matches []models.SessionEntry
 	for i := range sessions {
-		if len(sessions[i].SessionID) >= len(partialID) && sessions[i].SessionID[:len(partialID)] == partialID {
+		if strings.HasPrefix(strings.ToLower(sessions[i].SessionID), id) {
 			matches = append(matches, sessions[i])
 		}
 	}
@@ -243,16 +164,97 @@ func findSessionByPartialID(sessions []models.SessionEntry, partialID string) (*
 		return &matches[0], nil
 	}
 
-	// Multiple matches - return error with list (capped at 10)
+	// Multiple matches: list the newest, with what `list` would say about
+	// each, so the right one can be picked without running it.
+	const displayLimit = 10
+	sortSessionsByModified(matches)
+	shown := matches[:min(len(matches), displayLimit)]
+	descs := describeSessions(shown, time.Now())
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("ambiguous session ID %q matches %d sessions:\n", partialID, len(matches)))
-	displayLimit := 10
-	for i, m := range matches {
-		if i >= displayLimit {
-			sb.WriteString(fmt.Sprintf("  ... and %d more\n", len(matches)-displayLimit))
-			break
-		}
-		sb.WriteString(fmt.Sprintf("  %s\n", m.SessionID))
+	fmt.Fprintf(&sb, "ambiguous session ID %q matches %d sessions:", partialID, len(matches))
+	for i, m := range shown {
+		fmt.Fprintf(&sb, "\n  %s  %s", m.SessionID, descs[i])
 	}
-	return nil, fmt.Errorf("%s", sb.String())
+	if len(matches) > displayLimit {
+		fmt.Fprintf(&sb, "\n  ... and %d more", len(matches)-displayLimit)
+	}
+	return nil, errors.New(sb.String())
+}
+
+// sessionNotFoundError is ErrSessionNotFound with a message that says where
+// to look next.
+type sessionNotFoundError struct{ msg string }
+
+func (e *sessionNotFoundError) Error() string        { return e.msg }
+func (e *sessionNotFoundError) Is(target error) bool { return target == ErrSessionNotFound }
+
+// locateSession looks for a session ID in every project except excludeDir.
+// It only lists directories, with no parsing, so a miss stays cheap. It
+// returns nil when no other project has a match.
+func locateSession(cfg *config, arg, excludeDir string) error {
+	id := normalizeSessionID(arg)
+	projectsDir, err := paths.GetProjectsDir()
+	if id == "" || err != nil {
+		return nil
+	}
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return nil
+	}
+	type hit struct{ projectDir, sessionID string }
+	var hits []hit
+	for _, e := range entries {
+		dir := filepath.Join(projectsDir, e.Name())
+		if dir == excludeDir || !isDir(dir) {
+			continue
+		}
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, f := range files {
+			name := strings.ToLower(f.Name())
+			if !f.IsDir() && strings.HasSuffix(name, ".jsonl") && strings.HasPrefix(name, id) {
+				hits = append(hits, hit{dir, strings.TrimSuffix(f.Name(), ".jsonl")})
+			}
+		}
+	}
+	if len(hits) == 0 {
+		return nil
+	}
+	cfg.tracef("session %s found in %d other project(s)", arg, len(hits))
+
+	projects, _ := parser.DiscoverAllProjects()
+	byDir := make(map[string]models.ProjectInfo, len(projects))
+	for _, p := range projects {
+		byDir[p.FullPath] = p
+	}
+	project := func(dir string) models.ProjectInfo {
+		if p, ok := byDir[dir]; ok {
+			return p
+		}
+		return models.ProjectInfo{EncodedPath: filepath.Base(dir), FullPath: dir}
+	}
+	run := func(h hit) string {
+		return fmt.Sprintf("%s %s %s", cfg.command(), shortSessionID(h.sessionID), projectArgs(project(h.projectDir)))
+	}
+
+	if len(hits) == 1 {
+		p := project(hits[0].projectDir)
+		where := p.OriginalPath
+		if where == "" {
+			where = p.EncodedPath
+		}
+		return &sessionNotFoundError{fmt.Sprintf("session %s is in %s. Run: %s", shortSessionID(hits[0].sessionID), where, run(hits[0]))}
+	}
+	const maxHits = 5
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "session %s isn't here, but matches %d sessions in other projects:", arg, len(hits))
+	for _, h := range hits[:min(len(hits), maxHits)] {
+		sb.WriteString("\n  " + run(h))
+	}
+	if len(hits) > maxHits {
+		fmt.Fprintf(&sb, "\n  ... and %d more", len(hits)-maxHits)
+	}
+	return &sessionNotFoundError{sb.String()}
 }

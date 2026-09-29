@@ -163,8 +163,8 @@ func TestLooksLikePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.value, func(t *testing.T) {
-			if got := looksLikePath(tt.value); got != tt.expected {
-				t.Errorf("looksLikePath(%q) = %v, want %v", tt.value, got, tt.expected)
+			if got := LooksLikePath(tt.value); got != tt.expected {
+				t.Errorf("LooksLikePath(%q) = %v, want %v", tt.value, got, tt.expected)
 			}
 		})
 	}
@@ -172,10 +172,9 @@ func TestLooksLikePath(t *testing.T) {
 
 // A relative --project-dir value carrying a separator but no "./" prefix must
 // route to the path branch (resolved relative to cwd), not the encoded-name
-// branch under ~/.claude/projects. Before the looksLikePath change only "./"
-// and "../" prefixes were recognized, so this — and the Windows backslash
-// forms it now also catches — landed in the wrong branch. Uses a forward-slash
-// path so the positive resolution is deterministic on Linux.
+// branch under ~/.claude/projects, and so must its Windows backslash forms.
+// Uses a forward-slash path so the positive resolution is deterministic on
+// Linux.
 func TestResolveProjectDir_SeparatorRelativeRoutesToPath(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "ficha-resolve-sep-*")
 	if err != nil {
@@ -462,14 +461,13 @@ func TestAmbiguousProjectError(t *testing.T) {
 	if !strings.Contains(errStr, "myproject") {
 		t.Error("error should contain basename")
 	}
-	if !strings.Contains(errStr, "path1") {
-		t.Error("error should contain first match")
+	// Matches are named by the path Claude Code ran in, not the encoded name
+	// nobody typed.
+	if !strings.Contains(errStr, "/original/path1") || !strings.Contains(errStr, "/original/path2") {
+		t.Errorf("error should list both original paths: %s", errStr)
 	}
-	if !strings.Contains(errStr, "path2") {
-		t.Error("error should contain second match")
-	}
-	if !strings.Contains(errStr, "--project-dir") {
-		t.Error("error should suggest --project-dir flag")
+	if strings.Contains(errStr, "--project-dir") {
+		t.Errorf("error should not point at --project-dir: %s", errStr)
 	}
 }
 
