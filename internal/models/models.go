@@ -437,6 +437,27 @@ func (t TrendDirection) String() string {
 	}
 }
 
+// MarshalText encodes the direction by name, so json carries "increasing"
+// rather than an enum's position.
+func (t TrendDirection) MarshalText() ([]byte, error) {
+	return []byte(t.String()), nil
+}
+
+// UnmarshalText reads the names MarshalText writes.
+func (t *TrendDirection) UnmarshalText(b []byte) error {
+	switch string(b) {
+	case "stable":
+		*t = TrendStable
+	case "increasing":
+		*t = TrendIncreasing
+	case "decreasing":
+		*t = TrendDecreasing
+	default:
+		return fmt.Errorf("unknown cost trend %q", b)
+	}
+	return nil
+}
+
 // MessageSnapshot captures key data about a single message for insights
 type MessageSnapshot struct {
 	Index             int       `json:"index"` // 1-based message index
@@ -474,6 +495,25 @@ type MessageInsights struct {
 // threshold can never drift from the analyzer's compute threshold.
 func (i *MessageInsights) HasTrend() bool {
 	return i.MessageCount >= MinMessagesForTrend
+}
+
+// MarshalJSON leaves out cost_trend, recent_avg_cost and trend_window when no
+// trend was computed. Their zero values would otherwise read as a stable
+// trend over an empty window. omitempty can't do it: stable is the zero
+// TrendDirection, so it would drop a real stable trend too.
+func (i MessageInsights) MarshalJSON() ([]byte, error) {
+	type plain MessageInsights
+	if i.HasTrend() {
+		return json.Marshal(plain(i))
+	}
+	// Nil pointers at the outer level shadow the embedded fields of the same
+	// name, and omitempty drops them.
+	return json.Marshal(struct {
+		plain
+		CostTrend     *TrendDirection `json:"cost_trend,omitempty"`
+		RecentAvgCost *float64        `json:"recent_avg_cost,omitempty"`
+		TrendWindow   *int            `json:"trend_window,omitempty"`
+	}{plain: plain(i)})
 }
 
 // CostMultiplier returns how many times above average the highest cost is

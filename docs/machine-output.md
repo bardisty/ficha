@@ -48,6 +48,22 @@ Each entry in `workflows` (on `show` json and each per-session record in `summar
 
 `title` on `show` json and on each per-session record in `summary -d` json is the session's latest `ai-title` record, as Claude Code wrote it. Claude Code rewrites the title as a session goes on, and the key is undocumented, so `title` is absent when a transcript has none. It's raw transcript text: escape it before you print it to a terminal.
 
+## Cost insights
+
+`insights` on `show` json and on each per-session record in `summary -d` json describes the parent transcript's messages. Agents' messages aren't in it.
+
+| Key | Meaning |
+| --- | --- |
+| `message_count` | parent messages the insights cover |
+| `average_cost` | mean cost per message |
+| `first_message`, `last_message` | a snapshot: `index` (1-based), `timestamp`, `cost`, and `main_cost_component` (`input`, `output`, `cache_write_5m`, `cache_write_1h` or `cache_read`) with its `main_cost_value` |
+| `highest_cost` | the same snapshot for the costliest message, present only when it costs more than 1.5 times the average |
+| `cost_trend` | `increasing`, `decreasing` or `stable`: `recent_avg_cost` against `average_cost`, with more than 20% either way counting as a change |
+| `recent_avg_cost` | mean cost of the last `trend_window` messages |
+| `trend_window` | how many recent messages the trend averages: 20, or half the session if that's fewer |
+
+A session with fewer than 6 parent messages has no trend, so `cost_trend`, `recent_avg_cost` and `trend_window` are absent. Check for `cost_trend` before reading the other two.
+
 ## Skip counters
 
 Every input ficha could not read is counted, never swallowed. Three counters travel together on json (omitted when zero) and csv, and each one also prints a stderr warning:
