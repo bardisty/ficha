@@ -139,6 +139,17 @@ ficha breakdown  # live per-message cost table
 
 To analyze a different project without cd'ing, pass its directory with `-p` / `--project`.
 
+### Scrolling in tmux
+
+ficha doesn't capture the mouse, so click-and-drag selection keeps working. Most terminals turn the wheel into arrow keys for full-screen programs, and those scroll `watch` and `breakdown`. tmux with `set -g mouse on` doesn't. In tmux 3.5 and older, wheel-up puts the pane in copy mode: the clock and totals stop, `[0/0]` shows in the corner, and ficha looks hung until you press `q` or scroll back down. From 3.6 the wheel does nothing. These two lines in `~/.tmux.conf` make the wheel send arrow keys to full-screen programs that don't use the mouse, and leave the rest of tmux's wheel handling as it was:
+
+```tmux
+bind -n WheelUpPane if -Ft= '#{||:#{mouse_any_flag},#{pane_in_mode}}' 'send -M' "if -Ft= '#{alternate_on}' 'send -t= -N 3 Up' 'copy-mode -et='"
+bind -n WheelDownPane if -Ft= '#{||:#{mouse_any_flag},#{pane_in_mode}}' 'send -M' "if -Ft= '#{alternate_on}' 'send -t= -N 3 Down'"
+```
+
+Then, inside tmux, run `tmux source-file ~/.tmux.conf`. The bindings need tmux 2.6 or newer. `-t=` sends each command to the pane under the mouse. Without it, tmux before 3.0a runs the inner commands on the focused pane, which is often the other half of a `watch` and `breakdown` split.
+
 ## Commands
 
 | Command | Description |
