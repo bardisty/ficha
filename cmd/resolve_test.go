@@ -280,11 +280,17 @@ func TestE2EVerboseTrace(t *testing.T) {
 	_, stderr, _ = executeCLISplit(t, "list", "-p", sub, "-v")
 	for _, want := range []string{
 		"Debug: no project directory " + paths.PathToProjectDir(sub) + "\n",
-		"Debug: no project among 1 has the name \"src\"\n",
 		"Debug: parent directory " + webapp + " has a project\n",
 	} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr missing %q:\n%s", want, stderr)
 		}
+	}
+
+	// A directory with no project above it goes on to the name match.
+	other := realDir(t, "other", "src")
+	_, stderr, _ = executeCLISplit(t, "list", "-p", other, "-v")
+	if want := "Debug: no project among 1 has the name \"src\"\n"; !strings.Contains(stderr, want) {
+		t.Errorf("stderr missing %q:\n%s", want, stderr)
 	}
 }

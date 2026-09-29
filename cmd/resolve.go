@@ -134,12 +134,33 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 		return resolvedProject{}, noDataError(projectsDir)
 	}
 
+	// Claude Code shortens a folder name past 200 characters with a hash
+	// suffix PathToProjectDir can't reproduce, so a deep directory's own
+	// project is found by the path its transcripts recorded, before any
+	// parent can claim it.
+	for _, p := range allProjects {
+		if p.OriginalPath == canonical {
+			cfg.tracef("found project directory %s by its recorded path", p.EncodedPath)
+			return resolvedProject{dir: p.FullPath, label: p.OriginalPath}, nil
+		}
+	}
+
+	// A parent directory's project is far likelier to be the one meant than a
+	// project elsewhere that shares this directory's name, and common names
+	// ("src", "api") make such matches easy. So the parent hint comes first,
+	// and the name fallback is left to directories with no project above them,
+	// such as a project moved or renamed on disk.
+	if parent := ancestorWithProject(canonical, projectsDir); parent != "" {
+		cfg.tracef("parent directory %s has a project", parent)
+		return resolvedProject{}, noProjectError(cfg, projPath, canonical, parent, allProjects)
+	}
+
 	match, err := paths.FindProjectDir(projPath, allProjects)
 	var ambiguous *paths.AmbiguousProjectError
 	switch {
 	case errors.Is(err, paths.ErrNoProjectFound):
 		cfg.tracef("no project among %d has the name %q", len(allProjects), filepath.Base(canonical))
-		return resolvedProject{}, noProjectError(cfg, projPath, canonical, projectsDir, allProjects)
+		return resolvedProject{}, noProjectError(cfg, projPath, canonical, "", allProjects)
 	case errors.As(err, &ambiguous):
 		cfg.tracef("%d projects have the name %q", len(ambiguous.Matches), ambiguous.Basename)
 		return resolvedProject{}, ambiguousProjectError(cfg, canonical, ambiguous)
@@ -175,9 +196,9 @@ func hasProjects(projectsDir string) bool {
 
 // noProjectError explains a directory with no Claude project, one cause per
 // message: a -p path that doesn't exist or isn't a directory, or a real
-// directory Claude Code never ran in. Next steps are the nearest parent that
-// has sessions and projects with a similar name.
-func noProjectError(cfg *config, projPath, canonical, projectsDir string, allProjects []models.ProjectInfo) error {
+// directory Claude Code never ran in. Next steps are parent, the nearest
+// parent that has sessions ("" for none), and projects with a similar name.
+func noProjectError(cfg *config, projPath, canonical, parent string, allProjects []models.ProjectInfo) error {
 	var similar strings.Builder
 	if projects := similarProjects(canonical, allProjects); len(projects) > 0 {
 		similar.WriteString("\nProjects with a similar name:")
@@ -194,8 +215,7 @@ func noProjectError(cfg *config, projPath, canonical, projectsDir string, allPro
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Claude Code has no sessions for %s. Sessions are recorded per directory Claude Code was started in.", canonical)
-	if parent := ancestorWithProject(canonical, projectsDir); parent != "" {
-		cfg.tracef("parent directory %s has a project", parent)
+	if parent != "" {
 		fmt.Fprintf(&sb, "\nFound sessions for parent directory %s. Run: %s -p %s", parent, cfg.command(), shellQuote(parent))
 	}
 	sb.WriteString(similar.String())

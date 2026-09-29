@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bardisty/ficha/internal/paths"
 )
 
 // setupCwdFixture builds a projects tree the way current Claude Code writes
@@ -74,6 +77,97 @@ func TestProjectNameFallbackUsesTranscriptCwd(t *testing.T) {
 	}
 	if !strings.Contains(out, "API-equivalent estimate") {
 		t.Errorf("show should render the matched project:\n%s", out)
+	}
+}
+
+// From a subdirectory of a project, the parent hint wins over a name match:
+// an unrelated project that happens to share the subdirectory's common name
+// is offered as a similar project, never picked.
+func TestParentHintBeatsNameFallback(t *testing.T) {
+	home := realDir(t, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	root := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+
+	webapp := filepath.Join(home, "source", "webapp")
+	tools := filepath.Join(home, "work", "tools", "src")
+	for i, cwd := range []string{webapp, tools} {
+		id := fmt.Sprintf("aaaaaaaa-0000-0000-0000-00000000000%d", i)
+		dir := filepath.Join(root, "projects", paths.PathToProjectDir(cwd))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		line := strings.Replace(e2eMsg("2026-02-01T10:00:00Z", id, "claude-opus-4-8", 100, 200, 0, 0, 0),
+			`{"type":"assistant",`, `{"type":"assistant","cwd":`+jsonString(cwd)+`,`, 1)
+		if err := os.WriteFile(filepath.Join(dir, id+".jsonl"), []byte(line+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src := filepath.Join(webapp, "src")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(src)
+
+	_, stderr, err := executeCLISplit(t, "show")
+	if err == nil {
+		t.Fatal("want the parent hint, got a report")
+	}
+	if strings.Contains(stderr, "matched by name") {
+		t.Errorf("fell back to the name match:\n%s", stderr)
+	}
+	for _, want := range []string{
+		"Claude Code has no sessions for " + src + ".",
+		"\nFound sessions for parent directory " + webapp + ". Run: ficha show -p " + shellQuote(webapp),
+		"\nProjects with a similar name:\n  ficha show -p " + shellQuote(tools),
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q:\n%v", want, err)
+		}
+	}
+}
+
+// A project whose folder name isn't the plain encoding of its path, as with
+// the hashed names Claude Code gives long paths, is still found by the path
+// its transcripts recorded, even when a parent directory has a project too.
+func TestRecordedPathBeatsParentHint(t *testing.T) {
+	home := realDir(t, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	root := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+
+	webapp := filepath.Join(home, "source", "webapp")
+	billing := filepath.Join(webapp, "packages", "billing")
+	for i, p := range []struct{ cwd, encoded string }{
+		{webapp, paths.PathToProjectDir(webapp)},
+		{billing, paths.PathToProjectDir(billing)[:12] + "-1x2y3z"},
+	} {
+		id := fmt.Sprintf("bbbbbbbb-0000-0000-0000-00000000000%d", i)
+		dir := filepath.Join(root, "projects", p.encoded)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		line := strings.Replace(e2eMsg("2026-02-01T10:00:00Z", id, "claude-opus-4-8", 100, 200, 0, 0, 0),
+			`{"type":"assistant",`, `{"type":"assistant","cwd":`+jsonString(p.cwd)+`,`, 1)
+		if err := os.WriteFile(filepath.Join(dir, id+".jsonl"), []byte(line+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(billing, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out, stderr, err := executeCLISplit(t, "show", "-p", billing, "--no-color")
+	if err != nil {
+		t.Fatalf("want billing's own project, got: %v", err)
+	}
+	if strings.Contains(stderr, "Note:") {
+		t.Errorf("a recorded-path match is exact and needs no note:\n%s", stderr)
+	}
+	if !strings.Contains(out, "webapp/packages/billing  │  Session: bbbbbbbb") {
+		t.Errorf("show should render billing's project and session:\n%s", out)
 	}
 }
 
