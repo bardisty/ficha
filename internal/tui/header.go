@@ -19,29 +19,25 @@ const sessionIDDisplayLen = 8
 // session idle.
 const idleAfter = 5 * time.Minute
 
-// liveHeaderParams is the per-frame state the shared live header renders.
-//
-// With mode set, the header reads
+// liveHeaderParams is the per-frame state the shared live header renders:
 //
 //	webapp │ 68994c84 │ ● FOLLOWING │ last msg 12s ago
 //
-// and turns to "○ FOLLOWING │ idle 7m" once no message has landed for
-// idleAfter. Without it, the header keeps the older
-// "Session: … │ ● LIVE │ Updated: …" form.
+// turning to "○ FOLLOWING │ idle 7m" once no message has landed for
+// idleAfter.
 type liveHeaderParams struct {
-	sessionID     string
-	prevSessionID string
-	loading       bool
-	err           error
-	lastUpdated   time.Time
-	spinnerView   string // m.spinner.View(); only shown while loading
-	noColor       bool
-	width         int
+	sessionID   string
+	loading     bool
+	err         error
+	spinnerView string // m.spinner.View(); only shown while loading
+	noColor     bool
+	width       int
 
 	project      string    // project directory name; omitted when ""
-	mode         string    // "FOLLOWING" or "PINNED"; "" selects the older form
+	mode         string    // "FOLLOWING" or "PINNED"
 	lastActivity time.Time // newest message timestamp; zero when none yet
 	noMessages   bool      // lastActivity is the file's mtime: no message yet
+	waiting      bool      // no session yet: no ID, and the status says so
 	now          time.Time
 }
 
@@ -49,7 +45,7 @@ type liveHeaderParams struct {
 // breakdown TUIs:
 //
 //	╔══════════════════════════════════════════════════════════╗
-//	║  Session: xxx (prev: yyy)  │  ● LIVE  │  Updated: HH:MM:SS ║
+//	║  webapp │ 68994c84 │ ● FOLLOWING │ last msg 12s ago       ║
 //	╚══════════════════════════════════════════════════════════╝
 func renderLiveHeaderPanel(p liveHeaderParams) string {
 	var sb strings.Builder
@@ -66,25 +62,9 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 
 	// Fit the content to innerWidth *before* computing padding: full content
 	// wider than innerWidth would clamp padding to 0 and push the right border
-	// out of column on narrow terminals. Elide in order of least value
-	// — drop the "(prev: …)" clause, then shorten "Updated: HH:MM:SS" to the
-	// bare time — and hard-clip via lipgloss MaxWidth as a final guarantee.
-	var content string
-	if p.mode != "" {
-		content = fitStatusHeader(p, innerWidth)
-	} else {
-		showPrev := p.prevSessionID != ""
-		timeOnly := false
-		content = buildLiveHeaderContent(p, showPrev, timeOnly)
-		if lipgloss.Width(content) > innerWidth && showPrev {
-			showPrev = false
-			content = buildLiveHeaderContent(p, showPrev, timeOnly)
-		}
-		if lipgloss.Width(content) > innerWidth {
-			timeOnly = true
-			content = buildLiveHeaderContent(p, showPrev, timeOnly)
-		}
-	}
+	// out of column on narrow terminals. fitStatusHeader elides in order of
+	// least value; MaxWidth hard-clips as a final guarantee.
+	content := fitStatusHeader(p, innerWidth)
 	if lipgloss.Width(content) > innerWidth {
 		content = lipgloss.NewStyle().MaxWidth(innerWidth).Render(content)
 	}
@@ -143,56 +123,6 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 	return sb.String()
 }
 
-// buildLiveHeaderContent assembles the header's single content line honoring the
-// elision flags (showPrev, timeOnly) and p.noColor styling. The live dot is
-// one column in both glyph sets; lipgloss.Width, not len, measures it for
-// padding.
-func buildLiveHeaderContent(p liveHeaderParams, showPrev, timeOnly bool) string {
-	sessionDisplay := render.TruncateID(p.sessionID, sessionIDDisplayLen)
-	if showPrev && p.prevSessionID != "" {
-		sessionDisplay = fmt.Sprintf("%s (prev: %s)",
-			render.TruncateID(p.sessionID, sessionIDDisplayLen),
-			render.TruncateID(p.prevSessionID, sessionIDDisplayLen))
-	}
-	livePart := styles.LiveDot + " LIVE"
-
-	sep := styles.BoxVerticalSep
-
-	if p.noColor {
-		var statusPart string
-		switch {
-		case p.loading:
-			statusPart = "Loading..."
-		case p.err != nil:
-			statusPart = "Error"
-		case timeOnly:
-			statusPart = render.Clock(p.lastUpdated)
-		default:
-			statusPart = fmt.Sprintf("Updated: %s", render.Clock(p.lastUpdated))
-		}
-		sessionPart := fmt.Sprintf("Session: %s", sessionDisplay)
-		return fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart)
-	}
-
-	sessionStyled := fmt.Sprintf("%s %s", sectionHeaderStyle.Render("Session:"), sessionDisplay)
-	liveStyled := liveIndicatorStyle.Render(livePart)
-	var statusStyled string
-	switch {
-	case p.loading:
-		// The spinner is wider than plain "Loading..."; padding is measured off
-		// the rendered width so it can't push the right border out of alignment.
-		statusStyled = p.spinnerView + " Loading..."
-	case p.err != nil:
-		statusStyled = lipgloss.NewStyle().Foreground(styles.ErrorColor).Render("Error")
-	case timeOnly:
-		statusStyled = render.Clock(p.lastUpdated)
-	default:
-		statusStyled = fmt.Sprintf("Updated: %s", render.Clock(p.lastUpdated))
-	}
-	sepStyled := panelBorderStyle.Render(sep)
-	return sessionStyled + "  " + sepStyled + "  " + liveStyled + "  " + sepStyled + "  " + statusStyled
-}
-
 // fitStatusHeader builds the mode-style header content and fits it to width,
 // giving up detail in order of least value: the "last msg" prefix, then
 // project name characters, then the project name altogether.
@@ -241,6 +171,8 @@ func buildStatusHeader(p liveHeaderParams, project string, short bool) string {
 
 	var status string
 	switch {
+	case p.waiting:
+		status = "waiting for a session"
 	case p.loading:
 		status = "Loading..."
 		if !p.noColor {
@@ -260,10 +192,10 @@ func buildStatusHeader(p liveHeaderParams, project string, short bool) string {
 	if project != "" {
 		segs = append(segs, style(sectionHeaderStyle, project))
 	}
-	segs = append(segs,
-		render.TruncateID(p.sessionID, sessionIDDisplayLen),
-		style(modeStyle, dot+" "+p.mode),
-		status)
+	if p.sessionID != "" {
+		segs = append(segs, render.TruncateID(p.sessionID, sessionIDDisplayLen))
+	}
+	segs = append(segs, style(modeStyle, dot+" "+p.mode), status)
 	return strings.Join(segs, style(panelBorderStyle, " "+styles.BoxVerticalSep+" "))
 }
 

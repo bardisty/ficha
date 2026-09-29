@@ -625,7 +625,6 @@ func (m BreakdownModel) headerParams(width int) liveHeaderParams {
 		sessionID:    m.sessionID,
 		loading:      m.loading,
 		err:          m.err,
-		lastUpdated:  m.lastUpdated,
 		spinnerView:  m.spinner.View(),
 		noColor:      m.noColor,
 		width:        width,
