@@ -660,13 +660,9 @@ func (m Model) showLoading() bool {
 	return m.loading && m.analysis == nil
 }
 
-// clockInterval paces clockMsg: every second while the header counts
-// seconds, and every 15s once the age reads in minutes or more.
+// clockInterval paces clockMsg; see the function of the same name.
 func (m Model) clockInterval() time.Duration {
-	if !m.lastActivity.IsZero() && m.clock().Sub(m.lastActivity) < time.Minute {
-		return time.Second
-	}
-	return 15 * time.Second
+	return clockInterval(m.lastActivity, m.clock())
 }
 
 // lastActivity is the newest message timestamp in the analysis (agents
