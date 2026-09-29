@@ -64,3 +64,36 @@ func TestShowSkipsNewerSessionWithoutReplies(t *testing.T) {
 		t.Errorf("list should keep the empty session and its title:\n%s", stdout)
 	}
 }
+
+// Scripts get the newest session as before: only the table skips it.
+func TestShowJSONKeepsNewestSession(t *testing.T) {
+	emptyID := setupEmptyNewestSession(t)
+	stdout, stderr, err := executeCLISplit(t, "show", projFlag, "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, `"session_id": "`+emptyID+`"`) || strings.Contains(stderr, "skipped") {
+		t.Errorf("json should report the newest session unskipped:\nstdout %s\nstderr %s", stdout, stderr)
+	}
+}
+
+// A newest session whose lines couldn't be parsed may hold replies, so it
+// isn't passed over: its report and its skip warning show instead.
+func TestShowDoesNotSkipUnreadableSession(t *testing.T) {
+	emptyID := setupEmptyNewestSession(t)
+	root := os.Getenv("CLAUDE_CONFIG_DIR")
+	bad := `{"type":"assistant","timestamp":"not-a-time","message":{"id":"m9"` + "\n"
+	if err := os.WriteFile(filepath.Join(root, "projects", e2eProjDir, emptyID+".jsonl"), []byte(bad), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := executeCLISplit(t, "show", projFlag, "--no-color")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stderr, "skipped 1 newer") || !strings.Contains(stderr, "unparseable line") {
+		t.Errorf("want the unreadable session's warning, not a skip:\n%s", stderr)
+	}
+	if !strings.Contains(stdout, "No assistant messages in session "+emptyID[:8]) {
+		t.Errorf("want the newest session reported:\n%s", stdout)
+	}
+}

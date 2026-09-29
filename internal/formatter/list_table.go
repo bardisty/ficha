@@ -27,7 +27,6 @@ type ListTableOptions struct {
 const (
 	listStaticWidth   = 76
 	listWhenWidth     = len("just now")
-	listDurationWidth = len("12h 34m")
 	listModelWidth    = 10
 	listAgentsWidth   = len("AGENTS")
 	listMinTitleWidth = 12
@@ -59,6 +58,13 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		}
 	}
 	costWidth := render.CostCellWidth(len("COST"), costs...)
+	// LENGTH grows past "12h 34m" for a session left open for days.
+	listDurationWidth := len("LENGTH")
+	for _, r := range results {
+		if r.Analysis != nil && r.Analysis.MessageCount > 0 {
+			listDurationWidth = max(listDurationWidth, len(render.Duration(r.Analysis.Duration.Duration())))
+		}
+	}
 
 	gap := strings.Repeat(" ", columnGap)
 	fixed := rowIndent + idWidth + columnGap + listWhenWidth + columnGap + listDurationWidth +

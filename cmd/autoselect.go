@@ -14,9 +14,10 @@ import (
 // and returns the first with an assistant reply, plus how many newer ones it
 // passed over. A common flow is to open a new Claude Code session and run
 // ficha to see what the last one cost; the new session is newest by mtime
-// but has nothing to report yet. It returns nil when no session has a reply,
-// or when one it would pass over can't be analyzed, since skipping that would
-// silently report an older session in its place.
+// but has nothing to report yet. It only passes over a session that is truly
+// empty: one it couldn't fully read may hold replies, and reporting an older
+// session in its place would hide that. It returns nil when it stops there,
+// or when no session has a reply.
 func newestSessionWithReplies(cfg *config, scope analyzer.MessageScope) (*models.SessionAnalysis, int, error) {
 	sessions, err := loadProjectSessions(cfg, false)
 	if err != nil {
@@ -31,8 +32,17 @@ func newestSessionWithReplies(cfg *config, scope analyzer.MessageScope) (*models
 		if a.MessageCount > 0 {
 			return a, i, nil
 		}
+		if !trulyEmpty(a) {
+			return nil, 0, nil
+		}
 	}
 	return nil, 0, nil
+}
+
+// trulyEmpty reports whether a has no replies and nothing ficha failed to
+// read, which could have held some.
+func trulyEmpty(a *models.SessionAnalysis) bool {
+	return a.MessageCount == 0 && a.SkippedLines == 0 && a.SkippedAgents == 0
 }
 
 // writeSkippedNote says the report isn't about the newest session, and
