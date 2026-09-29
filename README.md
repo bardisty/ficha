@@ -17,6 +17,10 @@ ficha is an independent project. It is not affiliated with or endorsed by Anthro
   </tr>
 </table>
 
+## Requirements
+
+ficha runs on Linux, macOS and Windows, and CI tests all three. It has been checked against the transcripts of Claude Code 2.1. If a newer Claude Code makes it start skipping lines, see [Troubleshooting](#troubleshooting).
+
 ## Install
 
 Install ficha where Claude Code runs, since it reads the transcripts Claude Code keeps in that machine's home directory. Over SSH or in a dev container, that means the remote machine or the container. If Claude Code runs in WSL, use the Linux binary inside WSL, not the Windows one.
@@ -139,6 +143,8 @@ ficha breakdown  # live per-message cost table
 
 To analyze a different project without cd'ing, pass its directory with `-p` / `--project`.
 
+ficha can only report sessions whose transcripts still exist, and Claude Code deletes them after 30 days by default. [Troubleshooting](#troubleshooting) says how to keep more.
+
 ### Scrolling in tmux
 
 ficha doesn't capture the mouse, so click-and-drag selection keeps working. Most terminals turn the wheel into arrow keys for full-screen programs, and those scroll `watch` and `breakdown`. tmux with `set -g mouse on` doesn't. In tmux 3.5 and older, wheel-up puts the pane in copy mode: the clock and totals stop, `[0/0]` shows in the corner, and ficha looks hung until you press `q` or scroll back down. From 3.6 the wheel does nothing. These two lines in `~/.tmux.conf` make the wheel send arrow keys to full-screen programs that don't use the mouse, and leave the rest of tmux's wheel handling as it was:
@@ -175,7 +181,7 @@ Global flags, accepted by every command:
 
 `watch`, `breakdown` and `show --live` render a terminal UI, so they reject `-f json` and `-f csv`. `version` prints plain text and ignores `--format`.
 
-On macOS and Linux, colors adapt to a light or dark terminal background, which ficha asks the terminal for. Inside tmux or screen it can't ask and assumes dark, so on a light background set `COLORFGBG=0;15`. On Windows it always uses the dark palette.
+On macOS and Linux, colors adapt to a light or dark terminal background, which ficha asks the terminal for. Inside tmux or screen it can't ask and assumes dark, so on a light background set `COLORFGBG='0;15'`. Quote it: the shell reads an unquoted `;` as the end of the command. On Windows it always uses the dark palette.
 
 Per-command flags:
 
@@ -292,8 +298,25 @@ Unknown models are priced at $3 input and $15 output per million tokens with a 2
 
 Claude Code's transcript format is undocumented and can change between releases. ficha counts what it could not parse instead of guessing, so if the skip warnings or the `skipped_*` counters jump after a Claude Code update, that is the signal to file a bug.
 
-> [!NOTE]
-> Claude Code deletes session transcripts older than 30 days by default (`cleanupPeriodDays` in `~/.claude/settings.json`), so ficha can only report what still exists on disk. To keep longer history, raise the setting, e.g. `"cleanupPeriodDays": 365`. Avoid `0`, which has [known bugs](https://github.com/anthropics/claude-code/issues/59248).
+## Troubleshooting
+
+**"Claude Code has no sessions for …".** ficha looked in the wrong place. Run it from the directory Claude Code was started in, or pass that directory with `-p`. `-v` shows each place ficha looked.
+
+**You run Claude Code in WSL.** Use the Linux build inside WSL, not the Windows one. [Install](#install) has the details, including reading a Windows install's sessions from WSL.
+
+**Colors are hard to read on a light background in tmux or screen.** ficha can't ask the terminal for its background there and assumes dark. Run `export COLORFGBG='0;15'` first, as [Flags](#flags) describes.
+
+**The mouse wheel freezes `watch` or `breakdown` in tmux.** See [Scrolling in tmux](#scrolling-in-tmux).
+
+**Tab prints `_get_comp_words_by_ref: command not found`, or completes file names.** bash-completion isn't loaded. See [Shell completion](#shell-completion).
+
+**History stops after 30 days.** Claude Code deletes transcripts older than that by default, through `cleanupPeriodDays` in `~/.claude/settings.json`. To keep more, raise it, as in `"cleanupPeriodDays": 365`. Don't use `0`. Current Claude Code rejects it, and older versions had [bugs](https://github.com/anthropics/claude-code/issues/59248) with it. Raising it doesn't bring back what's already been deleted.
+
+**"Warning: unknown model".** Your ficha predates that model's prices. [Upgrade](#upgrading-and-uninstalling), and if the warning stays, open a [pricing update issue](https://github.com/bardisty/ficha/issues/new?template=pricing_update.yml).
+
+**"Warning: … unparseable line(s) skipped".** Some transcript lines didn't match the format ficha knows, usually after a Claude Code update. `list`, `summary` and `global` name the affected sessions under `-v`. [File a bug](https://github.com/bardisty/ficha/issues/new?template=bug_report.yml) with your `claude --version`.
+
+**Frames and symbols come out garbled**, for example as `lqqqk` and `x`. Something between ficha and the screen isn't in UTF-8 mode, usually a tmux or screen client started under a non-UTF-8 locale, which is common in containers and over SSH. Pass `--ascii`. To fix the locale instead, set it, for example `LANG=C.UTF-8`, in the shell you start or attach tmux or screen from, or start them with `tmux -u` or `screen -U`. Setting `LANG` inside the session changes nothing.
 
 ## Contributing
 
