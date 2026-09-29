@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/NimbleMarkets/ntcharts/sparkline"
+	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -100,7 +101,7 @@ func renderCostChart(costs []float64, dates []time.Time, width int, noColor bool
 
 	// Add scale labels below the chart
 	scaleInfo := fmt.Sprintf("min: %s  max: %s  %s",
-		formatChartCost(minCost), formatChartCost(maxCost), countInfo)
+		render.Cost(minCost), render.Cost(maxCost), countInfo)
 	if noColor {
 		sb.WriteString(indent + scaleInfo + "\n")
 	} else {
@@ -129,16 +130,4 @@ func renderCostChart(costs []float64, dates []time.Time, width int, noColor bool
 	}
 
 	return sb.String()
-}
-
-// formatChartCost formats a cost value compactly for chart Y-axis labels
-func formatChartCost(cost float64) string {
-	if cost >= 100 {
-		return fmt.Sprintf("$%.0f", cost)
-	} else if cost >= 10 {
-		return fmt.Sprintf("$%.1f", cost)
-	} else if cost >= 1 {
-		return fmt.Sprintf("$%.2f", cost)
-	}
-	return fmt.Sprintf("$%.3f", cost)
 }

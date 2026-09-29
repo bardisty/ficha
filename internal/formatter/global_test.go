@@ -1,7 +1,6 @@
 package formatter
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -87,7 +86,7 @@ func TestRenderProjectsTable_GradientIgnoresSortOrder(t *testing.T) {
 	// from the true min/max, regardless of slice order
 	wantStyled := lipgloss.NewStyle().
 		Foreground(styles.GetCostGradientColor(10.0, 1.0, 10.0)).
-		Render(fmt.Sprintf("%10s", "$10.00"))
+		Render("$10.00")
 	if !strings.Contains(out, wantStyled) {
 		t.Errorf("max-cost project should be styled with true-bounds gradient color\nwant substring: %q\ngot:\n%q", wantStyled, out)
 	}

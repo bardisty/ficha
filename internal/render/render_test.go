@@ -16,18 +16,78 @@ func TestCost(t *testing.T) {
 		input float64
 		want  string
 	}{
-		{0.0, "$0.000000"},
-		{0.0000001, "$0.000000"},
-		{-0.5, "$-0.500000"},
-		{0.123456, "$0.123456"},
-		{1.5, "$1.500000"},
-		{123.456789, "$123.456789"},
-		{99999.99, "$99999.990000"},
+		{0.0, "$0.0000"},
+		{0.0000001, "$0.0000"},
+		{0.0001, "$0.0001"},
+		{0.0512, "$0.0512"},
+		{-0.5, "$-0.5000"},
+		{0.123456, "$0.1235"},
+		// Four decimals would round these to 1.0000, so they switch to two
+		{0.99994, "$0.9999"},
+		{0.99995, "$1.00"},
+		{0.99999, "$1.00"},
+		{1.0, "$1.00"},
+		{1.5, "$1.50"},
+		{10.5, "$10.50"},
+		{123.456789, "$123.46"},
+		{999.99, "$999.99"},
+		{6224.395577, "$6224.40"},
+		{99999.99, "$99999.99"},
 	}
 	for _, tc := range tests {
 		if got := Cost(tc.input); got != tc.want {
 			t.Errorf("Cost(%f) = %q, want %q", tc.input, got, tc.want)
 		}
+	}
+}
+
+func TestCostCellAlignsDecimals(t *testing.T) {
+	tests := []struct {
+		cost  float64
+		width int
+		want  string
+	}{
+		{0.2628, 11, "    $0.2628"},
+		{13.65, 11, "   $13.65  "},
+		{1234.56, 11, " $1234.56  "},
+		{0, 8, " $0.0000"},
+		// Too wide for the cell: returned whole, never cut
+		{123456.78, 8, "$123456.78  "},
+	}
+	for _, tc := range tests {
+		got := CostCell(tc.cost, tc.width)
+		if got != tc.want {
+			t.Errorf("CostCell(%v, %d) = %q, want %q", tc.cost, tc.width, got, tc.want)
+		}
+	}
+
+	// Every cell in a column puts its decimal point at the same offset
+	width := CostCellWidth(0, 0.2628, 13.65, 1234.56, 0.001)
+	dot := -1
+	for _, c := range []float64{0.2628, 13.65, 1234.56, 0.001} {
+		cell := CostCell(c, width)
+		if len(cell) != width {
+			t.Errorf("CostCell(%v, %d) has width %d", c, width, len(cell))
+		}
+		d := strings.Index(cell, ".")
+		if dot == -1 {
+			dot = d
+		} else if d != dot {
+			t.Errorf("CostCell(%v) decimal at %d, want %d", c, d, dot)
+		}
+	}
+}
+
+func TestCostCellWidth(t *testing.T) {
+	if got := CostCellWidth(10); got != 10 {
+		t.Errorf("no costs: got %d, want the minimum 10", got)
+	}
+	if got := CostCellWidth(10, 0.5, 12.34); got != 10 {
+		t.Errorf("narrow costs: got %d, want 10", got)
+	}
+	// "$12345.67" plus the two-space decimal pad
+	if got := CostCellWidth(10, 0.5, 12345.67); got != 11 {
+		t.Errorf("wide cost: got %d, want 11", got)
 	}
 }
 
@@ -42,9 +102,15 @@ func TestNumber(t *testing.T) {
 		{999, "999"},
 		{1000, "1.0K"},
 		{1500, "1.5K"},
-		{999999, "1000.0K"},
+		{999949, "999.9K"},
+		// Rounding would print 1000.0K, so the next unit takes over
+		{999950, "1.00M"},
+		{999999, "1.00M"},
 		{1000000, "1.00M"},
 		{2500000, "2.50M"},
+		{999994999, "999.99M"},
+		{999995000, "1.00B"},
+		{1638000000, "1.64B"},
 	}
 	for _, tc := range tests {
 		if got := Number(tc.input); got != tc.want {
@@ -377,10 +443,10 @@ func TestCostStyledNoColor(t *testing.T) {
 		width int
 		want  string
 	}{
-		{"zero cost width 11", 0.0, 11, "  $0.000000"},
-		{"small cost width 11", 0.05, 11, "  $0.050000"},
-		{"dollar cost no pad", 1.234567, 0, "$1.234567"},
-		{"exact width", 0.123456, 10, " $0.123456"},
+		{"zero cost width 11", 0.0, 11, "    $0.0000"},
+		{"small cost width 11", 0.05, 11, "    $0.0500"},
+		{"dollar cost no pad", 1.234567, 0, "$1.23  "},
+		{"exact width", 0.123456, 7, "$0.1235"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -400,31 +466,28 @@ func TestCostStyledNoColor(t *testing.T) {
 }
 
 func TestCostStyledGreenBoldGreenNoColor(t *testing.T) {
-	if got, want := CostStyledGreen(1.5, 11, false, true), "  $1.500000"; got != want {
+	if got, want := CostStyledGreen(1.5, 11, false, true), "    $1.50  "; got != want {
 		t.Errorf("CostStyledGreen = %q, want %q", got, want)
 	}
-	if got, want := CostStyledBoldGreen(2.0, 11, false, true), "  $2.000000"; got != want {
+	if got, want := CostStyledBoldGreen(2.0, 11, false, true), "    $2.00  "; got != want {
 		t.Errorf("CostStyledBoldGreen = %q, want %q", got, want)
 	}
 }
 
 // TestCostStyledColorPathsContainValue exercises the colored branches (which
 // may or may not emit ANSI depending on the ambient terminal) and asserts the
-// numeric value survives regardless.
+// whole value survives in one piece: no digits split off into a dimmed run.
 func TestCostStyledColorPathsContainValue(t *testing.T) {
 	for _, s := range []string{
 		CostStyled(1.234567, 11, false, false),
 		CostStyled(1.234567, 11, true, false),
-		CostStyledGreen(1.5, 11, false, false),
-		CostStyledBoldGreen(2.0, 11, false, false),
-		CostWithDimDecimals(0.093528, lipgloss.Color("42"), 10),
+		CostStyledGreen(1.234567, 11, false, false),
+		CostStyledBoldGreen(1.234567, 11, false, false),
+		CostColored(1.234567, lipgloss.Color("42"), 10),
 	} {
-		if !strings.Contains(s, "$") {
-			t.Errorf("styled cost should contain the value: %q", s)
+		if !strings.Contains(s, "$1.23") {
+			t.Errorf("styled cost should contain the whole value: %q", s)
 		}
-	}
-	if !strings.Contains(CostStyled(1.234567, 11, false, true), "$1.234567") {
-		t.Error("plain CostStyled should contain the full cost value")
 	}
 }
 

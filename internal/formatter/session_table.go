@@ -196,9 +196,9 @@ func agentMsgsWidth(agents []models.AgentAnalysis) int {
 // All rows align costs at column 45 (2 indent + 43 content)
 // Example:
 //
-//	Parent session                            $1.135371
-//	[A1] Opus 4.5    (a0b184d)     14 msgs    $1.358774
-//	Agents subtotal                           $5.112218
+//	Parent session                              $1.14
+//	[Aa0b184d] Opus 4.5      14 msgs            $0.3588
+//	Agents subtotal                             $5.11
 func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool) string {
 	var sb strings.Builder
 
@@ -371,8 +371,8 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 		trendDesc := insights.TrendDescription()
 		trendSymbol := insights.CostTrend.Symbol()
 
-		earlyStr := fmt.Sprintf("$%.2f/msg", insights.EarlyAvgCost)
-		lateStr := fmt.Sprintf("$%.2f/msg", insights.LateAvgCost)
+		earlyStr := render.Cost(insights.EarlyAvgCost) + "/msg"
+		lateStr := render.Cost(insights.LateAvgCost) + "/msg"
 
 		if noColor {
 			sb.WriteString(fmt.Sprintf("  %-10s %s -> %s  %s %s\n",

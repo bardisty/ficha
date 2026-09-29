@@ -9,6 +9,7 @@ package render
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -19,15 +20,65 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Cost formats a cost value in plain text with 6 decimal places ("$123.456789").
+// Cost formats a dollar amount for human output: two decimals from $1 up
+// ("$13.65"), four below ("$0.2628"), where per-message costs live. These are
+// list-price estimates, so more digits would be false precision. Machine
+// output (json, csv) keeps six decimals and never goes through here.
 func Cost(cost float64) string {
-	return fmt.Sprintf("$%.6f", cost)
+	return fmt.Sprintf("$%.*f", costDecimals(cost), cost)
 }
 
-// Number formats a token count compactly: "1.23M", "45.6K", or the raw integer.
+// costDecimals picks Cost's precision. The cutoff is where four decimals
+// would round up to 1.0000, so 0.99996 prints "$1.00", not "$1.0000".
+func costDecimals(cost float64) int {
+	if math.Abs(cost) >= 0.99995 {
+		return 2
+	}
+	return 4
+}
+
+// CostCell right-aligns Cost(cost) in a width-column cell with the decimal
+// point at a fixed position: a two-decimal value is followed by two spaces,
+// so "$13.65  " lines up under "$0.2628". A value too wide for the cell comes
+// back whole at its natural width; size the column with CostCellWidth.
+func CostCell(cost float64, width int) string {
+	left, value, right := costCellParts(cost, width)
+	return left + value + right
+}
+
+// CostCellWidth returns the narrowest cell width, at least minWidth, that
+// holds every cost as a CostCell without overflowing.
+func CostCellWidth(minWidth int, costs ...float64) int {
+	width := minWidth
+	for _, c := range costs {
+		_, value, right := costCellParts(c, 0)
+		width = max(width, len(value)+len(right))
+	}
+	return width
+}
+
+// costCellParts splits a CostCell into its left padding, the value, and the
+// right padding, so styled callers can color the value alone.
+func costCellParts(cost float64, width int) (left, value, right string) {
+	value = Cost(cost)
+	if costDecimals(cost) == 2 {
+		right = "  "
+	}
+	if pad := width - len(value) - len(right); pad > 0 {
+		left = strings.Repeat(" ", pad)
+	}
+	return left, value, right
+}
+
+// Number formats a token count compactly: "1.23B", "1.23M", "45.6K", or the
+// raw integer. Each unit takes over where the smaller one would round up to
+// 1000, so 999,960 prints "1.00M", not "1000.0K".
 func Number(n int64) string {
-	if n >= 1000000 {
-		return fmt.Sprintf("%.2fM", float64(n)/1000000)
+	if n >= 999_995_000 {
+		return fmt.Sprintf("%.2fB", float64(n)/1e9)
+	}
+	if n >= 999_950 {
+		return fmt.Sprintf("%.2fM", float64(n)/1e6)
 	}
 	if n >= 1000 {
 		return fmt.Sprintf("%.1fK", float64(n)/1000)
@@ -329,122 +380,41 @@ func ContextBar(contextSize, freeSpace int64, maxContext int, noColor bool) stri
 	return "[" + usedStyled + freeStyled + "]"
 }
 
-// CostStyled right-pads a cost to width columns and dims the digits past the
-// cent so the significant figures read first. Padding is measured on the plain
-// string, not the styled one, so ANSI escape codes can't throw off column
-// alignment. highlighted overrides the dimming to flag a value that just changed
-// in the live view; static callers pass false.
+// CostStyled renders a CostCell with the value in the default color. Only
+// the value is styled, never the padding, so escape codes can't throw off the
+// column. highlighted flags a value that just changed in the live view;
+// static callers pass false.
 func CostStyled(cost float64, width int, highlighted, noColor bool) string {
-	full := fmt.Sprintf("$%.6f", cost)
-	plainLen := len(full)
-
-	padding := ""
-	if width > plainLen {
-		padding = strings.Repeat(" ", width-plainLen)
-	}
-
-	if noColor {
-		return padding + full
-	}
-
-	// Split into main ($X.XX) and extra (XXXX) parts
-	dotIdx := strings.Index(full, ".")
-	if dotIdx == -1 || len(full) <= dotIdx+3 {
-		if highlighted {
-			return padding + styles.HighlightStyle.Render(full)
-		}
-		return padding + full
-	}
-
-	main := full[:dotIdx+3]  // "$123.45"
-	extra := full[dotIdx+3:] // "6789"
-
-	if highlighted {
-		return padding + styles.HighlightStyle.Render(main+extra)
-	}
-	return padding + main + styles.DimStyle.Render(extra)
+	return costStyledCell(cost, width, highlighted, noColor, lipgloss.NewStyle())
 }
 
 // CostStyledGreen is CostStyled in the savings (green) style, for cache-savings
 // figures.
 func CostStyledGreen(cost float64, width int, highlighted, noColor bool) string {
-	full := fmt.Sprintf("$%.6f", cost)
-	plainLen := len(full)
-
-	padding := ""
-	if width > plainLen {
-		padding = strings.Repeat(" ", width-plainLen)
-	}
-
-	if noColor {
-		return padding + full
-	}
-
-	if highlighted {
-		return padding + styles.HighlightStyle.Render(full)
-	}
-
-	dotIdx := strings.Index(full, ".")
-	if dotIdx == -1 || len(full) <= dotIdx+3 {
-		return padding + styles.SavingsValueStyle.Render(full)
-	}
-
-	main := full[:dotIdx+3]
-	extra := full[dotIdx+3:]
-	return padding + styles.SavingsValueStyle.Render(main) + styles.DimStyle.Render(extra)
+	return costStyledCell(cost, width, highlighted, noColor, styles.SavingsValueStyle)
 }
 
 // CostStyledBoldGreen is CostStyled in the bold-green total style, for totals
 // and subtotals.
 func CostStyledBoldGreen(cost float64, width int, highlighted, noColor bool) string {
-	full := fmt.Sprintf("$%.6f", cost)
-	plainLen := len(full)
-
-	padding := ""
-	if width > plainLen {
-		padding = strings.Repeat(" ", width-plainLen)
-	}
-
-	if noColor {
-		return padding + full
-	}
-
-	if highlighted {
-		return padding + styles.HighlightStyle.Render(full)
-	}
-
-	dotIdx := strings.Index(full, ".")
-	if dotIdx == -1 || len(full) <= dotIdx+3 {
-		return padding + styles.TotalValueStyle.Render(full)
-	}
-
-	main := full[:dotIdx+3]
-	extra := full[dotIdx+3:]
-	return padding + styles.TotalValueStyle.Render(main) + styles.DimStyle.Render(extra)
+	return costStyledCell(cost, width, highlighted, noColor, styles.TotalValueStyle)
 }
 
-// CostWithDimDecimals renders a cost with the cents-and-above in color and the
-// trailing digits dimmed. color is a parameter because the per-message breakdown
-// colors each row by its own cost gradient rather than a fixed style.
-func CostWithDimDecimals(cost float64, color lipgloss.Color, width int) string {
-	full := fmt.Sprintf("$%.6f", cost)
-	plainLen := len(full)
+// CostColored renders a CostCell in an arbitrary foreground color, for columns
+// that color each value by its own magnitude (the per-message breakdown, the
+// global and summary tables).
+func CostColored(cost float64, color lipgloss.Color, width int) string {
+	return costStyledCell(cost, width, false, false, lipgloss.NewStyle().Foreground(color))
+}
 
-	padding := ""
-	if width > plainLen {
-		padding = strings.Repeat(" ", width-plainLen)
+func costStyledCell(cost float64, width int, highlighted, noColor bool, style lipgloss.Style) string {
+	left, value, right := costCellParts(cost, width)
+	switch {
+	case noColor:
+	case highlighted:
+		value = styles.HighlightStyle.Render(value)
+	default:
+		value = style.Render(value)
 	}
-
-	dotIdx := strings.Index(full, ".")
-	if dotIdx == -1 || len(full) <= dotIdx+3 {
-		return padding + lipgloss.NewStyle().Foreground(color).Render(full)
-	}
-
-	main := full[:dotIdx+3]  // "$0.09"
-	extra := full[dotIdx+3:] // "3528"
-
-	mainStyle := lipgloss.NewStyle().Foreground(color)
-	dimStyle := lipgloss.NewStyle().Foreground(styles.SecondaryColor)
-
-	return padding + mainStyle.Render(main) + dimStyle.Render(extra)
+	return left + value + right
 }

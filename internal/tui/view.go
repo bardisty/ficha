@@ -422,9 +422,9 @@ func (m Model) renderCostByModelContent() string {
 // All rows align costs at column 47 (4 indent + 43 content)
 // Example:
 //
-//	Parent session                            $1.135371
-//	[A1] Opus 4.5    (a0b184d)     14 msgs    $1.358774
-//	Agents subtotal                           $5.112218
+//	Parent session                              $1.14
+//	[Aa0b184d] Opus 4.5      14 msgs            $0.3588
+//	Agents subtotal                             $5.11
 func (m Model) renderAgentBreakdownContent() string {
 	var sb strings.Builder
 	a := m.analysis
@@ -617,8 +617,8 @@ func (m Model) renderInsightsContent() string {
 		trendSymbol := insights.CostTrend.Symbol()
 		highlighted := m.isHighlighted("insights_trend")
 
-		earlyStr := fmt.Sprintf("$%.2f/msg", insights.EarlyAvgCost)
-		lateStr := fmt.Sprintf("$%.2f/msg", insights.LateAvgCost)
+		earlyStr := render.Cost(insights.EarlyAvgCost) + "/msg"
+		lateStr := render.Cost(insights.LateAvgCost) + "/msg"
 
 		if !m.noColor {
 			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "Trend"))
@@ -686,7 +686,7 @@ func (m Model) renderHeaderPanel(width int) string {
 // formatCostStyledDim returns a cost string entirely in dim style
 // Used for secondary cost displays like component breakdowns in insights
 func formatCostStyledDim(cost float64) string {
-	return dimStyle.Render(fmt.Sprintf("$%.6f", cost))
+	return dimStyle.Render(render.Cost(cost))
 }
 
 // formatNumberWithDelta formats a number with optional delta during highlight
@@ -708,12 +708,10 @@ func formatNumberWithDelta(n int64, delta int64, showDelta bool) string {
 }
 
 // renderHeroCost renders the total cost integrated into a section header
-// Format: ─────────────────────[ $12.665834 TOTAL ]─────────────────────
+// Format: ─────────────────────[ $12.67 TOTAL ]─────────────────────
 func (m Model) renderHeroCost(cost float64, highlighted bool, width int) string {
-	// Format the cost with 6 decimal places
-	costFull := fmt.Sprintf("$%.6f", cost)
-	costStr := costFull + " TOTAL"
-	bracketedCost := "[ " + costStr + " ]"
+	costFull := render.Cost(cost)
+	bracketedCost := "[ " + costFull + " TOTAL ]"
 	costLen := len(bracketedCost)
 	sideLen := (width - costLen) / 2
 	if sideLen < 0 {
@@ -735,25 +733,10 @@ func (m Model) renderHeroCost(cost float64, highlighted bool, width int) string 
 		return leftLine + bracketedCost + rightLine
 	}
 
-	// Cost with dimmed trailing decimals (like other cost displays)
-	// Split into main ($X.XX) and extra (XXXX) parts
-	var costStyled string
-	dotIdx := strings.Index(costFull, ".")
+	// A highlight covers the value only, not " TOTAL"
+	costStyled := heroCostStyle.Render(costFull + " TOTAL")
 	if highlighted {
-		// Highlight only the cost value, not " TOTAL"
-		if dotIdx != -1 && len(costFull) > dotIdx+3 {
-			mainPart := costFull[:dotIdx+3]
-			extraPart := costFull[dotIdx+3:]
-			costStyled = highlightStyle.Render(mainPart+extraPart) + heroCostStyle.Render(" TOTAL")
-		} else {
-			costStyled = highlightStyle.Render(costFull) + heroCostStyle.Render(" TOTAL")
-		}
-	} else if dotIdx != -1 && len(costFull) > dotIdx+3 {
-		mainPart := costFull[:dotIdx+3]  // "$12.66"
-		extraPart := costFull[dotIdx+3:] // "5834"
-		costStyled = heroCostStyle.Render(mainPart) + dimStyle.Render(extraPart) + heroCostStyle.Render(" TOTAL")
-	} else {
-		costStyled = heroCostStyle.Render(costStr)
+		costStyled = highlightStyle.Render(costFull) + heroCostStyle.Render(" TOTAL")
 	}
 
 	return dimStyle.Render(leftLine) + "[ " + costStyled + " ]" + dimStyle.Render(rightLine)
@@ -776,7 +759,6 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 		labelStr = fmt.Sprintf("%-14s", label)
 	}
 
-	// Format cost (10 chars for "$123.456789")
 	costStr := render.CostStyled(cost, 11, costHighlighted, m.noColor)
 
 	// Format tokens
@@ -880,7 +862,7 @@ func (m Model) renderCostChart() string {
 	}
 
 	// Add scale labels below the chart
-	scaleInfo := fmt.Sprintf("min: $%.4f  max: $%.4f  %s", minCost, maxCost, countInfo)
+	scaleInfo := fmt.Sprintf("min: %s  max: %s  %s", render.Cost(minCost), render.Cost(maxCost), countInfo)
 	if !m.noColor {
 		sb.WriteString("    " + dimStyle.Render(scaleInfo) + "\n")
 	} else {

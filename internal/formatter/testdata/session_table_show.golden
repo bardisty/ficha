@@ -2,38 +2,38 @@
 |  Session: 0a1b2c3d-4e5f-6789-abcd-ef0123456789  |  Duration: 1h 30m      |
 +==========================================================================+
 
-----------------------------[ $9.900000 TOTAL ]-----------------------------
+------------------------------[ $9.90 TOTAL ]-------------------------------
 
-  Input            $0.300000         45.7K tokens
-  Output           $2.100000         23.5K tokens
-  Cache write      $3.750000        200.0K tokens  5m TTL
-  Cache write      $1.500000         50.0K tokens  1h TTL
-  Cache read       $2.250000         1.50M tokens
-  Savings         $20.250000  (from cache reads)
+  Input              $0.3000         45.7K tokens
+  Output             $2.10           23.5K tokens
+  Cache write        $3.75          200.0K tokens  5m TTL
+  Cache write        $1.50           50.0K tokens  1h TTL
+  Cache read         $2.25           1.50M tokens
+  Savings           $20.25    (from cache reads)
 
   Context  [##############------------------------]  380.0K (38% of 1.00M)
            Free: 620.0K (62.0%)
 
 -----------------------------[ COST BY MODEL ]------------------------------
 
-    Opus 4.8     $7.900000
-    Sonnet 5     $1.580000
-    Haiku 4.5    $0.420000
+    Opus 4.8     $7.90
+    Sonnet 5     $1.58
+    Haiku 4.5    $0.4200
 
 ---------------------------[ AGENT SUB-SESSIONS ]---------------------------
 
-  Parent session                             $7.900000
-  [Aa1b2c3d] Haiku 4.5    12 msgs            $0.420000
-  [Af6e5d4c] Sonnet 5       1 msg            $1.580000
-  Agents subtotal                            $2.000000
+  Parent session                             $7.90
+  [Aa1b2c3d] Haiku 4.5    12 msgs            $0.4200
+  [Af6e5d4c] Sonnet 5       1 msg            $1.58
+  Agents subtotal                            $2.00
 
 ----------------------------[ MESSAGE INSIGHTS ]----------------------------
 
   scope: parent transcript
-  First       $0.350000  (10:00:05)  cache_write: $0.300000
-  Last        $0.520000  (11:29:55)  cache_read: $0.310000
-  Peak        $1.870000  (10:42:13)  ! 4.6x avg cost
-  Trend      $0.28/msg -> $0.55/msg  ▲ increasing
+  First         $0.3500  (10:00:05)  cache_write: $0.3000
+  Last          $0.5200  (11:29:55)  cache_read: $0.3100
+  Peak          $1.87    (10:42:13)  ! 4.6x avg cost
+  Trend      $0.2800/msg -> $0.5500/msg  ▲ increasing
 
 ============================================================================
 Messages: 37 (24 parent, 13 agents)  |  Last active: 2026-01-15 11:30

@@ -224,16 +224,29 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 		}
 	}
 
-	contentWidth := 92
 	projectWidth := 45
+
+	// Cost columns grow to fit their widest value, so a large total widens the
+	// column for every row instead of pushing one row out of line.
+	var displayed, cumulatives []float64
+	var running float64
+	for i := 0; i < displayCount && i < len(projects); i++ {
+		c := projects[i].TotalCost.TotalCost
+		running += c
+		displayed = append(displayed, c)
+		cumulatives = append(cumulatives, running)
+	}
+	costWidth := render.CostCellWidth(10, displayed...)
+	cumWidth := render.CostCellWidth(10, cumulatives...)
 
 	// Header row
 	var headerRow string
 	if showDetails {
-		headerRow = fmt.Sprintf("  %3s   %-45s  %8s  %10s  %7s  %10s", "#", "PROJECT", "SESSIONS", "COST", "% TOTAL", "CUMULATIVE")
+		headerRow = fmt.Sprintf("  %3s   %-45s  %8s  %*s  %7s  %*s", "#", "PROJECT", "SESSIONS", costWidth, "COST", "% TOTAL", cumWidth, "CUMULATIVE")
 	} else {
-		headerRow = fmt.Sprintf("  %3s   %-45s  %8s  %10s  %7s", "#", "PROJECT", "SESSIONS", "COST", "% TOTAL")
+		headerRow = fmt.Sprintf("  %3s   %-45s  %8s  %*s  %7s", "#", "PROJECT", "SESSIONS", costWidth, "COST", "% TOTAL")
 	}
+	contentWidth := max(92, len(headerRow)-2)
 
 	if noColor {
 		sb.WriteString(headerRow + "\n")
@@ -260,20 +273,19 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 		name += strings.Repeat(" ", projectWidth-runewidth.StringWidth(name))
 
 		if noColor {
-			costStr := fmt.Sprintf("$%.2f", p.TotalCost.TotalCost)
+			costStr := render.CostCell(p.TotalCost.TotalCost, costWidth)
 			pctStr := fmt.Sprintf("%.1f%%", pctTotal)
 			if showDetails {
-				cumStr := fmt.Sprintf("$%.2f", cumulative)
-				sb.WriteString(fmt.Sprintf("  %3d   %s  %8d  %10s  %7s  %10s\n",
+				cumStr := render.CostCell(cumulative, cumWidth)
+				sb.WriteString(fmt.Sprintf("  %3d   %s  %8d  %s  %7s  %s\n",
 					i+1, name, p.SessionCount, costStr, pctStr, cumStr))
 			} else {
-				sb.WriteString(fmt.Sprintf("  %3d   %s  %8d  %10s  %7s\n",
+				sb.WriteString(fmt.Sprintf("  %3d   %s  %8d  %s  %7s\n",
 					i+1, name, p.SessionCount, costStr, pctStr))
 			}
 		} else {
 			costColor := styles.GetCostGradientColor(p.TotalCost.TotalCost, minCost, maxCost)
-			costStr := fmt.Sprintf("$%.2f", p.TotalCost.TotalCost)
-			costStyled := lipgloss.NewStyle().Foreground(costColor).Render(fmt.Sprintf("%10s", costStr))
+			costStyled := render.CostColored(p.TotalCost.TotalCost, costColor, costWidth)
 
 			pctStr := fmt.Sprintf("%.1f%%", pctTotal)
 			pctStyled := dimStyle.Render(fmt.Sprintf("%7s", pctStr))
@@ -282,8 +294,7 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 			sessionsStyled := dimStyle.Render(fmt.Sprintf("%8d", p.SessionCount))
 
 			if showDetails {
-				cumStr := fmt.Sprintf("$%.2f", cumulative)
-				cumStyled := lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(fmt.Sprintf("%10s", cumStr))
+				cumStyled := render.CostColored(cumulative, styles.SuccessColor, cumWidth)
 				sb.WriteString(fmt.Sprintf("  %s   %s  %s  %s  %s  %s\n",
 					numStyled, name, sessionsStyled, costStyled, pctStyled, cumStyled))
 			} else {
@@ -308,7 +319,7 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 			remainingCost += projects[i].TotalCost.TotalCost
 		}
 
-		summaryText := fmt.Sprintf("(%d more projects totaling $%.2f)", remaining, remainingCost)
+		summaryText := fmt.Sprintf("(%d more projects totaling %s)", remaining, render.Cost(remainingCost))
 		if noColor {
 			sb.WriteString(fmt.Sprintf("  %s\n", summaryText))
 		} else {

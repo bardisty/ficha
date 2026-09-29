@@ -180,16 +180,33 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 
 	// Table separator width matches section content width (76 - 2 padding on each side = 72)
 	// This keeps separators aligned with section boundaries regardless of table column widths
-	contentWidth := 72
+	// Cost columns grow to fit their widest value (the sum included, since it
+	// prints under CUMULATIVE), so a large total widens the column for every
+	// row instead of pushing one row out of line.
+	cumulatives := make([]float64, 0, len(costs)+1)
+	var running float64
+	for _, c := range costs {
+		running += c
+		cumulatives = append(cumulatives, running)
+	}
+	cumulatives = append(cumulatives, totalCost)
+	costWidth := render.CostCellWidth(8, costs...)
+	cumWidth := render.CostCellWidth(10, cumulatives...)
+	analyses := make([]*models.SessionAnalysis, 0, len(sessionData))
+	for _, sd := range sessionData {
+		analyses = append(analyses, sd.analysis)
+	}
+	agentsWidth := agentsColumnWidth(analyses)
 
 	var headerRow string
 	if expandAgents {
 		// Expanded view: simple 5-column layout (72 chars max for RFC brutalist compliance)
-		headerRow = fmt.Sprintf("  %4s %-8s  %-12s  %-10s  %8s  %10s", "#", "SESSION", "MODIFIED", "MODEL", "COST", "CUMULATIVE")
+		headerRow = fmt.Sprintf("  %4s %-8s  %-12s  %-10s  %*s  %*s", "#", "SESSION", "MODIFIED", "MODEL", costWidth, "COST", cumWidth, "CUMULATIVE")
 	} else {
 		// Default view: 7 columns, 73 chars - AGENTS before COST groups metadata together
-		headerRow = fmt.Sprintf("  %4s %-8s  %-12s  %-10s %10s  %8s %10s", "#", "SESSION", "MODIFIED", "MODEL", "AGENTS", "COST", "CUMULATIVE")
+		headerRow = fmt.Sprintf("  %4s %-8s  %-12s  %-10s %*s  %*s %*s", "#", "SESSION", "MODIFIED", "MODEL", agentsWidth, "AGENTS", costWidth, "COST", cumWidth, "CUMULATIVE")
 	}
+	contentWidth := max(72, len(headerRow)-2)
 
 	// Render header row (bold white, all caps - matches breakdown command style)
 	if noColor {
@@ -219,28 +236,28 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 			skipped++
 			if expandAgents {
 				if noColor {
-					sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-10s  %8s  %10s\n", num, shortID, modifiedStr, "-", "(error)", "-"))
+					sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-10s  %*s  %*s\n", num, shortID, modifiedStr, "-", costWidth, "(error)", cumWidth, "-"))
 				} else {
 					sb.WriteString(fmt.Sprintf("  %s %s  %s  %s  %s  %s\n",
 						dimStyle.Render(fmt.Sprintf("%4d", num)),
 						fmt.Sprintf("%-8s", shortID),
 						dimStyle.Render(fmt.Sprintf("%-12s", modifiedStr)),
 						dimStyle.Render(fmt.Sprintf("%-10s", "-")),
-						dimStyle.Render(fmt.Sprintf("%8s", "(error)")),
-						dimStyle.Render(fmt.Sprintf("%10s", "-"))))
+						dimStyle.Render(fmt.Sprintf("%*s", costWidth, "(error)")),
+						dimStyle.Render(fmt.Sprintf("%*s", cumWidth, "-"))))
 				}
 			} else {
 				if noColor {
-					sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-10s %10s  %8s %10s\n", num, shortID, modifiedStr, "-", "-", "(error)", "-"))
+					sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-10s %*s  %*s %*s\n", num, shortID, modifiedStr, "-", agentsWidth, "-", costWidth, "(error)", cumWidth, "-"))
 				} else {
 					sb.WriteString(fmt.Sprintf("  %s %s  %s  %s %s  %s %s\n",
 						dimStyle.Render(fmt.Sprintf("%4d", num)),
 						fmt.Sprintf("%-8s", shortID),
 						dimStyle.Render(fmt.Sprintf("%-12s", modifiedStr)),
 						dimStyle.Render(fmt.Sprintf("%-10s", "-")),
-						dimStyle.Render(fmt.Sprintf("%10s", "-")),
-						dimStyle.Render(fmt.Sprintf("%8s", "(error)")),
-						dimStyle.Render(fmt.Sprintf("%10s", "-"))))
+						dimStyle.Render(fmt.Sprintf("%*s", agentsWidth, "-")),
+						dimStyle.Render(fmt.Sprintf("%*s", costWidth, "(error)")),
+						dimStyle.Render(fmt.Sprintf("%*s", cumWidth, "-"))))
 				}
 			}
 			continue
@@ -249,7 +266,7 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 		cumulativeSum += sd.cost
 
 		// Format agents column (only used when not expanding)
-		agentsStr := formatAgentsColumn(sd.analysis, noColor)
+		agentsStr := formatAgentsColumn(sd.analysis, agentsWidth, noColor)
 
 		// Get primary model for the PARENT session (excludes agent models)
 		modelName := "-"
@@ -266,17 +283,15 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 		modelLabel := render.ClampModel(modelName, 10)
 
 		if expandAgents {
-			// Expanded view: 5 columns, 2-decimal costs (RFC brutalist: under 72 chars)
+			// Expanded view: 5 columns (RFC brutalist: under 72 chars)
 			if noColor {
-				costStr := fmt.Sprintf("$%.2f", sd.cost)
-				cumStr := fmt.Sprintf("$%.2f", cumulativeSum)
-				sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-10s  %8s  %10s\n", num, shortID, modifiedStr, modelLabel, costStr, cumStr))
+				costStr := render.CostCell(sd.cost, costWidth)
+				cumStr := render.CostCell(cumulativeSum, cumWidth)
+				sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-10s  %s  %s\n", num, shortID, modifiedStr, modelLabel, costStr, cumStr))
 			} else {
 				costColor := styles.GetCostGradientColor(sd.cost, minCost, maxCost)
-				costStr := fmt.Sprintf("$%.2f", sd.cost)
-				costStyled := lipgloss.NewStyle().Foreground(costColor).Render(fmt.Sprintf("%8s", costStr))
-				cumStr := fmt.Sprintf("$%.2f", cumulativeSum)
-				cumStyled := lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(fmt.Sprintf("%10s", cumStr))
+				costStyled := render.CostColored(sd.cost, costColor, costWidth)
+				cumStyled := render.CostColored(cumulativeSum, styles.SuccessColor, cumWidth)
 
 				// Color model name by tier
 				modelColor := styles.GetModelColor(modelName)
@@ -298,15 +313,13 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 		} else {
 			// Default view: AGENTS before COST (groups metadata, then costs)
 			if noColor {
-				costStr := fmt.Sprintf("$%.2f", sd.cost)
-				cumStr := fmt.Sprintf("$%.2f", cumulativeSum)
-				sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-10s %10s  %8s %10s\n", num, shortID, modifiedStr, modelLabel, agentsStr, costStr, cumStr))
+				costStr := render.CostCell(sd.cost, costWidth)
+				cumStr := render.CostCell(cumulativeSum, cumWidth)
+				sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-10s %s  %s %s\n", num, shortID, modifiedStr, modelLabel, agentsStr, costStr, cumStr))
 			} else {
 				costColor := styles.GetCostGradientColor(sd.cost, minCost, maxCost)
-				costStr := fmt.Sprintf("$%.2f", sd.cost)
-				costStyled := lipgloss.NewStyle().Foreground(costColor).Render(fmt.Sprintf("%8s", costStr))
-				cumStr := fmt.Sprintf("$%.2f", cumulativeSum)
-				cumStyled := lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(fmt.Sprintf("%10s", cumStr))
+				costStyled := render.CostColored(sd.cost, costColor, costWidth)
+				cumStyled := render.CostColored(cumulativeSum, styles.SuccessColor, cumWidth)
 
 				// Color model name by tier (10 chars: the longest display name,
 				// "Sonnet 4.6"; the row still fits the 72-char separator)
@@ -331,17 +344,16 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 
 	// The sum right-aligns exactly under CUMULATIVE: the label spans the header
 	// width minus the 2-space indent, the 2-space gap before the cost, and the
-	// 10-char CUMULATIVE field. Derived from headerRow (plain ASCII in both
+	// CUMULATIVE field. Derived from headerRow (plain ASCII in both
 	// views) so the two lines cannot drift apart.
-	sumLabelWidth := len(headerRow) - 2 - 2 - 10
-	sumCostStr := fmt.Sprintf("$%.2f", totalCost)
+	sumLabelWidth := len(headerRow) - 2 - 2 - cumWidth
 
 	if noColor {
 		sb.WriteString("  " + strings.Repeat("-", contentWidth) + "\n")
-		sb.WriteString(fmt.Sprintf("  %-*s  %10s\n", sumLabelWidth, sumLabel, sumCostStr))
+		sb.WriteString(fmt.Sprintf("  %-*s  %s\n", sumLabelWidth, sumLabel, render.CostCell(totalCost, cumWidth)))
 	} else {
 		sb.WriteString("  " + dimStyle.Render(strings.Repeat(styles.LineHorizontal, contentWidth)) + "\n")
-		sumStyled := lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(fmt.Sprintf("%10s", sumCostStr))
+		sumStyled := render.CostColored(totalCost, styles.SuccessColor, cumWidth)
 		sb.WriteString(fmt.Sprintf("  %-*s  %s\n", sumLabelWidth, sumLabel, sumStyled))
 	}
 
@@ -352,60 +364,47 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 	}
 }
 
-// formatAgentsColumn formats the AGENTS column value for a session
-// Format: "N [$X.XX]" where N = agent count, $X.XX = agent subtotal
-// (decimals degrade as the subtotal grows so the cell keeps its width)
-// Returns "-" (dimmed) if no agents
-// Column width: 10 chars, never exceeded
-func formatAgentsColumn(analysis *models.SessionAnalysis, noColor bool) string {
-	const colWidth = 10
-
+// agentsCell is the plain AGENTS value for a session, "N [$X]" with the
+// subtotal at human precision, or "-" without agents. A two-decimal subtotal
+// gets the same two-space pad a CostCell does, after the bracket, so the
+// decimal points line up down the column.
+func agentsCell(analysis *models.SessionAnalysis) string {
 	if analysis == nil || !analysis.HasAgents || analysis.AgentCount == 0 {
-		if noColor {
-			return fmt.Sprintf("%*s", colWidth, "-")
-		}
-		// For styled output, add padding BEFORE the styled content
-		// (can't use %Ns because ANSI codes count as bytes)
-		return strings.Repeat(" ", colWidth-1) + dimStyle.Render("-")
+		return "-"
 	}
+	cell := render.CostCell(analysis.AgentsCost.TotalCost, 0)
+	value := strings.TrimRight(cell, " ")
+	return fmt.Sprintf("%d [%s]%s", analysis.AgentCount, value, cell[len(value):])
+}
 
-	// Format: "N [$X.XX]" - right-aligned in colWidth chars. The bracketed
-	// cost drops decimals as it grows (formatChartCost's ladder) so large
-	// subtotals still fit; a value that overflows even at "[$N]" is cut with
-	// an ellipsis — the column never widens past colWidth.
-	agentCost := analysis.AgentsCost.TotalCost
-	countStr := fmt.Sprintf("%d ", analysis.AgentCount)
-	var costStr string
-	for _, layout := range []string{"[$%.2f]", "[$%.1f]", "[$%.0f]"} {
-		costStr = fmt.Sprintf(layout, agentCost)
-		if len(countStr)+len(costStr) <= colWidth {
-			break
-		}
+// agentsColumnWidth is the AGENTS column width: at least the header's 10,
+// grown to the widest cell so a large count or subtotal widens the column
+// instead of shifting its row.
+func agentsColumnWidth(analyses []*models.SessionAnalysis) int {
+	width := 10
+	for _, a := range analyses {
+		width = max(width, len(agentsCell(a)))
 	}
-	fullStr := countStr + costStr
-	if len(fullStr) > colWidth {
-		fullStr = render.ClampModel(fullStr, colWidth)
-	}
+	return width
+}
 
+// formatAgentsColumn right-aligns agentsCell in width columns, dimming the
+// bracketed subtotal (COST already includes it) and a lone "-".
+func formatAgentsColumn(analysis *models.SessionAnalysis, width int, noColor bool) string {
+	cell := agentsCell(analysis)
+	padding := strings.Repeat(" ", max(0, width-len(cell)))
 	if noColor {
-		return fmt.Sprintf("%*s", colWidth, fullStr)
+		return padding + cell
 	}
-
-	// Dim the bracketed cost (it's already included in COST column)
-	// Calculate padding to right-align the display to colWidth chars
-	padding := colWidth - lipgloss.Width(fullStr)
-	if padding < 0 {
-		padding = 0
+	if idx := strings.Index(cell, "["); idx >= 0 {
+		return padding + cell[:idx] + dimStyle.Render(cell[idx:])
 	}
-	if idx := strings.Index(fullStr, "["); idx >= 0 {
-		return strings.Repeat(" ", padding) + fullStr[:idx] + dimStyle.Render(fullStr[idx:])
-	}
-	return strings.Repeat(" ", padding) + fullStr
+	return padding + dimStyle.Render(cell)
 }
 
 // renderAgentTreeRows renders indented agent sub-session rows with tree connectors
 // Tree connectors: ├─ for all but last, └─ for final agent
-// Compact format: "    ├─ [A1] Haiku 4.5  45 msgs  $0.18"
+// Compact format: "    ├─ [Aa1b2c3d] Haiku 4.5  45 msgs  $0.1800"
 // Follows RFC brutalist principle: remove the unnecessary (no agent ID - it's noise)
 // Workflow agents get a dim group-header line before each run's first agent.
 func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool) string {
@@ -425,6 +424,11 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool) string 
 	// Shared msgs column width: grows past 8 only when a count overflows, so
 	// every sibling row's trailing cost stays mutually aligned.
 	msgsWidth := agentMsgsWidth(agents)
+	agentCosts := make([]float64, len(agents))
+	for i, a := range agents {
+		agentCosts[i] = a.TotalCost.TotalCost
+	}
+	costWidth := render.CostCellWidth(0, agentCosts...)
 
 	prevWorkflow := ""
 	for i, agent := range agents {
@@ -460,10 +464,10 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool) string 
 		// matching the breakdown TUI's scheme
 		agentLabel := "[A" + render.ShortAgentID(agent.AgentID) + "]"
 
-		// Format: "       ├─ [Aa1b2c3d] Haiku 4.5  45 msgs  $0.18"
+		// Format: "       ├─ [Aa1b2c3d] Haiku 4.5  45 msgs  $0.1800"
 		// 7-space indent aligns tree connector under SESSION column
 		if noColor {
-			costStr := fmt.Sprintf("$%.2f", agent.TotalCost.TotalCost)
+			costStr := render.CostCell(agent.TotalCost.TotalCost, costWidth)
 			sb.WriteString(fmt.Sprintf("       %s %-10s %-10s %*s  %s\n",
 				connector, agentLabel, modelLabel, msgsWidth, msgStr, costStr))
 		} else {
@@ -477,7 +481,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool) string 
 
 			// Dim the message count and cost
 			msgStyled := dimStyle.Render(fmt.Sprintf("%*s", msgsWidth, msgStr))
-			costStyled := dimStyle.Render(fmt.Sprintf("$%.2f", agent.TotalCost.TotalCost))
+			costStyled := render.CostColored(agent.TotalCost.TotalCost, styles.SecondaryColor, costWidth)
 
 			sb.WriteString(fmt.Sprintf("       %s %s %s %s  %s\n",
 				dimStyle.Render(connector),
