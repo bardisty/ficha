@@ -120,7 +120,7 @@ func renderContextSection(analysis *models.SessionAnalysis, width int, noColor b
 	gaugeWidth := width - 10
 	line, note := render.ContextGauge(contextSize, maxContext, gaugeWidth, noColor, false)
 	if !noColor {
-		note = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(note)
+		note = lipgloss.NewStyle().Foreground(styles.NoteColor).Render(note)
 	}
 	return "  Context " + line + "\n           " + note + "\n"
 }

@@ -111,6 +111,8 @@ Global flags, accepted by every command:
 
 `watch`, `breakdown` and `show --live` render a terminal UI, so they reject `-f json` and `-f csv`. `version` prints plain text and ignores `--format`.
 
+Colors adapt to a light or dark terminal background, which ficha asks the terminal for. Inside tmux or screen it can't ask and assumes dark, so on a light background set `COLORFGBG=0;15`.
+
 Per-command flags:
 
 | Command | Flag | Description |

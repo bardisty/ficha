@@ -97,15 +97,40 @@ func ASCIIChart(s string) string {
 	}, s)
 }
 
-// Shared color palette
+// Shared color palette. Each color carries two xterm-256 indexes: Dark is
+// the one ficha was designed with, and Light takes over on a light terminal
+// background. Light values keep text at 4.5:1 or better against white, and
+// bars and separators at 3:1. They're palette indexes rather than hex so the
+// ratio holds under both the 256-color and truecolor profiles.
+//
+// The background is detected once per process, by Bubble Tea's init asking
+// the terminal (OSC 11) before a TUI can take stdin. Without a reply (not a
+// terminal, or inside tmux or screen, which termenv doesn't ask) it goes by
+// COLORFGBG, and failing that reads as dark, so the dark values are the
+// fallback.
 var (
-	PrimaryColor   = lipgloss.Color("99")  // Purple
-	SecondaryColor = lipgloss.Color("245") // Gray (dimmed but readable)
-	SuccessColor   = lipgloss.Color("42")  // Green
-	InfoColor      = lipgloss.Color("43")  // Cyan
-	WarningColor   = lipgloss.Color("221") // Yellow
-	AccentColor    = lipgloss.Color("212") // Pink
-	ErrorColor     = lipgloss.Color("196") // Red
+	PrimaryColor   = lipgloss.AdaptiveColor{Light: "92", Dark: "99"}   // Purple
+	SecondaryColor = lipgloss.AdaptiveColor{Light: "242", Dark: "245"} // Gray (dimmed but readable)
+	SuccessColor   = lipgloss.AdaptiveColor{Light: "28", Dark: "42"}   // Green
+	InfoColor      = lipgloss.AdaptiveColor{Light: "23", Dark: "43"}   // Cyan
+	WarningColor   = lipgloss.AdaptiveColor{Light: "94", Dark: "221"}  // Yellow
+	AccentColor    = lipgloss.AdaptiveColor{Light: "162", Dark: "212"} // Pink
+	ErrorColor     = lipgloss.AdaptiveColor{Light: "160", Dark: "196"} // Red
+	OrangeColor    = lipgloss.AdaptiveColor{Light: "130", Dark: "214"} // Orange
+	BlueColor      = lipgloss.AdaptiveColor{Light: "25", Dark: "75"}   // Blue
+
+	// NeutralColor sits near the default foreground, for values that
+	// shouldn't draw the eye.
+	NeutralColor = lipgloss.AdaptiveColor{Light: "238", Dark: "252"}
+	// SoftTextColor is for text a step behind the figures it labels, such
+	// as breakdown's stats line.
+	SoftTextColor = lipgloss.AdaptiveColor{Light: "239", Dark: "250"}
+	// NoteColor is for explanatory notes under a value: less prominent than
+	// NeutralColor, more than SecondaryColor.
+	NoteColor = lipgloss.AdaptiveColor{Light: "241", Dark: "248"}
+	// SeparatorColor is for inline separators that should recede behind
+	// the text around them.
+	SeparatorColor = lipgloss.AdaptiveColor{Light: "246", Dark: "240"}
 )
 
 // Header styles for titles and section headers
@@ -171,9 +196,11 @@ var (
 		Foreground(PrimaryColor)
 )
 
-// Highlight style for recently changed values
+// Highlight style for recently changed values. On a dark background it's a
+// brighter gold than WarningColor. On white no gold reaches 4.5:1, so both
+// take the same dark amber.
 var (
-	HighlightColor = lipgloss.Color("220") // Bright yellow/gold
+	HighlightColor = lipgloss.AdaptiveColor{Light: "94", Dark: "220"} // Bright yellow/gold
 
 	HighlightStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -186,30 +213,31 @@ var DimStyle = lipgloss.NewStyle().
 
 // Model-specific colors (by tier)
 var (
-	FableColor  = lipgloss.Color("213") // Pink/Magenta - flagship tier
-	OpusColor   = lipgloss.Color("99")  // Purple - premium tier
-	SonnetColor = lipgloss.Color("75")  // Blue - mid tier
-	HaikuColor  = lipgloss.Color("43")  // Cyan/Teal - lightweight tier
+	FableColor  = lipgloss.AdaptiveColor{Light: "162", Dark: "213"} // Pink/Magenta - flagship tier
+	OpusColor   = PrimaryColor                                      // Purple - premium tier
+	SonnetColor = BlueColor                                         // Blue - mid tier
+	HaikuColor  = InfoColor                                         // Cyan/Teal - lightweight tier
 )
 
 // Token type colors
 var (
-	OutputTokenColor     = lipgloss.Color("75")  // Light blue
-	CacheWriteTokenColor = lipgloss.Color("214") // Warm orange - cost investment
-	CacheReadTokenColor  = lipgloss.Color("43")  // Cyan - efficiency/savings
+	OutputTokenColor     = BlueColor   // Light blue
+	CacheWriteTokenColor = OrangeColor // Warm orange - cost investment
+	CacheReadTokenColor  = InfoColor   // Cyan - efficiency/savings
 )
 
 // Context usage level colors (thresholds based on ~75-78% compaction trigger)
 var (
-	ContextLowColor      = SuccessColor          // Green - 0-65%
-	ContextHighColor     = lipgloss.Color("214") // Orange - 65-75% (approaching compaction)
-	ContextCriticalColor = ErrorColor            // Red - 75%+ (compaction territory)
-	ContextFreeColor     = lipgloss.Color("252") // Bright gray - clearly visible free space
+	ContextLowColor      = SuccessColor // Green - 0-65%
+	ContextHighColor     = OrangeColor  // Orange - 65-75% (approaching compaction)
+	ContextCriticalColor = ErrorColor   // Red - 75%+ (compaction territory)
+	// Bright gray - clearly visible free space
+	ContextFreeColor = lipgloss.AdaptiveColor{Light: "244", Dark: "252"}
 )
 
 // GetContextUsageColor returns the appropriate color based on context usage percentage.
 // Thresholds aligned with Claude Code's ~75-78% auto-compaction trigger.
-func GetContextUsageColor(usagePct float64) lipgloss.Color {
+func GetContextUsageColor(usagePct float64) lipgloss.AdaptiveColor {
 	switch {
 	case usagePct >= 75:
 		return ContextCriticalColor // Red - compaction territory
@@ -221,12 +249,12 @@ func GetContextUsageColor(usagePct float64) lipgloss.Color {
 }
 
 // Agent marker colors - cycling palette for distinguishing sub-agents
-var AgentColors = []lipgloss.Color{
-	lipgloss.Color("212"), // Pink - A1
-	lipgloss.Color("214"), // Orange - A2
-	lipgloss.Color("221"), // Yellow - A3
-	lipgloss.Color("75"),  // Blue - A4
-	lipgloss.Color("43"),  // Cyan - A5
+var AgentColors = []lipgloss.AdaptiveColor{
+	AccentColor,  // Pink - A1
+	OrangeColor,  // Orange - A2
+	WarningColor, // Yellow - A3
+	BlueColor,    // Blue - A4
+	InfoColor,    // Cyan - A5
 }
 
 // GetAgentColor returns a color for the given agent ID (cycles through palette).
@@ -235,7 +263,7 @@ var AgentColors = []lipgloss.Color{
 // distinct agents usually get distinct colors. The numeric path requires the
 // WHOLE string to be a number — a digit-prefixed hash like "3f2a" must hash,
 // not masquerade as ordinal 3.
-func GetAgentColor(agentID string) lipgloss.Color {
+func GetAgentColor(agentID string) lipgloss.AdaptiveColor {
 	if agentID == "" {
 		return SecondaryColor
 	}
@@ -250,7 +278,7 @@ func GetAgentColor(agentID string) lipgloss.Color {
 // GetModelColor returns the tier-appropriate color for a model name or ID.
 // Works with both display names ("Opus 4.5") and raw IDs ("claude-opus-4-6")
 // via case-insensitive substring matching.
-func GetModelColor(modelName string) lipgloss.Color {
+func GetModelColor(modelName string) lipgloss.AdaptiveColor {
 	switch {
 	case contains(modelName, "Fable"), contains(modelName, "Mythos"):
 		return FableColor
@@ -273,10 +301,10 @@ func contains(s, substr string) bool {
 // GetCostGradientColor returns a color based on cost position in the session's range
 // Neutral (cheap) -> Yellow -> Orange -> Red (expensive)
 // Only expensive items "heat up" - cheap items stay unobtrusive
-func GetCostGradientColor(cost, minCost, maxCost float64) lipgloss.Color {
+func GetCostGradientColor(cost, minCost, maxCost float64) lipgloss.AdaptiveColor {
 	// Handle edge cases
 	if maxCost <= minCost {
-		return lipgloss.Color("252") // Single value - neutral white
+		return NeutralColor // Single value - neutral white
 	}
 
 	// Normalize to 0.0-1.0 range
@@ -296,13 +324,13 @@ func GetCostGradientColor(cost, minCost, maxCost float64) lipgloss.Color {
 	// 75-90%: orange (getting hot)
 	// 90%+: red (expensive!)
 	if normalized < 0.5 {
-		return lipgloss.Color("252") // Neutral white - cheap, unobtrusive
+		return NeutralColor // Neutral white - cheap, unobtrusive
 	}
 	if normalized < 0.75 {
 		return WarningColor // Yellow (221)
 	}
 	if normalized < 0.9 {
-		return lipgloss.Color("214") // Orange
+		return OrangeColor
 	}
 	return ErrorColor // Red (196)
 }

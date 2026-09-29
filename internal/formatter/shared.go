@@ -296,7 +296,7 @@ func renderCostRows(cost models.CostBreakdown, usage models.TokenUsage, width in
 // "tokens" unit.
 func costRows(cost models.CostBreakdown, usage models.TokenUsage, notes, unit bool, noColor bool) string {
 	var sb strings.Builder
-	sb.WriteString(renderUnifiedCostRow("Input", cost.InputCost, usage.InputTokens, lipgloss.Color(""), unit, "", noColor))
+	sb.WriteString(renderUnifiedCostRow("Input", cost.InputCost, usage.InputTokens, nil, unit, "", noColor))
 	sb.WriteString(renderUnifiedCostRow("Output", cost.OutputCost, usage.OutputTokens, styles.OutputTokenColor, unit, "", noColor))
 	cacheWrite := func(ttl string, c float64, tokens int64) string {
 		if notes {
@@ -323,10 +323,10 @@ func costRows(cost models.CostBreakdown, usage models.TokenUsage, notes, unit bo
 // renderUnifiedCostRow renders a single row with cost and token info
 // combined, the count followed by "tokens" when unit is set:
 // "  Label            $0.3710      53.9K tokens"
-func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor lipgloss.Color, unit bool, extra string, noColor bool) string {
+func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor lipgloss.TerminalColor, unit bool, extra string, noColor bool) string {
 	// Format label with optional color
 	var labelStr string
-	if !noColor && labelColor != "" {
+	if !noColor && labelColor != nil {
 		labelStyled := lipgloss.NewStyle().Foreground(labelColor)
 		labelStr = labelStyled.Render(fmt.Sprintf("%-14s", label))
 	} else {

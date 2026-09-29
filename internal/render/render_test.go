@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
+
+// TestMain pins a dark background. Left to detect, lipgloss would ask
+// whatever terminal the tests run in the first time a test renders a color.
+func TestMain(m *testing.M) {
+	lipgloss.SetHasDarkBackground(true)
+	os.Exit(m.Run())
+}
 
 func TestCost(t *testing.T) {
 	tests := []struct {
@@ -573,7 +581,7 @@ func TestCostStyledColorPathsContainValue(t *testing.T) {
 		CostStyled(1.234567, 11, true, false),
 		CostStyledGreen(1.234567, 11, false, false),
 		CostStyledBoldGreen(1.234567, 11, false, false),
-		CostColored(1.234567, lipgloss.Color("42"), 10),
+		CostColored(1.234567, styles.SuccessColor, 10),
 	} {
 		if !strings.Contains(s, "$1.23") {
 			t.Errorf("styled cost should contain the whole value: %q", s)
