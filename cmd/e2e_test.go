@@ -1378,3 +1378,51 @@ func TestE2ECompletionSkipsCountsOverBudget(t *testing.T) {
 		}
 	}
 }
+
+// TestE2ELiveViewsNeedATerminal: with stdout redirected, the live views fail
+// fast with a pointer at the scripting alternative instead of writing frames
+// into the pipe. Test stdout is a buffer, which is never a terminal.
+func TestE2ELiveViewsNeedATerminal(t *testing.T) {
+	const (
+		showAlt      = "For scripting, use 'ficha show -f json' (add --messages for per-message rows)."
+		breakdownAlt = "For per-message rows in a script, use 'ficha show -f csv --messages'."
+	)
+	tests := []struct {
+		name       string
+		args       []string
+		wantErr    string
+		wantStderr string
+	}{
+		{name: "watch", args: []string{"watch", projFlag},
+			wantErr: "ficha watch needs an interactive terminal, and stdout isn't one. " + showAlt},
+		{name: "pinned watch", args: []string{"watch", projFlag, e2eAlphaID},
+			wantErr: "ficha watch needs an interactive terminal, and stdout isn't one. " + showAlt},
+		{name: "show --live", args: []string{"show", projFlag, "--live"},
+			wantErr: "ficha show --live needs an interactive terminal, and stdout isn't one. " + showAlt},
+		{name: "root --live", args: []string{projFlag, "-l"},
+			wantErr: "ficha --live needs an interactive terminal, and stdout isn't one. " + showAlt},
+		{name: "breakdown", args: []string{"breakdown", projFlag},
+			wantErr: "ficha breakdown needs an interactive terminal, and stdout isn't one. " + breakdownAlt},
+		{name: "--messages in live mode warns without format advice", args: []string{"show", projFlag, "--live", "--messages"},
+			wantErr:    "ficha show --live needs an interactive terminal, and stdout isn't one. " + showAlt,
+			wantStderr: "Warning: --messages has no effect in live mode\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupE2EFixture(t)
+			stdout, stderr, err := executeCLISplit(t, tt.args...)
+			if err == nil {
+				t.Fatalf("expected error, got nil\nstdout: %s", stdout)
+			}
+			if err.Error() != tt.wantErr {
+				t.Errorf("error:\n got: %s\nwant: %s", err, tt.wantErr)
+			}
+			if stdout != "" {
+				t.Errorf("nothing should reach stdout, got %q", stdout)
+			}
+			if stderr != tt.wantStderr {
+				t.Errorf("stderr: got %q, want %q", stderr, tt.wantStderr)
+			}
+		})
+	}
+}

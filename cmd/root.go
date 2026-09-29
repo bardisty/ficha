@@ -43,6 +43,10 @@ Examples:
 			// up to the root's SetOut/SetErr, so this honors test redirection.
 			cfg.stdout = cmd.OutOrStdout()
 			cfg.stderr = cmd.ErrOrStderr()
+			cfg.commandPath = cmd.CommandPath()
+			if cfg.live && cmd.Name() != "watch" && cmd.Name() != "breakdown" {
+				cfg.commandPath += " --live"
+			}
 
 			// version prints plain text and ignores --format entirely
 			if cmd.Name() == "version" {
