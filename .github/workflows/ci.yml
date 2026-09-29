@@ -26,14 +26,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Build from source with the job's Go toolchain. The pinned release's
-      # prebuilt binary is built with an older Go than go.mod targets, and
-      # golangci-lint refuses to run when its build Go trails the target version.
-      - name: Install golangci-lint
-        run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
       # The fmt + lint half of `make check`; lint includes govet. Tests run in the
       # next step instead of through `make check` so they get the race detector
       # without running the suite twice.

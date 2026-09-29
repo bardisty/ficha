@@ -15,6 +15,14 @@ GOBUILD=CGO_ENABLED=0 $(GOCMD) build -trimpath
 GOTEST=$(GOCMD) test
 GOMOD=$(GOCMD) mod
 
+# golangci-lint v1.64.8 can't read the standard library's export data from Go
+# 1.27 on, so it has to build and load packages with an older Go, whatever is
+# installed locally. GOTOOLCHAIN pins both go run's build and the linter's own
+# go list calls to go.mod's toolchain, or its go line when there is no
+# toolchain line.
+GOLANGCI_LINT_VERSION=v1.64.8
+LINT_GOTOOLCHAIN=$(shell awk '$$1 == "go" { g = "go" $$2 } $$1 == "toolchain" { t = $$2 } END { print (t != "" ? t : g) }' go.mod)
+
 # Version from VERSION file
 VERSION=$(shell cat VERSION 2>/dev/null || echo "dev")
 
@@ -85,9 +93,9 @@ tidy:
 run:
 	$(GOCMD) run . $(ARGS)
 
-# Run golangci-lint
+# Run golangci-lint, building the pinned version on first use
 lint:
-	golangci-lint run ./...
+	GOTOOLCHAIN=$(LINT_GOTOOLCHAIN) $(GOCMD) run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
 
 # Format all Go files
 fmt:

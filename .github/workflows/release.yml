@@ -23,14 +23,6 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      # Build from source with the job's Go toolchain. The pinned release's
-      # prebuilt binary is built with an older Go than go.mod targets, and
-      # golangci-lint refuses to run when its build Go trails the target version.
-      - name: Install golangci-lint
-        run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
       - name: Format and lint
         run: make fmt lint
 
