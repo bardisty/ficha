@@ -3,117 +3,263 @@ package formatter
 import (
 	"fmt"
 	"strings"
+	"time"
+	"unicode"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
-// FormatSessionListTable formats a list of sessions as a table
-func FormatSessionListTable(entries []models.SessionEntry, noColor bool) string {
+// ListTableOptions shapes FormatSessionListTable.
+type ListTableOptions struct {
+	// Width is the terminal's width, or 0 when stdout isn't a terminal. With
+	// a width, TITLE widens to fit long titles. Without one the layout is
+	// fixed, so piped output doesn't depend on the terminal it came from.
+	Width int
+	// Now anchors WHEN's relative times. Zero means time.Now().
+	Now time.Time
+}
+
+// Column widths of the list table that don't depend on the data.
+const (
+	listStaticWidth   = 76
+	listWhenWidth     = len("just now")
+	listDurationWidth = len("12h 34m")
+	listModelWidth    = 10
+	listAgentsWidth   = len("AGENTS")
+	listMinTitleWidth = 12
+	// listGoodTitleWidth is the room TITLE gets before other columns go.
+	listGoodTitleWidth = 24
+	// listMaxTitleWidth keeps one long title from stretching the rules
+	// across a wide terminal.
+	listMaxTitleWidth = 72
+)
+
+// FormatSessionListTable renders one row per session, newest first as given,
+// with enough to pick one out: when, how long, which model, what it cost and
+// its title. results carries each session's analysis; a nil analysis is a
+// transcript that couldn't be read.
+func FormatSessionListTable(results []models.SessionResult, noColor bool, opts ListTableOptions) string {
+	if opts.Now.IsZero() {
+		opts.Now = time.Now()
+	}
+
+	ids := shortSessionIDs(results)
+	idWidth := 0
+	var costs []float64
+	titleWidth := len("TITLE")
+	for i, r := range results {
+		idWidth = max(idWidth, len(ids[i]))
+		if r.Analysis != nil {
+			costs = append(costs, r.Analysis.TotalCost.TotalCost)
+			titleWidth = max(titleWidth, runewidth.StringWidth(cleanTitle(r.Analysis.Title)))
+		}
+	}
+	costWidth := render.CostCellWidth(len("COST"), costs...)
+
+	gap := strings.Repeat(" ", columnGap)
+	fixed := rowIndent + idWidth + columnGap + listWhenWidth + columnGap + listDurationWidth +
+		columnGap + listModelWidth + columnGap + listAgentsWidth + columnGap + costWidth + columnGap
+
+	// A terminal that would leave TITLE too little room gives up LENGTH, then
+	// AGENTS, keeping what picks a session out: when, model, cost and title.
+	showLength, showAgents := true, true
+	tooNarrow := func() bool { return opts.Width > 0 && fixed+listGoodTitleWidth > opts.Width }
+	if tooNarrow() {
+		showLength = false
+		fixed -= columnGap + listDurationWidth
+	}
+	if tooNarrow() {
+		showAgents = false
+		fixed -= columnGap + listAgentsWidth
+	}
+
+	// TITLE is the last column, so nothing after it needs aligning. Piped,
+	// titles print whole, for grep, and the rules keep the fixed width. On a
+	// terminal they're cut to fit it.
+	width := listStaticWidth
+	titleCol := -1
+	if opts.Width > 0 {
+		width = min(max(fixed+min(titleWidth, listMaxTitleWidth), listStaticWidth), opts.Width)
+		width = max(width, fixed+listMinTitleWidth)
+		titleCol = width - fixed
+	}
+
 	var sb strings.Builder
-	const width = 76
+	sb.WriteString(renderListHeaderPanel(len(results), width, noColor))
+	sb.WriteString("\n\n")
 
-	// Header panel
-	sessionWord := "sessions"
-	if len(entries) == 1 {
-		sessionWord = "session"
+	join := func(id, when, length, model, agents, cost, title string) string {
+		cells := []string{id, when}
+		if showLength {
+			cells = append(cells, length)
+		}
+		cells = append(cells, model)
+		if showAgents {
+			cells = append(cells, agents)
+		}
+		cells = append(cells, cost, title)
+		return strings.Repeat(" ", rowIndent) + strings.Join(cells, gap)
 	}
-	headerText := fmt.Sprintf("%d %s", len(entries), sessionWord)
-
+	header := join(
+		fmt.Sprintf("%-*s", idWidth, "ID"),
+		fmt.Sprintf("%-*s", listWhenWidth, "WHEN"),
+		fmt.Sprintf("%*s", listDurationWidth, "LENGTH"),
+		fmt.Sprintf("%-*s", listModelWidth, "MODEL"),
+		fmt.Sprintf("%*s", listAgentsWidth, "AGENTS"),
+		fmt.Sprintf("%*s", costWidth, "COST"),
+		"TITLE",
+	)
+	rule := strings.Repeat(" ", rowIndent) + strings.Repeat(styles.LineHorizontal, width-rowIndent)
 	if noColor {
-		// Plain header panel
-		sb.WriteString(styles.BoxTopLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxTopRight)
-		sb.WriteString("\n")
-
-		sb.WriteString(styles.BoxVertical)
-		sb.WriteString("  ")
-		sb.WriteString(headerText)
-		sb.WriteString(strings.Repeat(" ", width-6-len(headerText)))
-		sb.WriteString("  ")
-		sb.WriteString(styles.BoxVertical)
-		sb.WriteString("\n")
-
-		sb.WriteString(styles.BoxBottomLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxBottomRight)
-		sb.WriteString("\n\n")
+		sb.WriteString(header + "\n" + rule + "\n")
 	} else {
-		// Styled header panel
-		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
-		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
-		sb.WriteString(panelBorderStyle.Render(styles.BoxTopRight))
-		sb.WriteString("\n")
-
-		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
-		sb.WriteString("  ")
-		sb.WriteString(sectionHeaderStyle.Render(fmt.Sprintf("%d", len(entries))))
-		sb.WriteString(fmt.Sprintf(" %s", sessionWord))
-		sb.WriteString(strings.Repeat(" ", width-6-len(headerText)))
-		sb.WriteString("  ")
-		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
-		sb.WriteString("\n")
-
-		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomLeft))
-		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
-		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomRight))
-		sb.WriteString("\n\n")
+		sb.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(rule) + "\n")
 	}
 
-	// Column headers
-	colHeader := fmt.Sprintf("%-36s  %8s  %7s  %s", "Session ID", "Messages", "Agents", "Modified")
-	if noColor {
-		sb.WriteString(colHeader + "\n")
-		sb.WriteString(strings.Repeat(styles.LineHorizontal, width) + "\n")
-	} else {
-		sb.WriteString(dimStyle.Render(colHeader) + "\n")
-		sb.WriteString(dimStyle.Render(strings.Repeat(styles.LineHorizontal, width)) + "\n")
+	var minCost, maxCost float64
+	for i, c := range costs {
+		if i == 0 || c < minCost {
+			minCost = c
+		}
+		maxCost = max(maxCost, c)
 	}
 
-	// Session rows
-	for _, entry := range entries {
-		modified := entry.Modified.Format("2006-01-02 15:04")
-		agentStr := "-"
-		if entry.AgentCount > 0 {
-			agentStr = fmt.Sprintf("%d (%d)", entry.AgentCount, entry.AgentMessageCount)
+	for i, r := range results {
+		id := fmt.Sprintf("%-*s", idWidth, ids[i])
+		when := fmt.Sprintf("%-*s", listWhenWidth, render.Ago(r.Entry.Modified, opts.Now))
+		a := r.Analysis
+
+		// A session with no replies yet, or one that couldn't be read, has
+		// nothing to price. Its row stays, dimmed, so the list still accounts
+		// for every transcript.
+		if a == nil || a.MessageCount == 0 {
+			title := "(unreadable)"
+			if a != nil {
+				title = "(no replies yet)"
+				if t := cleanTitle(a.Title); t != "" {
+					title = t
+				}
+			}
+			row := join(id, when,
+				fmt.Sprintf("%*s", listDurationWidth, "-"),
+				fmt.Sprintf("%-*s", listModelWidth, "-"),
+				fmt.Sprintf("%*s", listAgentsWidth, "-"),
+				fmt.Sprintf("%*s", costWidth, "-"),
+				truncateRight(title, titleCol))
+			if !noColor {
+				row = dimStyle.Render(row)
+			}
+			sb.WriteString(row + "\n")
+			continue
 		}
 
-		// Truncate session ID to fit (first 8 chars is usually enough to identify)
-		shortID := entry.SessionID
-		if len(shortID) > 36 {
-			shortID = shortID[:33] + "..."
+		duration := fmt.Sprintf("%*s", listDurationWidth, render.Duration(a.Duration.Duration()))
+		modelName := parentPrimaryModel(a)
+		model := fmt.Sprintf("%-*s", listModelWidth, render.ClampModel(modelName, listModelWidth))
+		agents := fmt.Sprintf("%*s", listAgentsWidth, "-")
+		if a.AgentCount > 0 {
+			agents = fmt.Sprintf("%*d", listAgentsWidth, a.AgentCount)
 		}
+		title := cleanTitle(a.Title)
+		if title == "" {
+			title = "-"
+		}
+		title = truncateRight(title, titleCol)
 
 		if noColor {
-			sb.WriteString(fmt.Sprintf("%-36s  %8d  %7s  %s\n",
-				shortID,
-				entry.MessageCount,
-				agentStr,
-				modified))
-		} else {
-			// Dim the session ID, highlight message count if > 0
-			var msgStr string
-			if entry.MessageCount > 0 {
-				msgStr = fmt.Sprintf("%8d", entry.MessageCount)
-			} else {
-				msgStr = dimStyle.Render(fmt.Sprintf("%8d", entry.MessageCount))
-			}
-			sb.WriteString(fmt.Sprintf("%s  %s  %7s  %s\n",
-				dimStyle.Render(fmt.Sprintf("%-36s", shortID)),
-				msgStr,
-				agentStr,
-				dimStyle.Render(modified)))
+			sb.WriteString(join(id, when, duration, model, agents, render.CostCell(a.TotalCost.TotalCost, costWidth), title) + "\n")
+			continue
 		}
+		costColor := styles.GetCostGradientColor(a.TotalCost.TotalCost, minCost, maxCost)
+		sb.WriteString(join(
+			id,
+			dimStyle.Render(when),
+			dimStyle.Render(duration),
+			lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName)).Render(model),
+			dimStyle.Render(agents),
+			render.CostColored(a.TotalCost.TotalCost, costColor, costWidth),
+			title,
+		) + "\n")
 	}
 
-	// Footer separator
 	sb.WriteString("\n")
 	if noColor {
 		sb.WriteString(strings.Repeat(styles.LineHorizontal, width))
 	} else {
 		sb.WriteString(dimStyle.Render(strings.Repeat(styles.LineHorizontal, width)))
 	}
-
 	return sb.String()
+}
+
+// renderListHeaderPanel draws list's boxed "N sessions" header.
+func renderListHeaderPanel(n int, width int, noColor bool) string {
+	text := fmt.Sprintf("%d %s", n, sessionsWord(n))
+	pad := strings.Repeat(" ", max(width-6-len(text), 0))
+	top := styles.BoxTopLeft + strings.Repeat(styles.BoxHorizontal, width-2) + styles.BoxTopRight
+	bottom := styles.BoxBottomLeft + strings.Repeat(styles.BoxHorizontal, width-2) + styles.BoxBottomRight
+	if noColor {
+		return top + "\n" + styles.BoxVertical + "  " + text + pad + "  " + styles.BoxVertical + "\n" + bottom
+	}
+	side := panelBorderStyle.Render(styles.BoxVertical)
+	return panelBorderStyle.Render(top) + "\n" +
+		side + "  " + sectionHeaderStyle.Render(fmt.Sprintf("%d", n)) + " " + sessionsWord(n) + pad + "  " + side + "\n" +
+		panelBorderStyle.Render(bottom)
+}
+
+// parentPrimaryModel names the model that cost the most in the parent
+// transcript, the one the user talked to, ignoring what agents ran on.
+func parentPrimaryModel(a *models.SessionAnalysis) string {
+	if len(a.ParentCostByModel) > 0 {
+		return render.PrimaryModel(a.ParentCostByModel)
+	}
+	return render.PrimaryModel(a.CostByModel)
+}
+
+// shortSessionIDs gives each session the shortest ID prefix, at least 8
+// characters, that no other listed session shares, so every ID shown still
+// works as `ficha show <id>`.
+func shortSessionIDs(results []models.SessionResult) []string {
+	const short = 8
+	ids := make([]string, len(results))
+	for i, r := range results {
+		id := r.Entry.SessionID
+		n := min(short, len(id))
+		for j, other := range results {
+			if j == i {
+				continue
+			}
+			o := other.Entry.SessionID
+			for n < len(id) && strings.HasPrefix(o, id[:n]) {
+				n++
+			}
+		}
+		ids[i] = id[:n]
+	}
+	return ids
+}
+
+// cleanTitle makes a transcript's title safe to print on one line. It comes
+// from the transcript, so a control character could otherwise move the
+// cursor or recolor the terminal.
+func cleanTitle(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// truncateRight fits s into width display columns, ending in an ellipsis
+// when it's cut. A negative width leaves s whole.
+func truncateRight(s string, width int) string {
+	if width < 0 || runewidth.StringWidth(s) <= width {
+		return s
+	}
+	return runewidth.Truncate(s, width, styles.Ellipsis)
 }

@@ -344,14 +344,48 @@ func TestGoldenSessionTableSummary(t *testing.T) {
 
 // --- golden tests: FormatSessionListTable ---
 
+// goldenListResults pairs goldenSessionEntries with analyses: a titled
+// session with agents, an untitled one whose long title-less row falls back
+// to "-", a session with no replies yet, and one whose transcript couldn't
+// be read.
+func goldenListResults() []models.SessionResult {
+	entries := goldenSessionEntries()
+	opus := map[string]models.CostBreakdown{"claude-opus-4-8": {TotalCost: 12.34}}
+	results := []models.SessionResult{
+		{Entry: entries[0], Analysis: &models.SessionAnalysis{
+			Title:             "Refactor the auth middleware to use short-lived tokens",
+			Duration:          models.Duration(83 * time.Minute),
+			MessageCount:      24,
+			AgentCount:        2,
+			TotalCost:         models.CostBreakdown{TotalCost: 12.34},
+			ParentCostByModel: opus,
+			CostByModel:       opus,
+		}},
+		{Entry: entries[1], Analysis: &models.SessionAnalysis{
+			Duration:          models.Duration(47*time.Minute + 5*time.Second),
+			MessageCount:      150,
+			TotalCost:         models.CostBreakdown{TotalCost: 0.4321},
+			ParentCostByModel: map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 0.4321}},
+		}},
+		{Entry: entries[2], Analysis: &models.SessionAnalysis{}},
+		{Entry: models.SessionEntry{
+			SessionID: "deadbeef-0000-4000-8000-000000000000",
+			Modified:  time.Date(2025, 11, 2, 9, 0, 0, 0, time.UTC),
+		}},
+	}
+	return results
+}
+
+var goldenListOptions = ListTableOptions{Now: time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)}
+
 func TestGoldenSessionList(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	checkGolden(t, "session_list", FormatSessionListTable(goldenSessionEntries(), true))
+	checkGolden(t, "session_list", FormatSessionListTable(goldenListResults(), true, goldenListOptions))
 }
 
 func TestGoldenSessionListColor(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
-	checkGolden(t, "session_list_color", FormatSessionListTable(goldenSessionEntries(), false))
+	checkGolden(t, "session_list_color", FormatSessionListTable(goldenListResults(), false, goldenListOptions))
 }
 
 // --- golden tests: FormatGlobalTable ---

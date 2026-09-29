@@ -603,24 +603,19 @@ func TestFormatSessionTable_WithAgents(t *testing.T) {
 }
 
 func TestFormatSessionListTable(t *testing.T) {
-	entries := sampleSessionEntries()
-
-	output := FormatSessionListTable(entries, true)
-
-	// Check header
-	if !strings.Contains(output, "Session ID") {
-		t.Error("Session list table missing header")
+	var results []models.SessionResult
+	for _, e := range sampleSessionEntries() {
+		results = append(results, models.SessionResult{Entry: e, Analysis: &models.SessionAnalysis{MessageCount: 1}})
 	}
-	if !strings.Contains(output, "Messages") {
-		t.Error("Session list table missing Messages column")
-	}
+	output := FormatSessionListTable(results, true, ListTableOptions{})
 
-	// Check entries
-	if !strings.Contains(output, "session-001") {
-		t.Error("Session list table missing first session")
+	for _, col := range []string{"ID", "WHEN", "LENGTH", "MODEL", "AGENTS", "COST", "TITLE"} {
+		if !strings.Contains(output, col) {
+			t.Errorf("list table missing %s column:\n%s", col, output)
+		}
 	}
-	if !strings.Contains(output, "session-002") {
-		t.Error("Session list table missing second session")
+	if !strings.Contains(output, "session-") {
+		t.Error("list table missing sessions")
 	}
 }
 
@@ -761,5 +756,14 @@ func TestFormatGlobalTable(t *testing.T) {
 	}
 	if !strings.Contains(output, "TOTAL") {
 		t.Error("output should contain 'TOTAL'")
+	}
+}
+
+// A session nobody has replied to prints one line, not a report of empty
+// sections.
+func TestSessionTableEmptySession(t *testing.T) {
+	out := FormatSessionTable(&models.SessionAnalysis{SessionID: "68994c84-0840-3234-39ed-0800317979f9"}, true)
+	if out != "No assistant messages in session 68994c84 yet." {
+		t.Errorf("got %q", out)
 	}
 }

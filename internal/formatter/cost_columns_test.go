@@ -104,3 +104,54 @@ func TestShowTableBillionTokens(t *testing.T) {
 		t.Errorf("want a B suffix for 1.638B tokens:\n%s", out)
 	}
 }
+
+func listResult(id, title string, cost float64) models.SessionResult {
+	return models.SessionResult{
+		Entry: models.SessionEntry{SessionID: id},
+		Analysis: &models.SessionAnalysis{
+			Title: title, MessageCount: 1,
+			TotalCost: models.CostBreakdown{TotalCost: cost},
+		},
+	}
+}
+
+// IDs shorten to 8 characters unless another listed session shares that
+// prefix, so every ID shown still works with `ficha show`.
+func TestListShortIDsStayUnique(t *testing.T) {
+	got := shortSessionIDs([]models.SessionResult{
+		listResult("abcdef12-0000", "", 0),
+		listResult("abcdef12-1111", "", 0),
+		listResult("99999999-2222", "", 0),
+		listResult("short", "", 0),
+	})
+	want := []string{"abcdef12-0", "abcdef12-1", "99999999", "short"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("id %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// On a terminal, titles are cut to fit its width. Piped, they print whole.
+// Control characters from the transcript never reach the terminal.
+func TestListTitlesFitTerminal(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	long := "Refactor the auth middleware to use short-lived tokens and rotate refresh keys"
+	results := []models.SessionResult{
+		listResult("aaaaaaaa-1", long, 1.5),
+		listResult("bbbbbbbb-2", "evil\x1b[31mred\x07title", 0.25),
+	}
+	for _, width := range []int{60, 80, 120} {
+		out := FormatSessionListTable(results, true, ListTableOptions{Width: width})
+		if w := maxLineWidth(out); w > width {
+			t.Errorf("width %d: widest line is %d:\n%s", width, w, out)
+		}
+	}
+	piped := FormatSessionListTable(results, true, ListTableOptions{})
+	if !strings.Contains(piped, long) {
+		t.Errorf("piped output should keep the whole title:\n%s", piped)
+	}
+	if strings.ContainsAny(piped, "\x1b\x07") || !strings.Contains(piped, "evil [31mred title") {
+		t.Errorf("control characters should become spaces:\n%q", piped)
+	}
+}

@@ -93,7 +93,7 @@ To analyze a different project without cd'ing, pass its directory with `-p` / `-
 | `ficha [show]` | Show latest (or specified) session costs |
 | `ficha watch` | Live monitoring with auto-follow |
 | `ficha breakdown` | Live per-message cost table (scrollable) |
-| `ficha list` | List all sessions |
+| `ficha list` | List sessions: when, length, model, agents, cost and title |
 | `ficha summary` | Total costs across all sessions |
 | `ficha global` | Aggregated stats across all projects |
 | `ficha version` | Print version information |
