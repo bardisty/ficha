@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -155,5 +156,60 @@ func TestAnalyzeSessionWithCacheOrdersNewAgentLast(t *testing.T) {
 	}
 	if got, want := agentIDs(second.Agents), "b2 b1 a0 run:wf_a w2 w0 run:wf_b w3"; got != want {
 		t.Errorf("second analysis:\n got %s\nwant %s", got, want)
+	}
+}
+
+// writeOrderRunMeta names workflow run as an instance of workflow.
+func writeOrderRunMeta(t *testing.T, projectDir, sessionID, run, workflow string) {
+	t.Helper()
+	dir := filepath.Join(projectDir, sessionID, "workflows")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	meta := fmt.Sprintf(`{"workflowName":%q,"status":"completed"}`, workflow)
+	if err := os.WriteFile(filepath.Join(dir, run+".json"), []byte(meta), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Run IDs are random, so a workflow's second run can sort first by ID.
+// Breakdown lists runs by start, as show does, whatever order discovery
+// finds them in; a run with no timestamped message goes last.
+func TestGetBreakdownMessagesOrdersRunsByStart(t *testing.T) {
+	dir := t.TempDir()
+	sessionPath := filepath.Join(dir, "sess.jsonl")
+	writeJSONLFile(t, sessionPath, []string{orderLine("parent", at(10, 0))})
+	writeOrderAgent(t, dir, "sess", "wf_0", "w0", time.Time{})
+	writeOrderAgent(t, dir, "sess", "wf_a", "w1", at(10, 50))
+	writeOrderAgent(t, dir, "sess", "wf_a", "w2", at(10, 30))
+	writeOrderAgent(t, dir, "sess", "wf_b", "w3", at(10, 40))
+	for _, run := range []string{"wf_0", "wf_a", "wf_b"} {
+		writeOrderRunMeta(t, dir, "sess", run, "review-changes")
+	}
+
+	result, err := GetBreakdownMessages(sessionPath, "sess")
+	if err != nil {
+		t.Fatalf("GetBreakdownMessages: %v", err)
+	}
+	var runs []string
+	for _, w := range result.Workflows {
+		runs = append(runs, w.RunID)
+	}
+	// wf_a starts at w2's 10:30, before wf_b's 10:40, though w1 is later.
+	if got := strings.Join(runs, " "); got != "wf_a wf_b wf_0" {
+		t.Errorf("workflows: got %s, want wf_a wf_b wf_0", got)
+	}
+
+	// Same order as show over the same session.
+	analysis, err := AnalyzeSession(sessionPath, "sess", AllMessages)
+	if err != nil {
+		t.Fatalf("AnalyzeSession: %v", err)
+	}
+	var showRuns []string
+	for _, w := range analysis.Workflows {
+		showRuns = append(showRuns, w.RunID)
+	}
+	if !slices.Equal(runs, showRuns) {
+		t.Errorf("breakdown runs %v, show runs %v", runs, showRuns)
 	}
 }
