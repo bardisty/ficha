@@ -122,6 +122,8 @@ Per-command flags:
 | `show` | `--messages` | Per-message rows (json/csv only) |
 | `summary` | `-d, --details` | Add a per-session breakdown |
 | `summary` | `--expand-agents` | Per-agent records (requires `--details`) |
+| `summary`, `global` | `--since <when>` | Only messages from then on: `2026-09-01`, `today`, `7d`, `12h` |
+| `summary`, `global` | `--until <when>` | Only messages before then; a date includes that day |
 | `global` | `-n, --top <n>` | Top N projects in table (default 10) |
 | `global` | `--sort-by <key>` | Sort: cost, sessions, name, activity |
 | `global` | `-d, --details` | All projects in the table, with a cumulative column when sorted by cost |
@@ -136,6 +138,7 @@ ficha watch abc123            # watch specific session (pinned)
 ficha -f json > out.json      # export to JSON
 ficha summary -d -f csv       # per-session rows as CSV
 ficha global --top 5          # top 5 projects by cost
+ficha global --since 7d       # every project, the last 7 days
 ficha show -f csv --messages  # per-message rows as CSV
 ficha list -p /path/to/dir    # list sessions for different project
 ```

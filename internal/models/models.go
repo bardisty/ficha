@@ -15,6 +15,43 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Duration(d).String())
 }
 
+// Seconds is the duration in seconds, for machine output.
+func (d Duration) Seconds() float64 {
+	return time.Duration(d).Seconds()
+}
+
+// The types below carry a Duration, which marshals as a Go duration string
+// ("3h12m5s") that jq can't do arithmetic on. Each adds duration_seconds
+// beside it, the way csv has it. The alias type drops the method so
+// marshaling it doesn't recurse.
+
+// MarshalJSON adds duration_seconds to the session's fields.
+func (s SessionAnalysis) MarshalJSON() ([]byte, error) {
+	type plain SessionAnalysis
+	return json.Marshal(struct {
+		plain
+		DurationSeconds float64 `json:"duration_seconds"`
+	}{plain(s), s.Duration.Seconds()})
+}
+
+// MarshalJSON adds duration_seconds to the agent's fields.
+func (a AgentAnalysis) MarshalJSON() ([]byte, error) {
+	type plain AgentAnalysis
+	return json.Marshal(struct {
+		plain
+		DurationSeconds float64 `json:"duration_seconds"`
+	}{plain(a), a.Duration.Seconds()})
+}
+
+// MarshalJSON adds duration_seconds to the global totals' fields.
+func (g GlobalAnalysis) MarshalJSON() ([]byte, error) {
+	type plain GlobalAnalysis
+	return json.Marshal(struct {
+		plain
+		DurationSeconds float64 `json:"duration_seconds"`
+	}{plain(g), g.Duration.Seconds()})
+}
+
 // UnmarshalJSON implements json.Unmarshaler for Duration
 // It handles both string format ("1h30m") and numeric (nanoseconds) for backwards compatibility
 func (d *Duration) UnmarshalJSON(b []byte) error {
@@ -181,6 +218,9 @@ type SessionAnalysis struct {
 	// report header. Set by the command, which resolved the project; machine
 	// output names it by project_path instead.
 	Project string `json:"-"`
+	// Window is the --since/--until range the analysis covers, when one was
+	// given. Messages outside it aren't counted anywhere.
+	Window *TimeWindow `json:"window,omitempty"`
 	// Title is the session's latest "ai-title" record, raw from the
 	// transcript. Empty when it has none, and on the summary aggregate.
 	Title        string        `json:"title,omitempty"`
@@ -238,6 +278,30 @@ func (s *SessionAnalysis) WorkflowByID(runID string) WorkflowMeta {
 		}
 	}
 	return WorkflowMeta{RunID: runID}
+}
+
+// TimeWindow limits an analysis to messages timestamped in [Since, Until).
+// A zero bound is open, and the zero window takes everything. A message with
+// no timestamp can't be placed, so a window with a bound leaves it out.
+type TimeWindow struct {
+	Since time.Time `json:"since,omitzero"`
+	Until time.Time `json:"until,omitzero"`
+}
+
+// IsZero reports whether w takes every message.
+func (w TimeWindow) IsZero() bool {
+	return w.Since.IsZero() && w.Until.IsZero()
+}
+
+// Contains reports whether a message at t is in w.
+func (w TimeWindow) Contains(t time.Time) bool {
+	if w.IsZero() {
+		return true
+	}
+	if t.IsZero() {
+		return false
+	}
+	return (w.Since.IsZero() || !t.Before(w.Since)) && (w.Until.IsZero() || t.Before(w.Until))
 }
 
 // SessionResult pairs a session entry with its computed analysis. Analysis is
@@ -450,10 +514,10 @@ type BreakdownMessage struct {
 
 // ProjectInfo represents a discovered Claude Code project directory
 type ProjectInfo struct {
-	EncodedPath  string // "-home-user-source-foo"
-	FullPath     string // ~/.claude/projects/-home-user-source-foo
-	OriginalPath string // /home/user/source/foo: sessions-index.json's originalPath, else a transcript's cwd; "" when neither exists
-	DisplayName  string // "~/source/foo" from OriginalPath, else the encoded name without its leading dash
+	EncodedPath  string `json:"encoded_path"`  // "-home-user-source-foo"
+	FullPath     string `json:"full_path"`     // ~/.claude/projects/-home-user-source-foo
+	OriginalPath string `json:"original_path"` // /home/user/source/foo: sessions-index.json's originalPath, else a transcript's cwd; "" when neither exists
+	DisplayName  string `json:"display_name"`  // "~/source/foo" from OriginalPath, else the encoded name without its leading dash
 }
 
 // ProjectAnalysis represents the analysis of a single project.
@@ -487,6 +551,9 @@ type ProjectAnalysis struct {
 
 // GlobalAnalysis represents aggregated stats across all projects
 type GlobalAnalysis struct {
+	// Window is the --since/--until range the analysis covers, when one was
+	// given (see SessionAnalysis.Window).
+	Window          *TimeWindow              `json:"window,omitempty"`
 	Projects        []ProjectAnalysis        `json:"projects"` // sorted by cost desc
 	TotalCost       CostBreakdown            `json:"total_cost"`
 	TotalUsage      TokenUsage               `json:"total_usage"`

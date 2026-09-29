@@ -67,17 +67,30 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope Mes
 	if err != nil {
 		return nil, err
 	}
-	return analyzeParsedSession(result, sessionPath, sessionID, scope, cache, seen), nil
+	return analyzeParsedSession(result, sessionPath, sessionID, scope, cache, seen, models.TimeWindow{}), nil
 }
 
 // analyzeParsedSession is analyzeSessionExcludingSeen after the parent parse.
 // AnalyzeMultipleSessions parses every parent before analyzing any of them
 // (processing order derives from the parsed timestamps), so it hands the
 // result in rather than parse twice.
-func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[parser.DedupKey]struct{}) *models.SessionAnalysis {
+//
+// A non-zero window counts only the messages timestamped inside it, parent
+// and agents alike, so a session that straddles a bound splits at it.
+// Agents with nothing inside it are left out.
+func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[parser.DedupKey]struct{}, window models.TimeWindow) *models.SessionAnalysis {
 	messages := result.Messages
 	if seen != nil {
 		messages = parser.ExcludeSeenMessages(messages, seen)
+	}
+	if !window.IsZero() {
+		var inside []models.JSONLMessage
+		for _, m := range messages {
+			if window.Contains(m.Timestamp) {
+				inside = append(inside, m)
+			}
+		}
+		messages = inside
 	}
 
 	// Extract usage data from messages
@@ -114,10 +127,13 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 		analysis.HasAgents = true
 
 		for _, agentPath := range agentPaths {
-			agentAnalysis, agentMessages, err := analyzeAgentWithCache(agentPath, cache)
+			agentAnalysis, agentMessages, err := analyzeAgentWithCache(agentPath, cache, window)
 			if err != nil {
 				analysis.SkippedAgents++
 				continue // Skip agents that can't be parsed
+			}
+			if !window.IsZero() && agentAnalysis.MessageCount == 0 {
+				continue
 			}
 			agentAnalysis.WorkflowID = parser.ExtractWorkflowRunID(agentPath)
 
@@ -184,6 +200,10 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 			}
 		}
 		analysis.WorkflowCount = len(analysis.Workflows)
+		// Every agent fell outside the window.
+		if len(analysis.Agents) == 0 && analysis.SkippedAgents == 0 {
+			analysis.HasAgents = false
+		}
 
 		// Recalculate duration after including agents
 		if !analysis.StartTime.IsZero() && !analysis.EndTime.IsZero() {
@@ -197,7 +217,7 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 // AnalyzeAgent analyzes a single agent sub-session. There is no message-scope
 // knob: AgentAnalysis carries aggregates only, never the per-message list.
 func AnalyzeAgent(agentPath string) (*models.AgentAnalysis, error) {
-	analysis, _, err := analyzeAgentWithCache(agentPath, nil)
+	analysis, _, err := analyzeAgentWithCache(agentPath, nil, models.TimeWindow{})
 	return analysis, err
 }
 
@@ -205,10 +225,20 @@ func AnalyzeAgent(agentPath string) (*models.AgentAnalysis, error) {
 // parse from cache when unchanged (nil cache always parses). The returned
 // messages back the caller's per-message list; they may alias the cache's
 // slice, so copy before mutating an element.
-func analyzeAgentWithCache(agentPath string, cache *AgentParseCache) (*models.AgentAnalysis, []models.MessageAnalysis, error) {
+func analyzeAgentWithCache(agentPath string, cache *AgentParseCache, window models.TimeWindow) (*models.AgentAnalysis, []models.MessageAnalysis, error) {
 	messageAnalyses, skippedLines, err := loadAgentMessages(agentPath, cache)
 	if err != nil {
 		return nil, nil, err
+	}
+	if !window.IsZero() {
+		// A new slice: messageAnalyses may be the cache's own.
+		var inside []models.MessageAnalysis
+		for _, m := range messageAnalyses {
+			if window.Contains(m.Timestamp) {
+				inside = append(inside, m)
+			}
+		}
+		messageAnalyses = inside
 	}
 
 	agentID := parser.ExtractAgentID(agentPath)
@@ -403,6 +433,16 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 // while the partition sums parent + (agent1 + agent2). Reconcile with a
 // tolerance, never with ==.
 func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnalysis, []models.SessionResult, error) {
+	return AnalyzeMultipleSessionsInWindow(entries, models.TimeWindow{})
+}
+
+// AnalyzeMultipleSessionsInWindow is AnalyzeMultipleSessions counting only
+// the messages inside window (see analyzeParsedSession). A session with
+// nothing inside it drops out of results and the counts, as if it weren't
+// there, unless it has lines or agents that couldn't be read, whose
+// messages might have been. The aggregate carries the window. Every session
+// falling outside it isn't an error: the aggregate is then empty.
+func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window models.TimeWindow) (*models.SessionAnalysis, []models.SessionResult, error) {
 	if len(entries) == 0 {
 		return nil, nil, fmt.Errorf("no sessions to analyze")
 	}
@@ -423,6 +463,8 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 	firstTimeSet := false
 	skippedSessions := 0
 	successfulSessions := 0
+	parsedSessions := 0
+	outside := make([]bool, len(entries))
 	seen := make(map[parser.DedupKey]struct{})
 
 	// Parse every parent up front: processing order derives from each
@@ -478,7 +520,13 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 			results[idx] = models.SessionResult{Entry: entry, Analysis: nil}
 			continue
 		}
-		sessionAnalysis := analyzeParsedSession(parsed[idx], entry.FullPath, entry.SessionID, NoMessages, nil, seen)
+		sessionAnalysis := analyzeParsedSession(parsed[idx], entry.FullPath, entry.SessionID, NoMessages, nil, seen, window)
+		parsedSessions++
+		if !window.IsZero() && sessionAnalysis.MessageCount == 0 && sessionAnalysis.SkippedLines == 0 && sessionAnalysis.SkippedAgents == 0 {
+			results[idx] = models.SessionResult{Entry: entry, Analysis: nil}
+			outside[idx] = true
+			continue
+		}
 		successfulSessions++
 		results[idx] = models.SessionResult{Entry: entry, Analysis: sessionAnalysis}
 		// Also aggregate skipped agents and lines from individual sessions
@@ -532,8 +580,19 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 	aggregate.SessionCount = successfulSessions
 
 	// Return error if all sessions failed to parse
-	if successfulSessions == 0 {
+	if parsedSessions == 0 {
 		return nil, nil, fmt.Errorf("all %d sessions failed to parse", len(entries))
+	}
+
+	if !window.IsZero() {
+		aggregate.Window = &window
+		kept := results[:0]
+		for i, r := range results {
+			if !outside[i] {
+				kept = append(kept, r)
+			}
+		}
+		results = kept
 	}
 
 	return aggregate, results, nil

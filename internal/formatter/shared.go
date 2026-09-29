@@ -69,13 +69,55 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 	if analysis.IsSummary {
 		return renderPanel(analysis.Project, []string{
 			fmt.Sprintf("%d %s", analysis.SessionCount, sessionsWord(analysis.SessionCount)),
-			"Span: " + span(analysis.StartTime, analysis.EndTime),
+			spanOrWindow(analysis.Window, analysis.StartTime, analysis.EndTime),
 		}, width, noColor)
 	}
 	return renderPanel(analysis.Project, []string{
 		"Session: " + render.TruncateID(analysis.SessionID, 8),
 		"Duration: " + render.Duration(analysis.Duration.Duration()),
 	}, width, noColor)
+}
+
+// spanOrWindow is the header's time field: the --since/--until window when
+// one was given, since that's what the figures cover, else the span of the
+// messages.
+func spanOrWindow(w *models.TimeWindow, first, last time.Time) string {
+	if w == nil || w.IsZero() {
+		return "Span: " + span(first, last)
+	}
+	return "Window: " + windowLabel(*w)
+}
+
+// windowLabel renders a --since/--until window: "Sep 21 → now",
+// "Sep 01 → Sep 30". An end at midnight is the exclusive bound of a whole
+// day given as a date, so it shows as the day before, the one typed.
+func windowLabel(w models.TimeWindow) string {
+	point := func(t time.Time) string {
+		l := t.Local()
+		if l.Hour() == 0 && l.Minute() == 0 && l.Second() == 0 {
+			return render.Date(t, now())
+		}
+		return render.DateTime(t, now())
+	}
+	from, to := "start", "now"
+	if !w.Since.IsZero() {
+		from = point(w.Since)
+	}
+	if !w.Until.IsZero() {
+		until := w.Until
+		l := until.Local()
+		if l.Hour() == 0 && l.Minute() == 0 && l.Second() == 0 {
+			until = until.AddDate(0, 0, -1)
+		}
+		to = point(until)
+	}
+	return from + " " + styles.Arrow + " " + to
+}
+
+// emptyWindow is the one line a windowed report prints when nothing falls
+// inside the window, instead of a report of empty sections.
+func emptyWindow(w models.TimeWindow) string {
+	return "No messages in " + windowLabel(w) + "."
 }
 
 // span renders a first-to-last range as dates, "Sep 08 → Sep 28", or one

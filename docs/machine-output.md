@@ -2,6 +2,8 @@
 
 `-f` only picks the encoding; json/csv always export the complete dataset as a single object / uniform-column table (safe for `jq` and pandas).
 
+Every json key is snake_case on every command, and csv columns use the same names. Model IDs under `cost_by_model` and `parent_cost_by_model` are map keys, not field names, and keep their own spelling.
+
 ## How flags interact with json/csv
 
 One rule decides it:
@@ -24,7 +26,7 @@ Sessions that fail to parse are omitted from detail output and reported on stder
 
 ## Record provenance
 
-Two fields name where a record came from. `project_path` is the Claude project directory (`~/.claude/projects/<encoded>`) — identical on `show`, the `summary` aggregate, and every per-session record, so machine outputs join on it. `session_file` is the transcript `.jsonl` path; it is empty on the `summary` aggregate, which spans many files. In csv, session rows carry both columns and agent rows leave them empty (join back through `session_id`). (`list` names the same transcript path `fullPath` / `full_path`, and its `projectPath` is the original working directory, not this encoded project dir.)
+Two fields name where a record came from. `project_path` is the Claude project directory (`~/.claude/projects/<encoded>`) — identical on `show`, the `summary` aggregate, and every per-session record, so machine outputs join on it. `session_file` is the transcript `.jsonl` path; it is empty on the `summary` aggregate, which spans many files. In csv, session rows carry both columns and agent rows leave them empty (join back through `session_id`). (`list` names the same transcript path `full_path`, and its `project_path` is the original working directory, not this encoded project dir. `global` names each project by `encoded_path`, `full_path`, `original_path` and `display_name`.)
 
 ## Workflow runs
 
@@ -65,6 +67,14 @@ parent_cost + agents_cost = total_cost
 ```
 
 On the `summary` aggregate that split spans every session, alongside `agent_count`, `workflow_count`, `has_agents` and `parent_cost_by_model`; the per-agent records themselves live under `summary --details`. (`global` reports project totals only, with no parent/agent split.)
+
+## Durations
+
+`duration` is a Go duration string (`"3h12m5s"`) for reading. `duration_seconds` beside it, on sessions, agents and the `global` totals, is the same span as a number, for arithmetic. Where csv has a duration, it's `duration_seconds`. Both measure first message to last, not time spent.
+
+## Time windows (`--since`, `--until`)
+
+On `summary` and `global`, `--since` and `--until` limit every format to the messages timestamped inside the window, parent and agents alike, so a session that crosses a bound counts only its part inside. Sessions, agents and projects with nothing inside drop out of the records and the counts. A message with no timestamp can't be placed, so a window leaves it out. json names the window as `window: {since, until}` (RFC 3339, either one absent when open) on the `summary` aggregate and the `global` object; csv doesn't carry it.
 
 ## Timestamps
 

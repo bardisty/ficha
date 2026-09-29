@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"time"
 
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
@@ -25,7 +26,13 @@ Examples:
   ficha summary                           Show aggregate stats
   ficha summary --details                 Show per-session cost breakdown
   ficha summary --details --expand-agents Include agent sub-sessions
-  ficha summary --details -f json         Per-session records as JSON`,
+  ficha summary --details -f json         Per-session records as JSON
+  ficha summary --since 7d                The last 7 days
+  ficha summary --since 2026-09-01 --until 2026-09-30   September
+
+--since and --until count messages by their own timestamps, agents' too, so
+a session that crosses a bound is split at it. They apply to json and csv
+as well as the table.`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -36,6 +43,7 @@ Examples:
 	addProjectFlags(summaryCmd, cfg)
 	summaryCmd.Flags().BoolVarP(&cfg.showDetails, "details", "d", false, "Add a per-session breakdown (table rows / json sessions / csv rows)")
 	summaryCmd.Flags().BoolVar(&cfg.expandAgents, "expand-agents", false, "Include per-agent records: tree rows (table), nested agents (json), agent rows (csv); requires --details")
+	addWindowFlags(summaryCmd, cfg)
 
 	return summaryCmd
 }
@@ -54,7 +62,11 @@ func runSummary(cfg *config) error {
 
 	// Analyze all sessions. The per-session results feed the --details view so
 	// the formatter doesn't re-parse every session.
-	analysis, results, err := analyzer.AnalyzeMultipleSessions(sessions)
+	window, err := cfg.timeWindow(time.Now())
+	if err != nil {
+		return err
+	}
+	analysis, results, err := analyzer.AnalyzeMultipleSessionsInWindow(sessions, window)
 	if err != nil {
 		return fmt.Errorf("analyzing sessions: %w", err)
 	}

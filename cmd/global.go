@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
@@ -28,7 +29,12 @@ Examples:
   ficha global --details         Show all projects, with a cumulative cost column
   ficha global --top 20          Show top 20 projects
   ficha global --sort-by name    Sort by project name
-  ficha global -f json           Output every project as JSON`,
+  ficha global -f json           Output every project as JSON
+  ficha global --since 7d        Every project, the last 7 days
+
+--since and --until count messages by their own timestamps, so a session
+that crosses a bound is split at it. They apply to json and csv as well as
+the table.`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -42,6 +48,7 @@ Examples:
 	globalCmd.Flags().BoolVar(&cfg.globalNoCache, "no-cache", false, "Skip cache, force fresh analysis (reserved for future use)")
 	_ = globalCmd.Flags().MarkHidden("no-cache")
 	_ = globalCmd.RegisterFlagCompletionFunc("sort-by", fixedValues(sortByValues))
+	addWindowFlags(globalCmd, cfg)
 
 	return globalCmd
 }
@@ -74,7 +81,11 @@ func runGlobal(cfg *config) error {
 	}
 
 	// Analyze all projects (analyzeProject handles empty-session projects internally)
-	analysis, err := analyzer.AnalyzeAllProjects(projects)
+	window, err := cfg.timeWindow(time.Now())
+	if err != nil {
+		return err
+	}
+	analysis, err := analyzer.AnalyzeAllProjectsInWindow(projects, window)
 	if err != nil {
 		return fmt.Errorf("analyzing projects: %w", err)
 	}
