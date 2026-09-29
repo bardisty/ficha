@@ -36,10 +36,42 @@ If you changed how something renders, regenerate the golden files and read the d
 
 ```sh
 make update-golden
-git diff internal/formatter/testdata internal/tui/testdata
+git diff internal/formatter/testdata internal/tui/testdata cmd/testdata
 ```
 
 A golden diff is a rendering change you are asserting is correct. Don't commit one you haven't looked at.
+
+## Seeing your change
+
+Tests and goldens don't show what a change looks like in a terminal. Your own `~/.claude` would, but it holds your prompts and your code, and that's what would end up in a screenshot. Run ficha against the synthetic fixture instead:
+
+```sh
+make build fixture
+```
+
+That writes fake transcripts to `bin/fixture`: one project, `work/webapp`, with one 424-message session and nine agents, five of them in two workflow runs. Point ficha at it and run it from the project's directory:
+
+```sh
+FX="$PWD/bin/fixture" PATH="$PWD/bin:$PATH"
+cd "$FX/work/webapp"
+HOME="$FX" CLAUDE_CONFIG_DIR="$FX/config" TZ=UTC ficha watch
+```
+
+Swap `watch` for `breakdown`, `show` or anything else. With `HOME` inside the fixture, the paths ficha prints read `~/work/webapp`, and `TZ=UTC` keeps your timezone out of the clock times. `docs/screenshots/watch.tape` uses the same setup. Take PR captures this way, never from your own transcripts.
+
+The fixture's timestamps are relative to when you built it, so about five minutes later watch's header says idle. To start over, quit watch, run `make fixture` again at the repo root, then `cd` back in and restart watch. The rebuild replaces every file, so a watch left running stays on the deleted ones. Or keep the session going with `live.py` from a second terminal at the repo root:
+
+```sh
+python3 docs/screenshots/live.py bin/fixture/config/projects/*/*.jsonl
+```
+
+In a fresh fixture that glob matches the one session. With no flags, `live.py` appends a message every 2 seconds, 20 in all. The flags cover the rest of what watch and breakdown react to:
+
+- `--agent` starts a new subagent in the session and appends to it.
+- `--new-session`, given the project directory `bin/fixture/config/projects/*/` in place of the session, starts a new session. watch follows it.
+- `--burst 50` appends 50 messages at once, for scroll anchoring and large jumps.
+
+`--interval` and `--count` change the pace.
 
 ## Comments
 

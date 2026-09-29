@@ -1,4 +1,4 @@
-.PHONY: all build build-linux build-linux-arm64 build-windows build-darwin build-darwin-arm64 build-all test update-golden test-coverage install clean deps tidy run lint fmt fmt-check vet check test-race ci screenshots help
+.PHONY: all build build-linux build-linux-arm64 build-windows build-darwin build-darwin-arm64 build-all test update-golden test-coverage install clean deps tidy run lint fmt fmt-check vet check test-race ci fixture screenshots help
 
 # Binary name
 BINARY=ficha
@@ -140,6 +140,22 @@ test-race:
 # never rewrites files.
 ci: fmt-check lint test-race build-all
 
+# Where make fixture writes the synthetic transcripts. Set it on the command
+# line; the environment can't redirect the rm -rf below.
+FIXTURE = $(BIN_DIR)/fixture
+
+# Build the synthetic fixture to run ficha against, with nothing but python3.
+# It starts over each time, dropping whatever live.py appended, so it only
+# deletes a directory carrying the marker a finished run leaves behind.
+fixture:
+	@if [ -z "$(FIXTURE)" ]; then echo "fixture: FIXTURE is empty" >&2; exit 1; fi
+	@if [ -e "$(FIXTURE)" ] && [ ! -f "$(FIXTURE)/.ficha-fixture" ]; then \
+		echo "fixture: $(FIXTURE) exists and isn't a fixture, so it was left alone" >&2; exit 1; \
+	fi
+	rm -rf "$(FIXTURE)"
+	python3 docs/screenshots/mkfixture.py "$(FIXTURE)"
+	@touch "$(FIXTURE)/.ficha-fixture"
+
 # Regenerate the README screenshots from a synthetic fixture. Needs vhs
 # (charmbracelet/vhs) with its ttyd and ffmpeg dependencies, python3, and the
 # DejaVu Sans Mono font the tapes are sized for.
@@ -178,4 +194,5 @@ help:
 	@echo "  test-race       - Run tests with the race detector (plain tests without cgo)"
 	@echo "  check           - Run fmt, lint, and test"
 	@echo "  ci              - Run what CI runs: fmt-check, lint, test-race, build-all"
+	@echo "  fixture         - Build synthetic transcripts in bin/fixture (FIXTURE=dir)"
 	@echo "  screenshots     - Regenerate the README screenshots (needs vhs)"
