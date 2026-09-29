@@ -16,7 +16,13 @@ import (
 // and printed first they scroll off the top of a short terminal before the
 // prompt returns. Redirected, they keep coming first, so a log that captures
 // both streams reads cause before effect.
+//
+// Every output ends in exactly one newline, which writeReport adds. csv
+// arrives with its own, because csv.Writer ends the last record too.
 func printReport(cfg *config, warnings *bytes.Buffer, output string) {
+	if cfg.format == "csv" {
+		output = strings.TrimSuffix(output, "\n")
+	}
 	writeReport(cfg.stdout, cfg.stderr, warnings, output, isTerminal(cfg.stderr))
 }
 
