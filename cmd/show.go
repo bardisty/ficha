@@ -36,7 +36,7 @@ Examples:
 
 	addProjectFlags(showCmd, cfg)
 	addLiveFlags(showCmd, cfg, false)
-	showCmd.Flags().BoolVar(&cfg.messages, "messages", false, "Output per-message rows/records instead of the session summary, agent sub-sessions included and tagged with agent_id (json/csv only)")
+	showCmd.Flags().BoolVar(&cfg.messages, "messages", false, "Add per-message records, agents' too: json adds a messages array to the session, csv writes one row per message (json/csv only)")
 
 	return showCmd
 }

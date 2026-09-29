@@ -1,6 +1,6 @@
 # Machine output (json / csv)
 
-`-f` only picks the encoding; json/csv always export the complete dataset as a single object / uniform-column table (safe for `jq` and pandas).
+`-f` only picks the encoding. json is one document per run, and csv one table with the same columns on every row, safe for `jq` and pandas. Neither is cut down by table-only flags like `global --top`. csv is the flat view, so it leaves out the nested detail json has. [What csv leaves out](#what-csv-leaves-out) lists it.
 
 Every json key is snake_case on every command, and csv columns use the same names. Model IDs under `cost_by_model` and `parent_cost_by_model` are map keys, not field names, and keep their own spelling.
 
@@ -16,6 +16,24 @@ To keep a script working across upgrades, pin the version you tested it against:
 go install github.com/bardisty/ficha@vX.Y.Z
 ```
 
+## Shapes
+
+| Command | json | csv |
+| --- | --- | --- |
+| `show` | a session object | one row for the session |
+| `show --messages` | the same session object, plus a `messages` array | one row per message |
+| `list` | an array, one record per session | one row per session |
+| `summary` | the aggregate: a session object whose `session_id` is `"aggregate"` | one row for the aggregate |
+| `summary -d` | `{"summary": ..., "sessions": [...]}`: the aggregate moves under `.summary`, and `.sessions[]` has one record per session | one `session` row per session |
+| `summary -d --expand-agents` | as `summary -d`, and each session gains `agents[]` | each `session` row followed by an `agent` row per agent |
+| `global` | an object: totals at the top level, one record per project in `.projects[]` | one row per project, and no totals row |
+
+A few keys only make sense in one place:
+
+- The `summary` aggregate has `session_id: "aggregate"`, and no `session_file`, `title`, `insights` or `context`, since it spans many sessions.
+- `global` always has `skipped_projects`, even at zero: the project directories it couldn't analyze. The other skip counters are left out at zero.
+- `summary -d` csv has `row_type`, `session` or `agent`. See [Per-session rows](#per-session-rows-summary--d-csv).
+
 ## How flags interact with json/csv
 
 One rule decides it:
@@ -26,7 +44,7 @@ One rule decides it:
 | --- | --- |
 | `summary --details` | per-session records |
 | `summary --expand-agents` | per-agent records (nested / rows) |
-| `show --messages` | per-message rows, not the summary |
+| `show --messages` | per-message records: json keeps the session object and adds `messages`, csv switches to one row per message |
 
 **Flags that only shape the table do NOT change json/csv:**
 
@@ -134,11 +152,13 @@ Counts describe only what the totals cover. `session_count` is the sessions that
 
 ## Parent/agent split
 
-Agent spend is never hidden. `show` and `summary` both carry the split that adds up to the total they report:
+Agent spend is never hidden. `show` and `summary` both carry the split that adds up to the total they report. `parent_cost`, `agents_cost` and `total_cost` are objects, so compare their `total_cost` fields:
 
+```sh
+jq '.parent_cost.total_cost + .agents_cost.total_cost == .total_cost.total_cost'
 ```
-parent_cost + agents_cost = total_cost
-```
+
+The sum can be off in the last float digit, so a script should compare with a tolerance: `((.parent_cost.total_cost + .agents_cost.total_cost - .total_cost.total_cost) | fabs) < 1e-9`. Adding the objects themselves (`.parent_cost + .agents_cost`) merges them in jq instead of adding them. The other costs, `workflows[].cost` and the costs under `insights`, are plain numbers.
 
 On the `summary` aggregate that split spans every session, alongside `agent_count`, `workflow_count`, `has_agents` and `parent_cost_by_model`; the per-agent records themselves live under `summary --details`. (`global` reports project totals only, with no parent/agent split.)
 
@@ -148,9 +168,13 @@ On the `summary` aggregate that split spans every session, alongside `agent_coun
 
 ## Time windows (`--since`, `--until`)
 
-On `summary` and `global`, `--since` and `--until` limit every format to the messages timestamped inside the window, parent and agents alike, so a session that crosses a bound counts only its part inside. Sessions, agents and projects with nothing inside drop out of the records and the counts. A message with no timestamp can't be placed, so a window leaves it out. json names the window as `window: {since, until}` (RFC 3339, either one absent when open) on the `summary` aggregate and the `global` object; csv doesn't carry it.
+On `summary` and `global`, `--since` and `--until` limit every format to the messages timestamped inside the window, parent and agents alike, so a session that crosses a bound counts only its part inside. Sessions, agents and projects with nothing inside drop out of the records and the counts. A message with no timestamp can't be placed, so a window leaves it out. json names the window as `window: {since, until}` (timestamps as below, either one absent when open) on the `summary` aggregate and the `global` object; csv doesn't carry it.
 
 ## Timestamps
+
+Every timestamp in json and csv is UTC to the second, with a `Z`: `2026-09-29T17:18:43Z`. That covers message timestamps, `start_time` and `end_time`, `first_active` and `last_active`, list's `modified`, and `window.since` and `until`, whatever your local time zone. jq's `fromdate` reads the format. Relative `--since` bounds such as `2h` lose their fraction of a second.
+
+Whole seconds mean `end_time` minus `start_time` can differ from `duration_seconds` by up to a second, and two messages in the same second get the same timestamp in `--messages` output. Rows keep ficha's order, so don't re-sort on `timestamp` alone if order within a second matters.
 
 `first_active` / `last_active` are message timestamps on every surface, so a project's span in `global` matches its span in `summary`. Only a project whose messages carry no timestamp at all falls back to file mtimes.
 
@@ -172,11 +196,23 @@ One `agent_id` key space throughout: the same ID joins these rows, the json `age
 
 The accounting counters ride along in `--messages` csv too: each row ends with the session-level `skipped_agents`, `skipped_lines` and `estimated_cost_messages`, repeated verbatim (denormalized, like any flat export of a parent/child shape) — so a consumer summing rows can tell when the rows are incomplete or estimated without leaving the file. json `--messages` carries the same counters once, on the session object enclosing the messages array.
 
+## What csv leaves out
+
+csv is one flat table per command, so anything nested stays json-only:
+
+- `show` and `summary`: the per-model split (`cost_by_model`, `parent_cost_by_model`), token counts, `insights`, `context`, `agents`, `workflows`, `title`, start and end times, and the window.
+- `summary -d`: the same, except that each row names its costliest `model`, and `--expand-agents` adds agent rows.
+- `global`: the totals row, the per-model split and token counts, and `original_path`. Projects are named by `project` (the display name), `encoded_path` and `full_path`. `full_path` is the same value as `summary`'s and `show`'s `project_path`, so join on it.
+- `list`: `agent_paths`, and `total_cost` is the total only, not the breakdown.
+- `show --messages`: the session summary. The rows carry the session's skip and estimate counters, but not its totals.
+
+Use json when you need any of these.
+
 ## Floats and csv safety
 
 Costs are floats, and csv prints six decimals. Reconcile a sum against a total with a tolerance, never with `==`.
 
-A cell that would open as a spreadsheet formula (`=`, `+`, `-`, `@`) is prefixed with an apostrophe in csv. No real model or agent ID starts with one, so this only ever fires on a hostile transcript.
+A cell that would open as a spreadsheet formula (`=`, `+`, `-`, `@`) is prefixed with an apostrophe in csv. No real model or agent ID starts with one. `global`'s `encoded_path` does on macOS and Linux, where encoded names start with `-`, so it reads `'-home-you-work-webapp` in csv. On Windows it starts with the drive letter (`C--Users-you-work-webapp`) and gets no apostrophe. Strip a leading apostrophe only when there is one before comparing it with json, or join on `full_path` instead.
 
 ## Canonical model IDs
 

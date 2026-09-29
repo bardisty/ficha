@@ -5,9 +5,11 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -496,5 +498,114 @@ func TestE2EContextMatchesTheGauge(t *testing.T) {
 		if s.Context == nil {
 			t.Errorf("summary -d session %d has no context", i)
 		}
+	}
+}
+
+// TestE2ETimestampsAreUTCSeconds: every timestamp in json and csv is UTC at
+// whole seconds with a Z, the form jq's fromdate reads, even when local time
+// isn't UTC and a relative --since bound carries nanoseconds.
+func TestE2ETimestampsAreUTCSeconds(t *testing.T) {
+	setupE2EFixture(t)
+	orig := time.Local
+	time.Local = time.FixedZone("EDT", -4*3600)
+	t.Cleanup(func() { time.Local = orig })
+
+	utcSeconds := regexp.MustCompile(`^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$`)
+	timeKeys := map[string]bool{
+		"start_time": true, "end_time": true, "timestamp": true, "modified": true,
+		"first_active": true, "last_active": true, "since": true, "until": true,
+	}
+	check := func(where, key, v string) {
+		t.Helper()
+		if timeKeys[key] && v != "" && !utcSeconds.MatchString(v) {
+			t.Errorf("%s: %s = %q, want UTC seconds with Z", where, key, v)
+		}
+	}
+	var walk func(where string, v any)
+	walk = func(where string, v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			for k, child := range v {
+				if s, ok := child.(string); ok {
+					check(where, k, s)
+				}
+				walk(where, child)
+			}
+		case []any:
+			for _, child := range v {
+				walk(where, child)
+			}
+		}
+	}
+
+	runs := slices.Clone(machineOutputs)
+	runs = append(runs,
+		[]string{"summary", projFlag, "--since", "2h"},
+		[]string{"summary", projFlag, "--since", "2026-02-01", "--until", "2026-02-03"},
+		[]string{"global", "--since", "2h"},
+	)
+	var seen int
+	for _, args := range runs {
+		where := strings.Join(args, " ")
+		out, _, err := executeCLISplit(t, append(args, "-f", "json")...)
+		if err != nil {
+			t.Fatalf("%s -f json: %v", where, err)
+		}
+		var v any
+		mustJSON(t, out, &v)
+		walk(where+" -f json", v)
+		seen += strings.Count(out, `Z"`)
+
+		out, _, err = executeCLISplit(t, append(args, "-f", "csv")...)
+		if err != nil {
+			t.Fatalf("%s -f csv: %v", where, err)
+		}
+		records := mustCSV(t, out)
+		for _, r := range records[1:] {
+			for i, col := range records[0] {
+				check(where+" -f csv", col, r[i])
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no timestamps checked")
+	}
+}
+
+// TestE2EGlobalCSVJoinsSummary: global csv's full_path is summary's
+// project_path, so the two exports join without rewriting either side.
+func TestE2EGlobalCSVJoinsSummary(t *testing.T) {
+	setupE2EFixture(t)
+	out, _, err := executeCLISplit(t, "summary", projFlag, "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary struct {
+		ProjectPath string `json:"project_path"`
+	}
+	mustJSON(t, out, &summary)
+
+	out, _, err = executeCLISplit(t, "global", "-f", "csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := mustCSV(t, out)
+	fullPath, encoded := slices.Index(records[0], "full_path"), slices.Index(records[0], "encoded_path")
+	if fullPath < 0 || encoded < 0 {
+		t.Fatalf("global csv header %v lacks full_path or encoded_path", records[0])
+	}
+	var found bool
+	for _, r := range records[1:] {
+		if r[fullPath] == summary.ProjectPath {
+			found = true
+			// csvCell guards the leading dash of a Unix encoded name. The
+			// fixture's names are Unix-style on every OS.
+			if r[encoded] != "'"+e2eProjDir {
+				t.Errorf("encoded_path = %q, want %q", r[encoded], "'"+e2eProjDir)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no global csv row has full_path %q", summary.ProjectPath)
 	}
 }

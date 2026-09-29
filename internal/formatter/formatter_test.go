@@ -717,9 +717,9 @@ func TestFormatGlobalCSV(t *testing.T) {
 		t.Fatalf("expected 3 rows (header + 2 data), got %d", len(records))
 	}
 
-	// Verify 17-column header
-	if len(records[0]) != 17 {
-		t.Fatalf("expected 17 columns, got %d", len(records[0]))
+	// Verify 19-column header
+	if len(records[0]) != 19 {
+		t.Fatalf("expected 19 columns, got %d", len(records[0]))
 	}
 	if records[0][0] != "project" {
 		t.Errorf("first header column: got %q, want %q", records[0][0], "project")

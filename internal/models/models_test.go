@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -317,5 +318,75 @@ func TestInsightsJSONOmitsUncomputedTrend(t *testing.T) {
 	}
 	if v, ok := stable["recent_avg_cost"]; !ok || v != float64(0) {
 		t.Errorf("recent_avg_cost should be written with a trend, even at 0: %v", stable)
+	}
+}
+
+// Every time json writes is UTC at whole seconds with a Z, whatever zone and
+// precision the value carries inside the program.
+func TestJSONTimesAreUTCSeconds(t *testing.T) {
+	ny := time.FixedZone("EDT", -4*3600)
+	local := time.Date(2026, 9, 29, 13, 18, 43, 123456789, ny)
+	const want = "2026-09-29T17:18:43Z"
+
+	for name, v := range map[string]any{
+		"session":  SessionAnalysis{StartTime: local, EndTime: local, Window: &TimeWindow{Since: local, Until: local}},
+		"agent":    AgentAnalysis{StartTime: local, EndTime: local},
+		"message":  MessageAnalysis{Timestamp: local},
+		"snapshot": MessageSnapshot{Timestamp: local},
+		"insights": MessageInsights{FirstMessage: &MessageSnapshot{Timestamp: local}},
+		"global":   GlobalAnalysis{FirstActive: local, LastActive: local, Projects: []ProjectAnalysis{{FirstActive: local, LastActive: local}}},
+	} {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var times int
+		var walk func(any)
+		walk = func(v any) {
+			switch v := v.(type) {
+			case map[string]any:
+				for _, child := range v {
+					walk(child)
+				}
+			case []any:
+				for _, child := range v {
+					walk(child)
+				}
+			case string:
+				if strings.HasPrefix(v, "2026-") || strings.HasPrefix(v, "0001-") {
+					times++
+					if v != want && v != "0001-01-01T00:00:00Z" {
+						t.Errorf("%s: time written as %q, want %q", name, v, want)
+					}
+				}
+			}
+		}
+		var decoded any
+		if err := json.Unmarshal(b, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		walk(decoded)
+		if times == 0 {
+			t.Errorf("%s: no times in %s", name, b)
+		}
+	}
+
+	// The internal value keeps its zone and nanoseconds.
+	a := AgentAnalysis{StartTime: local}
+	if _, err := json.Marshal(a); err != nil || !a.StartTime.Equal(local) || a.StartTime.Location() != ny {
+		t.Errorf("marshaling changed the value: %v", a.StartTime)
+	}
+
+	// A window leaves an open bound out, and decodes back.
+	b, err := json.Marshal(TimeWindow{Since: local})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != `{"since":"`+want+`"}` {
+		t.Errorf("window = %s", b)
+	}
+	var w TimeWindow
+	if err := json.Unmarshal(b, &w); err != nil || !w.Since.Equal(local.Truncate(time.Second)) || !w.Until.IsZero() {
+		t.Errorf("window decodes to %+v (err %v)", w, err)
 	}
 }
