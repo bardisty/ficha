@@ -70,12 +70,22 @@ func DurationLong(d time.Duration) string {
 // header's update time, show's "Last active") are local, so every display
 // site converts here. Machine output (json, csv) formats the parsed value
 // directly and stays UTC.
+//
+// A transcript line with no timestamp parses to the zero time. Converting that
+// would print the zone's year-1 offset, a real-looking time like 16:07:02, so
+// it gets a placeholder of the same width instead.
 func Clock(t time.Time) string {
+	if t.IsZero() {
+		return "--:--:--"
+	}
 	return t.Local().Format("15:04:05")
 }
 
 // ClockShort is Clock without seconds ("15:04"), for compact one-line summaries.
 func ClockShort(t time.Time) string {
+	if t.IsZero() {
+		return "--:--"
+	}
 	return t.Local().Format("15:04")
 }
 

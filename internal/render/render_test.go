@@ -440,6 +440,13 @@ func TestClockConvertsToLocal(t *testing.T) {
 	if got := ClockShort(ts); got != "18:53" {
 		t.Errorf("ClockShort = %q, want 18:53", got)
 	}
+	// A missing timestamp must not turn into a plausible local time
+	if got := Clock(time.Time{}); got != "--:--:--" {
+		t.Errorf("Clock(zero) = %q, want --:--:--", got)
+	}
+	if got := ClockShort(time.Time{}); got != "--:--" {
+		t.Errorf("ClockShort(zero) = %q, want --:--", got)
+	}
 	// 01:53 UTC on the 29th is still the 28th in UTC-7
 	if got := DayMarker(ts); got != "Mon 28 Sep" {
 		t.Errorf("DayMarker = %q, want Mon 28 Sep", got)
