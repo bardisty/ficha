@@ -24,3 +24,17 @@ func isTerminal(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	return ok && term.IsTerminal(f.Fd())
 }
+
+// terminalWidth returns w's width in columns, or 0 when w isn't a terminal,
+// which tells the table formatters to use their fixed layout.
+func terminalWidth(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok || !term.IsTerminal(f.Fd()) {
+		return 0
+	}
+	width, _, err := term.GetSize(f.Fd())
+	if err != nil {
+		return 0
+	}
+	return width
+}

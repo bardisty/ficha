@@ -24,8 +24,8 @@ func TestNoColorEmitsNoEscapes(t *testing.T) {
 			"summary details": FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false),
 			"summary expand":  FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true),
 			"list":            FormatSessionListTable(goldenSessionEntries(), true),
-			"global":          FormatGlobalTable(goldenGlobalAnalysis(), true, 3, false),
-			"global details":  FormatGlobalTable(goldenGlobalAnalysis(), true, 3, true),
+			"global":          FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(false)),
+			"global details":  FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(true)),
 		}
 		for name, out := range outputs {
 			if i := strings.Index(out, "\x1b["); i >= 0 {

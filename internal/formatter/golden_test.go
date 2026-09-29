@@ -356,19 +356,30 @@ func TestGoldenSessionListColor(t *testing.T) {
 
 // --- golden tests: FormatGlobalTable ---
 
+// goldenGlobalOptions is the piped (fixed-width) layout, cost order, top 3,
+// half an hour after the newest project's last activity.
+func goldenGlobalOptions(details bool) GlobalTableOptions {
+	return GlobalTableOptions{
+		TopN:    3,
+		Details: details,
+		SortBy:  "cost",
+		Now:     time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC),
+	}
+}
+
 func TestGoldenGlobalTable(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	checkGolden(t, "global_table", FormatGlobalTable(goldenGlobalAnalysis(), true, 3, false))
+	checkGolden(t, "global_table", FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(false)))
 }
 
 func TestGoldenGlobalTableColor(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
-	checkGolden(t, "global_table_color", FormatGlobalTable(goldenGlobalAnalysis(), false, 3, false))
+	checkGolden(t, "global_table_color", FormatGlobalTable(goldenGlobalAnalysis(), false, goldenGlobalOptions(false)))
 }
 
 func TestGoldenGlobalTableDetails(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	checkGolden(t, "global_table_details", FormatGlobalTable(goldenGlobalAnalysis(), true, 3, true))
+	checkGolden(t, "global_table_details", FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(true)))
 }
 
 // --- golden tests: FormatSummaryTableWithDetails ---

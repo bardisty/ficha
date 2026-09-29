@@ -116,6 +116,31 @@ func DurationLong(d time.Duration) string {
 	return fmt.Sprintf("%dd", days)
 }
 
+// Ago renders how long before now t was, coarsely: "just now", "5m ago",
+// "3h ago", "12d ago", "4mo ago", "2y ago". A zero t (no timestamp) is "-".
+// A t after now, from clock skew between machines, counts as just now.
+func Ago(t, now time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	d := now.Sub(t)
+	const day = 24 * time.Hour
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < day:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 60*day:
+		return fmt.Sprintf("%dd ago", int(d/day))
+	case d < 365*day:
+		return fmt.Sprintf("%dmo ago", int(d/(30*day)))
+	default:
+		return fmt.Sprintf("%dy ago", int(d/(365*day)))
+	}
+}
+
 // Clock formats t as a local wall-clock time ("15:04:05"). Transcript
 // timestamps parse as UTC, and the clocks shown next to them (the live
 // header's update time, show's "Last active") are local, so every display

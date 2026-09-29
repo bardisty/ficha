@@ -577,3 +577,32 @@ func TestClampModelASCIIEllipsis(t *testing.T) {
 		t.Errorf("ClampModel ASCII width 2 = %q, want ..", got)
 	}
 }
+
+func TestAgo(t *testing.T) {
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		ago  time.Duration
+		want string
+	}{
+		{-time.Hour, "just now"}, // clock skew
+		{30 * time.Second, "just now"},
+		{time.Minute, "1m ago"},
+		{59 * time.Minute, "59m ago"},
+		{time.Hour, "1h ago"},
+		{23*time.Hour + 59*time.Minute, "23h ago"},
+		{24 * time.Hour, "1d ago"},
+		{59 * 24 * time.Hour, "59d ago"},
+		{60 * 24 * time.Hour, "2mo ago"},
+		{364 * 24 * time.Hour, "12mo ago"},
+		{365 * 24 * time.Hour, "1y ago"},
+		{800 * 24 * time.Hour, "2y ago"},
+	}
+	for _, tt := range tests {
+		if got := Ago(now.Add(-tt.ago), now); got != tt.want {
+			t.Errorf("Ago(now-%v) = %q, want %q", tt.ago, got, tt.want)
+		}
+	}
+	if got := Ago(time.Time{}, now); got != "-" {
+		t.Errorf("Ago(zero) = %q, want %q", got, "-")
+	}
+}

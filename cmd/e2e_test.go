@@ -555,7 +555,7 @@ func TestE2ECommands(t *testing.T) {
 			args: []string{"global"},
 			check: func(t *testing.T, out string) {
 				// Default --top is 10 >= 2 projects, so the header reports all 2.
-				mustContainAll(t, out, "TOP PROJECTS (2)", "Projects: 2", "TOTAL")
+				mustContainAll(t, out, "PROJECTS (all 2, by cost)", "Projects: 2", "TOTAL")
 			},
 		},
 		{
@@ -563,8 +563,8 @@ func TestE2ECommands(t *testing.T) {
 			args: []string{"global", "--top", "1"},
 			check: func(t *testing.T, out string) {
 				// Header count reflects the cap without depending on decoded names.
-				mustContainAll(t, out, "TOP PROJECTS (1)", "Projects: 2")
-				if strings.Contains(out, "TOP PROJECTS (2)") {
+				mustContainAll(t, out, "PROJECTS (1 of 2, by cost)", "Projects: 2")
+				if strings.Contains(out, "PROJECTS (all 2, by cost)") {
 					t.Error("--top 1 should not report 2 projects in the header")
 				}
 			},

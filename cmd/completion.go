@@ -9,6 +9,7 @@ import (
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
+	"github.com/bardisty/ficha/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -55,7 +56,7 @@ func completeSessionIDs(cfg *config) cobra.CompletionFunc {
 		now := time.Now()
 		out := make([]cobra.Completion, 0, len(candidates))
 		for _, s := range candidates {
-			desc := "modified " + ageString(now.Sub(s.Modified))
+			desc := "modified " + render.Ago(s.Modified, now)
 			if count {
 				if res, err := parser.ParseJSONLFileWithResult(s.FullPath); err == nil {
 					desc += fmt.Sprintf(" · %d msgs", len(res.Messages))
@@ -81,21 +82,6 @@ func completionValue(id string, sessions []models.SessionEntry, typed int) strin
 		}
 	}
 	return id[:short]
-}
-
-// ageString renders a duration as a coarse age: "just now", "5m ago",
-// "3h ago", "2d ago".
-func ageString(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
-	}
 }
 
 // completeProjectDirs completes --project-dir with the Claude project

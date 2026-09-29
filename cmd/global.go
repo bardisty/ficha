@@ -24,7 +24,7 @@ json/csv always export every project; --top and --details only shape the table
 
 Examples:
   ficha global                   Show global stats (top 10 projects)
-  ficha global --details         Show all projects with cumulative column
+  ficha global --details         Show all projects, with a cumulative cost column
   ficha global --top 20          Show top 20 projects
   ficha global --sort-by name    Sort by project name
   ficha global -f json           Output every project as JSON`,
@@ -35,7 +35,7 @@ Examples:
 		},
 	}
 
-	globalCmd.Flags().BoolVarP(&cfg.globalDetails, "details", "d", false, "Show all projects with a cumulative column (table view only)")
+	globalCmd.Flags().BoolVarP(&cfg.globalDetails, "details", "d", false, "Show all projects, plus a cumulative column when sorted by cost (table view only)")
 	globalCmd.Flags().IntVarP(&cfg.globalTopN, "top", "n", 10, "Top projects to show in the table (json/csv always export all)")
 	globalCmd.Flags().StringVar(&cfg.globalSortBy, "sort-by", "cost", "Sort by: cost, sessions, name, activity")
 	globalCmd.Flags().BoolVar(&cfg.globalNoCache, "no-cache", false, "Skip cache, force fresh analysis (reserved for future use)")
@@ -112,7 +112,12 @@ func runGlobal(cfg *config) error {
 			return fmt.Errorf("formatting output: %w", err)
 		}
 	default:
-		output = formatter.FormatGlobalTable(analysis, cfg.noColor, cfg.globalTopN, cfg.globalDetails)
+		output = formatter.FormatGlobalTable(analysis, cfg.noColor, formatter.GlobalTableOptions{
+			TopN:    cfg.globalTopN,
+			Details: cfg.globalDetails,
+			SortBy:  cfg.globalSortBy,
+			Width:   terminalWidth(cfg.stdout),
+		})
 	}
 
 	printReport(cfg, &warnings, output)
