@@ -437,8 +437,8 @@ type BreakdownMessage struct {
 type ProjectInfo struct {
 	EncodedPath  string // "-home-user-source-foo"
 	FullPath     string // ~/.claude/projects/-home-user-source-foo
-	OriginalPath string // /home/user/source/foo (decoded)
-	DisplayName  string // "foo" (basename)
+	OriginalPath string // /home/user/source/foo: sessions-index.json's originalPath, else a transcript's cwd; "" when neither exists
+	DisplayName  string // "~/source/foo" from OriginalPath, else the encoded name without its leading dash
 }
 
 // ProjectAnalysis represents the analysis of a single project.

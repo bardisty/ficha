@@ -22,7 +22,7 @@
     #   PROJECT                                        SESSIONS        COST  % TOTAL  CUMULATIVE
   ──────────────────────────────────────────────────────────────────────────────────────────────
     1   example                                              42   $123.45      64.5%   $123.45  
-    2   a-very-long-proj...me-that-exceeds-the-column        17    $56.78      29.7%   $180.23  
+    2   …oject-directory-name-that-exceeds-the-column        17    $56.78      29.7%   $180.23  
     3   web-app                                               5     $9.87       5.2%   $190.10  
     4   dotfiles                                              3     $1.23       0.6%   $191.33  
     5   scratch                                               1     $0.0500     0.0%   $191.38  

@@ -125,6 +125,18 @@ func resolveProjectDirectory(cfg *config) (string, error) {
 	return match.ProjectDir, nil
 }
 
+// similarProjectCommand is the command to paste for a suggested project:
+// -p with its real path, which normally resolves by exact match (unless the
+// directory has since moved or a symlink changed). A path from another OS (a
+// Windows transcript read under WSL) isn't absolute here and can't resolve,
+// so it gets the encoded directory name instead.
+func similarProjectCommand(proj models.ProjectInfo) string {
+	if filepath.IsAbs(proj.OriginalPath) {
+		return "ficha -p " + shellQuote(proj.OriginalPath)
+	}
+	return "ficha --project-dir=" + shellQuote(proj.EncodedPath)
+}
+
 // formatNoProjectError creates a helpful error message when no project is found
 func formatNoProjectError(projPath string, allProjects []models.ProjectInfo) error {
 	basename := strings.ToLower(filepath.Base(projPath))
@@ -136,7 +148,7 @@ func formatNoProjectError(projPath string, allProjects []models.ProjectInfo) err
 		if proj.OriginalPath != "" {
 			projBasename := strings.ToLower(paths.BasenameCrossOS(proj.OriginalPath))
 			if strings.HasPrefix(projBasename, basename) || strings.HasPrefix(basename, projBasename) {
-				suggestions = append(suggestions, fmt.Sprintf("  %s (original: %s)", proj.EncodedPath, proj.OriginalPath))
+				suggestions = append(suggestions, "  "+similarProjectCommand(proj))
 				if len(suggestions) >= maxSuggestions {
 					break
 				}
@@ -149,11 +161,7 @@ func formatNoProjectError(projPath string, allProjects []models.ProjectInfo) err
 
 	if len(suggestions) > 0 {
 		sb.WriteString("\n\nSimilar projects:\n")
-		for _, s := range suggestions {
-			sb.WriteString(s)
-			sb.WriteString("\n")
-		}
-		sb.WriteString("\nUse --project-dir to specify the exact directory")
+		sb.WriteString(strings.Join(suggestions, "\n"))
 	}
 
 	return errors.New(sb.String())

@@ -1,6 +1,7 @@
 package formatter
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -149,9 +150,9 @@ func TestRenderProjectsTableWideNamesAlign(t *testing.T) {
 	}
 }
 
-// truncateMiddle must cut on rune boundaries and measure display width, not
-// byte-slice UTF-8 (which corrupts multi-byte runes and miscounts width).
-func TestTruncateMiddle(t *testing.T) {
+// truncateLeft must cut on rune boundaries and measure display width, not
+// bytes, in both glyph sets.
+func TestTruncateLeft(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -163,41 +164,45 @@ func TestTruncateMiddle(t *testing.T) {
 		{"mixed ascii and cjk", "project-" + strings.Repeat("日本語", 20) + "-end", 45},
 		{"tiny max width", strings.Repeat("é", 20), 3},
 		{"max width 2", strings.Repeat("世", 20), 2},
+		{"path", "~/source/github.com/acme/billing-service/worktrees/fix-invoice-rounding", 45},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := truncateMiddle(tt.input, tt.maxWidth)
-			if !utf8.ValidString(got) {
-				t.Errorf("result is not valid UTF-8: %q", got)
+	for _, ascii := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ascii=%v", ascii), func(t *testing.T) {
+			if ascii {
+				useASCII(t)
 			}
-			if w := runewidth.StringWidth(got); w > tt.maxWidth {
-				t.Errorf("display width %d exceeds max %d: %q", w, tt.maxWidth, got)
+			for _, tt := range tests {
+				got := truncateLeft(tt.input, tt.maxWidth)
+				if !utf8.ValidString(got) {
+					t.Errorf("%s: result is not valid UTF-8: %q", tt.name, got)
+				}
+				if w := runewidth.StringWidth(got); w > tt.maxWidth {
+					t.Errorf("%s: display width %d exceeds max %d: %q", tt.name, w, tt.maxWidth, got)
+				}
 			}
 		})
 	}
 
 	t.Run("short string unchanged", func(t *testing.T) {
-		if got := truncateMiddle("short", 45); got != "short" {
+		if got := truncateLeft("short", 45); got != "short" {
 			t.Errorf("got %q, want %q", got, "short")
 		}
 	})
 
-	t.Run("keeps start and end", func(t *testing.T) {
-		in := "AAAA" + strings.Repeat("x", 100) + "ZZZZ"
-		got := truncateMiddle(in, 45)
-		if !strings.HasPrefix(got, "AAAA") || !strings.HasSuffix(got, "ZZZZ") {
-			t.Errorf("expected start...end shape, got %q", got)
+	t.Run("keeps the tail", func(t *testing.T) {
+		got := truncateLeft("~/source/github.com/acme/billing-service/worktrees/fix-invoice-rounding", 45)
+		if !strings.HasSuffix(got, "service/worktrees/fix-invoice-rounding") {
+			t.Errorf("the distinctive tail should survive, got %q", got)
 		}
-		if !strings.Contains(got, "...") {
-			t.Errorf("expected ellipsis, got %q", got)
+		if runewidth.StringWidth(got) != 45 || !strings.HasPrefix(got, "…") {
+			t.Errorf("want 45 columns starting with the ellipsis, got %q", got)
 		}
 	})
 
 	t.Run("byte length exceeds width but display width fits", func(t *testing.T) {
-		// 20 runes, 40 bytes, display width 20 — old byte-based check truncated this
 		in := strings.Repeat("é", 20)
-		if got := truncateMiddle(in, 25); got != in {
+		if got := truncateLeft(in, 25); got != in {
 			t.Errorf("string with display width 20 should fit in 25, got %q", got)
 		}
 	})
