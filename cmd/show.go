@@ -82,6 +82,19 @@ func runShow(cfg *config, args []string, live bool) error {
 	}
 
 	var warnings bytes.Buffer
+	// Only the table skips a reply-less newest session. Scripts asking for
+	// json or csv get the newest session, as they always have, and can see
+	// from message_count that it's empty.
+	if !explicitSessionID && cfg.format == "table" && trulyEmpty(analysis) {
+		older, skipped, err := newestSessionWithReplies(cfg, scope)
+		if err != nil {
+			return err
+		}
+		if older != nil && skipped > 0 {
+			writeSkippedNote(&warnings, skipped, session.SessionID, cfg.noColor)
+			analysis = older
+		}
+	}
 	skipWarning{counts: "totals", agents: analysis.SkippedAgents, lines: analysis.SkippedLines}.write(&warnings, cfg.verbose)
 	warnEstimatedCosts(&warnings, analysis.EstimatedCostMessages)
 	warnUnknownModels(&warnings, analysis.CostByModel)

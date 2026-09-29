@@ -599,3 +599,22 @@ func mustParse(t *testing.T, input string) []models.JSONLMessage {
 	}
 	return messages
 }
+
+// The title is the last ai-title record: Claude Code writes a new one as
+// the session's topic shifts. Title records aren't messages.
+func TestParseJSONLTitle(t *testing.T) {
+	input := `{"type":"ai-title","aiTitle":"First guess","sessionId":"s"}
+{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"id":"m1","model":"claude-opus-4-5","usage":{}}}
+{"type":"ai-title","aiTitle":"Fix the login redirect","sessionId":"s"}
+{"type":"ai-title","aiTitle":"","sessionId":"s"}`
+	result, err := ParseJSONLWithResult(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Title != "Fix the login redirect" {
+		t.Errorf("Title = %q, want the last non-empty ai-title", result.Title)
+	}
+	if len(result.Messages) != 1 {
+		t.Errorf("got %d messages, want 1", len(result.Messages))
+	}
+}

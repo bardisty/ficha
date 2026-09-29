@@ -91,6 +91,7 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 	// Build the session analysis (parent session only)
 	analysis := buildSessionAnalysis(sessionID, sessionPath, messageAnalyses, scope != NoMessages)
 	analysis.SkippedLines = result.SkippedLines
+	analysis.Title = result.Title
 
 	// Store parent cost and message count before adding agent data
 	analysis.ParentCost = analysis.TotalCost

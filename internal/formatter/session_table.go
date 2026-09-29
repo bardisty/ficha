@@ -20,6 +20,12 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	// Detect summary vs show mode
 	isSummary := analysis.IsSummary
 
+	// A session nobody has replied to yet has nothing to price, and a report
+	// of empty sections reads like a broken tool or the wrong session.
+	if !isSummary && analysis.MessageCount == 0 {
+		return fmt.Sprintf("No assistant messages in session %s yet.", render.TruncateID(analysis.SessionID, 8))
+	}
+
 	// Header panel
 	sb.WriteString(renderHeaderPanel(analysis, sectionWidth, noColor))
 	sb.WriteString("\n\n")

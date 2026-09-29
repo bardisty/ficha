@@ -32,6 +32,9 @@ type ParseResult struct {
 	Messages     []models.JSONLMessage
 	SkippedLines int   // Number of lines skipped (malformed JSON or longer than maxLineBytes)
 	SkippedAt    []int // Line numbers of skipped lines (1-indexed, capped at maxSkippedLineNumbers)
+	// Title is the last "ai-title" record's title. Claude Code writes a new
+	// one as the session's topic shifts, so the last is the current one.
+	Title string
 }
 
 // ParseJSONLFileWithResult parses a session JSONL file and returns detailed results
@@ -93,8 +96,11 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 		}
 
 		// Only collect assistant messages with usage data
-		if msg.Type == "assistant" && msg.Message != nil {
+		switch {
+		case msg.Type == "assistant" && msg.Message != nil:
 			result.Messages = append(result.Messages, msg)
+		case msg.Type == "ai-title" && msg.AITitle != "":
+			result.Title = msg.AITitle
 		}
 	}
 

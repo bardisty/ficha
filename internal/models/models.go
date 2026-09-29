@@ -173,7 +173,10 @@ type SessionAnalysis struct {
 	ProjectPath string `json:"project_path"`
 	// SessionFile is the session's transcript .jsonl path. Empty on the summary
 	// aggregate, which spans many files; use project_path to name the project.
-	SessionFile  string        `json:"session_file,omitempty"`
+	SessionFile string `json:"session_file,omitempty"`
+	// Title is the session's latest "ai-title" record, raw from the
+	// transcript. Empty when it has none, and on the summary aggregate.
+	Title        string        `json:"title,omitempty"`
 	StartTime    time.Time     `json:"start_time"`
 	EndTime      time.Time     `json:"end_time"`
 	Duration     Duration      `json:"duration"`
@@ -280,6 +283,10 @@ type JSONLMessage struct {
 	Message   *AssistantMessage `json:"message,omitempty"`
 	Timestamp time.Time         `json:"timestamp"`
 	RequestID string            `json:"requestId,omitempty"`
+	// AITitle is set on "ai-title" records, the session title Claude Code
+	// generates and rewrites as the session goes on. The key is undocumented,
+	// so a transcript without one is normal.
+	AITitle string `json:"aiTitle,omitempty"`
 }
 
 // AssistantMessage represents the message field for assistant type messages

@@ -23,7 +23,7 @@ func TestNoColorEmitsNoEscapes(t *testing.T) {
 			"summary":         FormatSessionTable(goldenSummaryAnalysis(), true),
 			"summary details": FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false),
 			"summary expand":  FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true),
-			"list":            FormatSessionListTable(goldenSessionEntries(), true),
+			"list":            FormatSessionListTable(goldenListResults(), true, goldenListOptions),
 			"global":          FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(false)),
 			"global details":  FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(true)),
 		}

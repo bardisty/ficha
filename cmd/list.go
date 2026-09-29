@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/spf13/cobra"
@@ -35,6 +36,10 @@ Examples:
 }
 
 func runList(cfg *config) error {
+	if cfg.format == "table" {
+		return runListTable(cfg)
+	}
+
 	// list displays per-session message counts, so request the discovery-time scan.
 	sessions, err := loadProjectSessions(cfg, true)
 	if err != nil {
@@ -71,18 +76,55 @@ func runList(cfg *config) error {
 	switch cfg.format {
 	case "json":
 		output, err = formatter.FormatSessionListJSON(sessions, true)
-		if err != nil {
-			return fmt.Errorf("formatting output: %w", err)
-		}
 	case "csv":
 		output, err = formatter.FormatSessionListCSV(sessions)
-		if err != nil {
-			return fmt.Errorf("formatting output: %w", err)
-		}
-	default:
-		output = formatter.FormatSessionListTable(sessions, cfg.noColor)
+	}
+	if err != nil {
+		return fmt.Errorf("formatting output: %w", err)
 	}
 
+	printReport(cfg, &warnings, output)
+	return nil
+}
+
+// runListTable prices every session the way summary --details does, cross-
+// session duplicates attributed once, so a session's cost here matches its
+// row there. The table shows no message counts, so it skips the
+// discovery-time scan.
+func runListTable(cfg *config) error {
+	sessions, err := loadProjectSessions(cfg, false)
+	if err != nil {
+		return err
+	}
+	sortSessionsByModified(sessions)
+
+	aggregate, results, err := analyzer.AnalyzeMultipleSessions(sessions)
+	if err != nil {
+		// Every transcript failed to parse. List them anyway, as unreadable.
+		results = make([]models.SessionResult, len(sessions))
+		for i, s := range sessions {
+			results[i] = models.SessionResult{Entry: s}
+		}
+	}
+
+	skips := skipWarning{counts: "costs", details: labelSkips("", analyzer.SkipDetails(results))}
+	for _, d := range skips.details {
+		if d.Unreadable {
+			skips.sessions++
+		}
+		skips.agents += d.Agents
+		skips.lines += d.Lines
+	}
+	var warnings bytes.Buffer
+	skips.write(&warnings, cfg.verbose)
+	if aggregate != nil {
+		warnEstimatedCosts(&warnings, aggregate.EstimatedCostMessages)
+		warnUnknownModels(&warnings, aggregate.CostByModel)
+	}
+
+	output := formatter.FormatSessionListTable(results, cfg.noColor, formatter.ListTableOptions{
+		Width: terminalWidth(cfg.stdout),
+	})
 	printReport(cfg, &warnings, output)
 	return nil
 }
