@@ -155,13 +155,14 @@ type projectsLayout struct {
 	project    int
 	cost       int
 	cumulative int  // 0 when the column is hidden
+	sessions   bool // whether SESSIONS is shown
 	pct        bool // whether % TOTAL is shown
 	active     bool // whether LAST ACTIVE is shown
 	width      int  // the whole report's width, rules included
 }
 
 func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOptions) projectsLayout {
-	l := projectsLayout{rows: max(opts.TopN, 0), pct: true, active: true}
+	l := projectsLayout{rows: max(opts.TopN, 0), sessions: true, pct: true, active: true}
 	if opts.Details || l.rows > len(projects) {
 		l.rows = len(projects)
 	}
@@ -188,9 +189,10 @@ func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOption
 		fixed += columnGap + l.cumulative
 	}
 	// A terminal too narrow for every column gives up % TOTAL first, since
-	// COST against the total says the same, then LAST ACTIVE unless the rows
-	// are sorted by it. Only then do the rows wrap. Piped output holds to 80
-	// columns the same way, which large costs would otherwise push past.
+	// COST against the total says the same, then LAST ACTIVE, then SESSIONS,
+	// each unless the rows are sorted by it. Only then do the rows wrap. Piped
+	// output holds to 80 columns the same way, which large costs would
+	// otherwise push past.
 	budget := opts.Width
 	if budget <= 0 {
 		budget = globalPipedMaxWidth
@@ -203,6 +205,10 @@ func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOption
 	if tooNarrow() && opts.SortBy != "activity" {
 		l.active = false
 		fixed -= columnGap + activeWidth
+	}
+	if tooNarrow() && opts.SortBy != "sessions" {
+		l.sessions = false
+		fixed -= columnGap + sessionsWidth
 	}
 
 	l.width = globalStaticWidth
@@ -304,9 +310,11 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 	header := []string{
 		fmt.Sprintf("%*s", rankWidth, "#"),
 		fmt.Sprintf("%-*s", layout.project, "PROJECT"),
-		fmt.Sprintf("%*s", sessionsWidth, "SESSIONS"),
-		fmt.Sprintf("%*s", layout.cost, "COST"),
 	}
+	if layout.sessions {
+		header = append(header, fmt.Sprintf("%*s", sessionsWidth, "SESSIONS"))
+	}
+	header = append(header, fmt.Sprintf("%*s", layout.cost, "COST"))
 	if layout.pct {
 		header = append(header, fmt.Sprintf("%*s", pctWidth, "% TOTAL"))
 	}
@@ -359,7 +367,11 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 
 		var cells []string
 		if noColor {
-			cells = []string{rank, name, sessions, render.CostCell(p.TotalCost.TotalCost, layout.cost)}
+			cells = []string{rank, name}
+			if layout.sessions {
+				cells = append(cells, sessions)
+			}
+			cells = append(cells, render.CostCell(p.TotalCost.TotalCost, layout.cost))
 			if layout.pct {
 				cells = append(cells, pct)
 			}
@@ -371,12 +383,11 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 			}
 		} else {
 			costColor := styles.GetCostGradientColor(p.TotalCost.TotalCost, minCost, maxCost)
-			cells = []string{
-				dimStyle.Render(rank),
-				name,
-				keyStyle("sessions").Render(sessions),
-				render.CostColored(p.TotalCost.TotalCost, costColor, layout.cost),
+			cells = []string{dimStyle.Render(rank), name}
+			if layout.sessions {
+				cells = append(cells, keyStyle("sessions").Render(sessions))
 			}
+			cells = append(cells, render.CostColored(p.TotalCost.TotalCost, costColor, layout.cost))
 			if layout.pct {
 				cells = append(cells, dimStyle.Render(pct))
 			}

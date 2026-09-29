@@ -27,10 +27,12 @@ type ListTableOptions struct {
 
 // Column widths of the list table that don't depend on the data.
 const (
-	listStaticWidth   = 76
-	listWhenWidth     = len("just now")
-	listModelWidth    = 10
-	listAgentsWidth   = len("AGENTS")
+	listStaticWidth = 76
+	listWhenWidth   = len("just now")
+	listModelWidth  = 10
+	listAgentsWidth = len("AGENTS")
+	// listMinTitleWidth is the room TITLE keeps before MODEL goes. Past
+	// that, TITLE shrinks, to nothing if it must, rather than rows wrap.
 	listMinTitleWidth = 12
 	// listGoodTitleWidth is the room TITLE gets before other columns go.
 	listGoodTitleWidth = 24
@@ -74,15 +76,21 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 
 	// A terminal that would leave TITLE too little room gives up LENGTH, then
 	// AGENTS, keeping what picks a session out: when, model, cost and title.
-	showLength, showAgents := true, true
-	tooNarrow := func() bool { return opts.Width > 0 && fixed+listGoodTitleWidth > opts.Width }
-	if tooNarrow() {
+	// A narrower one gives up MODEL too, since the ID, when and cost still
+	// tell sessions apart and a title is what names them.
+	showLength, showAgents, showModel := true, true, true
+	tooNarrow := func(title int) bool { return opts.Width > 0 && fixed+title > opts.Width }
+	if tooNarrow(listGoodTitleWidth) {
 		showLength = false
 		fixed -= columnGap + listDurationWidth
 	}
-	if tooNarrow() {
+	if tooNarrow(listGoodTitleWidth) {
 		showAgents = false
 		fixed -= columnGap + listAgentsWidth
+	}
+	if tooNarrow(listMinTitleWidth) {
+		showModel = false
+		fixed -= columnGap + listModelWidth
 	}
 
 	// TITLE is the last column, so nothing after it needs aligning. Piped,
@@ -92,7 +100,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	titleCol := -1
 	if opts.Width > 0 {
 		width = min(max(fixed+min(titleWidth, listMaxTitleWidth), listStaticWidth), opts.Width)
-		width = max(width, fixed+listMinTitleWidth)
+		width = max(width, fixed)
 		titleCol = width - fixed
 	}
 
@@ -105,7 +113,9 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		if showLength {
 			cells = append(cells, length)
 		}
-		cells = append(cells, model)
+		if showModel {
+			cells = append(cells, model)
+		}
 		if showAgents {
 			cells = append(cells, agents)
 		}
@@ -119,7 +129,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		fmt.Sprintf("%-*s", listModelWidth, "MODEL"),
 		fmt.Sprintf("%*s", listAgentsWidth, "AGENTS"),
 		fmt.Sprintf("%*s", costWidth, "COST"),
-		"TITLE",
+		truncateRight("TITLE", titleCol),
 	)
 	rule := strings.Repeat(" ", rowIndent) + strings.Repeat(styles.LineHorizontal, width-rowIndent)
 	if noColor {
@@ -254,10 +264,14 @@ func stripControl(s string) string {
 }
 
 // truncateRight fits s into width display columns, ending in an ellipsis
-// when it's cut. A negative width leaves s whole.
+// when it's cut. A negative width leaves s whole, and a zero width, with no
+// room even for the ellipsis, leaves nothing.
 func truncateRight(s string, width int) string {
 	if width < 0 || runewidth.StringWidth(s) <= width {
 		return s
+	}
+	if width == 0 {
+		return ""
 	}
 	return runewidth.Truncate(s, width, styles.Ellipsis)
 }
