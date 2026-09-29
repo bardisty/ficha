@@ -15,7 +15,7 @@ func (m Model) Init() tea.Cmd {
 		m.spinner.Tick,
 		m.loadAnalysis,
 		func() tea.Msg { return m.watchFile() },
-		tickCmd(),
+		clockCmd(time.Second, 0),
 		subagentPollCmd(),
 	}
 
@@ -32,6 +32,15 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
+}
+
+// clockMsg is watch's slow redraw tick for time-based text. gen names the
+// chain it belongs to.
+type clockMsg struct{ gen int }
+
+// clockCmd schedules the next clockMsg of chain gen.
+func clockCmd(d time.Duration, gen int) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg { return clockMsg{gen: gen} })
 }
 
 // Commands

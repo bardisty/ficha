@@ -15,13 +15,43 @@ import (
 	"github.com/bardisty/ficha/internal/styles"
 )
 
-// Watch's fixed chrome. The header is the 3-line panel plus the notify row;
-// the footer is the rule, the pinned stats line, any warning rows, and help.
+// Watch's fixed chrome. The header is the 3-line panel plus the notify row,
+// which is always reserved so a notice never shifts the body; the footer is
+// the rule, the pinned stats line, any warning rows, and help. Compact mode
+// trades the box for a one-line header and drops the help row.
 const (
-	watchHeaderHeight = 4
-	watchFooterBase   = 3
-	maxWarningRows    = 2
+	watchHeaderHeight   = 4
+	compactHeaderHeight = 2
+	watchFooterBase     = 3
+	compactFooterBase   = 2
+	maxWarningRows      = 2
 )
+
+// Terminal size thresholds: below compactBelowRows the chrome goes compact,
+// and below minTermWidth x minTermHeight no frame fits at all.
+const (
+	compactBelowRows = 16
+	minTermWidth     = 40
+	minTermHeight    = 8
+)
+
+// compact reports whether the terminal is short enough for compact chrome.
+func (m Model) compact() bool {
+	return m.height > 0 && m.height < compactBelowRows
+}
+
+// tooSmall reports whether the terminal can't hold a usable frame.
+func (m Model) tooSmall() bool {
+	return m.width > 0 && m.height > 0 && (m.width < minTermWidth || m.height < minTermHeight)
+}
+
+// headerHeight is the header's row count, notify row included.
+func (m Model) headerHeight() int {
+	if m.compact() {
+		return compactHeaderHeight
+	}
+	return watchHeaderHeight
+}
 
 // rateWindow is how far back the footer's rolling spend rate looks.
 const rateWindow = 10 * time.Minute
@@ -71,7 +101,11 @@ func (m Model) clock() time.Time {
 
 // footerHeight is the footer's row count at the current width.
 func (m Model) footerHeight() int {
-	return watchFooterBase + len(m.warningRows(panelWidthFor(m.width)))
+	base := watchFooterBase
+	if m.compact() {
+		base = compactFooterBase
+	}
+	return base + len(m.warningRows(panelWidthFor(m.width)))
 }
 
 // renderFooterLines renders the fixed footer, one string per row.
@@ -94,6 +128,9 @@ func (m Model) renderFooterLines(panelWidth int) []string {
 		}
 	}
 
+	if m.compact() {
+		return lines
+	}
 	helpText := helpLine("q: quit", "r: refresh", "f: follow", "g/G: top/bottom", styles.ScrollKeys+": scroll")
 	if !m.noColor {
 		helpText = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(helpText)

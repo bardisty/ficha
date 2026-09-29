@@ -54,23 +54,31 @@ func clipToWidth(frame string, termWidth int) string {
 
 // View renders the TUI
 func (m Model) View() string {
+	if m.tooSmall() {
+		return m.renderTooSmall()
+	}
+
 	var sb strings.Builder
 	panelWidth := panelWidthFor(m.width)
 
-	// FIXED HEADER (4 lines)
-	sb.WriteString(m.renderHeaderPanel(panelWidth))
+	// FIXED HEADER: the boxed panel, or one plain line when compact
+	if m.compact() {
+		sb.WriteString("  " + fitStatusHeader(m.headerParams(panelWidth), panelWidth-2))
+	} else {
+		sb.WriteString(m.renderHeaderPanel(panelWidth))
+	}
 
-	// Notify row: errors, the last session switch, other sessions' activity
+	// Notify row, always reserved: errors, the last session switch, other
+	// sessions' activity
+	sb.WriteString("\n")
 	if row := m.renderNotifyRow(panelWidth); row != "" {
-		sb.WriteString("\n  " + row)
+		sb.WriteString("  " + row)
 	}
 	sb.WriteString("\n")
 
 	// SCROLLABLE CONTENT (viewport)
 	if m.ready {
 		sb.WriteString(m.viewport.View())
-	} else if m.loading {
-		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
 
@@ -78,6 +86,21 @@ func (m Model) View() string {
 	sb.WriteString(strings.Join(m.renderFooterLines(panelWidth), "\n"))
 
 	return clipToWidth(sb.String(), m.width)
+}
+
+// renderTooSmall replaces the frame when no layout fits.
+func (m Model) renderTooSmall() string {
+	// Short lines, so the message itself survives a tiny terminal.
+	var short []string
+	if m.width < minTermWidth {
+		short = append(short, fmt.Sprintf("%d columns, need %d", m.width, minTermWidth))
+	}
+	if m.height < minTermHeight {
+		short = append(short, fmt.Sprintf("%d rows, need %d", m.height, minTermHeight))
+	}
+	lines := append([]string{"terminal too small"}, short...)
+	lines = append(lines, "q to quit")
+	return clipToWidth("  "+strings.Join(lines, "\n  "), m.width)
 }
 
 // renderAnalysis renders the live analysis body. Cache-write tokens are split by
@@ -96,7 +119,7 @@ func (m Model) renderAnalysis() string {
 	sb.WriteString("\n")
 	totalHighlighted := m.isHighlighted("total")
 	sb.WriteString("  " + m.renderHeroCost(a.TotalCost.TotalCost, totalHighlighted, sectionWidth))
-	sb.WriteString("\n\n")
+	sb.WriteString("\n")
 
 	// Unified cost+token rows
 	// Input tokens
@@ -157,8 +180,9 @@ func (m Model) renderAnalysis() string {
 	sb.WriteString("\n")
 	sb.WriteString(m.renderContextSection())
 
-	// Cost trend chart (only show if we have 2+ data points)
-	if len(m.costHistory) >= 2 {
+	// Cost trend chart (only show if we have 2+ data points). A short
+	// terminal can't spare its nine rows.
+	if len(m.costHistory) >= 2 && !m.compact() {
 		sb.WriteString("\n")
 		sb.WriteString("  " + render.SectionHeader("COST TREND", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
@@ -530,13 +554,18 @@ func (m Model) renderInsightsContent() string {
 // ║  Session: xxx (prev: yyy)  │  ● LIVE  │  Updated: HH:MM:SS              ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 func (m Model) renderHeaderPanel(width int) string {
+	return renderLiveHeaderPanel(m.headerParams(width))
+}
+
+// headerParams fills the live header for the current frame.
+func (m Model) headerParams(width int) liveHeaderParams {
 	mode := "PINNED"
 	if m.followMode {
 		mode = "FOLLOWING"
 	}
-	return renderLiveHeaderPanel(liveHeaderParams{
+	return liveHeaderParams{
 		sessionID:    m.sessionID,
-		loading:      m.loading,
+		loading:      m.showLoading(),
 		err:          m.err,
 		lastUpdated:  m.lastUpdated,
 		spinnerView:  m.spinner.View(),
@@ -547,7 +576,7 @@ func (m Model) renderHeaderPanel(width int) string {
 		lastActivity: m.lastActivity,
 		noMessages:   m.activityFromFile,
 		now:          m.clock(),
-	})
+	}
 }
 
 // TUI-only formatting helpers, layered over the shared render.* helpers with
@@ -559,22 +588,16 @@ func formatCostStyledDim(cost float64) string {
 	return dimStyle.Render(render.Cost(cost))
 }
 
-// formatNumberWithDelta formats a number with optional delta during highlight
-func formatNumberWithDelta(n int64, delta int64, showDelta bool) string {
-	valStr := render.Number(n)
-	if !showDelta || delta == 0 {
-		return fmt.Sprintf("%12s", valStr)
+// formatDelta formats a token-count change as "(+2.7K)" or "(-1.0K)", or ""
+// for no change.
+func formatDelta(delta int64) string {
+	switch {
+	case delta > 0:
+		return "(+" + render.Number(delta) + ")"
+	case delta < 0:
+		return "(-" + render.Number(-delta) + ")"
 	}
-
-	// Format delta
-	var deltaStr string
-	if delta > 0 {
-		deltaStr = fmt.Sprintf("(+%s)", render.Number(delta))
-	} else {
-		deltaStr = fmt.Sprintf("(-%s)", render.Number(-delta))
-	}
-
-	return fmt.Sprintf("%12s %s", valStr, deltaStr)
+	return ""
 }
 
 // renderHeroCost renders the total cost integrated into a section header
@@ -609,6 +632,13 @@ func (m Model) renderHeroCost(cost float64, highlighted bool, width int) string 
 	return dimStyle.Render(leftLine) + "[ " + costStyled + " ]" + dimStyle.Render(rightLine)
 }
 
+// ttlColumnWidth is the width of the "  5m TTL" column after "tokens".
+const ttlColumnWidth = 8
+
+// deltaColumnEnd is where the delta column starts, plus its two-space gap:
+// indent, label, cost, count, " tokens", then the TTL column.
+const deltaColumnEnd = 4 + 14 + 1 + 11 + 2 + 12 + 7 + ttlColumnWidth + 2
+
 // renderUnifiedCostRow renders a single row with cost and token info combined
 // Format: "  Label          $0.371042     53.9K tokens"
 func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, costField, tokenField string, labelColor lipgloss.Color, extra string) string {
@@ -628,18 +658,28 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 
 	costStr := render.CostStyled(cost, 11, costHighlighted, m.noColor)
 
-	// Format tokens
-	var tokenStr string
-	if tokenChanged {
-		tokenStr = formatNumberWithDelta(tokens, delta, true)
+	// Tokens keep a fixed width; a recent change lights them up, and its
+	// delta goes in a column of its own after the TTL so nothing to its
+	// left moves while it shows. Where that column would fall off a narrow
+	// terminal, the delta sits right after the count instead: a shift
+	// beats a delta nobody can see.
+	var deltaStr string
+	if tokenChanged && delta != 0 {
+		deltaStr = formatDelta(delta)
 		if tokenHighlighted {
-			tokenStr = highlightStyle.Render(tokenStr)
+			deltaStr = highlightStyle.Render(deltaStr)
 		}
-	} else {
-		tokenStr = fmt.Sprintf("%12s", render.Number(tokens))
+	}
+	inline := deltaStr != "" && m.width > 0 && deltaColumnEnd+lipgloss.Width(deltaStr) > m.width
+	tokenStr := fmt.Sprintf("%12s", render.Number(tokens))
+	if tokenHighlighted {
+		tokenStr = highlightStyle.Render(tokenStr)
+	}
+	if inline {
+		tokenStr += " " + deltaStr
 	}
 
-	// Add extra info (like TTL)
+	// Add extra info (like TTL), padded so the delta column lines up
 	extraStr := ""
 	if extra != "" {
 		if !m.noColor {
@@ -647,6 +687,10 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 		} else {
 			extraStr = "  " + extra
 		}
+	}
+	if deltaStr != "" && !inline {
+		extraStr += strings.Repeat(" ", max(ttlColumnWidth-lipgloss.Width(extraStr), 0))
+		extraStr += "  " + deltaStr
 	}
 
 	return fmt.Sprintf("    %s %s  %s tokens%s\n", labelStr, costStr, tokenStr, extraStr)

@@ -12,66 +12,20 @@ import (
 	"github.com/muesli/termenv"
 )
 
-func TestFormatNumberWithDelta(t *testing.T) {
+func TestFormatDelta(t *testing.T) {
 	tests := []struct {
-		name      string
-		n         int64
-		delta     int64
-		showDelta bool
-		wantSub   string // substring that must appear
-		wantNot   string // substring that must NOT appear (empty = skip check)
+		delta int64
+		want  string
 	}{
-		{
-			name:      "showDelta false ignores delta",
-			n:         1000,
-			delta:     500,
-			showDelta: false,
-			wantSub:   "1.0K",
-			wantNot:   "+",
-		},
-		{
-			name:      "positive delta",
-			n:         5000,
-			delta:     2000,
-			showDelta: true,
-			wantSub:   "(+2.0K)",
-		},
-		{
-			name:      "negative delta",
-			n:         3000,
-			delta:     -1000,
-			showDelta: true,
-			wantSub:   "(-1.0K)",
-		},
-		{
-			name:      "zero delta no suffix",
-			n:         1000,
-			delta:     0,
-			showDelta: true,
-			wantSub:   "1.0K",
-			wantNot:   "(",
-		},
-		{
-			name:      "small numbers",
-			n:         42,
-			delta:     10,
-			showDelta: true,
-			wantSub:   "(+10)",
-		},
+		{500, "(+500)"},
+		{2700, "(+2.7K)"},
+		{-1000, "(-1.0K)"},
+		{0, ""},
 	}
-
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := formatNumberWithDelta(tt.n, tt.delta, tt.showDelta)
-			if !strings.Contains(got, tt.wantSub) {
-				t.Errorf("formatNumberWithDelta(%d, %d, %v) = %q, want substring %q",
-					tt.n, tt.delta, tt.showDelta, got, tt.wantSub)
-			}
-			if tt.wantNot != "" && strings.Contains(got, tt.wantNot) {
-				t.Errorf("formatNumberWithDelta(%d, %d, %v) = %q, should not contain %q",
-					tt.n, tt.delta, tt.showDelta, got, tt.wantNot)
-			}
-		})
+		if got := formatDelta(tt.delta); got != tt.want {
+			t.Errorf("formatDelta(%d) = %q, want %q", tt.delta, got, tt.want)
+		}
 	}
 }
 

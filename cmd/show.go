@@ -9,7 +9,6 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/tui"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -114,12 +113,7 @@ func runShow(cfg *config, args []string, live bool) error {
 
 func runLiveMode(cfg *config, session *models.SessionEntry, projectDir string, followMode bool) error {
 	model := tui.NewModel(session.FullPath, session.SessionID, cfg.verbose, cfg.noColor, projectDir, followMode)
-	p := tea.NewProgram(model, tea.WithAltScreen())
-
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("running TUI: %w", err)
-	}
-	return nil
+	return runTUI(cfg.stdout, model)
 }
 
 func formatOutput(cfg *config, analysis *models.SessionAnalysis, includeMessages bool) (string, error) {

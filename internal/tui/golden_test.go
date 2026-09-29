@@ -238,6 +238,13 @@ func TestGoldenWatchView80x24(t *testing.T) {
 	checkGolden(t, "watch_view_80x24", goldenWatchViewSized(t, true, 80, 24))
 }
 
+// A short terminal gets compact chrome: a plain header line, no help row,
+// and the body's blank spacers dropped.
+func TestGoldenWatchViewCompact(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	checkGolden(t, "watch_view_80x12", goldenWatchViewSized(t, true, 80, 12))
+}
+
 func goldenBreakdownMessages() []models.BreakdownMessage {
 	return []models.BreakdownMessage{
 		{
