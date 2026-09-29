@@ -237,11 +237,43 @@ func TestLastActivity(t *testing.T) {
 	end := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
 	mod := end.Add(-time.Hour)
 	a := &models.SessionAnalysis{EndTime: end, Messages: []models.MessageAnalysis{{Timestamp: end.Add(time.Minute)}}}
-	if got := lastActivity(a, mod); !got.Equal(end.Add(time.Minute)) {
-		t.Errorf("got %v, want the newest message", got)
+	if got, fromFile := lastActivity(a, mod); !got.Equal(end.Add(time.Minute)) || fromFile {
+		t.Errorf("got %v, fromFile %v; want the newest message, not from the file", got, fromFile)
 	}
-	if got := lastActivity(&models.SessionAnalysis{}, mod); !got.Equal(mod) {
-		t.Errorf("got %v, want the file mtime for a session with no messages", got)
+	if got, fromFile := lastActivity(&models.SessionAnalysis{}, mod); !got.Equal(mod) || !fromFile {
+		t.Errorf("got %v, fromFile %v; want the file mtime for a session with no messages", got, fromFile)
+	}
+}
+
+// A transcript whose mtime equals its last message's timestamp (a coarse
+// filesystem clock, a copied or restored file) still has messages. Drive the
+// real load so the flag is checked where the mtime enters.
+func TestHeaderWhenMtimeEqualsLastMessage(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	stamp := time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), sessA+".jsonl")
+	line := `{"type":"assistant","timestamp":"2026-02-01T10:00:00Z","requestId":"r1","message":{"id":"m1","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewModel(path, sessA, false, true, "", false)
+	m.now = func() time.Time { return stamp.Add(12 * time.Second) }
+	m = sized(t, m, 80, 24)
+	msg, ok := m.loadAnalysis().(analysisMsg)
+	if !ok {
+		t.Fatalf("loadAnalysis returned %T, want analysisMsg", m.loadAnalysis())
+	}
+	if !msg.modTime.Equal(stamp) {
+		t.Skipf("filesystem stored mtime %v, want %v", msg.modTime, stamp)
+	}
+	updated, _ := m.Update(msg)
+	m = updated.(Model)
+	if header := m.renderHeaderPanel(80); !strings.Contains(header, "last msg 12s ago") {
+		t.Errorf("header should read the message's age:\n%s", header)
 	}
 }
 
