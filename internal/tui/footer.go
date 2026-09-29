@@ -384,7 +384,7 @@ func (m Model) renderNotifyRow(width int) string {
 				render.TruncateID(m.prevSessionID, sessionIDDisplayLen), render.Cost(m.switched.prevTotal))
 		}
 		if m.prevSessionPath != "" {
-			text += " " + styles.Bullet + " p to go back"
+			text += " " + styles.Bullet + " - to go back"
 		}
 	case m.fallback.active():
 		color = styles.WarningColor

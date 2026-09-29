@@ -26,7 +26,7 @@ func TestWaitingModel(t *testing.T) {
 			}
 		}
 
-		for _, k := range []string{"r", "j", "n", "p"} {
+		for _, k := range []string{"r", "j", "n", "-"} {
 			if m = key(t, m, k); !m.waiting() || m.err != nil || m.loading {
 				t.Fatalf("follow=%v: %q left the wait (waiting=%v err=%v loading=%v)", follow, k, m.waiting(), m.err, m.loading)
 			}
@@ -36,7 +36,7 @@ func TestWaitingModel(t *testing.T) {
 		if m.sessionID != sessA {
 			t.Fatalf("follow=%v: first session didn't replace the wait", follow)
 		}
-		if strings.Contains(m.View(), "p to go back") {
+		if strings.Contains(m.View(), "- to go back") {
 			t.Errorf("follow=%v: offers going back to nothing:\n%s", follow, m.View())
 		}
 	}

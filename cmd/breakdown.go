@@ -20,6 +20,7 @@ Features:
   - Stays on the newest rows until you scroll up
   - Agent rows marked in an AGENT column, with the IDs watch shows
   - p jumps to the most expensive rows
+  - Minus (-) goes back to the previous session after a switch
   - With no session in the project yet, waits for the first one
 
 Examples:

@@ -95,11 +95,13 @@ type BreakdownModel struct {
 	fallback watchFallback
 
 	// Auto-follow mode for tracking new sessions
-	projectDir     string          // Project directory to watch for new sessions
-	followMode     bool            // Whether to auto-follow new sessions
-	prevSessionID  string          // Previous session ID (shown after switch)
-	sessionWatcher *SessionWatcher // Watches for new session files
-	switchNotifyAt time.Time       // When session switch notification started
+	projectDir      string          // Project directory to watch for new sessions
+	followMode      bool            // Whether to auto-follow new sessions
+	prevSessionID   string          // Session open before the last switch
+	prevSessionPath string          // Its file, for the go-back key (-)
+	switchedBack    bool            // The last switch was the go-back key
+	sessionWatcher  *SessionWatcher // Watches for new session files
+	switchNotifyAt  time.Time       // When session switch notification started
 
 	// Last subagent-tree fingerprint; the poll reloads when it changes
 	// (fsnotify never sees subagent/workflow writes — see subagentPollCmd)
@@ -245,6 +247,13 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "p":
 			m.selectNextTop()
+
+		case "-":
+			// Back to the previous session, as in watch; it pins there too.
+			if m.prevSessionPath != "" {
+				m.followMode = false
+				return m.switchTo(m.prevSessionPath, m.prevSessionID, true)
+			}
 
 		case "f":
 			// Following new sessions, as in watch; the header shows the mode
@@ -421,7 +430,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// start is already on disk; take it rather than wait for its next write.
 		if m.waiting() {
 			if path, id := msg.watcher.NewestSession(); path != "" {
-				return m.switchTo(path, id)
+				return m.switchTo(path, id, false)
 			}
 		}
 		return m, m.waitForNewSession()
@@ -448,7 +457,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.followMode && !m.waiting() {
 			return m, m.waitForNewSession()
 		}
-		return m.switchTo(msg.newSessionPath, msg.newSessionID)
+		return m.switchTo(msg.newSessionPath, msg.newSessionID, false)
 
 	case tickMsg:
 		// Re-render only while highlights are active — an idle table would
@@ -481,8 +490,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // switchTo opens another session, dropping everything the old one showed.
-func (m BreakdownModel) switchTo(path, id string) (tea.Model, tea.Cmd) {
-	m.prevSessionID = m.sessionID
+// back marks the go-back key, as opposed to following a new session.
+func (m BreakdownModel) switchTo(path, id string, back bool) (tea.Model, tea.Cmd) {
+	m.prevSessionID, m.prevSessionPath = m.sessionID, m.sessionPath
+	m.switchedBack = back
 	m.sessionID = id
 	m.sessionPath = path
 	m.switchNotifyAt = time.Now()
@@ -662,9 +673,10 @@ func (m BreakdownModel) View() string {
 }
 
 // renderNotifyRow is a load error in words, then p's selection, the switch
-// notice for a few seconds after following a new session, or a missing file
-// watcher, and blank otherwise. The watcher notice comes last because the
-// others are brief and answer something the reader just did or saw.
+// notice for a few seconds after following a new session or going back, or
+// a missing file watcher, and blank otherwise. The watcher notice comes last
+// because the others are brief and answer something the reader just did or
+// saw.
 func (m BreakdownModel) renderNotifyRow() string {
 	if m.err != nil {
 		text := styles.Warning + " " + describeErr(m.err)
@@ -684,10 +696,18 @@ func (m BreakdownModel) renderNotifyRow() string {
 		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Render(text)
 	}
 	if !m.switchNotifyAt.IsZero() && time.Since(m.switchNotifyAt) < switchNotifyDuration {
-		if m.noColor {
-			return "  [Switched to new session]"
+		lead := "Switched to new session"
+		if m.switchedBack {
+			lead = "Switched back to " + render.TruncateID(m.sessionID, sessionIDDisplayLen)
 		}
-		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session")
+		tail := ""
+		if m.prevSessionPath != "" {
+			tail = " " + styles.Bullet + " - to go back"
+		}
+		if m.noColor {
+			return "  [" + lead + "]" + tail
+		}
+		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render(lead) + lipgloss.NewStyle().Foreground(styles.HighlightColor).Render(tail)
 	}
 	if m.fallback.active() {
 		text := m.fallback.notice(m.panelWidth())

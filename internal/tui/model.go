@@ -89,7 +89,7 @@ type Model struct {
 	project         string          // Project name for the header and title; "" when unknown
 	followMode      bool            // Whether to auto-follow new sessions
 	prevSessionID   string          // Session watched before the last switch
-	prevSessionPath string          // Its file, for the go-back key
+	prevSessionPath string          // Its file, for the go-back key (-)
 	sessionWatcher  *SessionWatcher // Watches for other sessions' files
 	switched        *switchNotice   // Shown until the next keypress
 	hint            *sessionHint    // Another session's activity, not followed
@@ -278,7 +278,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case "p":
+		case "-":
+			// Back to the previous session, like cd -. breakdown has the same
+			// key, and p there means peak, so neither view uses p for this.
 			// Going back is a deliberate choice of session, so it pins.
 			if m.prevSessionPath != "" {
 				m.followMode = false
