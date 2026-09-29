@@ -210,7 +210,7 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 	// Render header row (bold white, all caps - matches breakdown command style)
 	if noColor {
 		sb.WriteString(headerRow + "\n")
-		sb.WriteString("  " + strings.Repeat("-", contentWidth) + "\n")
+		sb.WriteString("  " + strings.Repeat(styles.LineHorizontal, contentWidth) + "\n")
 	} else {
 		sb.WriteString(headerStyle.Render(headerRow) + "\n")
 		sb.WriteString("  " + dimStyle.Render(strings.Repeat(styles.LineHorizontal, contentWidth)) + "\n")
@@ -348,7 +348,7 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 	sumLabelWidth := len(headerRow) - 2 - 2 - cumWidth
 
 	if noColor {
-		sb.WriteString("  " + strings.Repeat("-", contentWidth) + "\n")
+		sb.WriteString("  " + strings.Repeat(styles.LineHorizontal, contentWidth) + "\n")
 		sb.WriteString(fmt.Sprintf("  %-*s  %s\n", sumLabelWidth, sumLabel, render.CostCell(totalCost, cumWidth)))
 	} else {
 		sb.WriteString("  " + dimStyle.Render(strings.Repeat(styles.LineHorizontal, contentWidth)) + "\n")
@@ -410,15 +410,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool) string 
 	var sb strings.Builder
 	agents := analysis.Agents
 
-	// Tree connector characters
-	var branchChar, lastBranchChar string
-	if noColor {
-		branchChar = "+-"
-		lastBranchChar = "`-"
-	} else {
-		branchChar = "├─"
-		lastBranchChar = "└─"
-	}
+	branchChar, lastBranchChar := styles.TreeBranch, styles.TreeLast
 
 	// Shared msgs column width: grows past 8 only when a count overflows, so
 	// every sibling row's trailing cost stays mutually aligned.
@@ -436,9 +428,9 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool) string 
 			if agent.WorkflowID != "" {
 				label := render.WorkflowLabel(analysis.WorkflowByID(agent.WorkflowID))
 				if noColor {
-					sb.WriteString(fmt.Sprintf("       -- %s\n", label))
+					sb.WriteString("       " + styles.GroupRule + " " + label + "\n")
 				} else {
-					sb.WriteString("       " + dimStyle.Render("── "+label) + "\n")
+					sb.WriteString("       " + dimStyle.Render(styles.GroupRule+" "+label) + "\n")
 				}
 			}
 		}

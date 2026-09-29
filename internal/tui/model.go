@@ -123,14 +123,9 @@ type (
 
 // NewModel creates a new TUI model
 func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir string, followMode bool) Model {
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = spinnerStyle
-
 	// Initialize cost trend chart with default dimensions
 	// Will be resized when we receive the first WindowSizeMsg
-	chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
-	chart := sparkline.New(chartWidth, chartHeight, sparkline.WithStyle(chartStyle))
+	chart := newCostChart(chartWidth, noColor)
 
 	closing := &atomic.Bool{}
 	closeOnce := &sync.Once{}
@@ -141,7 +136,7 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 		noColor:     noColor,
 		loading:     true,
 		autoScroll:  true,
-		spinner:     s,
+		spinner:     newSpinner(noColor),
 		done:        make(chan struct{}),
 		closing:     closing,
 		closeOnce:   closeOnce,
@@ -355,8 +350,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Reset cost chart for new session
 		m.costHistory = make([]float64, 0)
-		chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
-		m.costChart = sparkline.New(m.getChartWidth(), chartHeight, sparkline.WithStyle(chartStyle))
+		m.costChart = newCostChart(m.getChartWidth(), m.noColor)
 
 		// Stop old file watcher, will be restarted by watchFile. Closing it
 		// unblocks the old waiter, which exits without a message, so the
@@ -662,15 +656,25 @@ func (m Model) visibleCostHistory() []float64 {
 // flat-lining the visible bars against an off-screen max; pushing only
 // what is drawn keeps the scale honest to the visible bars.
 func (m *Model) rebuildCostChart() {
-	chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
-	m.costChart = sparkline.New(m.getChartWidth(), chartHeight, sparkline.WithStyle(chartStyle))
+	m.costChart = newCostChart(m.getChartWidth(), m.noColor)
 	m.costChart.PushAll(m.visibleCostHistory())
 
-	if !m.noColor {
-		m.costChart.DrawBraille()
-	} else {
+	// Braille has four times the vertical resolution but no ASCII stand-in;
+	// the ASCII glyph set draws columns, which renderCostChart maps to ASCII.
+	if styles.ASCII() {
 		m.costChart.Draw()
+	} else {
+		m.costChart.DrawBraille()
 	}
+}
+
+// newCostChart builds the cost-trend sparkline, green unless color is off.
+func newCostChart(width int, noColor bool) sparkline.Model {
+	if noColor {
+		return sparkline.New(width, chartHeight)
+	}
+	chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
+	return sparkline.New(width, chartHeight, sparkline.WithStyle(chartStyle))
 }
 
 // updateCostChart rebuilds the sparkline from the analysis on every reload.

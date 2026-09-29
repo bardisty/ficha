@@ -13,6 +13,7 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 var update = flag.Bool("update", false, "rewrite .golden files with current rendered output")
@@ -303,4 +304,31 @@ func TestGoldenBreakdownView(t *testing.T) {
 func TestGoldenBreakdownViewColor(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
 	checkGolden(t, "breakdown_view_color", goldenBreakdownView(t, false))
+}
+
+// useASCII switches to the ASCII glyph set for one test.
+func useASCII(t *testing.T) {
+	t.Helper()
+	styles.SetASCII(true)
+	t.Cleanup(func() { styles.SetASCII(false) })
+}
+
+// --ascii --no-color: plain ASCII frames, symbols and chart, no escapes.
+func TestGoldenWatchViewASCII(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	useASCII(t)
+	checkGolden(t, "watch_view_ascii", goldenWatchView(t, true))
+}
+
+// --ascii alone keeps color; the colored branches must draw ASCII glyphs too.
+func TestGoldenWatchViewASCIIColor(t *testing.T) {
+	forceProfile(t, termenv.ANSI256)
+	useASCII(t)
+	checkGolden(t, "watch_view_ascii_color", goldenWatchView(t, false))
+}
+
+func TestGoldenBreakdownViewASCII(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	useASCII(t)
+	checkGolden(t, "breakdown_view_ascii", goldenBreakdownView(t, true))
 }

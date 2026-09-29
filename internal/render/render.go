@@ -147,6 +147,18 @@ func DayMarker(t time.Time) string {
 	return t.Local().Format("Mon 02 Jan")
 }
 
+// TrendSymbol returns the glyph for a session cost trend.
+func TrendSymbol(t models.TrendDirection) string {
+	switch t {
+	case models.TrendIncreasing:
+		return styles.TrendUp
+	case models.TrendDecreasing:
+		return styles.TrendDown
+	default:
+		return styles.TrendFlat
+	}
+}
+
 // SameLocalDay reports whether a and b fall on the same local calendar day.
 func SameLocalDay(a, b time.Time) bool {
 	ay, am, ad := a.Local().Date()
@@ -184,10 +196,7 @@ func WorkflowLabel(meta models.WorkflowMeta) string {
 		label += " (" + meta.Status + ")"
 	}
 
-	if r := []rune(label); len(r) > maxLen {
-		label = string(r[:maxLen-1]) + "…"
-	}
-	return label
+	return truncateRunes(label, maxLen)
 }
 
 // CacheTokensByTTL returns the 5-minute and 1-hour cache-write token counts.
@@ -210,22 +219,29 @@ func CacheTokensByTTL(usage models.TokenUsage) (int64, int64) {
 // field after the MODEL column out of alignment — fmt's "%-Ns" pads but never
 // truncates.
 //
-// Callers still pass the result through "%-Ns". That works because an uncut
-// label is pure ASCII (bytes == columns, so fmt pads it correctly) while a cut
-// one ends in a 3-byte, 1-column ellipsis (bytes > width, so fmt leaves the
-// already-exact width alone).
+// Callers still pass the result through "%-Ns". fmt pads by rune count, and
+// a cut label is exactly width runes whichever ellipsis the glyph set uses
+// ("…" or "..."), so fmt leaves it alone.
 func ClampModel(label string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	r := []rune(label)
+	return truncateRunes(label, width)
+}
+
+// truncateRunes cuts s to at most width runes, ending a cut in the glyph
+// set's ellipsis. A width narrower than the ellipsis gets as much of the
+// ellipsis as fits.
+func truncateRunes(s string, width int) string {
+	r := []rune(s)
 	if len(r) <= width {
-		return label
+		return s
 	}
-	if width == 1 {
-		return "…"
+	ell := []rune(styles.Ellipsis)
+	if width <= len(ell) {
+		return string(ell[:width])
 	}
-	return string(r[:width-1]) + "…"
+	return string(r[:width-len(ell)]) + styles.Ellipsis
 }
 
 // ShortAgentID abbreviates an agent ID to at most 7 bytes for display. Byte
@@ -302,12 +318,8 @@ func SectionHeader(name string, width int, noColor bool) string {
 	sideLen := max((width-nameLen)/2, 0)
 	rightLen := max(width-sideLen-nameLen, 0)
 
-	rule := styles.LineHorizontal
-	if noColor {
-		rule = styles.AsciiRule
-	}
-	leftLine := strings.Repeat(rule, sideLen)
-	rightLine := strings.Repeat(rule, rightLen)
+	leftLine := strings.Repeat(styles.LineHorizontal, sideLen)
+	rightLine := strings.Repeat(styles.LineHorizontal, rightLen)
 
 	if noColor {
 		return leftLine + bracketedName + rightLine
@@ -324,10 +336,7 @@ func SectionHeader(name string, width int, noColor bool) string {
 func ContextBar(contextSize, freeSpace int64, maxContext int, noColor bool) string {
 	const barWidth = 38
 
-	usedGlyph, freeGlyph := "█", "░"
-	if noColor {
-		usedGlyph, freeGlyph = styles.AsciiBarUsed, styles.AsciiBarFree
-	}
+	usedGlyph, freeGlyph := styles.BarUsed, styles.BarFree
 
 	if maxContext == 0 {
 		return strings.Repeat(freeGlyph, barWidth)

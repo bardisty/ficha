@@ -76,15 +76,20 @@ func renderCostChart(costs []float64, dates []time.Time, width int, noColor bool
 	// Push only the visible window
 	chart.PushAll(visibleCosts)
 
-	// Render with appropriate mode
-	if !noColor {
-		chart.DrawBraille()
-	} else {
+	// Braille has four times the vertical resolution but no ASCII stand-in;
+	// the ASCII glyph set draws columns and maps them to ASCII.
+	if styles.ASCII() {
 		chart.Draw()
+	} else {
+		chart.DrawBraille()
+	}
+	chartView := chart.View()
+	if styles.ASCII() {
+		chartView = styles.ASCIIChart(chartView)
 	}
 
 	// Render the chart with proper indentation
-	chartLines := strings.Split(chart.View(), "\n")
+	chartLines := strings.Split(chartView, "\n")
 	for _, line := range chartLines {
 		if line != "" {
 			sb.WriteString(indent + line + "\n")

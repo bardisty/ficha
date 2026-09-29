@@ -359,18 +359,6 @@ func (t TrendDirection) String() string {
 	}
 }
 
-// Symbol returns a visual symbol for the trend direction
-func (t TrendDirection) Symbol() string {
-	switch t {
-	case TrendIncreasing:
-		return "▲"
-	case TrendDecreasing:
-		return "▼"
-	default:
-		return "═"
-	}
-}
-
 // MessageSnapshot captures key data about a single message for insights
 type MessageSnapshot struct {
 	Index             int       `json:"index"` // 1-based message index

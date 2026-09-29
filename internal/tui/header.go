@@ -74,26 +74,26 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 	if p.noColor {
 		// Top border
 		sb.WriteString("  ")
-		sb.WriteString(styles.AsciiCorner)
-		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
-		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(styles.BoxTopLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxTopRight)
 		sb.WriteString("\n")
 
 		// Content line
 		sb.WriteString("  ")
-		sb.WriteString(styles.AsciiVertical)
+		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("  ")
 		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
 		sb.WriteString("  ")
-		sb.WriteString(styles.AsciiVertical)
+		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("\n")
 
 		// Bottom border
 		sb.WriteString("  ")
-		sb.WriteString(styles.AsciiCorner)
-		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
-		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(styles.BoxBottomLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxBottomRight)
 	} else {
 		// Top border
 		sb.WriteString("  ")
@@ -123,9 +123,9 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 }
 
 // buildLiveHeaderContent assembles the header's single content line honoring the
-// elision flags (showPrev, timeOnly) and p.noColor styling. The "●" bullet is
-// kept even in noColor mode (it renders one column; lipgloss.Width, not len,
-// measures it for padding).
+// elision flags (showPrev, timeOnly) and p.noColor styling. The live dot is
+// one column in both glyph sets; lipgloss.Width, not len, measures it for
+// padding.
 func buildLiveHeaderContent(p liveHeaderParams, showPrev, timeOnly bool) string {
 	sessionDisplay := render.TruncateID(p.sessionID, sessionIDDisplayLen)
 	if showPrev && p.prevSessionID != "" {
@@ -133,12 +133,9 @@ func buildLiveHeaderContent(p liveHeaderParams, showPrev, timeOnly bool) string 
 			render.TruncateID(p.sessionID, sessionIDDisplayLen),
 			render.TruncateID(p.prevSessionID, sessionIDDisplayLen))
 	}
-	livePart := "● LIVE"
+	livePart := styles.LiveDot + " LIVE"
 
 	sep := styles.BoxVerticalSep
-	if p.noColor {
-		sep = styles.AsciiVertical
-	}
 
 	if p.noColor {
 		var statusPart string

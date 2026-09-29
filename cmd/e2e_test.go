@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 // End-to-end tests drive the full parser→analyzer→formatter pipeline through a
@@ -1498,7 +1499,8 @@ func TestE2EFootersCarryTheTotal(t *testing.T) {
 		lines := strings.Split(stdout, "\n")
 		footer := -1
 		for i, l := range lines {
-			if strings.HasPrefix(l, "=====") {
+			// The heavy rule above the footer; --no-color keeps Unicode frames
+			if strings.HasPrefix(l, strings.Repeat(styles.BoxHorizontal, 5)) {
 				footer = i
 			}
 		}

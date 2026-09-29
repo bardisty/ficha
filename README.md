@@ -106,7 +106,8 @@ Global flags, accepted by every command:
 | --- | --- |
 | `-f, --format <fmt>` | Output format: table, json, csv |
 | `-v, --verbose` | Show debug information |
-| `--no-color` | Disable colored output |
+| `--no-color` | Disable colored output (same as setting `NO_COLOR`) |
+| `--ascii` | Draw frames and symbols in plain ASCII instead of Unicode |
 
 `watch`, `breakdown` and `show --live` render a terminal UI, so they reject `-f json` and `-f csv`. `version` prints plain text and ignores `--format`.
 

@@ -11,6 +11,7 @@ type config struct {
 	format  string
 	verbose bool
 	noColor bool
+	ascii   bool // --ascii: ASCII frames and symbols; independent of noColor
 
 	// Project flags (root, show, watch, breakdown, list, summary).
 	projectPath string

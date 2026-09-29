@@ -70,9 +70,6 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 
 	// Calculate content length
 	sep := styles.BoxVerticalSep
-	if noColor {
-		sep = styles.AsciiVertical
-	}
 	content := fmt.Sprintf("%s  %s  %s", titlePart, sep, durationPart)
 	contentLen := len(titlePart) + 2 + 1 + 2 + len(durationPart)
 	padding := innerWidth - contentLen
@@ -82,24 +79,24 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 
 	if noColor {
 		// Top border
-		sb.WriteString(styles.AsciiCorner)
-		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
-		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(styles.BoxTopLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxTopRight)
 		sb.WriteString("\n")
 
 		// Content line
-		sb.WriteString(styles.AsciiVertical)
+		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("  ")
 		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
 		sb.WriteString("  ")
-		sb.WriteString(styles.AsciiVertical)
+		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("\n")
 
 		// Bottom border
-		sb.WriteString(styles.AsciiCorner)
-		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
-		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(styles.BoxBottomLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxBottomRight)
 	} else {
 		// Build styled content - matches plain text format
 		var titleStyled string
@@ -160,9 +157,6 @@ func renderHeroCost(cost float64, width int, noColor bool) string {
 	}
 
 	rule := styles.LineHorizontal
-	if noColor {
-		rule = styles.AsciiRule
-	}
 	leftLine := strings.Repeat(rule, sideLen)
 	rightLine := strings.Repeat(rule, rightLen)
 
@@ -218,12 +212,8 @@ func renderSavingsRow(savings float64, noColor bool) string {
 		dimStyle.Render("(from cache reads)"))
 }
 
-// footerSep is the field separator used inside footer stat lines. no-color uses
-// an ASCII pipe so non-UTF-8 terminals stay legible.
-func footerSep(noColor bool) string {
-	if noColor {
-		return "|"
-	}
+// footerSep is the field separator used inside footer stat lines.
+func footerSep() string {
 	return styles.BoxVerticalSep
 }
 
@@ -231,7 +221,7 @@ func footerSep(noColor bool) string {
 // next field would run past width. Callers put the total first, so it's on
 // screen whenever the footer is.
 func footerStats(fields []string, width int, noColor bool) string {
-	sep := "  " + footerSep(noColor) + "  "
+	sep := "  " + footerSep() + "  "
 	var lines []string
 	line := ""
 	for _, f := range fields {
@@ -257,7 +247,7 @@ func footerStats(fields []string, width int, noColor bool) string {
 // renderFooterDoubleRule renders the heavy separator that closes a table body.
 func renderFooterDoubleRule(width int, noColor bool) string {
 	if noColor {
-		return strings.Repeat("=", width)
+		return strings.Repeat(styles.BoxHorizontal, width)
 	}
 	return panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width))
 }
@@ -265,7 +255,7 @@ func renderFooterDoubleRule(width int, noColor bool) string {
 // renderFooterSingleRule renders the light rule drawn under the footer stats.
 func renderFooterSingleRule(width int, noColor bool) string {
 	if noColor {
-		return strings.Repeat("-", width)
+		return strings.Repeat(styles.LineHorizontal, width)
 	}
 	return dimStyle.Render(strings.Repeat(styles.LineHorizontal, width))
 }
@@ -280,7 +270,7 @@ func formatCostByModelContent(analysis *models.SessionAnalysis, noColor bool) st
 		modelName := pricing.GetModelDisplayName(modelID)
 		modelLabel := render.ClampModel(modelName, 12)
 		if noColor {
-			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelLabel, render.Cost(cost.TotalCost)))
+			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelLabel, render.CostCell(cost.TotalCost, 12)))
 		} else {
 			// Color by model tier
 			modelColor := styles.GetModelColor(modelName)
