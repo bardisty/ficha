@@ -27,7 +27,14 @@ type BreakdownResult struct {
 	// parent list, so the figures match those surfaces exactly.
 	// The set still differs when agents ran (parent + agents); the breakdown's
 	// scope label discloses that.
+	//
+	// Snapshot indices are the exception to file order: they are resolved to
+	// the display Index of the same message after the sort, since the table's
+	// row numbers are the only handle a reader has to find it.
 	Insights *models.MessageInsights
+	// Workflows lists the workflow runs whose agents appear in Messages, in
+	// discovery order (alphabetical by run ID).
+	Workflows []models.WorkflowMeta
 }
 
 // GetBreakdownMessages parses a session and returns all messages (parent + agents)
@@ -75,6 +82,8 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 	// just like an agent file that fails to parse.
 	projectDir := filepath.Dir(sessionPath)
 	agentPaths, skippedAgents := parser.DiscoverAgentSessions(projectDir, sessionID)
+	var workflows []models.WorkflowMeta
+	seenRuns := make(map[string]bool)
 
 	for _, agentPath := range agentPaths {
 		agentAnalyses, agentSkipped, err := loadAgentMessages(agentPath, cache)
@@ -87,6 +96,14 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		// Same key space as AgentAnalysis.AgentID, so a marker in the TUI can
 		// be cross-referenced against the machine outputs
 		displayID := parser.ExtractAgentID(agentPath)
+		// A run is listed only once one of its agents has a message, so a
+		// run with no rows can't claim a run tag.
+		runID := parser.ExtractWorkflowRunID(agentPath)
+		if runID != "" && len(agentAnalyses) > 0 && !seenRuns[runID] {
+			seenRuns[runID] = true
+			meta, _ := parser.ParseWorkflowMeta(projectDir, sessionID, runID)
+			workflows = append(workflows, meta)
+		}
 
 		// Convert agent messages to breakdown format (already cost-annotated by
 		// loadAgentMessages)
@@ -95,11 +112,12 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 				estimatedCostMessages++
 			}
 			allMessages = append(allMessages, models.BreakdownMessage{
-				AgentID:   displayID,
-				Timestamp: msg.Timestamp,
-				Model:     msg.Model,
-				Usage:     msg.Usage,
-				Cost:      msg.Cost,
+				AgentID:    displayID,
+				WorkflowID: runID,
+				Timestamp:  msg.Timestamp,
+				Model:      msg.Model,
+				Usage:      msg.Usage,
+				Cost:       msg.Cost,
 			})
 		}
 	}
@@ -122,21 +140,46 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 	insights := CalculateInsights(fileOrderAnalyses)
 
 	// Sort all messages by timestamp; stable so equal timestamps keep the
-	// deterministic append order (parent rows, then agents in discovery order)
-	sort.SliceStable(allMessages, func(i, j int) bool {
-		return allMessages[i].Timestamp.Before(allMessages[j].Timestamp)
-	})
-
-	// Assign sequential 1-based indices
-	for i := range allMessages {
-		allMessages[i].Index = i + 1
+	// deterministic append order (parent rows, then agents in discovery order).
+	// Sorting positions rather than messages keeps the file-order position of
+	// each row, which the insight snapshots need to find their display row.
+	order := make([]int, len(allMessages))
+	for i := range order {
+		order[i] = i
 	}
+	sort.SliceStable(order, func(i, j int) bool {
+		return allMessages[order[i]].Timestamp.Before(allMessages[order[j]].Timestamp)
+	})
+	sorted := make([]models.BreakdownMessage, len(allMessages))
+	displayIndex := make([]int, len(allMessages)) // file-order position -> 1-based display Index
+	for i, pos := range order {
+		sorted[i] = allMessages[pos]
+		sorted[i].Index = i + 1
+		displayIndex[pos] = i + 1
+	}
+	remapSnapshotIndices(insights, displayIndex)
 
 	return &BreakdownResult{
-		Messages:              allMessages,
+		Messages:              sorted,
 		SkippedLines:          skippedLines,
 		SkippedAgents:         skippedAgents,
 		EstimatedCostMessages: estimatedCostMessages,
 		Insights:              insights,
+		Workflows:             workflows,
 	}, nil
+}
+
+// remapSnapshotIndices rewrites each snapshot's 1-based file-order Index to the
+// display Index of the same message. Left in file order, "Peak: #N" names
+// whichever row happens to sit at position N after the time sort, which in a
+// session with agents is a different message, and drifts as the parent grows.
+func remapSnapshotIndices(insights *models.MessageInsights, displayIndex []int) {
+	if insights == nil {
+		return
+	}
+	for _, snap := range []*models.MessageSnapshot{insights.FirstMessage, insights.LastMessage, insights.HighestCost} {
+		if snap != nil && snap.Index >= 1 && snap.Index <= len(displayIndex) {
+			snap.Index = displayIndex[snap.Index-1]
+		}
+	}
 }

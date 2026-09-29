@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/bardisty/ficha/internal/models"
 )
 
 func TestGetBreakdownMessages(t *testing.T) {
@@ -280,24 +282,172 @@ func TestGetBreakdownMessages_InsightsMatchSessionFileOrder(t *testing.T) {
 		t.Fatalf("AnalyzeSession: %v", err)
 	}
 
-	if !reflect.DeepEqual(result.Insights, analysis.Insights) {
-		t.Errorf("breakdown insights diverge from show/watch for an agent-free session\n breakdown: %+v\n show/watch: %+v", result.Insights, analysis.Insights)
+	// Every figure matches show/watch. Snapshot indices are the one deliberate
+	// difference: breakdown resolves them to its display rows (checked below),
+	// so compare with the indices cleared.
+	withoutIndices := func(in *models.MessageInsights) models.MessageInsights {
+		out := *in
+		for _, snap := range []**models.MessageSnapshot{&out.FirstMessage, &out.LastMessage, &out.HighestCost} {
+			if *snap != nil {
+				c := **snap
+				c.Index = 0
+				*snap = &c
+			}
+		}
+		return out
+	}
+	if result.Insights == nil || analysis.Insights == nil {
+		t.Fatal("expected insights from both surfaces")
+	}
+	if got, want := withoutIndices(result.Insights), withoutIndices(analysis.Insights); !reflect.DeepEqual(got, want) {
+		t.Errorf("breakdown insights diverge from show/watch for an agent-free session\n breakdown: %+v\n show/watch: %+v", got, want)
 	}
 
 	// Pin file-order semantics so a regression to timestamp-sorted insights is
 	// caught even if both surfaces drifted together: the first file line (the
 	// 5000-output message) must be FirstMessage, not the zero-timestamp line a
 	// sort would float to the front.
-	if result.Insights == nil || result.Insights.FirstMessage == nil {
+	if result.Insights.FirstMessage == nil {
 		t.Fatal("expected insights with a FirstMessage")
-	}
-	if result.Insights.FirstMessage.Index != 1 {
-		t.Fatalf("FirstMessage index = %d, want 1 (file order)", result.Insights.FirstMessage.Index)
 	}
 	firstCost := result.Insights.FirstMessage.Cost
 	lastCost := result.Insights.LastMessage.Cost
 	if firstCost <= lastCost {
 		t.Fatalf("expected file-order FirstMessage (5000-output) to cost more than LastMessage; got first=%.6f last=%.6f (insights look timestamp-sorted)", firstCost, lastCost)
+	}
+
+	// The first file line sorts third (after the zero timestamp and 10:01), so
+	// its display row is #3, not its file position 1.
+	if got := result.Insights.FirstMessage.Index; got != 3 {
+		t.Errorf("FirstMessage index = %d, want display row 3", got)
+	}
+	for name, snap := range map[string]*models.MessageSnapshot{
+		"FirstMessage": result.Insights.FirstMessage,
+		"LastMessage":  result.Insights.LastMessage,
+		"HighestCost":  result.Insights.HighestCost,
+	} {
+		if snap == nil {
+			t.Fatalf("%s snapshot missing", name)
+		}
+		row := result.Messages[snap.Index-1]
+		if !row.Timestamp.Equal(snap.Timestamp) || row.Cost.TotalCost != snap.Cost {
+			t.Errorf("%s #%d names row %+v, not the snapshot's message", name, snap.Index, row)
+		}
+	}
+}
+
+// With agents, "Peak: #N" must name the peak's own row after the time sort.
+// Here the most expensive message is an agent's, discovered after every
+// parent message in file order but timestamped between them, and parent
+// messages keep arriving after it.
+func TestGetBreakdownMessages_PeakIndexNamesDisplayRow(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "peak-index"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cheap := func(ts string) string {
+		return `{"type":"assistant","timestamp":"` + ts + `","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":100}}}` + "\n"
+	}
+	parent := cheap("2024-01-15T10:00:00Z") + cheap("2024-01-15T10:10:00Z") + cheap("2024-01-15T10:20:00Z")
+	if err := os.WriteFile(sessionPath, []byte(parent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	agent := cheap("2024-01-15T10:04:00Z") +
+		`{"type":"assistant","timestamp":"2024-01-15T10:05:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":20000}}}` + "\n"
+	if err := os.WriteFile(filepath.Join(subagentsDir, "agent-a0123456789abcdef.jsonl"), []byte(agent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	check := func(wantRows int) {
+		t.Helper()
+		result, err := GetBreakdownMessages(sessionPath, sessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Messages) != wantRows {
+			t.Fatalf("got %d rows, want %d", len(result.Messages), wantRows)
+		}
+		peak := result.Insights.HighestCost
+		if peak == nil {
+			t.Fatal("expected a Peak")
+		}
+		// Rows: 10:00, 10:04 (agent), 10:05 (agent peak), 10:10, 10:20, ...
+		if peak.Index != 3 {
+			t.Errorf("Peak index = %d, want 3 (its row after the time sort)", peak.Index)
+		}
+		row := result.Messages[peak.Index-1]
+		if row.AgentID != "a0123456789abcdef" || row.Cost.TotalCost != peak.Cost {
+			t.Errorf("Peak #%d names row %+v, not the agent's peak message", peak.Index, row)
+		}
+	}
+	check(5)
+
+	// Parent appends after load must not move the index.
+	f, err := os.OpenFile(sessionPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ts := range []string{"2024-01-15T10:30:00Z", "2024-01-15T10:40:00Z", "2024-01-15T10:50:00Z"} {
+		if _, err := f.WriteString(cheap(ts)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.Close()
+	check(8)
+}
+
+// Workflow agents carry their run ID, and the result lists each run once with
+// its metadata.
+func TestGetBreakdownMessages_WorkflowRuns(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "wf-runs"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+	msg := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":100}}}` + "\n"
+	if err := os.WriteFile(sessionPath, []byte(msg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(tmpDir, sessionID, "subagents", "workflows", "wf_1")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a1111111111111111", "a2222222222222222"} {
+		if err := os.WriteFile(filepath.Join(runDir, "agent-"+id+".jsonl"), []byte(msg), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, sessionID, "subagents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, sessionID, "subagents", "agent-a3333333333333333.jsonl"), []byte(msg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	metaDir := filepath.Join(tmpDir, sessionID, "workflows")
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(metaDir, "wf_1.json"), []byte(`{"workflowName":"review-changes","status":"completed"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []models.WorkflowMeta{{RunID: "wf_1", Name: "review-changes", Status: "completed"}}
+	if !reflect.DeepEqual(result.Workflows, want) {
+		t.Errorf("Workflows = %+v, want %+v", result.Workflows, want)
+	}
+	runs := map[string]string{}
+	for _, m := range result.Messages {
+		runs[m.AgentID] = m.WorkflowID
+	}
+	wantRuns := map[string]string{"": "", "a1111111111111111": "wf_1", "a2222222222222222": "wf_1", "a3333333333333333": ""}
+	if !reflect.DeepEqual(runs, wantRuns) {
+		t.Errorf("agent -> run = %v, want %v", runs, wantRuns)
 	}
 }
 

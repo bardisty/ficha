@@ -140,7 +140,7 @@ func TestBreakdownModel_RenderRow(t *testing.T) {
 		},
 	}
 
-	row := m.renderRow(msg, false, 0.0, true) // prevCost=0, isFirst=true
+	row := m.renderRow(msg, false, newBreakdownLayout(0, 0))
 
 	// Check that the row contains expected values
 	if !strings.Contains(row, "42") {
@@ -158,9 +158,12 @@ func TestBreakdownModel_RenderRow(t *testing.T) {
 	if !strings.Contains(row, "1.2K") {
 		t.Error("row should contain input tokens")
 	}
-	// Check trend indicator (first message, should be stable ·)
-	if !strings.Contains(row, "·") {
-		t.Error("row should contain stable trend indicator · for first message")
+	// No per-row change arrow: it compared each row with whichever stream
+	// wrote the row before it
+	for _, arrow := range []string{"↑", "↓", "·"} {
+		if strings.Contains(row, arrow) {
+			t.Errorf("row should carry no change arrow, got %q", row)
+		}
 	}
 }
 
@@ -181,7 +184,7 @@ func TestBreakdownModel_RenderRow_WithAgent(t *testing.T) {
 		},
 	}
 
-	row := m.renderRow(msg, false, 0.05, false) // prevCost=0.05, isFirst=false
+	row := m.renderRow(msg, false, newBreakdownLayout(10, 0))
 
 	// Check agent marker shows the truncated real ID
 	if !strings.Contains(row, "[Ag7h8i9j]") {
@@ -194,7 +197,7 @@ func TestBreakdownModel_RenderRow_WithAgent(t *testing.T) {
 
 	// A short ID is shown whole
 	msg.AgentID = "w1"
-	row = m.renderRow(msg, false, 0.05, false)
+	row = m.renderRow(msg, false, newBreakdownLayout(10, 0))
 	if !strings.Contains(row, "[Aw1]") {
 		t.Errorf("row should contain agent marker [Aw1], got %q", row)
 	}
@@ -211,11 +214,11 @@ func TestBreakdownModel_RenderRow_ANSICodes(t *testing.T) {
 
 	// noColor=false takes color code path
 	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
-	coloredRow := m.renderRow(msg, false, 0.0, true)
+	coloredRow := m.renderRow(msg, false, newBreakdownLayout(0, 0))
 
 	// noColor=true takes plain code path - must not contain ANSI
 	m2 := NewBreakdownModel("/test/path", "test-session", true, "", false)
-	plainRow := m2.renderRow(msg, false, 0.0, true)
+	plainRow := m2.renderRow(msg, false, newBreakdownLayout(0, 0))
 
 	if strings.Contains(plainRow, "\x1b[") {
 		t.Error("noColor output should not contain ANSI escape codes")
@@ -236,86 +239,6 @@ func TestBreakdownModel_RenderRow_ANSICodes(t *testing.T) {
 	// Verify the colored path was exercised by checking both produce valid output.
 	if !strings.Contains(coloredRow, "14:30:45") {
 		t.Errorf("colored row should contain timestamp: %q", coloredRow)
-	}
-}
-
-func TestGetRowTrendIndicator(t *testing.T) {
-	tests := []struct {
-		name          string
-		currentCost   float64
-		previousCost  float64
-		isFirst       bool
-		wantSymbol    string
-		wantDirection models.TrendDirection
-	}{
-		{
-			name:          "first message",
-			currentCost:   0.05,
-			previousCost:  0.0,
-			isFirst:       true,
-			wantSymbol:    "·",
-			wantDirection: models.TrendStable,
-		},
-		{
-			name:          "stable cost (within 5%)",
-			currentCost:   0.052,
-			previousCost:  0.05,
-			isFirst:       false,
-			wantSymbol:    "·",
-			wantDirection: models.TrendStable,
-		},
-		{
-			name:          "increasing cost (>5%)",
-			currentCost:   0.06,
-			previousCost:  0.05,
-			isFirst:       false,
-			wantSymbol:    "↑",
-			wantDirection: models.TrendIncreasing,
-		},
-		{
-			name:          "decreasing cost (>5%)",
-			currentCost:   0.04,
-			previousCost:  0.05,
-			isFirst:       false,
-			wantSymbol:    "↓",
-			wantDirection: models.TrendDecreasing,
-		},
-		{
-			name:          "exactly 5% increase (not significant)",
-			currentCost:   0.0525,
-			previousCost:  0.05,
-			isFirst:       false,
-			wantSymbol:    "·",
-			wantDirection: models.TrendStable,
-		},
-		{
-			name:          "just over 5% increase",
-			currentCost:   0.0526,
-			previousCost:  0.05,
-			isFirst:       false,
-			wantSymbol:    "↑",
-			wantDirection: models.TrendIncreasing,
-		},
-		{
-			name:          "previous cost zero",
-			currentCost:   0.05,
-			previousCost:  0.0,
-			isFirst:       false,
-			wantSymbol:    "·",
-			wantDirection: models.TrendStable,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotSymbol, gotDirection := getRowTrendIndicator(tt.currentCost, tt.previousCost, tt.isFirst)
-			if gotSymbol != tt.wantSymbol {
-				t.Errorf("getRowTrendIndicator() symbol = %q, want %q", gotSymbol, tt.wantSymbol)
-			}
-			if gotDirection != tt.wantDirection {
-				t.Errorf("getRowTrendIndicator() direction = %v, want %v", gotDirection, tt.wantDirection)
-			}
-		})
 	}
 }
 
