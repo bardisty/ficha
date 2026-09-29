@@ -10,7 +10,7 @@ import (
 )
 
 func newListCmd(cfg *config) *cobra.Command {
-	return &cobra.Command{
+	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List available sessions",
 		Long: `List all Claude Code sessions for the current project.
@@ -26,6 +26,10 @@ Examples:
 			return runList(cfg)
 		},
 	}
+
+	addProjectFlags(listCmd, cfg)
+
+	return listCmd
 }
 
 func runList(cfg *config) error {

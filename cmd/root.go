@@ -20,18 +20,20 @@ func newRootCmd() *cobra.Command {
 	cfg := &config{}
 
 	rootCmd := &cobra.Command{
-		Use:   "ficha",
-		Short: "Claude Code Usage Analyzer",
-		Long: `ficha - Claude Code Usage Analyzer
+		Use:   "ficha [session-id]",
+		Short: "Track your Claude Code API-equivalent costs, token usage, and context window",
+		Long: `Track your Claude Code API-equivalent costs, token usage, and context window.
 
-Analyzes Claude Code sessions and calculates API costs based on Anthropic pricing.
+Figures are API list-price estimates. On a subscription this is not your bill.
+
+Run ficha from the directory Claude Code is running in, or point -p at it.
 
 Examples:
-  ficha                    Show cost breakdown for latest session
-  ficha show abc123        Show cost breakdown for specific session
-  ficha list               List all sessions for current project
-  ficha summary            Show aggregate stats across all sessions
-  ficha --live             Watch session in real-time`,
+  ficha                    Cost breakdown for the latest session
+  ficha watch              Live dashboard that follows new sessions
+  ficha breakdown          Live per-message cost table
+  ficha summary            Totals across this project's sessions
+  ficha global             Totals across every project`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       version(),
@@ -50,14 +52,19 @@ Examples:
 				return fmt.Errorf("invalid format %q: must be one of table, json, csv", cfg.format)
 			}
 			// TUI/live modes only support table format. watch and breakdown are
-			// TUI commands that ignore the --live flag, so gate on the command
-			// name in addition to cfg.live (which covers `show --live`).
+			// always TUIs; cfg.live covers `show --live` and bare `ficha --live`.
 			isTUI := cfg.live || cmd.Name() == "breakdown" || cmd.Name() == "watch"
 			if isTUI && cfg.format != "table" {
 				return fmt.Errorf("--format %s is not supported in live/TUI mode", cfg.format)
 			}
-			// Warn about --no-follow outside live/watch/breakdown
-			if cfg.noFollow && !cfg.live && cmd.Name() != "watch" && cmd.Name() != "breakdown" {
+			// Runs ahead of cobra's own mutual-exclusion check, whose message
+			// doesn't say what either flag is for.
+			if cmd.Flags().Changed("project") && cmd.Flags().Changed("project-dir") {
+				return fmt.Errorf("use either -p or --project-dir, not both: -p is the directory Claude Code ran in, --project-dir a Claude project directory name")
+			}
+			// --no-follow is registered on show and the root, where it only
+			// means something with --live.
+			if cfg.noFollow && !isTUI {
 				fmt.Fprintln(cfg.stderr, "Warning: --no-follow has no effect outside live/watch/breakdown mode")
 			}
 			return nil
@@ -73,14 +80,17 @@ Examples:
 	// rootArgs calls SuggestionsFor directly.
 	rootCmd.SuggestionsMinimumDistance = 2
 
-	// Global flags
-	rootCmd.PersistentFlags().StringVarP(&cfg.projectPath, "project", "p", "", "Project directory (default: current directory)")
-	rootCmd.PersistentFlags().StringVar(&cfg.projectDir, "project-dir", "", "Claude project directory name (bypass auto-detection)")
+	// Flags every command honors. Everything else is registered only on the
+	// commands that use it, so help lists nothing a command would ignore.
 	rootCmd.PersistentFlags().StringVarP(&cfg.format, "format", "f", "table", "Output format: table, json, csv")
 	rootCmd.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "Show debug information")
 	rootCmd.PersistentFlags().BoolVar(&cfg.noColor, "no-color", false, "Disable colored output")
-	rootCmd.PersistentFlags().BoolVarP(&cfg.live, "live", "l", false, "Enable live mode (auto-updates)")
-	rootCmd.PersistentFlags().BoolVar(&cfg.noFollow, "no-follow", false, "Disable auto-follow in live mode (pin to current session)")
+
+	// Bare `ficha` is `ficha show`. --live stays for compatibility, hidden so
+	// help steers people to `ficha watch`; --no-follow only matters with it.
+	addProjectFlags(rootCmd, cfg)
+	addLiveFlags(rootCmd, cfg, true)
+	_ = rootCmd.Flags().MarkHidden("no-follow")
 
 	// Subcommands (each closes over the same cfg)
 	rootCmd.AddCommand(newShowCmd(cfg))
@@ -99,6 +109,26 @@ func Execute() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+// addProjectFlags registers -p and --project-dir on a command that analyzes one
+// project.
+func addProjectFlags(cmd *cobra.Command, cfg *config) {
+	cmd.Flags().StringVarP(&cfg.projectPath, "project", "p", "", "Project directory (default: current directory)")
+	cmd.Flags().StringVar(&cfg.projectDir, "project-dir", "", "Claude project directory name (bypass auto-detection)")
+	// Validated with a clearer message in PersistentPreRunE; marking the group
+	// as well stops completion offering the second flag once one is set.
+	cmd.MarkFlagsMutuallyExclusive("project", "project-dir")
+}
+
+// addLiveFlags registers --live and --no-follow on a command that can run the
+// live view. hideLive hides --live from help while still accepting it.
+func addLiveFlags(cmd *cobra.Command, cfg *config, hideLive bool) {
+	cmd.Flags().BoolVarP(&cfg.live, "live", "l", false, "Watch the session live (same as 'ficha watch')")
+	cmd.Flags().BoolVar(&cfg.noFollow, "no-follow", false, "Stay on the starting session instead of following new ones (live mode only)")
+	if hideLive {
+		_ = cmd.Flags().MarkHidden("live")
 	}
 }
 

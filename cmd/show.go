@@ -31,6 +31,8 @@ Examples:
 		},
 	}
 
+	addProjectFlags(showCmd, cfg)
+	addLiveFlags(showCmd, cfg, false)
 	showCmd.Flags().BoolVar(&cfg.messages, "messages", false, "Output per-message rows/records instead of the session summary, agent sub-sessions included and tagged with agent_id (json/csv only)")
 
 	return showCmd
@@ -40,6 +42,13 @@ Examples:
 // explicitly rather than read from cfg so watch can force it on without a
 // shared mutation: `show`/bare root pass cfg.live, `watch` passes true.
 func runShow(cfg *config, args []string, live bool) error {
+	switch {
+	case cfg.messages && live:
+		fmt.Fprintln(cfg.stderr, "Warning: --messages has no effect in live mode")
+	case cfg.messages && cfg.format == "table":
+		fmt.Fprintln(cfg.stderr, "Warning: --messages has no effect on table output (use -f json or -f csv)")
+	}
+
 	session, projectDir, explicitSessionID, err := selectSession(cfg, args)
 	if err != nil {
 		return err

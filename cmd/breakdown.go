@@ -9,7 +9,7 @@ import (
 )
 
 func newBreakdownCmd(cfg *config) *cobra.Command {
-	return &cobra.Command{
+	breakdownCmd := &cobra.Command{
 		Use:   "breakdown [session-id]",
 		Short: "Show live per-message cost breakdown",
 		Long: `Show a live, scrollable per-message cost table for a Claude Code session.
@@ -33,6 +33,12 @@ Examples:
 			return runBreakdown(cfg, args)
 		},
 	}
+
+	addProjectFlags(breakdownCmd, cfg)
+	// breakdown is always live; --live is accepted, hidden, for scripts that pass it.
+	addLiveFlags(breakdownCmd, cfg, true)
+
+	return breakdownCmd
 }
 
 func runBreakdown(cfg *config, args []string) error {

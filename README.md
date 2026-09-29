@@ -1,6 +1,6 @@
 # ficha
 
-Track your Claude Code API costs, token usage, and context window in real time.
+Track your Claude Code API-equivalent costs, token usage, and context window in real time.
 
 ficha is an independent project. It is not affiliated with or endorsed by Anthropic.
 
@@ -105,25 +105,27 @@ Global flags, accepted by every command:
 | Flag | Description |
 | --- | --- |
 | `-f, --format <fmt>` | Output format: table, json, csv |
-| `-p, --project <dir>` | Project directory (default: current dir) |
-| `--project-dir <name>` | Claude project dir name (bypass auto-detect) |
-| `-l, --live` | Live mode for `show` (`ficha watch` is an alias for `show --live`) |
-| `--no-follow` | Pin to the current session instead of following new ones (live mode only) |
 | `-v, --verbose` | Show debug information |
 | `--no-color` | Disable colored output |
 
-`watch`, `breakdown` and `--live` render a terminal UI, so they reject `-f json` and `-f csv`. `version` prints plain text and ignores `--format`. Outside live mode, `--no-follow` prints a warning and does nothing.
+`watch`, `breakdown` and `show --live` render a terminal UI, so they reject `-f json` and `-f csv`. `version` prints plain text and ignores `--format`.
 
 Per-command flags:
 
 | Command | Flag | Description |
 | --- | --- | --- |
+| `show`, `watch`, `breakdown`, `list`, `summary` | `-p, --project <dir>` | Project directory (default: current dir) |
+| `show`, `watch`, `breakdown`, `list`, `summary` | `--project-dir <name>` | Claude project dir name, instead of `-p` (bypass auto-detect) |
+| `show` | `-l, --live` | Watch the session live (same as `ficha watch`) |
+| `show`, `watch`, `breakdown` | `--no-follow` | Stay on the starting session instead of following new ones (live mode only) |
+| `show` | `--messages` | Per-message rows (json/csv only) |
 | `summary` | `-d, --details` | Add a per-session breakdown |
 | `summary` | `--expand-agents` | Per-agent records (requires `--details`) |
 | `global` | `-n, --top <n>` | Top N projects in table (default 10) |
 | `global` | `--sort-by <key>` | Sort: cost, sessions, name, activity |
 | `global` | `-d, --details` | All projects + cumulative column (table) |
-| `show` | `--messages` | Per-message rows (json/csv only) |
+
+Bare `ficha` works like `show` and takes the same project flags. A flag on a command that doesn't use it is an error, and `--no-follow` or `--messages` where they'd have no effect print a warning.
 
 ## Examples
 
