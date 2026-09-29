@@ -30,7 +30,7 @@ func TestRenderCostChartTruncationDisclosed(t *testing.T) {
 		} else {
 			forceProfile(t, termenv.ANSI256)
 		}
-		got := renderCostChart(chartFixture(80), noColor)
+		got := renderCostChart(chartFixture(80), 76, noColor)
 		if !strings.Contains(got, "last 68 of 80 sessions with a cost, oldest") {
 			t.Errorf("noColor=%v: count label must disclose truncation, got:\n%s", noColor, got)
 		}
@@ -45,7 +45,7 @@ func TestRenderCostChartTruncationDisclosed(t *testing.T) {
 // says the points are sessions in order, not dates.
 func TestRenderCostChartSizedToPoints(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	got := renderCostChart(chartFixture(15), true)
+	got := renderCostChart(chartFixture(15), 76, true)
 	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
 	bars := lines[:len(lines)-2]
 	for _, l := range bars {
@@ -63,10 +63,10 @@ func TestRenderCostChartSizedToPoints(t *testing.T) {
 
 // Too few points for a chart to say more than the table under it.
 func TestRenderCostChartNeedsFivePoints(t *testing.T) {
-	if got := renderCostChart(chartFixture(4), true); got != "" {
+	if got := renderCostChart(chartFixture(4), 76, true); got != "" {
 		t.Errorf("4 points should draw no chart, got:\n%s", got)
 	}
-	if got := renderCostChart(chartFixture(5), true); got == "" {
+	if got := renderCostChart(chartFixture(5), 76, true); got == "" {
 		t.Error("5 points should draw a chart")
 	}
 }

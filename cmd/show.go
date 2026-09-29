@@ -128,6 +128,6 @@ func formatOutput(cfg *config, analysis *models.SessionAnalysis, includeMessages
 	case "csv":
 		return formatter.FormatSessionCSV(analysis, includeMessages)
 	default:
-		return formatter.FormatSessionTable(analysis, cfg.noColor), nil
+		return formatter.FormatSessionTable(analysis, cfg.noColor, terminalWidth(cfg.stdout)), nil
 	}
 }

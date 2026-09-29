@@ -332,17 +332,17 @@ func goldenGlobalAnalysis() *models.GlobalAnalysis {
 
 func TestGoldenSessionTableShow(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	checkGolden(t, "session_table_show", FormatSessionTable(goldenShowAnalysis(), true))
+	checkGolden(t, "session_table_show", FormatSessionTable(goldenShowAnalysis(), true, 0))
 }
 
 func TestGoldenSessionTableShowColor(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
-	checkGolden(t, "session_table_show_color", FormatSessionTable(goldenShowAnalysis(), false))
+	checkGolden(t, "session_table_show_color", FormatSessionTable(goldenShowAnalysis(), false, 0))
 }
 
 func TestGoldenSessionTableSummary(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	checkGolden(t, "session_table_summary", FormatSessionTable(goldenSummaryAnalysis(), true))
+	checkGolden(t, "session_table_summary", FormatSessionTable(goldenSummaryAnalysis(), true, 0))
 }
 
 // --- golden tests: FormatSessionListTable ---
@@ -510,21 +510,21 @@ func TestGoldenSummaryDetails(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	entries := summaryDetailsFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false))
+	checkGolden(t, "summary_details", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, 0))
 }
 
 func TestGoldenSummaryDetailsExpandAgents(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	entries := summaryDetailsFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_expand", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true))
+	checkGolden(t, "summary_details_expand", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0))
 }
 
 func TestGoldenSummaryDetailsColor(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
 	entries := summaryDetailsFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, false))
+	checkGolden(t, "summary_details_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, false, 0))
 }
 
 // --- golden tests: workflow agent grouping ---
@@ -580,12 +580,12 @@ func goldenShowWorkflowAnalysis() *models.SessionAnalysis {
 
 func TestGoldenSessionTableShowWorkflows(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	checkGolden(t, "session_table_show_workflows", FormatSessionTable(goldenShowWorkflowAnalysis(), true))
+	checkGolden(t, "session_table_show_workflows", FormatSessionTable(goldenShowWorkflowAnalysis(), true, 0))
 }
 
 func TestGoldenSessionTableShowWorkflowsColor(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
-	checkGolden(t, "session_table_show_workflows_color", FormatSessionTable(goldenShowWorkflowAnalysis(), false))
+	checkGolden(t, "session_table_show_workflows_color", FormatSessionTable(goldenShowWorkflowAnalysis(), false, 0))
 }
 
 const goldenWfSessionID = "dddd4444-5555-6666-7777-888899990000"
@@ -653,7 +653,7 @@ func TestGoldenSummaryDetailsExpandWorkflows(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	entries := summaryWorkflowFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_expand_workflows", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true))
+	checkGolden(t, "summary_details_expand_workflows", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0))
 }
 
 func TestGoldenSummaryDetailsExpandWorkflowsASCII(t *testing.T) {
@@ -661,14 +661,14 @@ func TestGoldenSummaryDetailsExpandWorkflowsASCII(t *testing.T) {
 	useASCII(t)
 	entries := summaryWorkflowFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_expand_workflows_ascii", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true))
+	checkGolden(t, "summary_details_expand_workflows_ascii", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0))
 }
 
 func TestGoldenSummaryDetailsExpandWorkflowsColor(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
 	entries := summaryWorkflowFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_expand_workflows_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, true))
+	checkGolden(t, "summary_details_expand_workflows_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, true, 0))
 }
 
 // --- golden tests: glyph sets and mixed cost widths ---
@@ -684,21 +684,21 @@ func useASCII(t *testing.T) {
 func TestGoldenSessionTableShowASCII(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	useASCII(t)
-	checkGolden(t, "session_table_show_ascii", FormatSessionTable(goldenShowAnalysis(), true))
+	checkGolden(t, "session_table_show_ascii", FormatSessionTable(goldenShowAnalysis(), true, 0))
 }
 
 // --ascii alone keeps color; the colored branches must draw ASCII glyphs too.
 func TestGoldenSessionTableShowASCIIColor(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
 	useASCII(t)
-	checkGolden(t, "session_table_show_ascii_color", FormatSessionTable(goldenShowAnalysis(), false))
+	checkGolden(t, "session_table_show_ascii_color", FormatSessionTable(goldenShowAnalysis(), false, 0))
 }
 
 func TestGoldenSummaryDetailsExpandASCII(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	useASCII(t)
 	analysis, results := summaryDetailsAnalysis(t, summaryDetailsFixture(t))
-	checkGolden(t, "summary_details_expand_ascii", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true))
+	checkGolden(t, "summary_details_expand_ascii", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0))
 }
 
 // goldenMixedWidthAnalysis gives every cost column values with different
@@ -720,5 +720,5 @@ func goldenMixedWidthAnalysis() *models.SessionAnalysis {
 
 func TestGoldenSessionTableShowMixedWidths(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	checkGolden(t, "session_table_show_mixed_widths", FormatSessionTable(goldenMixedWidthAnalysis(), true))
+	checkGolden(t, "session_table_show_mixed_widths", FormatSessionTable(goldenMixedWidthAnalysis(), true, 0))
 }

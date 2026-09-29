@@ -119,9 +119,9 @@ func runSummary(cfg *config) error {
 			if cfg.verbose {
 				storageDir = projectDir
 			}
-			output = formatter.FormatSummaryTableWithDetails(analysis, results, storageDir, cfg.noColor, cfg.expandAgents)
+			output = formatter.FormatSummaryTableWithDetails(analysis, results, storageDir, cfg.noColor, cfg.expandAgents, terminalWidth(cfg.stdout))
 		} else {
-			output = formatter.FormatSessionTable(analysis, cfg.noColor)
+			output = formatter.FormatSessionTable(analysis, cfg.noColor, terminalWidth(cfg.stdout))
 		}
 	}
 

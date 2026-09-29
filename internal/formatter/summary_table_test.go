@@ -46,7 +46,7 @@ func summaryTableRows(t *testing.T, results []models.SessionResult, expandAgents
 		SessionCount: len(results),
 		CostByModel:  map[string]models.CostBreakdown{},
 	}
-	out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", true, expandAgents)
+	out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", true, expandAgents, 0)
 
 	var rows []string
 	for _, line := range strings.Split(out, "\n") {
@@ -143,7 +143,7 @@ func TestSummaryTableAgentsColumnAlignsWithColor(t *testing.T) {
 		sessionRowWithAgents("bbbb2222", "claude-opus-4-8", 11, 2.00, 1, 100.00),
 		sessionRowWithAgents("cccc3333", "claude-opus-4-8", 12, 3.00, 100, 12345.67),
 	}
-	out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", false, false)
+	out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", false, false, 0)
 
 	var widths []int
 	for _, line := range strings.Split(out, "\n") {
@@ -190,7 +190,7 @@ func TestSummaryTableSumAlignsUnderCost(t *testing.T) {
 				sessionRow("aaaa1111", "claude-opus-4-8", 10, 1.00),
 				sessionRow("bbbb2222", "claude-opus-4-8", 11, 2.00),
 			}
-			out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", tc.noColor, tc.expandAgents)
+			out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", tc.noColor, tc.expandAgents, 0)
 
 			var headerWidth, sumWidth int
 			var sumLine string
@@ -222,7 +222,7 @@ func TestSummaryTableSumLabelSingularizes(t *testing.T) {
 	}
 	out := FormatSummaryTableWithDetails(aggregate, []models.SessionResult{
 		sessionRow("aaaa1111", "claude-opus-4-8", 10, 1.00),
-	}, "/home/user/src/app", true, false)
+	}, "/home/user/src/app", true, false, 0)
 
 	if !strings.Contains(out, "Sum (1 session):") {
 		t.Errorf("one session must singularize the sum label, got:\n%s", out)
@@ -272,7 +272,7 @@ func TestSummaryTableModelColumnAlignsWithColor(t *testing.T) {
 		sessionRow("bbbb2222", "claude-sonnet-4-6", 11, 2.00),
 		sessionRow("cccc3333", "claude-opus-4-9-20260101", 12, 3.00),
 	}
-	out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", false, false)
+	out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", false, false, 0)
 
 	var widths []int
 	for _, line := range strings.Split(out, "\n") {

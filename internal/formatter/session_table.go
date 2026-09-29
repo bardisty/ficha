@@ -13,10 +13,11 @@ import (
 )
 
 // FormatSessionTable renders a session analysis as a table (single session or
-// summary). Color and glyph choices are driven by noColor.
-func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
+// summary). Color and glyph choices are driven by noColor. width is the
+// terminal's width, or 0 when stdout isn't a terminal (see reportWidth).
+func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool, width int) string {
 	var sb strings.Builder
-	const sectionWidth = 76
+	sectionWidth := reportWidth(width)
 
 	// Detect summary vs show mode
 	isSummary := analysis.IsSummary
@@ -38,42 +39,14 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	sb.WriteString(renderHeroCost(analysis.TotalCost.TotalCost, sectionWidth, noColor))
 	sb.WriteString("\n\n")
 
-	// Unified cost+token rows
-	// Input tokens
-	sb.WriteString(renderUnifiedCostRow("Input", analysis.TotalCost.InputCost, analysis.TotalUsage.InputTokens, lipgloss.Color(""), "", noColor))
-
-	// Output tokens
-	sb.WriteString(renderUnifiedCostRow("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, styles.OutputTokenColor, "", noColor))
-
-	// Cache write rows
-	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
-	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
-	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
-
-	if has5mCost {
-		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite5mCost, cache5mTokens, styles.CacheWriteTokenColor, "5m TTL", noColor))
-	}
-
-	if has1hCost {
-		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite1hCost, cache1hTokens, styles.CacheWriteTokenColor, "1h TTL", noColor))
-	}
-
-	// Cache read - only show if present
-	if analysis.TotalCost.CacheReadCost > 0 || analysis.TotalUsage.CacheReadInputTokens > 0 {
-		sb.WriteString(renderUnifiedCostRow("Cache read", analysis.TotalCost.CacheReadCost, analysis.TotalUsage.CacheReadInputTokens, styles.CacheReadTokenColor, "", noColor))
-	}
-
-	// Savings row
-	if analysis.TotalCost.CacheSavings > 0 {
-		sb.WriteString(renderSavingsRow(analysis.TotalCost.CacheSavings, noColor))
-	}
+	sb.WriteString(renderCostRows(analysis.TotalCost, analysis.TotalUsage, sectionWidth, noColor))
 
 	// Context window section - only for single sessions, not summaries
 	if !isSummary {
 		contextSize := analysis.LastMessageUsage.ContextWindowSize()
 		if contextSize > 0 {
 			sb.WriteString("\n")
-			sb.WriteString(renderContextSection(analysis, noColor))
+			sb.WriteString(renderContextSection(analysis, sectionWidth, noColor))
 		}
 	}
 
@@ -95,7 +68,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 		sb.WriteString("\n")
 		sb.WriteString(render.SectionHeader("AGENT SUB-SESSIONS", sectionWidth, noColor))
 		sb.WriteString("\n\n")
-		sb.WriteString(formatAgentBreakdownContent(analysis, noColor))
+		sb.WriteString(formatAgentBreakdownContent(analysis, sectionWidth, noColor))
 	}
 
 	// Message insights (shown when insights are available)
@@ -103,7 +76,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 		sb.WriteString("\n")
 		sb.WriteString(render.SectionHeader("MESSAGE INSIGHTS", sectionWidth, noColor))
 		sb.WriteString("\n\n")
-		sb.WriteString(formatInsightsSectionContent(analysis.Insights, analysis.HasAgents, noColor))
+		sb.WriteString(formatInsightsSectionContent(analysis.Insights, analysis.HasAgents, sectionWidth, noColor))
 	}
 
 	// Footer with double-line separator
@@ -135,16 +108,16 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 
 // renderContextSection renders the context window section: the gauge line,
 // then its scope and headroom note under the bar.
-func renderContextSection(analysis *models.SessionAnalysis, noColor bool) string {
+func renderContextSection(analysis *models.SessionAnalysis, width int, noColor bool) string {
 	contextSize := analysis.LastMessageUsage.ContextWindowSize()
 	if contextSize == 0 {
 		return ""
 	}
 	maxContext := pricing.GetModelPricing(analysis.LastMessageModel).MaxContextTokens
 
-	// Fill the 76-column section after the "  Context " label; the gauge
-	// right-aligns its percentage, so "Context  95%" and "Context 100%" align.
-	const gaugeWidth = 76 - 10
+	// Fill the section after the "  Context " label; the gauge right-aligns
+	// its percentage, so "Context  95%" and "Context 100%" align.
+	gaugeWidth := width - 10
 	line, note := render.ContextGauge(contextSize, maxContext, gaugeWidth, noColor, false)
 	if !noColor {
 		note = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(note)
@@ -176,35 +149,44 @@ func agentMsgsWidth(agents []models.AgentAnalysis) int {
 
 // formatAgentBreakdownContent renders agent breakdown rows (content only, no header)
 // Layout: [AN] Model (ID) msgs cost
-// All rows align costs at column 45 (2 indent + 43 content)
+// All rows align costs at column 45 (2 indent + 43 content), or further left
+// when the rows would be wider than width
 // Example:
 //
 //	Parent session                              $1.14
 //	[Aa0b184d] Opus 4.5      14 msgs            $0.3588
 //	Agents subtotal                             $5.11
-func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool) string {
+func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, noColor bool) string {
 	var sb strings.Builder
+
+	// labelWidth is the room before the cost column, less the indent and a
+	// 3-space gap: 40, narrowed to fit width, but never so far that an agent
+	// row's marker, model and message count (10+1+11+1+msgs, then a space)
+	// would reach the cost.
+	msgsWidth := agentMsgsWidth(analysis.Agents)
+	labelWidth := max(min(40, width-2-3-11), msgsWidth+21)
 
 	// Parent session cost - right-aligned cost at column 45
 	// Format: 2(indent) + 40(label) + 3(spaces) + cost = 45 chars before cost
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	if noColor {
-		sb.WriteString(fmt.Sprintf("  %-40s   %s\n", "Parent session", render.CostCell(analysis.ParentCost.TotalCost, 11)))
+		sb.WriteString(fmt.Sprintf("  %-*s   %s\n", labelWidth, "Parent session", render.CostCell(analysis.ParentCost.TotalCost, 11)))
 	} else {
-		paddedLabel := fmt.Sprintf("%-40s", "Parent session")
+		paddedLabel := fmt.Sprintf("%-*s", labelWidth, "Parent session")
 		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedLabel, formatCostStyled(analysis.ParentCost.TotalCost, 11, noColor)))
 	}
 
 	// Each agent with [A<id>] Model msgs cost format — the marker carries the
 	// abbreviated real agent ID, matching the breakdown TUI's scheme.
 	// Format: 2(indent) + 10(marker) + 1 + 11(model) + 1 + msgs + gap + cost
-	// where msgs + gap = 20 (normally 8 + 12; the gap shrinks as the msgs
-	// column grows to fit an oversized count), keeping cost at 45 chars
-	// (aligned with parent and subtotal).
+	// where msgs + gap = labelWidth - 20 (normally 8 + 12; the gap shrinks as
+	// the msgs column grows to fit an oversized count), keeping cost at 45
+	// chars (aligned with parent and subtotal).
 	// Workflow agents are grouped after regular agents; a dim header line marks
 	// each run's start.
-	msgsWidth := agentMsgsWidth(analysis.Agents)
-	msgsGap := strings.Repeat(" ", max(1, 20-msgsWidth))
+	msgsGap := strings.Repeat(" ", max(1, labelWidth-20-msgsWidth))
+	narrowed := width < staticReportWidth
+	status := workflowStatuses(styles.GroupRule+" ", labelWidth, analysis)
 	prevWorkflow := ""
 	for _, agent := range analysis.Agents {
 		if agent.WorkflowID != prevWorkflow {
@@ -212,8 +194,8 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 			if agent.WorkflowID != "" {
 				// The run's subtotal sits in the cost column, so a workflow
 				// compares with the parent session at a glance.
-				heading := truncateRight(styles.GroupRule+" "+render.WorkflowLabel(analysis.WorkflowByID(agent.WorkflowID)), 40)
-				pad := strings.Repeat(" ", 40-runewidth.StringWidth(heading)+3)
+				heading := fitWorkflowLabel(styles.GroupRule+" ", analysis.WorkflowByID(agent.WorkflowID), labelWidth, narrowed, status)
+				pad := strings.Repeat(" ", labelWidth-runewidth.StringWidth(heading)+3)
 				cost := workflowCost(analysis.Agents, agent.WorkflowID)
 				if noColor {
 					sb.WriteString("  " + heading + pad + render.CostCell(cost, 11) + "\n")
@@ -259,9 +241,9 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 	// Agents subtotal in bold green (matches TotalValueStyle for visual hierarchy)
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	if noColor {
-		sb.WriteString(fmt.Sprintf("  %-40s   %s\n", "Agents subtotal", render.CostCell(analysis.AgentsCost.TotalCost, 11)))
+		sb.WriteString(fmt.Sprintf("  %-*s   %s\n", labelWidth, "Agents subtotal", render.CostCell(analysis.AgentsCost.TotalCost, 11)))
 	} else {
-		paddedSubtotal := fmt.Sprintf("%-40s", "Agents subtotal")
+		paddedSubtotal := fmt.Sprintf("%-*s", labelWidth, "Agents subtotal")
 		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedSubtotal, formatCostStyledBoldGreen(analysis.AgentsCost.TotalCost, 11, noColor)))
 	}
 
@@ -279,9 +261,27 @@ func workflowCost(agents []models.AgentAnalysis, runID string) float64 {
 	return sum
 }
 
-// formatInsightsSectionContent renders message insights rows (content only, no header)
-func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bool, noColor bool) string {
+// formatInsightsSectionContent renders message insights rows (content only,
+// no header). A row that would be wider than width loses its last field,
+// the detail, rather than wrap.
+func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bool, width int, noColor bool) string {
 	var sb strings.Builder
+	dim := func(s string) string {
+		if noColor {
+			return s
+		}
+		return dimStyle.Render(s)
+	}
+	// row writes a labelled row of fields, dropping trailing fields past the
+	// first until it fits.
+	row := func(label string, fields ...string) {
+		line := fmt.Sprintf("  %-10s %s", label, strings.Join(fields, "  "))
+		for len(fields) > 1 && lipgloss.Width(line) > width {
+			fields = fields[:len(fields)-1]
+			line = fmt.Sprintf("  %-10s %s", label, strings.Join(fields, "  "))
+		}
+		sb.WriteString(line + "\n")
+	}
 
 	// When agents ran, these insights cover the main conversation alone (the
 	// agent rows live in AGENT SUB-SESSIONS above and are excluded here). Label
@@ -289,58 +289,37 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 	// computes Peak/trend over the merged parent+agent messages. No label when
 	// there are no agents: parent-only and all-messages are then identical.
 	if hasAgents {
-		const scope = "main conversation only, agents excluded"
-		if noColor {
-			sb.WriteString("  " + scope + "\n")
-		} else {
-			sb.WriteString("  " + dimStyle.Render(scope) + "\n")
-		}
+		sb.WriteString("  " + dim("main conversation only, agents excluded") + "\n")
 	}
 
-	// First message
-	if insights.FirstMessage != nil {
-		first := insights.FirstMessage
-		componentLabel := render.CostComponentLabel(first.MainCostComponent)
-		timestamp := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(first.Timestamp)))
-		componentInfo := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, render.Cost(first.MainCostValue)))
-
-		if noColor {
-			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
-				"First",
-				formatCostStyled(first.Cost, 10, noColor),
-				render.Clock(first.Timestamp),
-				componentLabel,
-				render.Cost(first.MainCostValue)))
-		} else {
-			sb.WriteString(fmt.Sprintf("  %-10s %s  %s  %s\n",
-				"First",
-				formatCostStyled(first.Cost, 10, noColor),
-				timestamp,
-				componentInfo))
-		}
+	// First and Last lose their detail together, so neither reads as a
+	// message that had none.
+	type messageRow struct {
+		label  string
+		fields []string
 	}
-
-	// Last message
-	if insights.LastMessage != nil {
-		last := insights.LastMessage
-		componentLabel := render.CostComponentLabel(last.MainCostComponent)
-		timestamp := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(last.Timestamp)))
-		componentInfo := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, render.Cost(last.MainCostValue)))
-
-		if noColor {
-			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
-				"Last",
-				formatCostStyled(last.Cost, 10, noColor),
-				render.Clock(last.Timestamp),
-				componentLabel,
-				render.Cost(last.MainCostValue)))
-		} else {
-			sb.WriteString(fmt.Sprintf("  %-10s %s  %s  %s\n",
-				"Last",
-				formatCostStyled(last.Cost, 10, noColor),
-				timestamp,
-				componentInfo))
+	var messages []messageRow
+	detail := true
+	labels := []string{"First", "Last"}
+	for i, msg := range []*models.MessageSnapshot{insights.FirstMessage, insights.LastMessage} {
+		if msg == nil {
+			continue
 		}
+		m := messageRow{labels[i], []string{
+			formatCostStyled(msg.Cost, 10, noColor),
+			dim("(" + render.Clock(msg.Timestamp) + ")"),
+			dim(render.CostComponentLabel(msg.MainCostComponent) + ": " + render.Cost(msg.MainCostValue)),
+		}}
+		if lipgloss.Width(fmt.Sprintf("  %-10s %s", m.label, strings.Join(m.fields, "  "))) > width {
+			detail = false
+		}
+		messages = append(messages, m)
+	}
+	for _, m := range messages {
+		if !detail {
+			m.fields = m.fields[:2]
+		}
+		row(m.label, m.fields...)
 	}
 
 	// Highest cost (only if notably above average)
@@ -348,55 +327,44 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 		highest := insights.HighestCost
 		// The multiplier is information, not a warning: nearly every session
 		// has a message well above its average.
-		multiplierStr := fmt.Sprintf("%.1fx avg cost", insights.CostMultiplier())
-
-		if noColor {
-			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
-				"Peak",
-				formatCostStyled(highest.Cost, 10, noColor),
-				render.Clock(highest.Timestamp),
-				multiplierStr))
-		} else {
-			timestamp := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(highest.Timestamp)))
-			sb.WriteString(fmt.Sprintf("  %-10s %s  %s  %s\n",
-				"Peak",
-				formatCostStyled(highest.Cost, 10, noColor),
-				timestamp,
-				dimStyle.Render(multiplierStr)))
-		}
+		row("Peak",
+			formatCostStyled(highest.Cost, 10, noColor),
+			dim("("+render.Clock(highest.Timestamp)+")"),
+			dim(fmt.Sprintf("%.1fx avg cost", insights.CostMultiplier())))
 	}
 
 	// Trend (only once the analyzer actually computed one — see HasTrend)
 	if insights.HasTrend() {
-		trendDesc := insights.TrendDescription()
 		trendSymbol := render.TrendSymbol(insights.CostTrend)
-
-		comparison := fmt.Sprintf("last %d %s/msg vs %s/msg avg",
-			insights.TrendWindow, render.Cost(insights.RecentAvgCost), render.Cost(insights.AverageCost))
-
-		if noColor {
-			sb.WriteString(fmt.Sprintf("  %-10s %s  %s %s\n",
-				"Trend",
-				comparison,
-				trendSymbol,
-				trendDesc))
-		} else {
+		if !noColor {
 			// Color the trend symbol based on direction
-			var symbolStyled string
 			switch insights.CostTrend {
 			case models.TrendIncreasing:
-				symbolStyled = lipgloss.NewStyle().Foreground(styles.WarningColor).Render(trendSymbol)
+				trendSymbol = lipgloss.NewStyle().Foreground(styles.WarningColor).Render(trendSymbol)
 			case models.TrendDecreasing:
-				symbolStyled = lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(trendSymbol)
+				trendSymbol = lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(trendSymbol)
 			default:
-				symbolStyled = dimStyle.Render(trendSymbol)
+				trendSymbol = dimStyle.Render(trendSymbol)
 			}
-			sb.WriteString(fmt.Sprintf("  %-10s %s  %s %s\n",
-				"Trend",
-				comparison,
-				symbolStyled,
-				trendDesc))
 		}
+		direction := trendSymbol + " " + insights.TrendDescription()
+		recent, average := render.Cost(insights.RecentAvgCost), render.Cost(insights.AverageCost)
+		// The direction is the reading; the comparison behind it shortens,
+		// then goes. Both averages are per message, so the short form drops
+		// "/msg" and keeps what tells them apart.
+		lines := []string{
+			fmt.Sprintf("  %-10s last %d %s/msg vs %s/msg avg  %s", "Trend", insights.TrendWindow, recent, average, direction),
+			fmt.Sprintf("  %-10s last %d %s vs %s avg  %s", "Trend", insights.TrendWindow, recent, average, direction),
+			fmt.Sprintf("  %-10s %s", "Trend", direction),
+		}
+		line := lines[len(lines)-1]
+		for _, l := range lines {
+			if lipgloss.Width(l) <= width {
+				line = l
+				break
+			}
+		}
+		sb.WriteString(line + "\n")
 	}
 
 	return sb.String()

@@ -105,7 +105,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	}
 
 	var sb strings.Builder
-	sb.WriteString(renderPanel(opts.Project, []string{fmt.Sprintf("%d %s", len(results), sessionsWord(len(results)))}, width, noColor))
+	sb.WriteString(renderPanel(opts.Project, []string{fmt.Sprintf("%d %s", len(results), sessionsWord(len(results)))}, []int{panelLead}, width, noColor))
 	sb.WriteString("\n\n")
 
 	join := func(id, when, length, model, agents, cost, title string) string {

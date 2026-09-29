@@ -18,11 +18,11 @@ func TestNoColorEmitsNoEscapes(t *testing.T) {
 		}
 		analysis, results := summaryDetailsAnalysis(t, summaryDetailsFixture(t))
 		outputs := map[string]string{
-			"show":            FormatSessionTable(goldenShowAnalysis(), true),
-			"show workflows":  FormatSessionTable(goldenShowWorkflowAnalysis(), true),
-			"summary":         FormatSessionTable(goldenSummaryAnalysis(), true),
-			"summary details": FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false),
-			"summary expand":  FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true),
+			"show":            FormatSessionTable(goldenShowAnalysis(), true, 0),
+			"show workflows":  FormatSessionTable(goldenShowWorkflowAnalysis(), true, 0),
+			"summary":         FormatSessionTable(goldenSummaryAnalysis(), true, 0),
+			"summary details": FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, 0),
+			"summary expand":  FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0),
 			"list":            FormatSessionListTable(goldenListResults(), true, goldenListOptions),
 			"global":          FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(false)),
 			"global details":  FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(true)),

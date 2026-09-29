@@ -25,7 +25,7 @@ func TestShowInsightTimesAreLocal(t *testing.T) {
 	withLocal(t, time.FixedZone("UTC+9", 9*3600))
 
 	for _, noColor := range []bool{true, false} {
-		out := FormatSessionTable(goldenShowAnalysis(), noColor)
+		out := FormatSessionTable(goldenShowAnalysis(), noColor, 0)
 		for _, want := range []string{"19:00:05", "20:29:55", "19:42:13"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("noColor=%v: missing local time %s", noColor, want)

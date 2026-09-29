@@ -532,7 +532,7 @@ func TestFormatSessionListJSON(t *testing.T) {
 func TestFormatSessionTable_Plain(t *testing.T) {
 	analysis := sampleAnalysis()
 
-	output := FormatSessionTable(analysis, true) // noColor = true
+	output := FormatSessionTable(analysis, true, 0) // noColor = true
 
 	// Check basic structure
 	if !strings.Contains(output, "Session: test-ses") {
@@ -549,7 +549,7 @@ func TestFormatSessionTable_Plain(t *testing.T) {
 func TestFormatSessionTable_WithColor(t *testing.T) {
 	analysis := sampleAnalysis()
 
-	output := FormatSessionTable(analysis, false) // noColor = false
+	output := FormatSessionTable(analysis, false, 0) // noColor = false
 
 	// Colored output should still contain the data
 	if !strings.Contains(output, "test-ses") {
@@ -563,7 +563,7 @@ func TestFormatSessionTable_WithColor(t *testing.T) {
 func TestFormatSessionTable_WithCacheSavings(t *testing.T) {
 	analysis := sampleAnalysis()
 
-	output := FormatSessionTable(analysis, true)
+	output := FormatSessionTable(analysis, true, 0)
 
 	if !strings.Contains(output, "Savings") {
 		t.Error("Table output missing savings row")
@@ -589,7 +589,7 @@ func TestFormatSessionTable_WithAgents(t *testing.T) {
 		},
 	}
 
-	output := FormatSessionTable(analysis, true)
+	output := FormatSessionTable(analysis, true, 0)
 
 	if !strings.Contains(output, "AGENT SUB-SESSIONS") {
 		t.Error("Table output missing agent breakdown section")
@@ -631,13 +631,13 @@ func TestFormatSessionTable_ANSICodes(t *testing.T) {
 	defer r.SetColorProfile(origProfile)
 
 	// noColor=false → output contains ANSI escape codes
-	colored := FormatSessionTable(analysis, false)
+	colored := FormatSessionTable(analysis, false, 0)
 	if !strings.Contains(colored, "\x1b[") {
 		t.Error("colored output should contain ANSI escape codes")
 	}
 
 	// noColor=true → no ANSI
-	plain := FormatSessionTable(analysis, true)
+	plain := FormatSessionTable(analysis, true, 0)
 	if strings.Contains(plain, "\x1b[") {
 		t.Error("plain output should not contain ANSI escape codes")
 	}
@@ -762,7 +762,7 @@ func TestFormatGlobalTable(t *testing.T) {
 // A session nobody has replied to prints one line, not a report of empty
 // sections.
 func TestSessionTableEmptySession(t *testing.T) {
-	out := FormatSessionTable(&models.SessionAnalysis{SessionID: "68994c84-0840-3234-39ed-0800317979f9"}, true)
+	out := FormatSessionTable(&models.SessionAnalysis{SessionID: "68994c84-0840-3234-39ed-0800317979f9"}, true, 0)
 	if out != "No assistant messages in session 68994c84 yet." {
 		t.Errorf("got %q", out)
 	}
