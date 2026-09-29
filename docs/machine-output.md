@@ -8,7 +8,7 @@ Every json key is snake_case on every command, and csv columns use the same name
 
 Until 1.0, a minor release may rename, remove or retype a json key or csv column. Its release notes list each such change at the top, with the old and new jq path. New keys and columns can arrive in any release, so read by name, not by position, and ignore keys you don't know.
 
-A test pins every command's json keys and csv header, so none of these changes ships without a line in the release notes.
+A test pins every command's json keys and csv header, so a change to either turns up in review as a diff instead of reaching your script as a silent `null`.
 
 To keep a script working across upgrades, pin the version you tested it against:
 
