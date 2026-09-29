@@ -268,8 +268,15 @@ func goldenBreakdownMessages() []models.BreakdownMessage {
 			Usage: models.TokenUsage{InputTokens: 90, OutputTokens: 4200, CacheReadInputTokens: 50000},
 			Cost:  models.CostBreakdown{TotalCost: 1.87},
 		},
+		// A workflow agent with a real-shaped ID ("a" + 16 hex): the marker
+		// drops the constant "a", and the run tag follows it.
 		{
-			Index: 6, Timestamp: goldenTime(11, 29, 55), Model: "claude-sonnet-5",
+			Index: 6, AgentID: "a9f8e7d6c5b4a3210", WorkflowID: "wf_2e7850b6-b19", Timestamp: goldenTime(11, 0, 0), Model: "claude-sonnet-5",
+			Usage: models.TokenUsage{InputTokens: 40, OutputTokens: 1100, CacheCreationInputTokens: 3000, CacheReadInputTokens: 21000},
+			Cost:  models.CostBreakdown{TotalCost: 0.07},
+		},
+		{
+			Index: 7, Timestamp: goldenTime(11, 29, 55), Model: "claude-sonnet-5",
 			Usage: models.TokenUsage{InputTokens: 12, OutputTokens: 600, CacheCreationInputTokens: 8000, CacheReadInputTokens: 371988},
 			Cost:  models.CostBreakdown{TotalCost: 0.55},
 		},
@@ -281,12 +288,18 @@ func goldenBreakdownMessages() []models.BreakdownMessage {
 // returns View(). skippedLines is set to exercise the footer warning segment.
 func goldenBreakdownView(t *testing.T, noColor bool) string {
 	t.Helper()
+	return goldenBreakdownViewSized(t, noColor, 100, 40)
+}
+
+func goldenBreakdownViewSized(t *testing.T, noColor bool, width, height int) string {
+	t.Helper()
 	m := NewBreakdownModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", noColor, "", false)
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	m = updated.(BreakdownModel)
 	updated, _ = m.Update(breakdownMsgsMsg{
 		messages:  goldenBreakdownMessages(),
-		totalCost: 3.34,
+		workflows: []models.WorkflowMeta{{RunID: "wf_2e7850b6-b19", Name: "audit-codebase", Status: "completed"}},
+		totalCost: 3.41,
 		minCost:   0.01,
 		maxCost:   1.87,
 		insights: &models.MessageInsights{
@@ -297,11 +310,11 @@ func goldenBreakdownView(t *testing.T, noColor bool) string {
 			CostTrend:    models.TrendIncreasing,
 			EarlyAvgCost: 0.30,
 			LateAvgCost:  0.81,
-			AverageCost:  0.56,
-			MessageCount: 6,
+			AverageCost:  0.49,
+			MessageCount: 7,
 		},
 		skippedLines: 3,
-		// The fixture rows include agent messages (indices 3-4), so the breakdown
+		// The fixture rows include agent messages (indices 3-4 and 6), so the breakdown
 		// merges parent+agent — exercises the "scope: parent + agents" label that
 		// distinguishes this surface from show/watch's parent-only insights.
 		hasAgents: true,
@@ -314,6 +327,13 @@ func goldenBreakdownView(t *testing.T, noColor bool) string {
 func TestGoldenBreakdownView(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "breakdown_view", goldenBreakdownView(t, true))
+}
+
+// Half a 160-column screen: the row is too wide for every column, so IN gives
+// way whole rather than the right edge cutting C_RD in half.
+func TestGoldenBreakdownView79(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	checkGolden(t, "breakdown_view_79", goldenBreakdownViewSized(t, true, 79, 24))
 }
 
 func TestGoldenBreakdownViewColor(t *testing.T) {

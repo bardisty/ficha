@@ -31,11 +31,12 @@ type BreakdownModel struct {
 	minCost        float64 // For cost gradient coloring
 	maxCost        float64 // For cost gradient coloring
 	insights       *models.MessageInsights
-	skippedLines   int  // JSONL lines skipped during parsing (malformed or oversized)
-	skippedAgents  int  // Agent sub-sessions that could not be read
-	estimatedCosts int  // Messages whose cache-write cost is a 5m-rate estimate
-	hasUnknown     bool // Any message priced from the fallback table (marked in the rows)
-	hasAgents      bool // Any agent row in the merged list — drives the insight scope label
+	skippedLines   int               // JSONL lines skipped during parsing (malformed or oversized)
+	skippedAgents  int               // Agent sub-sessions that could not be read
+	estimatedCosts int               // Messages whose cache-write cost is a 5m-rate estimate
+	hasUnknown     bool              // Any message priced from the fallback table (marked in the rows)
+	hasAgents      bool              // Any agent row in the merged list — drives the insight scope label
+	runTags        map[string]string // Workflow run ID -> AGENT-column run tag
 	err            error
 	loading        bool
 	lastUpdated    time.Time
@@ -94,6 +95,7 @@ type (
 		estimatedCosts int
 		hasUnknown     bool
 		hasAgents      bool
+		workflows      []models.WorkflowMeta
 		// sessionPath identifies the session this load was started for. In
 		// follow mode a slow in-flight load for the previous session can land
 		// after a switch; the handler drops it when it doesn't match the
@@ -243,6 +245,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.estimatedCosts = msg.estimatedCosts
 		m.hasUnknown = msg.hasUnknown
 		m.hasAgents = msg.hasAgents
+		m.runTags = workflowRunTags(msg.workflows)
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.err = nil
@@ -335,6 +338,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messages = nil
 		m.insights = nil
 		m.hasAgents = false
+		m.runTags = nil
 		m.totalCost = 0
 		m.minCost = 0
 		m.maxCost = 0
@@ -599,14 +603,14 @@ func (m BreakdownModel) renderCompactInsights() string {
 
 	var parts []string
 
-	// Peak cost with message number for easy lookup
-	if m.insights.HighestCost != nil {
-		mult := m.insights.CostMultiplier()
-		peakStr := fmt.Sprintf("Peak: #%d %s @ %s (%.1fx avg)",
-			m.insights.HighestCost.Index,
-			render.Cost(m.insights.HighestCost.Cost),
-			render.ClockShort(m.insights.HighestCost.Timestamp),
-			mult)
+	// Peak cost, with the row number, time to the second and agent marker, so
+	// the row can be found by number or matched by eye.
+	if peak := m.insights.HighestCost; peak != nil {
+		peakStr := fmt.Sprintf("Peak: #%d %s @ %s", peak.Index, render.Cost(peak.Cost), render.Clock(peak.Timestamp))
+		if marker := m.peakAgentMarker(); marker != "" {
+			peakStr += " " + marker
+		}
+		peakStr += fmt.Sprintf(" (%.1fx avg)", m.insights.CostMultiplier())
 		if !m.noColor {
 			parts = append(parts, lipgloss.NewStyle().Foreground(styles.WarningColor).Render(peakStr))
 		} else {
@@ -638,25 +642,62 @@ func (m BreakdownModel) renderCompactInsights() string {
 	// Label the scope when agents ran: the breakdown computes Peak/trend over the
 	// merged parent+agent messages, unlike show/watch's parent-only insights, so
 	// the figures can legitimately differ. Without agents the sets are identical,
-	// so no label (and no churn for the common case).
+	// so no label (and no churn for the common case). It leads the line because
+	// it explains the figures after it, but it is worthless on its own: when
+	// the first figure won't fit beside it, the label goes and the figures stay.
+	sep := " " + styles.BoxVerticalSep + " "
+	width := m.width - 2
 	if m.hasAgents && len(parts) > 0 {
-		const scope = "scope: parent + agents"
-		if m.noColor {
-			parts = append(parts, scope)
-		} else {
-			parts = append(parts, lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(scope))
+		scope := "scope: parent + agents"
+		if !m.noColor {
+			scope = lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(scope)
+		}
+		if width <= 0 || lipgloss.Width(scope+sep+parts[0]) <= width {
+			parts = append([]string{scope}, parts...)
 		}
 	}
 
-	return "  " + strings.Join(parts, " "+styles.BoxVerticalSep+" ")
+	return "  " + joinSegments(parts, sep, width)
+}
+
+// joinSegments joins parts with sep, leaving off whole trailing parts that
+// would run past width, so a narrow terminal loses a segment rather than
+// cutting one mid-word. The first part always stays, to be clipped if it must.
+// width <= 0 means unknown, and keeps every part.
+func joinSegments(parts []string, sep string, width int) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	out := parts[0]
+	for _, p := range parts[1:] {
+		next := out + sep + p
+		if width > 0 && lipgloss.Width(next) > width {
+			break
+		}
+		out = next
+	}
+	return out
+}
+
+// peakAgentMarker returns the agent marker of the Peak row, or "" when a
+// parent message is the peak. The snapshot's Index is the row's display
+// Index; the timestamp check guards against a snapshot and a message list
+// that came from different loads.
+func (m BreakdownModel) peakAgentMarker() string {
+	peak := m.insights.HighestCost
+	if peak == nil || peak.Index < 1 || peak.Index > len(m.messages) {
+		return ""
+	}
+	row := m.messages[peak.Index-1]
+	if !row.Timestamp.Equal(peak.Timestamp) {
+		return ""
+	}
+	return agentMarker(row.AgentID)
 }
 
 // renderTableHeader renders the table header row
 func (m BreakdownModel) renderTableHeader() string {
-	// The COST field is the 10-column cost cell plus a space and the change
-	// arrow; the label right-aligns over the cell's four-decimal edge.
-	header := fmt.Sprintf("  %-5s  %-8s  %-10s  %10s    %6s  %5s  %6s  %6s",
-		"#", "TIME", "MODEL", "COST", "IN", "OUT", "C_WR", "C_RD")
+	header := m.layout().header()
 	if !m.noColor {
 		return headerStyle.Render(header)
 	}
@@ -676,19 +717,17 @@ func (m BreakdownModel) renderTableSeparator() string {
 // renderTableContent renders all message rows for the viewport
 func (m BreakdownModel) renderTableContent() string {
 	var sb strings.Builder
-	var prevCost float64
+	layout := m.layout()
 
 	for i, msg := range m.messages {
-		isFirst := i == 0
 		// Rows carry only a time, so mark where the local day changes. A
 		// zero timestamp (unparseable in the transcript) has no day to mark.
-		if !isFirst && !msg.Timestamp.IsZero() && !m.messages[i-1].Timestamp.IsZero() &&
+		if i > 0 && !msg.Timestamp.IsZero() && !m.messages[i-1].Timestamp.IsZero() &&
 			!render.SameLocalDay(m.messages[i-1].Timestamp, msg.Timestamp) {
 			sb.WriteString(m.renderDayMarker(msg.Timestamp))
 			sb.WriteString("\n")
 		}
-		sb.WriteString(m.renderRow(msg, m.isNewMessage(msg), prevCost, isFirst))
-		prevCost = msg.Cost.TotalCost
+		sb.WriteString(m.renderRow(msg, m.isNewMessage(msg), layout))
 		if i < len(m.messages)-1 {
 			sb.WriteString("\n")
 		}
@@ -696,9 +735,6 @@ func (m BreakdownModel) renderTableContent() string {
 
 	return sb.String()
 }
-
-// breakdownCostWidth fits a per-message cost up to "$9999.99  ".
-const breakdownCostWidth = 10
 
 // renderDayMarker renders the divider row placed above the first message of a
 // new local day.
@@ -710,95 +746,104 @@ func (m BreakdownModel) renderDayMarker(t time.Time) string {
 	return "  " + dimStyle.Render(marker)
 }
 
+// agentMarker is the AGENT cell's ID part: the same [A<id>] marker watch,
+// show and summary print, so a row can be matched to its agent there.
+func agentMarker(agentID string) string {
+	if agentID == "" {
+		return ""
+	}
+	return "[A" + render.ShortAgentID(agentID) + "]"
+}
+
+// runTag returns the short workflow-run marker for a message, or "" for
+// parent and regular subagent rows.
+func (m BreakdownModel) runTag(msg models.BreakdownMessage) string {
+	if msg.WorkflowID == "" {
+		return ""
+	}
+	if tag, ok := m.runTags[msg.WorkflowID]; ok {
+		return tag
+	}
+	return workflowRunTag("")
+}
+
+// agentCell is the full AGENT cell text: the marker, then the run tag for a
+// workflow agent.
+func (m BreakdownModel) agentCell(msg models.BreakdownMessage) string {
+	marker := agentMarker(msg.AgentID)
+	if tag := m.runTag(msg); tag != "" && marker != "" {
+		return marker + " " + tag
+	}
+	return marker
+}
+
+// layout picks the columns this frame draws. See breakdownLayout.
+func (m BreakdownModel) layout() breakdownLayout {
+	agentWidth := 0
+	for _, msg := range m.messages {
+		agentWidth = max(agentWidth, len(m.agentCell(msg)))
+	}
+	return newBreakdownLayout(agentWidth, m.width)
+}
+
 // renderRow renders a single message row
-func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevCost float64, isFirst bool) string {
-	// Format column values
-	indexStr := fmt.Sprintf("%-5d", msg.Index)
-	timeStr := fmt.Sprintf("%-8s", render.Clock(msg.Timestamp))
+func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, layout breakdownLayout) string {
 	modelName := pricing.GetModelDisplayName(msg.Model)
 	// Flag fallback-priced rows inline; the footer explains the marker. Clamp
 	// first so a long raw ID can't push it out of the column (or off it).
-	modelLabel := render.ClampModel(modelName, 10)
+	modelLabel := render.ClampModel(modelName, bdModelWidth)
 	if !pricing.IsKnownModel(msg.Model) {
-		modelLabel = render.ClampModel(modelName, 9) + unknownModelMarker
+		modelLabel = render.ClampModel(modelName, bdModelWidth-1) + unknownModelMarker
 	}
-	modelStr := fmt.Sprintf("%-10s", modelLabel)
-	costStr := render.CostCell(msg.Cost.TotalCost, breakdownCostWidth)
-	inStr := fmt.Sprintf("%6s", render.Number(msg.Usage.InputTokens))
-	outStr := fmt.Sprintf("%5s", render.Number(msg.Usage.OutputTokens))
-	cacheWriteStr := fmt.Sprintf("%6s", render.Number(msg.Usage.CacheCreationInputTokens))
-	cacheReadStr := fmt.Sprintf("%6s", render.Number(msg.Usage.CacheReadInputTokens))
+	marker := agentMarker(msg.AgentID)
 
-	// Get trend indicator
-	trendSymbol, trendDirection := getRowTrendIndicator(msg.Cost.TotalCost, prevCost, isFirst)
-
-	// Agent marker at the end: the real agent ID, abbreviated. No fixed-width
-	// padding — nothing renders after it and the viewport pads every line.
-	agentMarker := ""
-	if msg.AgentID != "" {
-		agentMarker = "[A" + render.ShortAgentID(msg.AgentID) + "]"
+	c := breakdownCells{
+		index: fmt.Sprintf("%-*d", bdIndexWidth, msg.Index),
+		time:  fmt.Sprintf("%-*s", bdTimeWidth, render.Clock(msg.Timestamp)),
+		agent: fmt.Sprintf("%-*s", layout.agentWidth, m.agentCell(msg)),
+		model: fmt.Sprintf("%-*s", bdModelWidth, modelLabel),
+		cost:  render.CostCell(msg.Cost.TotalCost, bdCostWidth),
+		in:    fmt.Sprintf("%*s", bdInWidth, render.Number(msg.Usage.InputTokens)),
+		out:   fmt.Sprintf("%*s", bdOutWidth, render.Number(msg.Usage.OutputTokens)),
+		cacheWrite: fmt.Sprintf("%*s", bdCacheWidth,
+			render.Number(msg.Usage.CacheCreationInputTokens)),
+		cacheRead: fmt.Sprintf("%*s", bdCacheWidth, render.Number(msg.Usage.CacheReadInputTokens)),
 	}
 
 	if m.noColor {
-		return fmt.Sprintf("  %s  %s  %s  %s %s  %s  %s  %s  %s  %s",
-			indexStr, timeStr, modelStr, costStr, trendSymbol, inStr, outStr, cacheWriteStr, cacheReadStr, agentMarker)
+		return layout.join(c)
 	}
 
-	// Apply per-column styling
-	dimStyle := lipgloss.NewStyle().Foreground(styles.SecondaryColor)
-	modelStyle := lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName))
-	costColor := styles.GetCostGradientColor(msg.Cost.TotalCost, m.minCost, m.maxCost)
-	outStyle := lipgloss.NewStyle().Foreground(styles.OutputTokenColor)
-	cacheWriteStyle := lipgloss.NewStyle().Foreground(styles.CacheWriteTokenColor)
-	cacheReadStyle := lipgloss.NewStyle().Foreground(styles.CacheReadTokenColor)
-
-	// Color the trend indicator based on direction
-	var trendStyled string
-	switch trendDirection {
-	case models.TrendIncreasing:
-		trendStyled = lipgloss.NewStyle().Foreground(styles.WarningColor).Render(trendSymbol)
-	case models.TrendDecreasing:
-		trendStyled = lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(trendSymbol)
-	default:
-		trendStyled = dimStyle.Render(trendSymbol)
-	}
-
-	costStyled := render.CostColored(msg.Cost.TotalCost, costColor, breakdownCostWidth)
-
-	// For new messages, override with highlight style
+	// Each cell is styled after padding, so a highlighted row keeps exactly
+	// the column positions of a settled one.
 	if isNew {
-		highlightStyle := styles.HighlightStyle
-		return fmt.Sprintf("  %s  %s  %s  %s %s  %s  %s  %s  %s  %s",
-			highlightStyle.Render(indexStr),
-			highlightStyle.Render(timeStr),
-			highlightStyle.Render(modelStr),
-			highlightStyle.Render(costStr),
-			highlightStyle.Render(trendSymbol),
-			highlightStyle.Render(inStr),
-			highlightStyle.Render(outStr),
-			highlightStyle.Render(cacheWriteStr),
-			highlightStyle.Render(cacheReadStr),
-			highlightStyle.Render(agentMarker))
+		h := styles.HighlightStyle
+		return layout.join(breakdownCells{
+			index: h.Render(c.index), time: h.Render(c.time), agent: h.Render(c.agent),
+			model: h.Render(c.model), cost: h.Render(c.cost), in: h.Render(c.in),
+			out: h.Render(c.out), cacheWrite: h.Render(c.cacheWrite), cacheRead: h.Render(c.cacheRead),
+		})
 	}
 
-	// Agent marker with its own color
-	agentRendered := ""
-	if agentMarker != "" {
-		agentStyle := lipgloss.NewStyle().Foreground(styles.GetAgentColor(msg.AgentID))
-		agentRendered = agentStyle.Render(agentMarker)
+	// The agent marker takes the agent's hashed color (as in watch); the run
+	// tag and the padding after it stay dim.
+	agent := c.agent
+	if marker != "" {
+		pad := c.agent[len(marker):]
+		agent = lipgloss.NewStyle().Foreground(styles.GetAgentColor(msg.AgentID)).Render(marker) + dimStyle.Render(pad)
 	}
-
-	return fmt.Sprintf("  %s  %s  %s  %s %s  %s  %s  %s  %s  %s",
-		dimStyle.Render(indexStr),
-		dimStyle.Render(timeStr),
-		modelStyle.Render(modelStr),
-		costStyled,
-		trendStyled,
-		inStr, // Input stays white/default
-		outStyle.Render(outStr),
-		cacheWriteStyle.Render(cacheWriteStr),
-		cacheReadStyle.Render(cacheReadStr),
-		agentRendered)
+	costColor := styles.GetCostGradientColor(msg.Cost.TotalCost, m.minCost, m.maxCost)
+	return layout.join(breakdownCells{
+		index:      dimStyle.Render(c.index),
+		time:       dimStyle.Render(c.time),
+		agent:      agent,
+		model:      lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName)).Render(c.model),
+		cost:       render.CostColored(msg.Cost.TotalCost, costColor, bdCostWidth),
+		in:         c.in, // Input stays white/default
+		out:        lipgloss.NewStyle().Foreground(styles.OutputTokenColor).Render(c.out),
+		cacheWrite: lipgloss.NewStyle().Foreground(styles.CacheWriteTokenColor).Render(c.cacheWrite),
+		cacheRead:  lipgloss.NewStyle().Foreground(styles.CacheReadTokenColor).Render(c.cacheRead),
+	})
 }
 
 // Commands
@@ -856,6 +901,7 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 		estimatedCosts: result.EstimatedCostMessages,
 		hasUnknown:     hasUnknown,
 		hasAgents:      hasAgents,
+		workflows:      result.Workflows,
 		sessionPath:    m.sessionPath,
 	}
 }
@@ -883,23 +929,6 @@ func (m *BreakdownModel) armFileWaiter() tea.Cmd {
 	}
 	m.fileWaiterActive = true
 	return waitForFileChangeCmd(m.wg, m.closing, m.watcher, m.done, m.sessionPath)
-}
-
-// getRowTrendIndicator returns the change indicator for a message based on cost change
-// from previous message. Uses 5% threshold for significance.
-func getRowTrendIndicator(currentCost, previousCost float64, isFirst bool) (symbol string, direction models.TrendDirection) {
-	if isFirst || previousCost == 0 {
-		return styles.RowFlat, models.TrendStable
-	}
-
-	change := (currentCost - previousCost) / previousCost
-
-	if change > 0.05 {
-		return styles.RowUp, models.TrendIncreasing
-	} else if change < -0.05 {
-		return styles.RowDown, models.TrendDecreasing
-	}
-	return styles.RowFlat, models.TrendStable
 }
 
 func (m BreakdownModel) startSessionWatcher() tea.Cmd {

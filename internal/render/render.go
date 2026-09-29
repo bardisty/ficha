@@ -272,7 +272,15 @@ func truncateRunes(s string, width int) string {
 // ShortAgentID abbreviates an agent ID to at most 7 bytes for display. Byte
 // truncation is deliberate: agent IDs come from agent-<id>.jsonl filenames and
 // are ASCII, so bytes == columns and no rune can be split.
+//
+// Claude Code names every agent file agent-a<16 hex>, so a long ID's leading
+// "a" is a constant. Dropping it gives all seven display characters to the
+// part that tells agents apart, and keeps the "[A" marker prefix from reading
+// as a doubled letter. Short IDs keep every character.
 func ShortAgentID(id string) string {
+	if len(id) > 7 && id[0] == 'a' {
+		id = id[1:]
+	}
 	if len(id) > 7 {
 		return id[:7]
 	}

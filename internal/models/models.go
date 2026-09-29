@@ -435,12 +435,13 @@ func (i *MessageInsights) TrendDescription() string {
 // BreakdownMessage represents a single message in the breakdown view
 // combining parent and agent messages with sequential indexing
 type BreakdownMessage struct {
-	Index     int           // 1-based sequential index across all messages
-	AgentID   string        // Real agent ID from agent-<id>.jsonl (same key space as AgentAnalysis.AgentID); empty for parent session
-	Timestamp time.Time     // Message timestamp
-	Model     string        // Model used for this message
-	Usage     TokenUsage    // Token usage for this message
-	Cost      CostBreakdown // Calculated cost for this message
+	Index      int           // 1-based sequential index across all messages
+	AgentID    string        // Real agent ID from agent-<id>.jsonl (same key space as AgentAnalysis.AgentID); empty for parent session
+	WorkflowID string        // Workflow run ID for a workflow agent's message; empty for parent and regular subagent messages
+	Timestamp  time.Time     // Message timestamp
+	Model      string        // Model used for this message
+	Usage      TokenUsage    // Token usage for this message
+	Cost       CostBreakdown // Calculated cost for this message
 }
 
 // ProjectInfo represents a discovered Claude Code project directory

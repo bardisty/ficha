@@ -209,6 +209,10 @@ func TestShortAgentID(t *testing.T) {
 		{"exact77", "exact77"},                 // exactly 7 stays whole
 		{"g7h8i9j0k1l2", "g7h8i9j"},            // 12-char hash cut to 7
 		{"550e8400-e29b-41d4-a716", "550e840"}, // UUID-shaped
+		// Real IDs are "a" + 16 hex; the constant "a" is dropped first
+		{"a641f79aa692e33b9", "641f79a"},
+		{"a1234567", "1234567"},
+		{"abcdefg", "abcdefg"}, // short IDs keep their leading "a"
 	}
 	for _, tt := range tests {
 		if got := ShortAgentID(tt.id); got != tt.want {

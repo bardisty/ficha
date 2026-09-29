@@ -33,9 +33,6 @@ var (
 	IdleDot        string // ○ idle indicator
 	Warning        string // ⚠ warning prefix
 	Arrow          string // → "from -> to"
-	RowUp          string // ↑ per-message cost rose
-	RowDown        string // ↓ per-message cost fell
-	RowFlat        string // · per-message cost held
 	TrendUp        string // ▲ session trend increasing
 	TrendDown      string // ▼ session trend decreasing
 	TrendFlat      string // ═ session trend stable
@@ -61,7 +58,6 @@ func SetASCII(ascii bool) {
 		BoxHorizontal, BoxVertical, BoxVerticalSep, LineHorizontal = "=", "|", "|", "-"
 		BarUsed, BarFree = "#", "-"
 		Bullet, LiveDot, Warning, Arrow = "|", "*", "!", "->"
-		RowUp, RowDown, RowFlat = "^", "v", "."
 		TrendUp, TrendDown, TrendFlat = "^", "v", "="
 		TreeBranch, TreeLast, TreeRail, GroupRule = "+-", "`-", "|", "--"
 		ScrollKeys, Ellipsis = "j/k", "..."
@@ -73,7 +69,6 @@ func SetASCII(ascii bool) {
 	BoxHorizontal, BoxVertical, BoxVerticalSep, LineHorizontal = "═", "║", "│", "─"
 	BarUsed, BarFree = "█", "░"
 	Bullet, LiveDot, Warning, Arrow = "•", "●", "⚠", "→"
-	RowUp, RowDown, RowFlat = "↑", "↓", "·"
 	TrendUp, TrendDown, TrendFlat = "▲", "▼", "═"
 	TreeBranch, TreeLast, TreeRail, GroupRule = "├─", "└─", "│", "──"
 	ScrollKeys, Ellipsis = "↑↓", "…"
