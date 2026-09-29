@@ -114,6 +114,8 @@ func (m *BreakdownModel) refreshViewport() {
 	switch {
 	case len(m.messages) > 0:
 		content, m.lineRows = m.renderTableContent()
+	case m.waiting():
+		content, m.lineRows = m.renderWaiting(), nil
 	case !m.loading && m.err == nil:
 		content, m.lineRows = m.renderEmptyState(), nil
 	default:
@@ -127,6 +129,19 @@ func (m *BreakdownModel) refreshViewport() {
 
 // emptyStateText stands in for the table while the session has no replies.
 const emptyStateText = "No replies yet. Rows appear as Claude responds."
+
+// renderWaiting stands in for the table until the project has a session:
+// "Waiting for a Claude Code session in ~/work/webapp…", as in watch.
+func (m BreakdownModel) renderWaiting() string {
+	text := "Waiting for a Claude Code session" + styles.Ellipsis
+	if m.waitingIn != "" {
+		text = "Waiting for a Claude Code session in " + m.waitingIn + styles.Ellipsis
+	}
+	if m.noColor {
+		return "  " + text
+	}
+	return "  " + dimStyle.Render(text)
+}
 
 func (m BreakdownModel) renderEmptyState() string {
 	if m.noColor {

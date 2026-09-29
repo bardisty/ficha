@@ -30,6 +30,7 @@ const (
 type breakdownLayout struct {
 	indexWidth int
 	agentWidth int  // 0 when AGENT isn't drawn
+	modelExtra int  // columns MODEL gets past bdModelWidth, for unknown model IDs
 	runTags    bool // AGENT cells carry workflow run tags
 	in, out    bool
 	cacheWrite bool
@@ -74,9 +75,27 @@ func newBreakdownLayout(indexWidth, markerWidth, cellWidth, termWidth int) break
 	return l
 }
 
+// modelWidth is the MODEL column's width.
+func (l breakdownLayout) modelWidth() int { return bdModelWidth + l.modelExtra }
+
+// bdMaxModelWidth caps how far MODEL grows for an unknown model ID.
+const bdMaxModelWidth = 40
+
+// widenModel gives MODEL the columns an unknown model ID needs to show in
+// full (want, marker included), from whatever the row leaves spare. It never
+// takes a column back from the others: the ID is a nicety next to a cost.
+func (l breakdownLayout) widenModel(want, termWidth int) breakdownLayout {
+	extra := min(want, bdMaxModelWidth) - bdModelWidth
+	if termWidth > 0 {
+		extra = min(extra, termWidth-l.width())
+	}
+	l.modelExtra = max(extra, 0)
+	return l
+}
+
 // width is the display width of a row drawn with this layout, indent included.
 func (l breakdownLayout) width() int {
-	w := bdIndent + l.indexWidth + bdGap + bdTimeWidth + bdGap + bdModelWidth + bdGap + bdCostWidth
+	w := bdIndent + l.indexWidth + bdGap + bdTimeWidth + bdGap + l.modelWidth() + bdGap + bdCostWidth
 	if l.agentWidth > 0 {
 		w += bdGap + l.agentWidth
 	}
@@ -125,7 +144,7 @@ func (l breakdownLayout) header() string {
 		index:      fmt.Sprintf("%-*s", l.indexWidth, "#"),
 		time:       fmt.Sprintf("%-*s", bdTimeWidth, "TIME"),
 		agent:      fmt.Sprintf("%-*s", l.agentWidth, "AGENT"),
-		model:      fmt.Sprintf("%-*s", bdModelWidth, "MODEL"),
+		model:      fmt.Sprintf("%-*s", l.modelWidth(), "MODEL"),
 		cost:       fmt.Sprintf("%*s", bdCostWidth, "COST"),
 		in:         fmt.Sprintf("%*s", bdInWidth, "IN"),
 		out:        fmt.Sprintf("%*s", bdOutWidth, "OUT"),

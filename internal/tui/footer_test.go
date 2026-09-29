@@ -231,7 +231,9 @@ func TestWatchWarningRows(t *testing.T) {
 	a := tallAnalysis(1)
 	a.SkippedLines = 2
 	a.EstimatedCostMessages = 3
-	a.CostByModel["claude-mystery-9"] = models.CostBreakdown{TotalCost: 0.5}
+	// A short ID, so the footnote naming it still packs beside the other
+	// warning at 80 columns
+	a.CostByModel["m9"] = models.CostBreakdown{TotalCost: 0.5}
 
 	for _, w := range []int{80, 60} {
 		m := NewModel("/fixture/sess.jsonl", "sess", false, true, "", false)
@@ -240,7 +242,7 @@ func TestWatchWarningRows(t *testing.T) {
 		view := m.View()
 
 		flat := strings.Join(strings.Fields(view), " ")
-		for _, want := range []string{"2 skipped line(s), 3 estimated cost(s)", "* = fallback pricing"} {
+		for _, want := range []string{"2 skipped line(s), 3 estimated cost(s)", "* m9: fallback pricing"} {
 			if !strings.Contains(flat, want) {
 				t.Errorf("width %d: warnings lost %q:\n%s", w, want, view)
 			}

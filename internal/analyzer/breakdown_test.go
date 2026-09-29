@@ -1,9 +1,11 @@
 package analyzer
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -678,5 +680,44 @@ func TestGetBreakdownMessages_NoSkippedAgents(t *testing.T) {
 	if result.SkippedAgents != 0 || result.SkippedLines != 0 {
 		t.Errorf("SkippedAgents=%d SkippedLines=%d, want 0/0",
 			result.SkippedAgents, result.SkippedLines)
+	}
+}
+
+// With agents, the trend's recent window is the latest messages in time. In
+// file order it would be the tail of the last agent discovered: here an
+// agent that ran, expensively, before the parent's cheap later messages.
+func TestGetBreakdownMessages_TrendUsesTimeOrderWithAgents(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "trend-order"
+	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	line := func(minute, output int) string {
+		ts := time.Date(2024, 1, 15, 10, minute, 0, 0, time.UTC).Format(time.RFC3339)
+		return fmt.Sprintf(`{"type":"assistant","timestamp":"%s","message":{"model":"claude-sonnet-4","usage":{"input_tokens":10,"output_tokens":%d}}}`+"\n", ts, output)
+	}
+	var parent, agent strings.Builder
+	for i := range 10 {
+		agent.WriteString(line(i, 20000))   // 10:00-10:09, expensive
+		parent.WriteString(line(30+i, 100)) // 10:30-10:39, cheap
+	}
+	if err := os.WriteFile(sessionPath, []byte(parent.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subagentsDir, "agent-a0123456789abcdef.jsonl"), []byte(agent.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := GetBreakdownMessages(sessionPath, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Insights.CostTrend; got != models.TrendDecreasing {
+		t.Errorf("trend = %v, want falling: the latest messages are the cheap parent ones", got)
+	}
+	if peak := result.Insights.HighestCost; peak == nil || result.Messages[peak.Index-1].AgentID == "" {
+		t.Errorf("Peak should name one of the agent's rows: %+v", peak)
 	}
 }

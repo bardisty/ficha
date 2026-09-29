@@ -299,7 +299,7 @@ func TestWatchSessionSwitchResetsWaiterAccounting(t *testing.T) {
 
 func TestBreakdownSessionSwitchResetsWaiterAccounting(t *testing.T) {
 	sessionPath, projectDir, sessionID, _ := watchFixture(t)
-	m := NewBreakdownModel(sessionPath, sessionID, true, projectDir, false)
+	m := NewBreakdownModel(sessionPath, sessionID, true, projectDir, true)
 
 	mm, cmd := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
 	m = mm.(BreakdownModel)

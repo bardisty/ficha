@@ -92,9 +92,9 @@ func TestCalculateInsights_TwoMessages(t *testing.T) {
 		t.Errorf("Expected LastMessage.Cost=0.05, got %f", result.LastMessage.Cost)
 	}
 
-	// No trend for 2 messages (need 5+)
-	if result.EarlyAvgCost != 0 || result.LateAvgCost != 0 {
-		t.Error("Should not have trend data for < 5 messages")
+	// No trend below MinMessagesForTrend
+	if result.RecentAvgCost != 0 || result.TrendWindow != 0 {
+		t.Error("Should not have trend data below the trend threshold")
 	}
 }
 
@@ -116,19 +116,17 @@ func TestCalculateInsights_SixMessages_DecreasingTrend(t *testing.T) {
 		t.Fatal("Expected non-nil result")
 	}
 
-	// Early avg = (0.30 + 0.25 + 0.20) / 3 = 0.25
-	expectedEarlyAvg := 0.25
-	if !almostEqual(result.EarlyAvgCost, expectedEarlyAvg, 0.001) {
-		t.Errorf("Expected EarlyAvgCost=%f, got %f", expectedEarlyAvg, result.EarlyAvgCost)
+	// Six messages: the window is the later half, 3 messages
+	if result.TrendWindow != 3 {
+		t.Errorf("Expected TrendWindow=3, got %d", result.TrendWindow)
+	}
+	// Recent avg = (0.10 + 0.05 + 0.03) / 3 = 0.06, against a session avg of 0.155
+	expectedRecentAvg := (0.10 + 0.05 + 0.03) / 3
+	if !almostEqual(result.RecentAvgCost, expectedRecentAvg, 0.001) {
+		t.Errorf("Expected RecentAvgCost=%f, got %f", expectedRecentAvg, result.RecentAvgCost)
 	}
 
-	// Late avg = (0.10 + 0.05 + 0.03) / 3 = 0.06 — disjoint from the early window
-	expectedLateAvg := (0.10 + 0.05 + 0.03) / 3
-	if !almostEqual(result.LateAvgCost, expectedLateAvg, 0.001) {
-		t.Errorf("Expected LateAvgCost=%f, got %f", expectedLateAvg, result.LateAvgCost)
-	}
-
-	// Should be decreasing (late is significantly lower than early)
+	// Should be decreasing (recent is well below the session average)
 	if result.CostTrend != models.TrendDecreasing {
 		t.Errorf("Expected TrendDecreasing, got %v", result.CostTrend)
 	}
@@ -169,10 +167,6 @@ func TestMinMessagesForTrendMatchesModel(t *testing.T) {
 		t.Fatalf("analyzer minMessagesForTrend (%d) != models.MinMessagesForTrend (%d): the compute and render gates have drifted",
 			minMessagesForTrend, models.MinMessagesForTrend)
 	}
-	if minMessagesForTrend != 2*trendSampleSize {
-		t.Fatalf("minMessagesForTrend (%d) must be 2*trendSampleSize (%d) to keep the early/late windows disjoint",
-			minMessagesForTrend, 2*trendSampleSize)
-	}
 }
 
 func TestCalculateInsights_SixMessages_StableTrend(t *testing.T) {
@@ -199,9 +193,8 @@ func TestCalculateInsights_SixMessages_StableTrend(t *testing.T) {
 	}
 }
 
-// At exactly 5 messages the early [0,1,2] and late [2,3,4] trend windows would
-// overlap on the middle message, so trend requires 2*trendSampleSize messages
-// to keep the windows disjoint; below that, no trend is computed.
+// Below MinMessagesForTrend no trend is computed, and the trend fields keep
+// their zero values.
 func TestCalculateInsights_FiveMessages_NoTrend(t *testing.T) {
 	now := time.Now()
 	messages := []models.MessageAnalysis{
@@ -218,12 +211,8 @@ func TestCalculateInsights_FiveMessages_NoTrend(t *testing.T) {
 		t.Fatal("Expected non-nil result")
 	}
 
-	// Trend must not be computed with overlapping windows
-	if result.EarlyAvgCost != 0 {
-		t.Errorf("EarlyAvgCost should be 0 at 5 messages, got %f", result.EarlyAvgCost)
-	}
-	if result.LateAvgCost != 0 {
-		t.Errorf("LateAvgCost should be 0 at 5 messages, got %f", result.LateAvgCost)
+	if result.RecentAvgCost != 0 || result.TrendWindow != 0 {
+		t.Errorf("trend fields should be zero at 5 messages, got recent=%f window=%d", result.RecentAvgCost, result.TrendWindow)
 	}
 	if result.CostTrend != models.TrendStable {
 		t.Errorf("CostTrend should stay at zero value (stable), got %v", result.CostTrend)
@@ -418,8 +407,8 @@ func TestMessageInsights_TrendDescription(t *testing.T) {
 		t.Errorf("Expected empty description below the trend threshold")
 	}
 
-	// Exactly 5 messages is still below MinMessagesForTrend (6): the early/late
-	// windows would overlap, so no trend is computed and none is described.
+	// Exactly 5 messages is still below MinMessagesForTrend (6), so no trend is
+	// computed and none is described.
 	insights.MessageCount = models.MinMessagesForTrend - 1
 	if desc := insights.TrendDescription(); desc != "" {
 		t.Errorf("Expected empty description at %d messages, got %q", models.MinMessagesForTrend-1, desc)
@@ -428,20 +417,20 @@ func TestMessageInsights_TrendDescription(t *testing.T) {
 	// At the threshold - should return a description
 	insights.MessageCount = models.MinMessagesForTrend
 	desc := insights.TrendDescription()
-	if desc != "stabilizing" {
-		t.Errorf("Expected 'stabilizing' for TrendDecreasing, got %q", desc)
+	if desc != "falling" {
+		t.Errorf("Expected 'falling' for TrendDecreasing, got %q", desc)
 	}
 
 	insights.CostTrend = models.TrendIncreasing
 	desc = insights.TrendDescription()
-	if desc != "increasing" {
-		t.Errorf("Expected 'increasing' for TrendIncreasing, got %q", desc)
+	if desc != "rising" {
+		t.Errorf("Expected 'rising' for TrendIncreasing, got %q", desc)
 	}
 
 	insights.CostTrend = models.TrendStable
 	desc = insights.TrendDescription()
-	if desc != "stable" {
-		t.Errorf("Expected 'stable' for TrendStable, got %q", desc)
+	if desc != "flat" {
+		t.Errorf("Expected 'flat' for TrendStable, got %q", desc)
 	}
 }
 
@@ -504,8 +493,41 @@ func TestCalculateInsights_ManyMessages(t *testing.T) {
 		t.Errorf("Expected LastMessage.Cost=0.19, got %f", result.LastMessage.Cost)
 	}
 
-	// Should detect increasing trend
-	if result.CostTrend != models.TrendIncreasing {
-		t.Errorf("Expected TrendIncreasing, got %v", result.CostTrend)
+	// The last 5 average $0.17 against a session average of $0.145: 17%
+	// up, inside the 20% band, so flat
+	if result.CostTrend != models.TrendStable {
+		t.Errorf("Expected TrendStable, got %v", result.CostTrend)
+	}
+}
+
+// A long session's trend averages its last 20 messages, so a few small
+// replies at the end can't flip it.
+func TestCalculateInsights_TrendHoldsAcrossAFewSmallMessages(t *testing.T) {
+	now := time.Now()
+	var messages []models.MessageAnalysis
+	add := func(cost float64) {
+		messages = append(messages, models.MessageAnalysis{
+			Timestamp: now.Add(time.Duration(len(messages)) * time.Minute),
+			Cost:      models.CostBreakdown{TotalCost: cost},
+		})
+	}
+	// 200 messages around $0.04, then 40 around $0.09: a real rise
+	for i := range 200 {
+		add(0.04 + float64(i%3)*0.002)
+	}
+	for i := range 40 {
+		add(0.09 + float64(i%3)*0.002)
+	}
+	result := CalculateInsights(messages)
+	if result.TrendWindow != 20 || result.CostTrend != models.TrendIncreasing {
+		t.Fatalf("window %d, trend %v; want 20, rising", result.TrendWindow, result.CostTrend)
+	}
+
+	// Three small replies: a window of three would read falling here
+	for range 3 {
+		add(0.02)
+	}
+	if result := CalculateInsights(messages); result.CostTrend != models.TrendIncreasing {
+		t.Errorf("three small replies flipped the trend to %v", result.CostTrend)
 	}
 }

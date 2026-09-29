@@ -448,11 +448,10 @@ type MessageSnapshot struct {
 
 // MinMessagesForTrend is the message count at or above which
 // analyzer.CalculateInsights actually computes the trend fields
-// (EarlyAvgCost/LateAvgCost/CostTrend); it needs two disjoint sample windows,
-// so the threshold is twice the analyzer's per-end sample size. Below it those
-// fields are left at their zero values, so renderers must gate the trend row on
-// HasTrend rather than a hardcoded count — otherwise they print a fabricated
-// "$0.00/msg -> $0.00/msg stable" from never-computed zeros. The analyzer binds
+// (RecentAvgCost/TrendWindow/CostTrend). Below it those fields are left at
+// their zero values, so renderers must gate the trend row on HasTrend rather
+// than a hardcoded count — otherwise they print a fabricated
+// "$0.00/msg vs $0.00/msg flat" from never-computed zeros. The analyzer binds
 // its own compute gate to this constant (see analyzer.minMessagesForTrend).
 const MinMessagesForTrend = 6
 
@@ -462,10 +461,12 @@ type MessageInsights struct {
 	LastMessage  *MessageSnapshot `json:"last_message,omitempty"`
 	HighestCost  *MessageSnapshot `json:"highest_cost,omitempty"` // nil if not notably higher than average
 	CostTrend    TrendDirection   `json:"cost_trend"`
-	EarlyAvgCost float64          `json:"early_avg_cost"` // Average cost of first 3 messages
-	LateAvgCost  float64          `json:"late_avg_cost"`  // Average cost of last 3 messages
-	AverageCost  float64          `json:"average_cost"`   // Overall average cost per message
-	MessageCount int              `json:"message_count"`  // Total message count for insights
+	// RecentAvgCost is the average cost of the last TrendWindow messages,
+	// which CostTrend compares with AverageCost
+	RecentAvgCost float64 `json:"recent_avg_cost"`
+	TrendWindow   int     `json:"trend_window"`
+	AverageCost   float64 `json:"average_cost"`  // Overall average cost per message
+	MessageCount  int     `json:"message_count"` // Total message count for insights
 }
 
 // HasTrend reports whether a cost trend was actually computed. It is the single
@@ -492,11 +493,11 @@ func (i *MessageInsights) TrendDescription() string {
 
 	switch i.CostTrend {
 	case TrendIncreasing:
-		return "increasing"
+		return "rising"
 	case TrendDecreasing:
-		return "stabilizing"
+		return "falling"
 	default:
-		return "stable"
+		return "flat"
 	}
 }
 

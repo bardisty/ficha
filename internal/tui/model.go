@@ -807,7 +807,6 @@ func (m *Model) detectChanges(old, new *models.SessionAnalysis) {
 	if new.Insights != nil {
 		if old.Insights == nil {
 			// Insights newly appeared
-			m.changedAt["insights_first"] = now
 			m.changedAt["insights_last"] = now
 			if new.Insights.HighestCost != nil {
 				m.changedAt["insights_highest"] = now
@@ -828,7 +827,7 @@ func (m *Model) detectChanges(old, new *models.SessionAnalysis) {
 					new.Insights.HighestCost.Cost != old.Insights.HighestCost.Cost) {
 				m.changedAt["insights_highest"] = now
 			}
-			if old.Insights.LateAvgCost != new.Insights.LateAvgCost ||
+			if old.Insights.RecentAvgCost != new.Insights.RecentAvgCost ||
 				old.Insights.CostTrend != new.Insights.CostTrend {
 				m.changedAt["insights_trend"] = now
 			}

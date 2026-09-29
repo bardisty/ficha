@@ -106,7 +106,7 @@ func TestBreakdownPosition_ScrollBeforeFirstLoad(t *testing.T) {
 	m := NewBreakdownModel("/fixture/sess.jsonl", "0a1b2c3d", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
 	m = updated.(BreakdownModel)
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
 	m = updated.(BreakdownModel)
 	updated, _ = m.Update(breakdownMsgsMsg{messages: chromeRows(goldenTime(10, 0, 0), 40), insights: &models.MessageInsights{}})
 	m = updated.(BreakdownModel)
@@ -177,6 +177,7 @@ func TestBreakdownSessionSwitch_ResetsScroll(t *testing.T) {
 	if m.autoScroll || m.viewport.YOffset != 0 {
 		t.Fatalf("setup: want scrolled to top, manual")
 	}
+	m.followMode = true
 	updated, _ = m.Update(sessionSwitchedMsg{newSessionPath: "/fixture/new.jsonl", newSessionID: "new"})
 	m = updated.(BreakdownModel)
 	if !m.autoScroll {
@@ -209,5 +210,106 @@ func TestBreakdownEmptyState(t *testing.T) {
 	m = updated.(BreakdownModel)
 	if strings.Contains(m.View(), emptyStateText) {
 		t.Error("the empty state should go once a row arrives")
+	}
+}
+
+// A downward key resumes following even when the view is already at the
+// bottom and can't move: on a short table, or after p lands on a last-page
+// row.
+func TestBreakdownDownKeyAtBottomResumesFollowing(t *testing.T) {
+	press := func(m BreakdownModel, keys ...tea.KeyMsg) BreakdownModel {
+		for _, k := range keys {
+			updated, _ := m.Update(k)
+			m = updated.(BreakdownModel)
+		}
+		return m
+	}
+	g := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")}
+	for name, k := range map[string]tea.KeyMsg{
+		"j":     {Type: tea.KeyRunes, Runes: []rune("j")},
+		"down":  {Type: tea.KeyDown},
+		"space": {Type: tea.KeySpace, Runes: []rune(" ")},
+	} {
+		// Short table: g turns following off without moving anything
+		m := press(loadedBreakdown(t, 100, 30, chromeRows(goldenTime(10, 0, 0), 10)), g, k)
+		if !m.autoScroll {
+			t.Errorf("%s at the bottom of a short table should resume following", name)
+		}
+		updated, _ := m.Update(breakdownMsgsMsg{messages: chromeRows(goldenTime(10, 0, 0), 60), insights: &models.MessageInsights{}})
+		if m = updated.(BreakdownModel); !m.viewport.AtBottom() {
+			t.Errorf("%s: new rows should keep the view at the bottom", name)
+		}
+
+		// p on a last-page row clamps to the bottom with following off
+		rows := chromeRows(goldenTime(10, 0, 0), 40)
+		rows[39].Cost.TotalCost = 9
+		m = press(loadedBreakdown(t, 100, 20, rows), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+		if m.autoScroll || !m.viewport.AtBottom() {
+			t.Fatalf("setup: p should stop following at the bottom")
+		}
+		if m = press(m, k); !m.autoScroll {
+			t.Errorf("%s after p at the bottom should resume following", name)
+		}
+	}
+}
+
+// Pinned, a new session leaves the view where it is; f follows, as in watch.
+func TestBreakdownFollowToggle(t *testing.T) {
+	m := loadedBreakdown(t, 100, 24, chromeRows(goldenTime(10, 0, 0), 5))
+	updated, _ := m.Update(sessionSwitchedMsg{newSessionPath: "/fixture/new.jsonl", newSessionID: "new"})
+	if m = updated.(BreakdownModel); m.sessionPath != "/fixture/sess.jsonl" {
+		t.Fatalf("pinned breakdown switched to %s", m.sessionPath)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	if m = updated.(BreakdownModel); !m.followMode || !strings.Contains(m.View(), "FOLLOWING") {
+		t.Fatalf("f should turn following on and show it:\n%s", m.View())
+	}
+	updated, _ = m.Update(sessionSwitchedMsg{newSessionPath: "/fixture/new.jsonl", newSessionID: "new"})
+	if m = updated.(BreakdownModel); m.sessionPath != "/fixture/new.jsonl" {
+		t.Errorf("following breakdown stayed on %s", m.sessionPath)
+	}
+}
+
+// With no session yet, breakdown waits and says where, then opens the first
+// session to appear, pinned or not.
+func TestBreakdownWaitingForFirstSession(t *testing.T) {
+	m := NewWaitingBreakdownModel("/projects/-work-webapp", "~/work/webapp", true, false)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = updated.(BreakdownModel)
+	out := m.View()
+	for _, want := range []string{"Waiting for a Claude Code session in ~/work/webapp", "webapp", "waiting for a session"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("waiting view lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, emptyStateText) {
+		t.Errorf("waiting isn't the empty state:\n%s", out)
+	}
+	// Keys that act on rows or a session are harmless with neither
+	for _, k := range []string{"p", "r", "j", "g", "G"} {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
+		m = updated.(BreakdownModel)
+	}
+	updated, _ = m.Update(sessionSwitchedMsg{newSessionPath: "/projects/-work-webapp/first.jsonl", newSessionID: "first"})
+	if m = updated.(BreakdownModel); m.sessionPath != "/projects/-work-webapp/first.jsonl" || !m.loading {
+		t.Errorf("a waiting breakdown should open the first session, pinned or not (path %q)", m.sessionPath)
+	}
+}
+
+// ctrl+z suspends only where the shell can resume it; without job control
+// (a tmux pane started with a command) it would leave a blank screen.
+func TestBreakdownCtrlZSuspends(t *testing.T) {
+	m := loadedBreakdown(t, 100, 24, chromeRows(goldenTime(10, 0, 0), 5))
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlZ})
+	if !canSuspend() {
+		if cmd != nil {
+			t.Error("ctrl+z suspended without job control")
+		}
+		return
+	}
+	if cmd == nil {
+		t.Fatal("ctrl+z returned no command")
+	} else if _, ok := cmd().(tea.SuspendMsg); !ok {
+		t.Error("ctrl+z didn't suspend")
 	}
 }

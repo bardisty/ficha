@@ -233,8 +233,11 @@ func TestClampModel(t *testing.T) {
 		{"Sonnet 4.6", 10, "Sonnet 4.6"}, // exactly 10: the name that overflowed %-9s
 		{"Haiku 4.5", 10, "Haiku 4.5"},
 		// Unknown models fall back to their raw ID and must be cut to fit.
-		{"claude-opus-4-9-20260101", 10, "claude-op…"},
-		{"claude-opus-4-9-20260101", 12, "claude-opus…"},
+		// A raw ID that must be cut drops the shared "claude-" prefix first.
+		{"claude-opus-4-9-20260101", 10, "opus-4-9-…"},
+		{"claude-opus-4-9-20260101", 12, "opus-4-9-20…"},
+		{"claude-nova-9", 9, "nova-9"},
+		{"claude-nova-9", 13, "claude-nova-9"}, // fits whole: the full ID stays
 		{"us.anthropic.claude-opus-4-9-v1:0", 11, "us.anthrop…"},
 		// Degenerate widths yield no panic.
 		{"Opus 4.8", 1, "…"},
@@ -387,11 +390,12 @@ func TestCostComponentLabel(t *testing.T) {
 		component string
 		want      string
 	}{
-		{"input", "input"},
-		{"output", "output"},
-		{"cache_write_5m", "cache_write"},
-		{"cache_write_1h", "cache_write"},
-		{"cache_read", "cache_read"},
+		// The names the cost tables give these rows
+		{"input", "Input"},
+		{"output", "Output"},
+		{"cache_write_5m", "Cache write 5m"},
+		{"cache_write_1h", "Cache write 1h"},
+		{"cache_read", "Cache read"},
 		{"unknown_component", "unknown_component"},
 		{"", ""},
 	}
@@ -645,8 +649,8 @@ func TestTrendSymbol(t *testing.T) {
 func TestClampModelASCIIEllipsis(t *testing.T) {
 	styles.SetASCII(true)
 	t.Cleanup(func() { styles.SetASCII(false) })
-	if got := ClampModel("claude-opus-4-9-20260101", 10); got != "claude-..." {
-		t.Errorf("ClampModel ASCII = %q, want claude-...", got)
+	if got := ClampModel("claude-opus-4-9-20260101", 10); got != "opus-4-..." {
+		t.Errorf("ClampModel ASCII = %q, want opus-4-...", got)
 	}
 	if got := ClampModel("claude-opus-4-9", 2); got != ".." {
 		t.Errorf("ClampModel ASCII width 2 = %q, want ..", got)

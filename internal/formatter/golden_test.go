@@ -177,11 +177,11 @@ func goldenShowAnalysis() *models.SessionAnalysis {
 				Index: 9, Timestamp: goldenTime(10, 42, 13),
 				Cost: 1.87, MainCostComponent: "output", MainCostValue: 1.02,
 			},
-			CostTrend:    models.TrendIncreasing,
-			EarlyAvgCost: 0.28,
-			LateAvgCost:  0.55,
-			AverageCost:  0.41,
-			MessageCount: 24,
+			CostTrend:     models.TrendIncreasing,
+			RecentAvgCost: 0.55,
+			TrendWindow:   12,
+			AverageCost:   0.41,
+			MessageCount:  24,
 		},
 	}
 }

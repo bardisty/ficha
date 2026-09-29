@@ -9,9 +9,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/paths"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
@@ -57,6 +59,9 @@ type BreakdownModel struct {
 	// pausePending: auto-scroll went off before any load landed, so the next
 	// load's rows are the baseline, not new arrivals.
 	pausePending bool
+	// selectedKey is the row p last jumped to (breakdownMsgKey), highlighted
+	// until another key is pressed; "" when none.
+	selectedKey string
 	// lineRows maps each viewport content line to the display Index of the
 	// message on it, or 0 for a day divider.
 	lineRows []int
@@ -64,6 +69,7 @@ type BreakdownModel struct {
 	// Header state: project name, and the newest message timestamp (else the
 	// session file's mtime, with activityFromFile set) that the header ages.
 	project          string
+	waitingIn        string // the directory a waiting model waits for a session in
 	lastActivity     time.Time
 	activityFromFile bool
 	now              func() time.Time // tests pin the clock; nil means time.Now
@@ -134,7 +140,7 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 	closing := &atomic.Bool{}
 	closeOnce := &sync.Once{}
 
-	return BreakdownModel{
+	m := BreakdownModel{
 		sessionPath: sessionPath,
 		sessionID:   sessionID,
 		noColor:     noColor,
@@ -149,23 +155,38 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 		projectDir:  projectDir,
 		followMode:  followMode,
 		agentCache:  analyzer.NewAgentParseCache(),
-		subagentSig: subagentTreeSignature(filepath.Dir(sessionPath), sessionID),
 		project:     projectName(projectDir),
 	}
+	if sessionPath != "" {
+		m.subagentSig = subagentTreeSignature(filepath.Dir(sessionPath), sessionID)
+	}
+	return m
 }
+
+// NewWaitingBreakdownModel opens breakdown before its project has any
+// session, as watch's NewWaitingModel does. It waits on projectDir, which may
+// not exist yet, and opens the first session created there. projectPath is
+// the directory Claude Code will run in, for the header and the waiting line.
+func NewWaitingBreakdownModel(projectDir, projectPath string, noColor, followMode bool) BreakdownModel {
+	m := NewBreakdownModel("", "", noColor, projectDir, followMode)
+	m.loading = false
+	m.waitingIn = projectPath
+	m.project = paths.BasenameCrossOS(projectPath)
+	return m
+}
+
+// waiting reports whether breakdown has no session yet.
+func (m BreakdownModel) waiting() bool { return m.sessionPath == "" }
 
 // Init initializes the breakdown TUI
 func (m BreakdownModel) Init() tea.Cmd {
-	cmds := []tea.Cmd{
-		m.spinner.Tick,
-		m.loadBreakdown,
-		func() tea.Msg { return m.watchFile() },
-		tickCmd(),
-		subagentPollCmd(),
+	cmds := []tea.Cmd{m.spinner.Tick, tickCmd(), subagentPollCmd()}
+	if !m.waiting() {
+		cmds = append(cmds, m.loadBreakdown, func() tea.Msg { return m.watchFile() })
 	}
 
-	// Start session watcher if follow mode is enabled
-	if m.followMode && m.projectDir != "" {
+	// The session watcher runs pinned too, so f can start following
+	if m.projectDir != "" {
 		cmds = append(cmds, m.startSessionWatcher())
 	}
 
@@ -178,31 +199,53 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// A slow link can deliver a held key as one chunk ("jjjj"), which
+		// matches no binding; replay it one key at a time.
+		if n := repeatedRune(msg); n > 1 {
+			var model tea.Model = m
+			var cmds []tea.Cmd
+			for range n {
+				var cmd tea.Cmd
+				model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: msg.Runes[:1]})
+				cmds = append(cmds, cmd)
+			}
+			return model, tea.Batch(cmds...)
+		}
+		if msg.String() != "p" {
+			m.clearSelection()
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			shutdownWatchers(m.closeOnce, m.closing, m.done, m.watcher, m.sessionWatcher, m.wg)
 			return m, tea.Quit
 
-		case "up", "k":
-			m.setFollow(false)
-			m.viewport.ScrollUp(1)
-
-		case "down", "j":
-			m.viewport.ScrollDown(1)
-			// Re-enable auto-scroll if at bottom
-			if m.viewport.AtBottom() {
-				m.setFollow(true)
+		case "ctrl+z":
+			if canSuspend() {
+				return m, tea.Suspend
 			}
+			return m, nil
 
-		case "pgup":
-			m.setFollow(false)
-			m.viewport.HalfPageUp()
-
-		case "pgdown":
-			m.viewport.HalfPageDown()
-			if m.viewport.AtBottom() {
-				m.setFollow(true)
+		case "r":
+			// The view is already live; r is the retry the notify row offers
+			// after an error, and a harmless re-read otherwise.
+			if m.waiting() {
+				// The session watcher is all a waiting view has; if it
+				// failed to start, r is the retry.
+				if m.sessionWatcher == nil && m.projectDir != "" {
+					m.err = nil
+					return m, m.startSessionWatcher()
+				}
+				return m, nil
 			}
+			m.loading = true
+			return m, m.loadBreakdownCmd()
+
+		case "p":
+			m.selectNextTop()
+
+		case "f":
+			// Following new sessions, as in watch; the header shows the mode
+			m.followMode = !m.followMode
 
 		case "g", "home":
 			m.setFollow(false)
@@ -211,7 +254,30 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "G", "end":
 			m.viewport.GotoBottom()
 			m.setFollow(true)
+
+		default:
+			// The viewport's own keymap: arrows, j/k, PgUp/PgDn, space/b,
+			// d/u and ctrl+d/u. Scrolling off the bottom stops auto-scroll;
+			// reaching it again resumes.
+			before := m.viewport.YOffset
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			// A downward key at the bottom moves nothing but still means
+			// "take me to the newest", so it resumes following too.
+			if m.viewport.YOffset != before || (m.viewport.AtBottom() && isDownKey(m.viewport.KeyMap, msg)) {
+				m.setFollow(m.viewport.AtBottom())
+			}
+			return m, cmd
 		}
+
+	case tea.ResumeMsg:
+		// Anything written while suspended arrived without a redraw; reload
+		// rather than trust that every change was seen.
+		if m.waiting() {
+			return m, nil
+		}
+		m.loading = true
+		return m, m.loadBreakdownCmd()
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -320,6 +386,13 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionWatcherStartedMsg:
 		// Store the session watcher and start waiting for new sessions
 		m.sessionWatcher = msg.watcher
+		// A session created between the decision to wait and the watcher's
+		// start is already on disk; take it rather than wait for its next write.
+		if m.waiting() {
+			if path, id := msg.watcher.NewestSession(); path != "" {
+				return m.switchTo(path, id)
+			}
+		}
 		return m, m.waitForNewSession()
 
 	case sessionWatcherRestartMsg:
@@ -339,70 +412,12 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadBreakdownCmd()
 
 	case sessionSwitchedMsg:
-		// Store previous session ID and switch to new session
-		m.prevSessionID = m.sessionID
-		m.sessionID = msg.newSessionID
-		m.sessionPath = msg.newSessionPath
-		m.switchNotifyAt = time.Now()
-
-		// Reset state for clean switch. hasUnknown and err must reset too, or the
-		// old session's "* = fallback pricing" footnote (and a stale header
-		// error) persist under the new session until its first load lands — or
-		// indefinitely if that load errors.
-		m.messages = nil
-		m.insights = nil
-		m.hasAgents = false
-		m.runTags = nil
-		m.totalCost = 0
-		m.minCost = 0
-		m.maxCost = 0
-		m.skippedLines = 0
-		m.skippedAgents = 0
-		m.estimatedCosts = 0
-		m.hasUnknown = false
-		m.err = nil
-		m.loading = true
-		m.newMsgKeys = make(map[string]time.Time)
-		m.lastActivity = time.Time{}
-		m.activityFromFile = false
-		// The new session opens following its newest row, whatever the
-		// reader had scrolled to in the old one.
-		m.autoScroll = true
-		m.pausedAt = 0
-		m.pausePending = false
-		m.lineRows = nil
-		if m.ready {
-			m.viewport.SetContent("")
-			m.viewport.GotoTop()
+		// Pinned (f toggles it): stay put and keep watching. Waiting, any
+		// session beats none.
+		if !m.followMode && !m.waiting() {
+			return m, m.waitForNewSession()
 		}
-		// Drop the previous session's cached agent parses
-		m.agentCache = analyzer.NewAgentParseCache()
-		// Fingerprint the new session's subagent tree; the pending reload
-		// covers anything already on disk
-		m.subagentSig = subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
-
-		// Stop old file watcher, will be restarted by watchFile. Closing it
-		// unblocks the old waiter, which exits without a message, so the
-		// in-flight flag resets here for the new watcher's waiter
-		if m.watcher != nil {
-			m.watcher.Close()
-			m.watcher = nil
-		}
-		m.fileWaiterActive = false
-
-		// Update session watcher's current session
-		if m.sessionWatcher != nil {
-			m.sessionWatcher.SetCurrentSession(m.sessionID)
-		}
-
-		// Reload data, restart file watcher, and restart session watcher
-		// We must explicitly restart waitForNewSession because the goroutine that
-		// detected this switch has already exited after returning sessionSwitchedMsg
-		cmds := []tea.Cmd{m.loadBreakdownCmd(), func() tea.Msg { return m.watchFile() }}
-		if m.sessionWatcher != nil {
-			cmds = append(cmds, m.waitForNewSession())
-		}
-		return m, tea.Batch(cmds...)
+		return m.switchTo(msg.newSessionPath, msg.newSessionID)
 
 	case tickMsg:
 		// Re-render only while highlights are active — an idle table would
@@ -417,6 +432,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tickCmd()
 
 	case subagentPollMsg:
+		if m.waiting() {
+			return m, subagentPollCmd()
+		}
 		sig := subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
 		if sig != m.subagentSig {
 			m.subagentSig = sig
@@ -426,6 +444,74 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, subagentPollCmd()
 	}
 
+	return m, tea.Batch(cmds...)
+}
+
+// switchTo opens another session, dropping everything the old one showed.
+func (m BreakdownModel) switchTo(path, id string) (tea.Model, tea.Cmd) {
+	m.prevSessionID = m.sessionID
+	m.sessionID = id
+	m.sessionPath = path
+	m.switchNotifyAt = time.Now()
+
+	// Reset state for clean switch. hasUnknown and err must reset too, or the
+	// old session's "* = fallback pricing" footnote (and a stale header
+	// error) persist under the new session until its first load lands — or
+	// indefinitely if that load errors.
+	m.messages = nil
+	m.insights = nil
+	m.hasAgents = false
+	m.runTags = nil
+	m.totalCost = 0
+	m.minCost = 0
+	m.maxCost = 0
+	m.skippedLines = 0
+	m.skippedAgents = 0
+	m.estimatedCosts = 0
+	m.hasUnknown = false
+	m.err = nil
+	m.loading = true
+	m.newMsgKeys = make(map[string]time.Time)
+	m.lastActivity = time.Time{}
+	m.activityFromFile = false
+	// The new session opens following its newest row, whatever the
+	// reader had scrolled to in the old one.
+	m.autoScroll = true
+	m.pausedAt = 0
+	m.pausePending = false
+	m.selectedKey = ""
+	m.lineRows = nil
+	if m.ready {
+		m.viewport.SetContent("")
+		m.viewport.GotoTop()
+	}
+	// Drop the previous session's cached agent parses
+	m.agentCache = analyzer.NewAgentParseCache()
+	// Fingerprint the new session's subagent tree; the pending reload
+	// covers anything already on disk
+	m.subagentSig = subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
+
+	// Stop old file watcher, will be restarted by watchFile. Closing it
+	// unblocks the old waiter, which exits without a message, so the
+	// in-flight flag resets here for the new watcher's waiter
+	if m.watcher != nil {
+		m.watcher.Close()
+		m.watcher = nil
+	}
+	m.fileWaiterActive = false
+
+	// Update session watcher's current session
+	if m.sessionWatcher != nil {
+		m.sessionWatcher.SetCurrentSession(m.sessionID)
+	}
+
+	// Reload data, restart file watcher, and restart session watcher
+	// We must explicitly restart waitForNewSession because the goroutine that
+	// detected this switch has already exited after returning sessionSwitchedMsg
+	cmds := []tea.Cmd{m.loadBreakdownCmd(), func() tea.Msg { return m.watchFile() }}
+	if m.sessionWatcher != nil {
+		cmds = append(cmds, m.waitForNewSession())
+	}
 	return m, tea.Batch(cmds...)
 }
 
@@ -548,10 +634,17 @@ func (m BreakdownModel) renderNotifyRow() string {
 		if len(m.messages) > 0 {
 			text += ", showing last data"
 		}
+		text += " " + styles.Bullet + " r to retry"
 		if m.noColor {
 			return "  " + text
 		}
 		return "  " + lipgloss.NewStyle().Foreground(styles.ErrorColor).Render(text)
+	}
+	if text := m.selectionText(); text != "" {
+		if m.noColor {
+			return "  " + text
+		}
+		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Render(text)
 	}
 	if m.switchNotifyAt.IsZero() || time.Since(m.switchNotifyAt) >= switchNotifyDuration {
 		return ""
@@ -572,7 +665,7 @@ func (m BreakdownModel) renderStatsLine() string {
 			line += sep + note
 		}
 		if m.hasUnknown {
-			line += sep + unknownModelFootnote()
+			line += sep + unknownModelFootnote(m.unknownModelIDs())
 		}
 		return line
 	}
@@ -595,14 +688,16 @@ func (m BreakdownModel) renderStatsLine() string {
 	// Explain the MODEL-column asterisk: those rows are fallback-priced
 	if m.hasUnknown {
 		sb.WriteString(sepStyled)
-		sb.WriteString(warnStyle.Render(unknownModelFootnote()))
+		sb.WriteString(warnStyle.Render(unknownModelFootnote(m.unknownModelIDs())))
 	}
 	return sb.String()
 }
 
 // renderHelpLine is the key-hint row.
 func (m BreakdownModel) renderHelpLine() string {
-	helpText := helpLine("q: quit", "g/G: top/bottom", styles.ScrollKeys+": scroll")
+	// watch's line, plus p, which only breakdown has. r isn't listed: the
+	// view is already live, and the notify row offers it as a retry.
+	helpText := helpLine("q quit", "j/k scroll", "space/b page", "g/G top/bottom", "f follow", "p peak")
 	if !m.noColor {
 		helpText = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(helpText)
 	}
@@ -630,6 +725,7 @@ func (m BreakdownModel) headerParams(width int) liveHeaderParams {
 		width:        width,
 		project:      m.project,
 		mode:         mode,
+		waiting:      m.waiting(),
 		lastActivity: m.lastActivity,
 		noMessages:   m.activityFromFile,
 		now:          m.clock(),
@@ -694,7 +790,7 @@ func (m BreakdownModel) renderCompactInsights() string {
 	sep := " " + styles.BoxVerticalSep + " "
 	width := m.width - 2
 	if m.hasAgents && len(parts) > 0 {
-		scope := "scope: parent + agents"
+		scope := "main conversation + agents"
 		if !m.noColor {
 			scope = lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(scope)
 		}
@@ -776,7 +872,8 @@ func (m BreakdownModel) renderTableContent() (string, []int) {
 			sb.WriteString("\n")
 			lineRows = append(lineRows, 0)
 		}
-		sb.WriteString(m.renderRow(msg, m.isNewMessage(msg), layout))
+		highlight := m.isNewMessage(msg) || (m.selectedKey != "" && !m.noColor && breakdownMsgKey(msg) == m.selectedKey)
+		sb.WriteString(m.renderRow(msg, highlight, layout))
 		lineRows = append(lineRows, msg.Index)
 		if i < len(m.messages)-1 {
 			sb.WriteString("\n")
@@ -829,13 +926,16 @@ func (m BreakdownModel) agentCell(msg models.BreakdownMessage, withTag bool) str
 
 // layout picks the columns this frame draws. See breakdownLayout.
 func (m BreakdownModel) layout() breakdownLayout {
-	markerWidth, cellWidth, lastIndex := 0, 0, 0
+	markerWidth, cellWidth, lastIndex, modelWant := 0, 0, 0, 0
 	for _, msg := range m.messages {
 		markerWidth = max(markerWidth, len(agentMarker(msg.AgentID)))
 		cellWidth = max(cellWidth, len(m.agentCell(msg, true)))
 		lastIndex = max(lastIndex, msg.Index)
+		if !pricing.IsKnownModel(msg.Model) {
+			modelWant = max(modelWant, utf8.RuneCountInString(pricing.GetModelDisplayName(msg.Model))+len(unknownModelMarker))
+		}
 	}
-	return newBreakdownLayout(len(strconv.Itoa(lastIndex)), markerWidth, cellWidth, m.width)
+	return newBreakdownLayout(len(strconv.Itoa(lastIndex)), markerWidth, cellWidth, m.width).widenModel(modelWant, m.width)
 }
 
 // renderRow renders a single message row
@@ -843,9 +943,9 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, layou
 	modelName := pricing.GetModelDisplayName(msg.Model)
 	// Flag fallback-priced rows inline; the footer explains the marker. Clamp
 	// first so a long raw ID can't push it out of the column (or off it).
-	modelLabel := render.ClampModel(modelName, bdModelWidth)
+	modelLabel := render.ClampModel(modelName, layout.modelWidth())
 	if !pricing.IsKnownModel(msg.Model) {
-		modelLabel = render.ClampModel(modelName, bdModelWidth-1) + unknownModelMarker
+		modelLabel = render.ClampModel(modelName, layout.modelWidth()-1) + unknownModelMarker
 	}
 	marker := agentMarker(msg.AgentID)
 
@@ -853,7 +953,7 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, layou
 		index: fmt.Sprintf("%-*d", layout.indexWidth, msg.Index),
 		time:  fmt.Sprintf("%-*s", bdTimeWidth, render.Clock(msg.Timestamp)),
 		agent: fmt.Sprintf("%-*s", layout.agentWidth, m.agentCell(msg, layout.runTags)),
-		model: fmt.Sprintf("%-*s", bdModelWidth, modelLabel),
+		model: fmt.Sprintf("%-*s", layout.modelWidth(), modelLabel),
 		cost:  render.CostCell(msg.Cost.TotalCost, bdCostWidth),
 		in:    fmt.Sprintf("%*s", bdInWidth, render.Number(msg.Usage.InputTokens)),
 		out:   fmt.Sprintf("%*s", bdOutWidth, render.Number(msg.Usage.OutputTokens)),

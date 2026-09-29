@@ -19,18 +19,16 @@ type BreakdownResult struct {
 	// Messages whose cache-write cost is a 5m-rate estimate (parent + agents;
 	// see models.MessageAnalysis.EstimatedCost)
 	EstimatedCostMessages int
-	// Insights over the merged messages in FILE ORDER (parent block, then agent
-	// blocks in discovery order) — deliberately computed before the display sort
-	// so order-sensitive insights (trend windows, first/last, HighestCost
-	// tie-break) share the ordering semantics show/watch use over their
-	// parent-only file-order list. For an agent-free session this list equals the
-	// parent list, so the figures match those surfaces exactly.
-	// The set still differs when agents ran (parent + agents); the breakdown's
-	// scope label discloses that.
+	// Insights over the merged messages. For an agent-free session they are
+	// computed in file order, the order show/watch use over the same parent
+	// list, so the figures match those surfaces exactly. When agents ran they
+	// are computed in time order: the trend averages the latest messages, and
+	// file order (parent block, then each agent's) would make those the tail
+	// of whichever agent was discovered last. The breakdown's scope label
+	// discloses that the set differs from show/watch's.
 	//
-	// Snapshot indices are the exception to file order: they are resolved to
-	// the display Index of the same message after the sort, since the table's
-	// row numbers are the only handle a reader has to find it.
+	// Snapshot indices are always display Indexes, since the table's row
+	// numbers are the only handle a reader has to find a row.
 	Insights *models.MessageInsights
 	// Workflows lists the workflow runs whose agents appear in Messages, in
 	// discovery order (alphabetical by run ID).
@@ -122,22 +120,13 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		}
 	}
 
-	// Insights are order-sensitive, so compute them over the FILE-ORDER list
-	// (parent block, then agent blocks in discovery order) before the display
-	// sort below reorders it by timestamp. This keeps breakdown's trend/Peak
-	// aligned with show/watch, which compute over their parent-only file-order
-	// list — for an agent-free session the two lists are identical.
-	fileOrderAnalyses := make([]models.MessageAnalysis, len(allMessages))
-	for i, msg := range allMessages {
-		fileOrderAnalyses[i] = models.MessageAnalysis{
-			AgentID:   msg.AgentID,
-			Timestamp: msg.Timestamp,
-			Model:     msg.Model,
-			Usage:     msg.Usage,
-			Cost:      msg.Cost,
-		}
+	// Insights are order-sensitive; see BreakdownResult.Insights for which
+	// order applies. The agent-free case is computed here, before the sort.
+	hasAgentRows := len(allMessages) > len(parentAnalyses)
+	var insights *models.MessageInsights
+	if !hasAgentRows {
+		insights = CalculateInsights(breakdownAnalyses(allMessages))
 	}
-	insights := CalculateInsights(fileOrderAnalyses)
 
 	// Sort all messages by timestamp; stable so equal timestamps keep the
 	// deterministic append order (parent rows, then agents in discovery order).
@@ -157,7 +146,12 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		sorted[i].Index = i + 1
 		displayIndex[pos] = i + 1
 	}
-	remapSnapshotIndices(insights, displayIndex)
+	if hasAgentRows {
+		// Computed over the display order, so indices are display Indexes already
+		insights = CalculateInsights(breakdownAnalyses(sorted))
+	} else {
+		remapSnapshotIndices(insights, displayIndex)
+	}
 
 	return &BreakdownResult{
 		Messages:              sorted,
@@ -167,6 +161,22 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		Insights:              insights,
 		Workflows:             workflows,
 	}, nil
+}
+
+// breakdownAnalyses converts breakdown rows to the analyses CalculateInsights
+// takes, in the same order.
+func breakdownAnalyses(msgs []models.BreakdownMessage) []models.MessageAnalysis {
+	out := make([]models.MessageAnalysis, len(msgs))
+	for i, msg := range msgs {
+		out[i] = models.MessageAnalysis{
+			AgentID:   msg.AgentID,
+			Timestamp: msg.Timestamp,
+			Model:     msg.Model,
+			Usage:     msg.Usage,
+			Cost:      msg.Cost,
+		}
+	}
+	return out
 }
 
 // remapSnapshotIndices rewrites each snapshot's 1-based file-order Index to the

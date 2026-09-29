@@ -54,7 +54,7 @@ func runShow(cfg *config, args []string, live bool) error {
 	session, projectDir, explicitSessionID, err := selectSession(cfg, args)
 	if err != nil {
 		if live && len(args) == 0 {
-			if waited, waitErr := waitForFirstSession(cfg); waited {
+			if waited, waitErr := waitForFirstSession(cfg, waitingWatch(cfg)); waited {
 				return waitErr
 			}
 		}

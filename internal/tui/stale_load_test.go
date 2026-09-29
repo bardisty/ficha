@@ -20,7 +20,7 @@ var errTestStale = errors.New("stale-session load error")
 func TestBreakdownStaleLoadDroppedAfterSwitch(t *testing.T) {
 	oldPath := "/proj/old.jsonl"
 	newPath := "/proj/new.jsonl"
-	m := NewBreakdownModel(oldPath, "old", true, "", false)
+	m := NewBreakdownModel(oldPath, "old", true, "", true)
 
 	// Switch to the new session (resets state, sessionPath = newPath).
 	updated, _ := m.Update(sessionSwitchedMsg{newSessionPath: newPath, newSessionID: "new"})
@@ -72,7 +72,7 @@ func TestBreakdownStaleLoadDroppedAfterSwitch(t *testing.T) {
 // hasUnknown (and any header error), so the "* = fallback pricing" footnote and
 // a stale error don't bleed into the new session during its loading window.
 func TestBreakdownSwitchClearsUnknownFootnote(t *testing.T) {
-	m := NewBreakdownModel("/proj/old.jsonl", "old", true, "", false)
+	m := NewBreakdownModel("/proj/old.jsonl", "old", true, "", true)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = updated.(BreakdownModel)
 

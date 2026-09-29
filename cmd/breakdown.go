@@ -15,11 +15,12 @@ Run this alongside 'ficha watch' in a separate terminal for detailed
 cost visibility during Claude Code sessions.
 
 Features:
-  - Live updates as new messages arrive
-  - Auto-follows latest session (switches when new session starts)
-  - Auto-scroll to latest messages (can scroll up manually)
-  - Agent sub-session messages shown inline with [A1], [A2] markers
-  - New rows highlighted briefly when they appear
+  - Live updates as new messages arrive, highlighted briefly
+  - Follows new sessions as they start (f toggles; a session ID pins)
+  - Stays on the newest rows until you scroll up
+  - Agent rows marked in an AGENT column, with the IDs watch shows
+  - p jumps to the most expensive rows
+  - With no session in the project yet, waits for the first one
 
 Examples:
   ficha breakdown              Show breakdown and auto-follow latest session
@@ -42,6 +43,12 @@ Examples:
 func runBreakdown(cfg *config, args []string) error {
 	session, projectDir, explicitSessionID, err := selectSession(cfg, args)
 	if err != nil {
+		// No session yet: wait for one, as watch does, where that's the answer
+		if len(args) == 0 {
+			if waited, waitErr := waitForFirstSession(cfg, waitingBreakdown(cfg)); waited {
+				return waitErr
+			}
+		}
 		return err
 	}
 

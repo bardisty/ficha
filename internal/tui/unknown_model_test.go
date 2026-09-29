@@ -19,7 +19,7 @@ const unknownModelID = "claude-opus-4-9-20260101"
 // unknownModelPrefix survives the clamp on every surface: the raw ID is cut to
 // 9 columns in the breakdown row and 11 in the watch COST BY MODEL row, and
 // each reserves the last one for the marker.
-const unknownModelPrefix = "claude-o"
+const unknownModelPrefix = "opus-4-9"
 
 // watchViewWithUnknownModel renders a watch frame whose COST BY MODEL section
 // carries one catalog model and one fallback-priced model.
@@ -81,8 +81,8 @@ func TestWatchMarksUnknownModel(t *testing.T) {
 			}
 
 			// The footer explains it.
-			if !strings.Contains(out, unknownModelFootnote()) {
-				t.Errorf("footer missing %q:\n%s", unknownModelFootnote(), out)
+			if want := unknownModelFootnote([]string{"<synthetic>", unknownModelID}); !strings.Contains(out, want) {
+				t.Errorf("footer missing %q:\n%s", want, out)
 			}
 		})
 	}
@@ -92,7 +92,7 @@ func TestWatchMarksUnknownModel(t *testing.T) {
 func TestWatchOmitsUnknownModelFootnoteWhenAllKnown(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	out := stripANSI(goldenWatchView(t, true))
-	if strings.Contains(out, unknownModelFootnote()) {
+	if strings.Contains(out, "fallback pricing") {
 		t.Errorf("footnote must not render when every model is priced from the catalog:\n%s", out)
 	}
 	for _, row := range costByModelRows(out) {
@@ -141,8 +141,8 @@ func TestBreakdownMarksUnknownModel(t *testing.T) {
 			if strings.Contains(plainRow, unknownModelMarker) {
 				t.Errorf("catalog-model row must not be marked:\n%q", plainRow)
 			}
-			if !strings.Contains(out, unknownModelFootnote()) {
-				t.Errorf("footer missing %q:\n%s", unknownModelFootnote(), out)
+			if !strings.Contains(out, unknownModelFootnote([]string{unknownModelID})) {
+				t.Errorf("footer missing %q:\n%s", unknownModelFootnote([]string{unknownModelID}), out)
 			}
 		})
 	}
@@ -203,4 +203,34 @@ func costByModelRows(out string) []string {
 		}
 	}
 	return rows
+}
+
+// With room, breakdown shows an unknown model's full ID, the one a pricing
+// update needs, and the footnote names it.
+func TestBreakdownShowsFullUnknownModelID(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	out := stripANSI(breakdownViewWithUnknownModel(t, true))
+	if row := findRow(t, out, unknownModelPrefix); !strings.Contains(row, unknownModelID+unknownModelMarker) {
+		t.Errorf("at 120 columns the row should carry the full ID:\n%q", row)
+	}
+	if !strings.Contains(out, unknownModelMarker+" "+unknownModelID+": fallback pricing") {
+		t.Errorf("the footnote should name the model:\n%s", out)
+	}
+}
+
+func TestUnknownModelFootnote(t *testing.T) {
+	tests := []struct {
+		ids  []string
+		want string
+	}{
+		{nil, "⚠ * = fallback pricing"},
+		{[]string{"claude-nova-9"}, "⚠ * claude-nova-9: fallback pricing"},
+		{[]string{"a", "b"}, "⚠ * a, b: fallback pricing"},
+		{[]string{"a", "b", "c", "d"}, "⚠ * a, b +2 more: fallback pricing"},
+	}
+	for _, tt := range tests {
+		if got := unknownModelFootnote(tt.ids); got != tt.want {
+			t.Errorf("unknownModelFootnote(%v) = %q, want %q", tt.ids, got, tt.want)
+		}
+	}
 }
