@@ -121,7 +121,7 @@ Per-command flags:
 | `show`, `watch`, `breakdown`, `list`, `summary` | `--project-dir <name>` | Claude project dir name, instead of `-p` (bypass auto-detect) |
 | `show` | `-l, --live` | Watch the session live (same as `ficha watch`) |
 | `show`, `watch`, `breakdown` | `--no-follow` | Stay on the starting session instead of following new ones (live mode only) |
-| `show` | `--messages` | Per-message rows (json/csv only) |
+| `show` | `--messages` | Add per-message records: a `messages` array in json, one row per message in csv |
 | `summary` | `-d, --details` | Add a per-session breakdown |
 | `summary` | `--expand-agents` | Per-agent records (requires `--details`) |
 | `summary`, `global` | `--since <when>` | Only messages from then on: `2026-09-01`, `today`, `7d`, `12h` |
@@ -161,13 +161,13 @@ ficha completion fish > ~/.config/fish/completions/ficha.fish     # fish
 
 ## Machine output (json / csv)
 
-`-f` only picks the encoding. json and csv always export the complete dataset, as a single object or a uniform-column table, safe for `jq` and pandas.
+`-f` only picks the encoding. json is one document per run and csv one table with the same columns on every row, safe for `jq` and pandas. Table-only flags like `global --top` don't cut either one down. csv is the flat view: it leaves out nested detail such as the per-model split, which only json has.
 
 - Unreadable input is counted, never swallowed: `skipped_sessions`, `skipped_agents`, `skipped_lines`, `estimated_cost_messages`.
-- Agent spend is always split out: `parent_cost + agents_cost = total_cost`.
+- Agent spend is always split out: `jq '.parent_cost.total_cost + .agents_cost.total_cost == .total_cost.total_cost'` holds, up to float rounding.
 - `cost_by_model` keys are canonical model IDs, so summing by key needs no normalization.
 
-The full export contract is in [docs/machine-output.md](docs/machine-output.md). It covers flag interactions, record provenance, the counters, per-message rows, and csv safety.
+The full export contract is in [docs/machine-output.md](docs/machine-output.md). It covers each command's shape, flag interactions, record provenance, the counters, timestamps, per-message rows, what csv leaves out, and csv safety.
 
 Before 1.0, a minor release can rename or remove keys. [Compatibility](docs/machine-output.md#compatibility) says how those changes are announced and how to pin a version.
 

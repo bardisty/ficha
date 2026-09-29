@@ -11,9 +11,6 @@ import (
 	"github.com/bardisty/ficha/internal/render"
 )
 
-// csvTimeFormat matches the timestamp layout used by the other CSV formatters.
-const csvTimeFormat = "2006-01-02T15:04:05Z07:00"
-
 // sortedSuccessfulResults returns the results that parsed, ordered by modified
 // time to match the SESSION BREAKDOWN table. Failed sessions (nil Analysis) are
 // dropped: machine formats export only sessions that could be analyzed, and the
@@ -142,7 +139,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 			csvCell(a.ProjectPath),
 			csvCell(a.SessionFile),
 			"",
-			r.Entry.Modified.Format(csvTimeFormat),
+			models.MachineTime(r.Entry.Modified),
 			csvCell(primarySessionModelID(a)),
 			fmt.Sprintf("%d", a.MessageCount),
 			fmt.Sprintf("%d", a.AgentCount),

@@ -155,7 +155,7 @@ func formatMessagesCSV(analysis *models.SessionAnalysis) (string, error) {
 	for _, msg := range analysis.Messages {
 		row := []string{
 			csvCell(msg.AgentID),
-			msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+			models.MachineTime(msg.Timestamp),
 			csvCell(msg.Model),
 			fmt.Sprintf("%d", msg.Usage.InputTokens),
 			fmt.Sprintf("%d", msg.Usage.OutputTokens),
@@ -220,7 +220,7 @@ func FormatSessionListCSV(results []models.SessionResult, originalPath string) (
 			csvCell(entry.SessionID),
 			csvCell(entry.FullPath),
 			fmt.Sprintf("%d", entry.MessageCount),
-			entry.Modified.Format(csvTimeFormat),
+			models.MachineTime(entry.Modified),
 			fmt.Sprintf("%d", entry.AgentCount),
 			fmt.Sprintf("%d", entry.AgentMessageCount),
 			fmt.Sprintf("%d", entry.SkippedSessions),
@@ -232,7 +232,7 @@ func FormatSessionListCSV(results []models.SessionResult, originalPath string) (
 		if a := r.Analysis; a != nil {
 			start := ""
 			if !a.StartTime.IsZero() {
-				start = a.StartTime.Format(csvTimeFormat)
+				start = models.MachineTime(a.StartTime)
 			}
 			row = append(row,
 				start,

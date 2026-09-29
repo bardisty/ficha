@@ -22,7 +22,7 @@ type config struct {
 	noFollow bool
 
 	// show flags.
-	messages bool // --messages: per-message rows/records in json/csv instead of the session summary
+	messages bool // --messages: per-message records in json/csv (json keeps the session object; csv switches to message rows)
 
 	// summary flags.
 	showDetails  bool

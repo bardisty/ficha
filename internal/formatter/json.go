@@ -3,7 +3,6 @@ package formatter
 import (
 	"encoding/json"
 	"path/filepath"
-	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -38,8 +37,9 @@ func FormatSessionJSON(analysis *models.SessionAnalysis, pretty bool) (string, e
 // start_time, duration_seconds and total_cost leave out messages repeated
 // from an earlier session, and title is the transcript's latest, as on show.
 // They are absent on a session that failed to parse, which skipped_sessions
-// marks, and start_time and model on one with nothing of its own. total_cost is the same breakdown
-// object show and summary carry, so .total_cost.total_cost reads alike.
+// marks, and start_time and model on one with nothing of its own.
+// total_cost is the same breakdown object show and summary carry, so
+// .total_cost.total_cost reads alike.
 type sessionListRecord struct {
 	SessionID         string                `json:"session_id"`
 	FullPath          string                `json:"full_path"`
@@ -47,8 +47,8 @@ type sessionListRecord struct {
 	OriginalPath      string                `json:"original_path"`
 	Title             string                `json:"title,omitempty"`
 	Model             string                `json:"model,omitempty"`
-	StartTime         time.Time             `json:"start_time,omitzero"`
-	Modified          time.Time             `json:"modified"`
+	StartTime         string                `json:"start_time,omitempty"`
+	Modified          string                `json:"modified"`
 	DurationSeconds   *float64              `json:"duration_seconds,omitempty"`
 	MessageCount      int                   `json:"message_count"`
 	TotalCost         *models.CostBreakdown `json:"total_cost,omitempty"`
@@ -73,7 +73,7 @@ func FormatSessionListJSON(results []models.SessionResult, originalPath string, 
 			FullPath:          e.FullPath,
 			ProjectPath:       filepath.Dir(e.FullPath),
 			OriginalPath:      originalPath,
-			Modified:          e.Modified,
+			Modified:          models.MachineTime(e.Modified),
 			MessageCount:      e.MessageCount,
 			AgentPaths:        e.AgentPaths,
 			AgentCount:        e.AgentCount,
@@ -87,7 +87,9 @@ func FormatSessionListJSON(results []models.SessionResult, originalPath string, 
 			cost := a.TotalCost
 			records[i].Title = a.Title
 			records[i].Model = primarySessionModelID(a)
-			records[i].StartTime = a.StartTime
+			if !a.StartTime.IsZero() {
+				records[i].StartTime = models.MachineTime(a.StartTime)
+			}
 			records[i].DurationSeconds = &seconds
 			records[i].TotalCost = &cost
 		}

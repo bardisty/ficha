@@ -20,36 +20,101 @@ func (d Duration) Seconds() float64 {
 	return time.Duration(d).Seconds()
 }
 
-// The types below carry a Duration, which marshals as a Go duration string
-// ("3h12m5s") that jq can't do arithmetic on. Each adds duration_seconds
-// beside it, the way csv has it. The alias type drops the method so
-// marshaling it doesn't recurse.
+// MachineTime is how json and csv write a time: UTC, whole seconds, Z
+// ("2026-09-29T17:18:43Z"), the one layout jq's fromdate reads. The program
+// keeps full-precision local times, which ordering and dedup rely on, and
+// converts only when encoding. Two messages in the same second print alike.
+func MachineTime(t time.Time) string {
+	return t.UTC().Format(time.RFC3339)
+}
 
-// MarshalJSON adds duration_seconds to the session's fields.
+// The MarshalJSON methods below write each time field through MachineTime.
+// A field declared in the outer struct shadows the embedded one of the same
+// json name, and the alias type drops the method so marshaling it doesn't
+// recurse.
+//
+// The types that carry a Duration also add duration_seconds beside it: the
+// duration marshals as a Go duration string ("3h12m5s") that jq can't do
+// arithmetic on.
+
+// MarshalJSON writes the session's times through MachineTime and adds
+// duration_seconds.
 func (s SessionAnalysis) MarshalJSON() ([]byte, error) {
 	type plain SessionAnalysis
 	return json.Marshal(struct {
 		plain
+		StartTime       string  `json:"start_time"`
+		EndTime         string  `json:"end_time"`
 		DurationSeconds float64 `json:"duration_seconds"`
-	}{plain(s), s.Duration.Seconds()})
+	}{plain(s), MachineTime(s.StartTime), MachineTime(s.EndTime), s.Duration.Seconds()})
 }
 
-// MarshalJSON adds duration_seconds to the agent's fields.
+// MarshalJSON writes the agent's times through MachineTime and adds
+// duration_seconds.
 func (a AgentAnalysis) MarshalJSON() ([]byte, error) {
 	type plain AgentAnalysis
 	return json.Marshal(struct {
 		plain
+		StartTime       string  `json:"start_time"`
+		EndTime         string  `json:"end_time"`
 		DurationSeconds float64 `json:"duration_seconds"`
-	}{plain(a), a.Duration.Seconds()})
+	}{plain(a), MachineTime(a.StartTime), MachineTime(a.EndTime), a.Duration.Seconds()})
 }
 
-// MarshalJSON adds duration_seconds to the global totals' fields.
+// MarshalJSON writes the global span through MachineTime and adds
+// duration_seconds.
 func (g GlobalAnalysis) MarshalJSON() ([]byte, error) {
 	type plain GlobalAnalysis
 	return json.Marshal(struct {
 		plain
+		FirstActive     string  `json:"first_active"`
+		LastActive      string  `json:"last_active"`
 		DurationSeconds float64 `json:"duration_seconds"`
-	}{plain(g), g.Duration.Seconds()})
+	}{plain(g), MachineTime(g.FirstActive), MachineTime(g.LastActive), g.Duration.Seconds()})
+}
+
+// MarshalJSON writes the project's span through MachineTime.
+func (p ProjectAnalysis) MarshalJSON() ([]byte, error) {
+	type plain ProjectAnalysis
+	return json.Marshal(struct {
+		plain
+		FirstActive string `json:"first_active"`
+		LastActive  string `json:"last_active"`
+	}{plain(p), MachineTime(p.FirstActive), MachineTime(p.LastActive)})
+}
+
+// MarshalJSON writes the message's timestamp through MachineTime.
+func (m MessageAnalysis) MarshalJSON() ([]byte, error) {
+	type plain MessageAnalysis
+	return json.Marshal(struct {
+		plain
+		Timestamp string `json:"timestamp"`
+	}{plain(m), MachineTime(m.Timestamp)})
+}
+
+// MarshalJSON writes the snapshot's timestamp through MachineTime.
+func (m MessageSnapshot) MarshalJSON() ([]byte, error) {
+	type plain MessageSnapshot
+	return json.Marshal(struct {
+		plain
+		Timestamp string `json:"timestamp"`
+	}{plain(m), MachineTime(m.Timestamp)})
+}
+
+// MarshalJSON writes each bound through MachineTime, and leaves out an open
+// one. A relative bound (--since 2h) loses its fraction of a second.
+func (w TimeWindow) MarshalJSON() ([]byte, error) {
+	var out struct {
+		Since string `json:"since,omitempty"`
+		Until string `json:"until,omitempty"`
+	}
+	if !w.Since.IsZero() {
+		out.Since = MachineTime(w.Since)
+	}
+	if !w.Until.IsZero() {
+		out.Until = MachineTime(w.Until)
+	}
+	return json.Marshal(out)
 }
 
 // UnmarshalJSON implements json.Unmarshaler for Duration
@@ -482,7 +547,7 @@ type MessageSnapshot struct {
 	Index             int       `json:"index"` // 1-based message index
 	Timestamp         time.Time `json:"timestamp"`
 	Cost              float64   `json:"cost"`
-	MainCostComponent string    `json:"main_cost_component"` // "cache_write", "cache_read", "output", "input"
+	MainCostComponent string    `json:"main_cost_component"` // "input", "output", "cache_write_5m", "cache_write_1h" or "cache_read"
 	MainCostValue     float64   `json:"main_cost_value"`
 }
 
