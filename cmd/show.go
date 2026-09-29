@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/bardisty/ficha/internal/analyzer"
@@ -80,13 +81,10 @@ func runShow(cfg *config, args []string, live bool) error {
 		return fmt.Errorf("analyzing session: %w", err)
 	}
 
-	// Warn about skipped agents, skipped lines, and estimated pricing
-	warnSkippedAgents(cfg.stderr, analysis.SkippedAgents)
-	warnSkippedLines(cfg.stderr, analysis.SkippedLines)
-	warnEstimatedCosts(cfg.stderr, analysis.EstimatedCostMessages)
-
-	// Warn about unknown models (using fallback pricing)
-	warnUnknownModels(cfg.stderr, analysis.CostByModel)
+	var warnings bytes.Buffer
+	skipWarning{counts: "totals", agents: analysis.SkippedAgents, lines: analysis.SkippedLines}.write(&warnings, cfg.verbose)
+	warnEstimatedCosts(&warnings, analysis.EstimatedCostMessages)
+	warnUnknownModels(&warnings, analysis.CostByModel)
 
 	// Output in requested format
 	output, err := formatOutput(cfg, analysis, includeMessages)
@@ -94,7 +92,7 @@ func runShow(cfg *config, args []string, live bool) error {
 		return fmt.Errorf("formatting output: %w", err)
 	}
 
-	fmt.Fprintln(cfg.stdout, output)
+	printReport(cfg, &warnings, output)
 	return nil
 }
 

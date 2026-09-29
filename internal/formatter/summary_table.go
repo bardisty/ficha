@@ -89,12 +89,11 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
 	}
 
-	footerText := fmt.Sprintf("Messages: %s  %s  Sessions: %d", msgStr, footerSep(noColor), analysis.SessionCount)
-	if noColor {
-		sb.WriteString(footerText)
-	} else {
-		sb.WriteString(footerStyle.Render(footerText))
-	}
+	sb.WriteString(footerStats([]string{
+		"Total: " + render.Cost(analysis.TotalCost.TotalCost),
+		"Messages: " + msgStr,
+		fmt.Sprintf("Sessions: %d", analysis.SessionCount),
+	}, sectionWidth, noColor))
 	sb.WriteString("\n")
 
 	// Single-line separator

@@ -682,7 +682,7 @@ func TestE2EWarningsGoToStderr(t *testing.T) {
 	// test-name-derived temp path embedded in project_path.
 	var a models.SessionAnalysis
 	mustJSON(t, stdout, &a)
-	if strings.Contains(stdout, "using fallback pricing") {
+	if strings.Contains(stdout, "priced at fallback") {
 		t.Errorf("warning leaked into stdout: %q", stdout)
 	}
 }
@@ -1424,5 +1424,127 @@ func TestE2ELiveViewsNeedATerminal(t *testing.T) {
 				t.Errorf("stderr: got %q, want %q", stderr, tt.wantStderr)
 			}
 		})
+	}
+}
+
+// TestE2EWarningsNameTheirSessions: skip warnings on reports spanning several
+// sessions say how to find the affected ones, and -v names them; the
+// unknown-model warning gives the rate it priced at.
+func TestE2EWarningsNameTheirSessions(t *testing.T) {
+	root := t.TempDir()
+	projName := "-home-test-warn"
+	projDir := filepath.Join(root, "projects", projName)
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	badLine := `{"type":"assistant","timestamp":"not-a-time","requestId":"r9","message":{"id":"m9","usage":{"input_tokens":10}}}`
+	write := func(id, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(projDir, id+".jsonl"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("11111111-aaaa-bbbb-cccc-000000000000", e2eMsg("2026-03-01T10:00:00Z", "g1", "claude-opus-4-8", 1000, 500, 0, 0, 0)+"\n")
+	write("22222222-aaaa-bbbb-cccc-000000000000", e2eMsg("2026-03-01T11:00:00Z", "g2", "claude-nova-9", 1000, 500, 0, 0, 0)+"\n"+badLine+"\n"+badLine+"\n")
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	proj := "--project-dir=" + projName
+
+	const (
+		linesSummary = "Warning: 2 unparseable line(s) skipped; totals may be undercounted\n"
+		linesList    = "Warning: 2 unparseable line(s) skipped; message counts may be undercounted\n"
+		hint         = "  Run with -v to list the affected sessions.\n"
+		unknown      = "Warning: unknown model \"claude-nova-9\" priced at fallback $3/$15 per MTok\n"
+	)
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"summary", []string{"summary", proj}, linesSummary + hint + unknown},
+		{"summary -v", []string{"summary", proj, "-v"}, linesSummary + "  22222222: 2 lines\n" + unknown},
+		{"list", []string{"list", proj}, linesList + hint},
+		{"list -v", []string{"list", proj, "-v"}, linesList + "  22222222: 2 lines\n"},
+		{"global -v", []string{"global", "-v"}, linesSummary + "  -home-test-warn/22222222: 2 lines\n" + unknown},
+		// A single session is the one on screen: nothing to name.
+		{"show", []string{"show", proj, "22222222", "-v"}, linesSummary + unknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, stderr, err := executeCLISplit(t, tt.args...)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if stderr != tt.want {
+				t.Errorf("stderr:\n got: %q\nwant: %q", stderr, tt.want)
+			}
+		})
+	}
+}
+
+// TestE2EFootersCarryTheTotal: the footer is what stays on screen after a long
+// report, so it leads with the total.
+func TestE2EFootersCarryTheTotal(t *testing.T) {
+	setupE2EFixture(t)
+	for _, args := range [][]string{
+		{"show", projFlag, e2eAlphaID, "--no-color"},
+		{"summary", projFlag, "--no-color"},
+		{"summary", projFlag, "-d", "--no-color"},
+		{"global", "--no-color"},
+	} {
+		stdout, _, err := executeCLISplit(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		lines := strings.Split(stdout, "\n")
+		footer := -1
+		for i, l := range lines {
+			if strings.HasPrefix(l, "=====") {
+				footer = i
+			}
+		}
+		if footer < 0 || footer+1 >= len(lines) || !strings.HasPrefix(lines[footer+1], "Total: $") {
+			t.Errorf("%v: footer should start with the total:\n%s", args, stdout)
+		}
+	}
+}
+
+// TestE2EVerboseNamesUnreadableSession: an unreadable transcript's agents were
+// never analyzed, so -v charges them to it and the per-session lines add up
+// to the warning's agent count.
+func TestE2EVerboseNamesUnreadableSession(t *testing.T) {
+	root := t.TempDir()
+	projName := "-home-test-unreadable"
+	projDir := filepath.Join(root, "projects", projName)
+	badID := "33333333-aaaa-bbbb-cccc-000000000000"
+	agentPath := filepath.Join(projDir, badID, "subagents", "agent-x.jsonl")
+	if err := os.MkdirAll(filepath.Dir(agentPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	line := e2eMsg("2026-03-01T10:00:00Z", "g1", "claude-opus-4-8", 1000, 500, 0, 0, 0) + "\n"
+	for _, p := range []string{filepath.Join(projDir, "11111111-aaaa-bbbb-cccc-000000000000.jsonl"), agentPath} {
+		if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	badPath := filepath.Join(projDir, badID+".jsonl")
+	if err := os.WriteFile(badPath, []byte(line), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(badPath, 0o644) })
+	if f, err := os.Open(badPath); err == nil {
+		_ = f.Close()
+		t.Skip("chmod 000 does not bar file reads (running as root, or Windows)")
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+
+	_, stderr, err := executeCLISplit(t, "summary", "--project-dir="+projName, "-v")
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	want := "Warning: 1 session(s) could not be parsed\n" +
+		"Warning: 1 agent sub-session(s) could not be read\n" +
+		"  33333333: unreadable, 1 agent\n"
+	if stderr != want {
+		t.Errorf("stderr:\n got: %q\nwant: %q", stderr, want)
 	}
 }

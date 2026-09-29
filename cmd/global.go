@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -74,16 +75,23 @@ func runGlobal(cfg *config) error {
 	}
 
 	// Warn about every input the totals could not account for
+	var warnings bytes.Buffer
 	if analysis.SkippedProjects > 0 {
-		fmt.Fprintf(cfg.stderr, "Warning: %d project(s) could not be analyzed\n", analysis.SkippedProjects)
+		fmt.Fprintf(&warnings, "Warning: %d project(s) could not be analyzed\n", analysis.SkippedProjects)
 	}
-	warnSkippedSessions(cfg.stderr, analysis.SkippedSessions)
-	warnSkippedAgents(cfg.stderr, analysis.SkippedAgents)
-	warnSkippedLines(cfg.stderr, analysis.SkippedLines)
-	warnEstimatedCosts(cfg.stderr, analysis.EstimatedCostMessages)
-
-	// Warn about unknown models (using fallback pricing)
-	warnUnknownModels(cfg.stderr, analysis.CostByModel)
+	var details []namedSkip
+	for _, p := range analysis.Projects {
+		details = append(details, labelSkips(projectLabel(p.ProjectInfo), p.SkipDetails)...)
+	}
+	skipWarning{
+		counts:   "totals",
+		sessions: analysis.SkippedSessions,
+		agents:   analysis.SkippedAgents,
+		lines:    analysis.SkippedLines,
+		details:  details,
+	}.write(&warnings, cfg.verbose)
+	warnEstimatedCosts(&warnings, analysis.EstimatedCostMessages)
+	warnUnknownModels(&warnings, analysis.CostByModel)
 
 	// Apply custom sort if requested
 	if cfg.globalSortBy != "cost" {
@@ -107,6 +115,6 @@ func runGlobal(cfg *config) error {
 		output = formatter.FormatGlobalTable(analysis, cfg.noColor, cfg.globalTopN, cfg.globalDetails)
 	}
 
-	fmt.Fprintln(cfg.stdout, output)
+	printReport(cfg, &warnings, output)
 	return nil
 }

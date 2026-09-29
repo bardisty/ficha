@@ -476,6 +476,8 @@ type ProjectAnalysis struct {
 	SkippedSessions int `json:"skipped_sessions,omitempty"` // Sessions that failed to parse
 	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
 	SkippedLines    int `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized)
+	// Per-session breakdown of the skip counters, for verbose warnings.
+	SkipDetails []SkipDetail `json:"-"`
 	// Messages whose cache-write cost is a 5m-rate estimate (see SessionAnalysis)
 	EstimatedCostMessages int `json:"estimated_cost_messages,omitempty"`
 }

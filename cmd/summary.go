@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/bardisty/ficha/internal/analyzer"
@@ -57,14 +58,16 @@ func runSummary(cfg *config) error {
 		return fmt.Errorf("analyzing sessions: %w", err)
 	}
 
-	// Warn about skipped sessions/agents
-	warnSkippedSessions(cfg.stderr, analysis.SkippedSessions)
-	warnSkippedAgents(cfg.stderr, analysis.SkippedAgents)
-	warnSkippedLines(cfg.stderr, analysis.SkippedLines)
-	warnEstimatedCosts(cfg.stderr, analysis.EstimatedCostMessages)
-
-	// Warn about unknown models (using fallback pricing)
-	warnUnknownModels(cfg.stderr, analysis.CostByModel)
+	var warnings bytes.Buffer
+	skipWarning{
+		counts:   "totals",
+		sessions: analysis.SkippedSessions,
+		agents:   analysis.SkippedAgents,
+		lines:    analysis.SkippedLines,
+		details:  labelSkips("", analyzer.SkipDetails(results)),
+	}.write(&warnings, cfg.verbose)
+	warnEstimatedCosts(&warnings, analysis.EstimatedCostMessages)
+	warnUnknownModels(&warnings, analysis.CostByModel)
 
 	// Mark as summary (don't overwrite SessionID). SessionCount is already the
 	// skip-adjusted count — AnalyzeMultipleSessions sets it where the totals
@@ -102,6 +105,6 @@ func runSummary(cfg *config) error {
 		}
 	}
 
-	fmt.Fprintln(cfg.stdout, output)
+	printReport(cfg, &warnings, output)
 	return nil
 }

@@ -104,22 +104,16 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
 	}
 
-	footerText := fmt.Sprintf("Messages: %s", msgStr)
-	sep := footerSep(noColor)
+	fields := []string{"Total: " + render.Cost(analysis.TotalCost.TotalCost), "Messages: " + msgStr}
 	if isSummary {
 		if sessionCount := analysis.SessionCount; sessionCount > 0 {
-			footerText += fmt.Sprintf("  %s  Sessions: %d", sep, sessionCount)
+			fields = append(fields, fmt.Sprintf("Sessions: %d", sessionCount))
 		}
 	} else if !analysis.EndTime.IsZero() {
 		// Show last active time for single sessions
-		footerText += fmt.Sprintf("  %s  Last active: %s", sep, analysis.EndTime.Local().Format("2006-01-02 15:04"))
+		fields = append(fields, "Last active: "+analysis.EndTime.Local().Format("2006-01-02 15:04"))
 	}
-
-	if noColor {
-		sb.WriteString(footerText)
-	} else {
-		sb.WriteString(footerStyle.Render(footerText))
-	}
+	sb.WriteString(footerStats(fields, sectionWidth, noColor))
 	sb.WriteString("\n")
 
 	// Single-line help separator
