@@ -83,7 +83,8 @@ func TestE2EExpandAgentsCSVReconciles(t *testing.T) {
 		}
 		return i
 	}
-	rowType, total, parent, agents := col("row_type"), col("total_cost"), col("parent_cost"), col("agents_cost")
+	rowType, sessionID := col("row_type"), col("session_id")
+	total, parent, agents := col("total_cost"), col("parent_cost"), col("agents_cost")
 
 	// Each cell is rounded to 6 dp, so a sum of two can be off by one in the
 	// last place.
@@ -95,7 +96,7 @@ func TestE2EExpandAgentsCSVReconciles(t *testing.T) {
 		case "session":
 			p, a, tc := mustFloat(t, r[parent]), mustFloat(t, r[agents]), mustFloat(t, r[total])
 			if math.Abs(p+a-tc) > tol {
-				t.Errorf("session %s: parent_cost %v + agents_cost %v != total_cost %v", r[1], p, a, tc)
+				t.Errorf("session %s: parent_cost %v + agents_cost %v != total_cost %v", r[sessionID], p, a, tc)
 			}
 			sessionSum += tc
 			agentsCostSum += a

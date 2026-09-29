@@ -88,15 +88,15 @@ func FormatSummaryDetailJSON(summary *models.SessionAnalysis, results []models.S
 // expandAgents is set. project_path (the project dir, shared with the summary
 // aggregate for joining) and session_file (the transcript path) ride the session
 // rows only — join agent rows back through session_id. Session rows carry the
-// session total (message_count,
-// costs and skipped_lines include agents); agent rows break out each agent — do
-// not sum across row types: sum session rows for totals, agent rows for agent
-// spend. On session rows parent_cost + agents_cost = total_cost, so the file
-// reconciles against itself; agent rows leave both empty. cumulative_cost is the running session total in
-// modified order and is empty on agent rows. agent_id holds the agent's real ID
-// — the same key `show --messages` and the json agents[] array use, so the
-// exports join. skipped_agents says how many agents a session row's agent_count
-// does not include, and is empty on agent rows.
+// session total (message_count, costs and skipped_lines include agents); agent
+// rows break out each agent — do not sum across row types: sum session rows for
+// totals, agent rows for agent spend. On session rows parent_cost + agents_cost
+// = total_cost, so the file reconciles against itself; agent rows leave both
+// empty. cumulative_cost is the running session total in modified order and is
+// empty on agent rows. agent_id holds the agent's real ID — the same key `show
+// --messages` and the json agents[] array use, so the exports join.
+// skipped_agents says how many agents a session row's agent_count does not
+// include, and is empty on agent rows.
 func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
