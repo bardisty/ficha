@@ -335,63 +335,42 @@ func (m Model) renderAgentBreakdownContent() string {
 	// Uses plain white costs - model tier colors already provide cost hierarchy
 	// Workflow agents are grouped after regular agents; a dim header line marks
 	// each run's start. Markers carry the real agent ID (abbreviated), matching
-	// the breakdown TUI's [A<id>] scheme.
-	prevWorkflow := ""
-	for _, agent := range a.Agents {
-		if agent.WorkflowID != prevWorkflow {
-			prevWorkflow = agent.WorkflowID
-			if agent.WorkflowID != "" {
-				// The run's subtotal sits in the cost column, like show's, so a
-				// workflow compares with the parent session at a glance. It's
-				// dim like its heading: it repeats the rows below and isn't
-				// part of the column's sum.
-				heading := styles.GroupRule + " " + render.WorkflowLabel(a.WorkflowByID(agent.WorkflowID))
-				if lipgloss.Width(heading) > 40 {
-					heading = withEllipsis(heading, 40)
-				}
-				pad := strings.Repeat(" ", 40-lipgloss.Width(heading)+3)
-				cost := workflowCost(a.Agents, agent.WorkflowID)
-				if m.noColor {
-					sb.WriteString("    " + heading + pad + render.CostCell(cost, 11) + "\n")
-				} else {
-					sb.WriteString("    " + dimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, 11) + "\n")
-				}
+	// the breakdown TUI's [A<id>] scheme. A running agent's live dot sits in
+	// the indent, so the rows' columns don't move as agents start and stop.
+	for _, row := range agentRows(a, m.clock()) {
+		switch row.kind {
+		case agentRowRun:
+			// The run's subtotal sits in the cost column, like show's, so a
+			// workflow compares with the parent session at a glance. It's
+			// dim like its heading while it repeats the rows below and isn't
+			// part of the column's sum; a folded run's rows are gone, so
+			// then it is.
+			heading := styles.GroupRule + " " + render.WorkflowLabel(a.WorkflowByID(row.runID))
+			if lipgloss.Width(heading) > 40 {
+				heading = withEllipsis(heading, 40)
 			}
-		}
-		agentHighlighted := m.isHighlighted("agent_" + agent.AgentID)
-		costStr := render.CostStyled(agent.TotalCost.TotalCost, 11, agentHighlighted, m.noColor)
-
-		// [A<id>] carries the abbreviated real agent ID (%-10s fits [A1234567]),
-		// so no separate ID column is needed
-		marker := "[A" + render.ShortAgentID(agent.AgentID) + "]"
-
-		// Get primary model for this agent
-		modelName := render.PrimaryModel(agent.CostByModel)
-		modelLabel := render.ClampModel(modelName, 11)
-
-		// Format message count with singular/plural
-		msgStr := fmt.Sprintf("%d msgs", agent.MessageCount)
-		if agent.MessageCount == 1 {
-			msgStr = "1 msg"
-		}
-
-		if !m.noColor {
-			// Color the marker by hashing the full agent ID (matches breakdown)
-			agentColor := styles.GetAgentColor(agent.AgentID)
-			markerStyled := lipgloss.NewStyle().Foreground(agentColor).Render(fmt.Sprintf("%-10s", marker))
-
-			// Color model name by tier
-			modelColor := styles.GetModelColor(modelName)
-			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
-
-			// Dim the message count
-			msgStyled := dimStyle.Render(fmt.Sprintf("%8s", msgStr))
-
-			sb.WriteString(fmt.Sprintf("    %s %s %s            %s\n",
-				markerStyled, modelStyled, msgStyled, costStr))
-		} else {
-			sb.WriteString(fmt.Sprintf("    %-10s %-11s %8s            %s\n",
-				marker, modelLabel, msgStr, costStr))
+			pad := strings.Repeat(" ", 40-lipgloss.Width(heading)+3)
+			cost := workflowCost(a.Agents, row.runID)
+			switch {
+			case m.noColor:
+				sb.WriteString("    " + heading + pad + render.CostCell(cost, 11) + "\n")
+			case row.folded:
+				sb.WriteString("    " + dimStyle.Render(heading) + pad + render.CostStyled(cost, 11, false, false) + "\n")
+			default:
+				sb.WriteString("    " + dimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, 11) + "\n")
+			}
+		case agentRowFinished:
+			label := fmt.Sprintf("%d finished agents", row.count)
+			costStr := render.CostStyled(row.cost, 11, false, m.noColor)
+			msgStr := msgCount(row.msgs)
+			if m.noColor {
+				sb.WriteString(fmt.Sprintf("    %-22s %8s            %s\n", label, msgStr, costStr))
+			} else {
+				sb.WriteString(fmt.Sprintf("    %s %s            %s\n",
+					dimStyle.Render(fmt.Sprintf("%-22s", label)), dimStyle.Render(fmt.Sprintf("%8s", msgStr)), costStr))
+			}
+		case agentRowAgent:
+			sb.WriteString(m.renderAgentRow(row.agent, row.running))
 		}
 	}
 
@@ -418,6 +397,56 @@ func workflowCost(agents []models.AgentAnalysis, runID string) float64 {
 		}
 	}
 	return total
+}
+
+// renderAgentRow renders one agent's row: live dot, [A<id>] marker, model,
+// message count and cost.
+func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool) string {
+	agentHighlighted := m.isHighlighted("agent_" + agent.AgentID)
+	costStr := render.CostStyled(agent.TotalCost.TotalCost, 11, agentHighlighted, m.noColor)
+
+	// [A<id>] carries the abbreviated real agent ID (%-10s fits [A1234567]),
+	// so no separate ID column is needed
+	marker := "[A" + render.ShortAgentID(agent.AgentID) + "]"
+
+	// Get primary model for this agent
+	modelName := render.PrimaryModel(agent.CostByModel)
+	modelLabel := render.ClampModel(modelName, 11)
+	msgStr := msgCount(agent.MessageCount)
+
+	dot := " "
+	if running {
+		dot = styles.LiveDot
+	}
+
+	if m.noColor {
+		return fmt.Sprintf("  %s %-10s %-11s %8s            %s\n",
+			dot, marker, modelLabel, msgStr, costStr)
+	}
+	if running {
+		dot = liveIndicatorStyle.Render(dot)
+	}
+	// Color the marker by hashing the full agent ID (matches breakdown)
+	agentColor := styles.GetAgentColor(agent.AgentID)
+	markerStyled := lipgloss.NewStyle().Foreground(agentColor).Render(fmt.Sprintf("%-10s", marker))
+
+	// Color model name by tier
+	modelColor := styles.GetModelColor(modelName)
+	modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
+
+	// Dim the message count
+	msgStyled := dimStyle.Render(fmt.Sprintf("%8s", msgStr))
+
+	return fmt.Sprintf("  %s %s %s %s            %s\n",
+		dot, markerStyled, modelStyled, msgStyled, costStr)
+}
+
+// msgCount is "1 msg" or "N msgs".
+func msgCount(n int) string {
+	if n == 1 {
+		return "1 msg"
+	}
+	return fmt.Sprintf("%d msgs", n)
 }
 
 // renderInsightsContent renders just the insights content (no header)

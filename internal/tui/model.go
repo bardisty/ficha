@@ -113,6 +113,11 @@ type Model struct {
 	lastActivity     time.Time
 	activityFromFile bool
 
+	// runningAgents is runningAgentsKey as of the last content render; a
+	// clock tick that sees it change re-renders the agent list's dots and
+	// folds.
+	runningAgents string
+
 	// Cost trend chart
 	costChart   sparkline.Model // Sparkline chart for cost trend
 	costHistory []float64       // Rolling window of per-message costs (parent + agents, chronological)
@@ -351,10 +356,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case clockMsg:
-		// Nothing to update: the redraw after every message re-reads the
-		// clock for the header's age, the rate and the hint's expiry.
+		// The redraw after every message re-reads the clock for the header's
+		// age, the rate and the hint's expiry. The body is rendered content,
+		// so it's redone only when an agent went quiet.
 		if msg.gen != m.clockGen {
 			return m, nil // superseded by a faster chain; see analysisMsg
+		}
+		if m.ready && runningAgentsKey(m.analysis, m.clock()) != m.runningAgents {
+			m.refreshContent()
 		}
 		return m, clockCmd(m.clockInterval(), m.clockGen)
 
@@ -713,6 +722,7 @@ func (m *Model) layoutViewport() {
 // view scrolled past its last line.
 func (m *Model) refreshContent() {
 	m.layoutViewport()
+	m.runningAgents = runningAgentsKey(m.analysis, m.clock())
 	// The body's edge blank lines would count as hidden lines in the footer
 	// rule's overflow marker, and a leading one would open the view on an
 	// empty row.
