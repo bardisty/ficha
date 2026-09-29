@@ -310,3 +310,87 @@ func TestBreakdownInsights_NoFiguresNoScope(t *testing.T) {
 		t.Errorf("insights line = %q, want empty", out)
 	}
 }
+
+// runTagRows is n parent rows with two workflow runs' agents among them:
+// review-changes at rows 3 and 4, audit-codebase at row n-1.
+func runTagRows(n int) ([]models.BreakdownMessage, []models.WorkflowMeta) {
+	msgs := chromeRows(goldenTime(10, 0, 0), n)
+	for _, i := range []int{2, 3} {
+		msgs[i].AgentID, msgs[i].WorkflowID = "a1111111111111111", "wf_rc"
+	}
+	msgs[n-2].AgentID, msgs[n-2].WorkflowID = "a2222222222222222", "wf_ac"
+	return msgs, []models.WorkflowMeta{{RunID: "wf_rc", Name: "review-changes"}, {RunID: "wf_ac", Name: "audit-codebase"}}
+}
+
+// The stats line spells out the run tags drawn on the visible rows, and
+// only those: a key to a tag that's scrolled away explains nothing.
+func TestBreakdownRunTagKey_NamesVisibleTags(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	msgs, runs := runTagRows(40)
+	m := loadedBreakdown(t, 100, 24, nil)
+	updated, _ := m.Update(breakdownMsgsMsg{messages: msgs, workflows: runs, insights: &models.MessageInsights{}})
+	m = updated.(BreakdownModel)
+
+	// Following: the bottom rows show audit-codebase's agent only.
+	if got := m.renderStatsLine(m.layout()); !strings.HasSuffix(got, "│ ac = audit-codebase") || strings.Contains(got, "rc =") {
+		t.Errorf("at the bottom: %q", got)
+	}
+	m.viewport.GotoTop()
+	if got := m.renderStatsLine(m.layout()); !strings.HasSuffix(got, "│ rc = review-changes") || strings.Contains(got, "ac =") {
+		t.Errorf("at the top: %q", got)
+	}
+	// Both on screen, each named once, in the order they appear.
+	m.viewport.Height = 40
+	if got := m.renderStatsLine(m.layout()); !strings.HasSuffix(got, "│ rc = review-changes, ac = audit-codebase") {
+		t.Errorf("both visible: %q", got)
+	}
+	// No run on screen, no key.
+	m.viewport.Height = 10
+	m.viewport.SetYOffset(10)
+	if got := m.renderStatsLine(m.layout()); strings.Contains(got, " = ") {
+		t.Errorf("no tag visible: %q", got)
+	}
+}
+
+// The key never pushes the totals off: entries that don't fit go whole, and
+// a layout that dropped the tags from the AGENT column has nothing to key.
+func TestBreakdownRunTagKey_GivesWay(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	msgs, runs := runTagRows(6)
+	for _, tc := range []struct {
+		width int
+		want  string
+	}{
+		{100, "  Messages: 6 │ Total: $0.0000 │ rc = review-changes, ac = audit-codebase"},
+		{70, "  Messages: 6 │ Total: $0.0000 │ rc = review-changes"},
+		{50, "  Messages: 6 │ Total: $0.0000"},
+	} {
+		m := loadedBreakdown(t, tc.width, 24, nil)
+		updated, _ := m.Update(breakdownMsgsMsg{messages: msgs, workflows: runs, insights: &models.MessageInsights{}})
+		m = updated.(BreakdownModel)
+		if got := m.renderStatsLine(m.layout()); got != tc.want {
+			t.Errorf("width %d:\n got %q\nwant %q", tc.width, got, tc.want)
+		}
+		if !m.layout().runTags && strings.Contains(m.View(), " rc") {
+			t.Errorf("width %d: tags dropped from AGENT but still drawn", tc.width)
+		}
+	}
+}
+
+// A workflow name comes from a file on disk. Whatever it holds, the key
+// stays on one row and sends the terminal nothing but text.
+func TestBreakdownRunTagKey_PrintableNames(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	msgs, runs := runTagRows(6)
+	runs[0].Name = "review\nchan\x1b[31mges\t"
+	runs[1].Name = ""
+	m := loadedBreakdown(t, 120, 24, nil)
+	updated, _ := m.Update(breakdownMsgsMsg{messages: msgs, workflows: runs, insights: &models.MessageInsights{}})
+	m = updated.(BreakdownModel)
+	if got := m.renderStatsLine(m.layout()); !strings.HasSuffix(got, "│ rc = reviewchan[31mges, wf = wf_ac") {
+		t.Errorf("stats line: %q", got)
+	}
+	if rows := len(strings.Split(m.View(), "\n")); rows != 24 {
+		t.Errorf("frame is %d rows, want 24", rows)
+	}
+}

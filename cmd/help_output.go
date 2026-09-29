@@ -57,6 +57,9 @@ Context
 Agents and workflows
   Agents are sub-sessions Claude started. Their cost is included in the
   session's total, and AGENT SUB-SESSIONS lists them. Agents from a workflow
-  run are grouped under the run's name, with the run's subtotal.`,
+  run are grouped under the run's name, with the run's subtotal. In
+  breakdown, a workflow agent's AGENT cell ends in its run's initials, such
+  as rc for review-changes, and the footer names those on screen when it
+  has room.`,
 	}
 }
