@@ -22,6 +22,9 @@ Enter
 Type "cd ~/work/webapp && stty cols 80 rows 58 && clear && ficha breakdown"
 Enter
 Wait+Screen /FOLLOWING/
+# The frame can reach the terminal in pieces, so also wait for its last row,
+# the help line, before capturing.
+Wait+Screen /f follow/
 Show
 Sleep 500ms
 Screenshot bin/screenshots/breakdown.png
