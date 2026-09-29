@@ -427,3 +427,47 @@ func TestCostStyledColorPathsContainValue(t *testing.T) {
 		t.Error("plain CostStyled should contain the full cost value")
 	}
 }
+
+func TestClockConvertsToLocal(t *testing.T) {
+	orig := time.Local
+	time.Local = time.FixedZone("UTC-7", -7*3600)
+	t.Cleanup(func() { time.Local = orig })
+
+	ts := time.Date(2026, 9, 29, 1, 53, 3, 0, time.UTC)
+	if got := Clock(ts); got != "18:53:03" {
+		t.Errorf("Clock = %q, want 18:53:03", got)
+	}
+	if got := ClockShort(ts); got != "18:53" {
+		t.Errorf("ClockShort = %q, want 18:53", got)
+	}
+	// A missing timestamp must not turn into a plausible local time
+	if got := Clock(time.Time{}); got != "--:--:--" {
+		t.Errorf("Clock(zero) = %q, want --:--:--", got)
+	}
+	if got := ClockShort(time.Time{}); got != "--:--" {
+		t.Errorf("ClockShort(zero) = %q, want --:--", got)
+	}
+	// 01:53 UTC on the 29th is still the 28th in UTC-7
+	if got := DayMarker(ts); got != "Mon 28 Sep" {
+		t.Errorf("DayMarker = %q, want Mon 28 Sep", got)
+	}
+}
+
+func TestSameLocalDay(t *testing.T) {
+	orig := time.Local
+	time.Local = time.FixedZone("UTC+9", 9*3600)
+	t.Cleanup(func() { time.Local = orig })
+
+	// Same UTC day, but 15:00 UTC is midnight in UTC+9
+	a := time.Date(2026, 9, 28, 14, 59, 0, 0, time.UTC)
+	b := time.Date(2026, 9, 28, 15, 0, 0, 0, time.UTC)
+	if SameLocalDay(a, b) {
+		t.Error("14:59 and 15:00 UTC straddle local midnight in UTC+9")
+	}
+	// Different UTC days, same local day
+	c := time.Date(2026, 9, 28, 23, 0, 0, 0, time.UTC)
+	d := time.Date(2026, 9, 29, 1, 0, 0, 0, time.UTC)
+	if !SameLocalDay(c, d) {
+		t.Error("23:00 and 01:00 UTC are the same day in UTC+9")
+	}
+}

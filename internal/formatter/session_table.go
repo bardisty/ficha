@@ -301,14 +301,14 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 	if insights.FirstMessage != nil {
 		first := insights.FirstMessage
 		componentLabel := render.CostComponentLabel(first.MainCostComponent)
-		timestamp := dimStyle.Render(fmt.Sprintf("(%s)", first.Timestamp.Format("15:04:05")))
+		timestamp := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(first.Timestamp)))
 		componentInfo := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, render.Cost(first.MainCostValue)))
 
 		if noColor {
 			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
 				"First",
 				formatCostStyled(first.Cost, 10, noColor),
-				first.Timestamp.Format("15:04:05"),
+				render.Clock(first.Timestamp),
 				componentLabel,
 				render.Cost(first.MainCostValue)))
 		} else {
@@ -324,14 +324,14 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 	if insights.LastMessage != nil {
 		last := insights.LastMessage
 		componentLabel := render.CostComponentLabel(last.MainCostComponent)
-		timestamp := dimStyle.Render(fmt.Sprintf("(%s)", last.Timestamp.Format("15:04:05")))
+		timestamp := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(last.Timestamp)))
 		componentInfo := dimStyle.Render(fmt.Sprintf("%s: %s", componentLabel, render.Cost(last.MainCostValue)))
 
 		if noColor {
 			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s: %s\n",
 				"Last",
 				formatCostStyled(last.Cost, 10, noColor),
-				last.Timestamp.Format("15:04:05"),
+				render.Clock(last.Timestamp),
 				componentLabel,
 				render.Cost(last.MainCostValue)))
 		} else {
@@ -353,10 +353,10 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  ! %s\n",
 				"Peak",
 				formatCostStyled(highest.Cost, 10, noColor),
-				highest.Timestamp.Format("15:04:05"),
+				render.Clock(highest.Timestamp),
 				warningStr))
 		} else {
-			timestamp := dimStyle.Render(fmt.Sprintf("(%s)", highest.Timestamp.Format("15:04:05")))
+			timestamp := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(highest.Timestamp)))
 			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render("⚠ " + warningStr)
 			sb.WriteString(fmt.Sprintf("  %-10s %s  %s  %s\n",
 				"Peak",
