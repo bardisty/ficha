@@ -1251,3 +1251,130 @@ func TestRootHelp(t *testing.T) {
 		}
 	}
 }
+
+// completeLines runs cobra's hidden __complete command and returns the
+// candidate lines and the trailing ":<directive>" line.
+func completeLines(t *testing.T, args ...string) (candidates []string, directive string) {
+	t.Helper()
+	stdout, _, err := executeCLISplit(t, append([]string{"__complete"}, args...)...)
+	if err != nil {
+		t.Fatalf("__complete %v: %v", args, err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		if strings.HasPrefix(line, ":") {
+			directive = line
+			continue
+		}
+		if line != "" {
+			candidates = append(candidates, line)
+		}
+	}
+	return candidates, directive
+}
+
+// TestE2ECompletion: session-ID slots offer this project's sessions (never
+// filenames), flags with a closed set of values offer them, and commands that
+// take no positional args offer nothing.
+func TestE2ECompletion(t *testing.T) {
+	root := setupE2EFixture(t)
+	// Beta newer than alpha, so the newest-first order is observable.
+	proj := filepath.Join(root, "projects", e2eProjDir)
+	older, newer := time.Now().Add(-3*time.Hour), time.Now().Add(-5*time.Minute)
+	if err := os.Chtimes(filepath.Join(proj, e2eAlphaID+".jsonl"), older, older); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(proj, e2eBetaID+".jsonl"), newer, newer); err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		noFile    = ":4"  // ShellCompDirectiveNoFileComp
+		keepOrder = ":36" // NoFileComp | KeepOrder
+		dirsOnly  = ":16" // ShellCompDirectiveFilterDirs
+	)
+	tests := []struct {
+		name          string
+		args          []string
+		want          []string
+		wantDirective string
+	}{
+		{"show offers sessions newest first", []string{"show", projFlag, ""},
+			[]string{"bbbbbbbb\tmodified 5m ago · 2 msgs", "aaaaaaaa\tmodified 3h ago · 2 msgs"}, keepOrder},
+		{"prefix narrows the sessions", []string{"watch", projFlag, "aa"},
+			[]string{"aaaaaaaa\tmodified 3h ago · 2 msgs"}, keepOrder},
+		{"typing past 8 chars completes the full ID", []string{"breakdown", projFlag, "aaaaaaaa-1"},
+			[]string{e2eAlphaID + "\tmodified 3h ago · 2 msgs"}, keepOrder},
+		{"one session ID only", []string{"show", projFlag, e2eAlphaID, ""}, nil, noFile},
+		{"--format values", []string{"list", "-f", ""}, []string{"table", "json", "csv"}, noFile},
+		{"--sort-by values", []string{"global", "--sort-by", ""}, []string{"cost", "sessions", "name", "activity"}, noFile},
+		{"--project-dir offers project dirs", []string{"list", "--project-dir", ""}, []string{e2eOtherDir, e2eProjDir}, noFile},
+		// A word starting with "-" completes as a flag name unless it's
+		// attached with "=".
+		{"--project-dir= filters by prefix", []string{"list", "--project-dir=-home-test-p"}, []string{e2eProjDir}, noFile},
+		{"-p completes directories", []string{"summary", "-p", ""}, nil, dirsOnly},
+		{"list takes no args", []string{"list", ""}, nil, noFile},
+		{"version takes no args", []string{"version", ""}, nil, noFile},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, directive := completeLines(t, tt.args...)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("candidates:\n got: %q\nwant: %q", got, tt.want)
+			}
+			if directive != tt.wantDirective {
+				t.Errorf("directive: got %s, want %s", directive, tt.wantDirective)
+			}
+		})
+	}
+}
+
+// TestE2ECaseInsensitiveValues: -f and --sort-by accept any case.
+func TestE2ECaseInsensitiveValues(t *testing.T) {
+	setupE2EFixture(t)
+	out, _, err := executeCLISplit(t, "list", projFlag, "-f", "JSON")
+	if err != nil {
+		t.Fatalf("-f JSON: %v", err)
+	}
+	var entries []models.SessionEntry
+	mustJSON(t, out, &entries)
+
+	out, _, err = executeCLISplit(t, "global", "--sort-by", "Name", "-f", "CSV")
+	if err != nil {
+		t.Fatalf("--sort-by Name -f CSV: %v", err)
+	}
+	mustCSV(t, out)
+
+	// An invalid value is echoed as typed.
+	_, _, err = executeCLISplit(t, "list", projFlag, "-f", "XML")
+	if err == nil || err.Error() != `invalid format "XML": must be one of table, json, csv` {
+		t.Errorf("-f XML: got %v", err)
+	}
+}
+
+// TestE2ECompletionSkipsCountsOverBudget: counting messages parses whole
+// transcripts, so past the byte budget the descriptions drop the count.
+func TestE2ECompletionSkipsCountsOverBudget(t *testing.T) {
+	root := setupE2EFixture(t)
+	big := filepath.Join(root, "projects", e2eProjDir, e2eAlphaID+".jsonl")
+	f, err := os.OpenFile(big, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Blank lines are skipped by the parser and cheap to write.
+	if _, err := f.Write(bytes.Repeat([]byte("\n"), countBudgetBytes)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := completeLines(t, "show", projFlag, "")
+	if len(got) != 2 {
+		t.Fatalf("want 2 candidates, got %q", got)
+	}
+	for _, c := range got {
+		if strings.Contains(c, "msgs") {
+			t.Errorf("candidate over budget should not carry a count: %q", c)
+		}
+	}
+}

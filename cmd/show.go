@@ -25,7 +25,8 @@ Examples:
   ficha show --live             Watch latest session in real-time
   ficha show -f json            Output as JSON
   ficha show -f csv --messages  Per-message rows as CSV`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeSessionIDs(cfg),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runShow(cfg, args, cfg.live)
 		},

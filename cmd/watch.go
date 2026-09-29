@@ -20,7 +20,8 @@ Examples:
   ficha watch                   Watch and auto-follow latest session
   ficha watch --no-follow       Watch latest session, don't auto-follow
   ficha watch abc123            Watch specific session (pinned, no auto-follow)`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeSessionIDs(cfg),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// watch is show with live mode forced on; derived from the command
 			// rather than mutating a shared flag, so it can't leak into a later run.

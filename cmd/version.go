@@ -36,9 +36,10 @@ func resolveVersion(ldflagsVersion string, info *debug.BuildInfo, ok bool) strin
 
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
-		Short: "Print version information",
-		Args:  noArgs,
+		Use:               "version",
+		Short:             "Print version information",
+		Args:              noArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(cmd.OutOrStdout(), "ficha %s\n", version())
 			return nil

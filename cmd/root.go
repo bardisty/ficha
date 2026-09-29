@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -48,9 +49,10 @@ Examples:
 				return nil
 			}
 			// Validate format flag
-			if !validFormats[cfg.format] {
+			if !validFormats[strings.ToLower(cfg.format)] {
 				return fmt.Errorf("invalid format %q: must be one of table, json, csv", cfg.format)
 			}
+			cfg.format = strings.ToLower(cfg.format)
 			// TUI/live modes only support table format. watch and breakdown are
 			// always TUIs; cfg.live covers `show --live` and bare `ficha --live`.
 			isTUI := cfg.live || cmd.Name() == "breakdown" || cmd.Name() == "watch"
@@ -85,6 +87,7 @@ Examples:
 	rootCmd.PersistentFlags().StringVarP(&cfg.format, "format", "f", "table", "Output format: table, json, csv")
 	rootCmd.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "Show debug information")
 	rootCmd.PersistentFlags().BoolVar(&cfg.noColor, "no-color", false, "Disable colored output")
+	_ = rootCmd.RegisterFlagCompletionFunc("format", fixedValues(formatValues))
 
 	// Bare `ficha` is `ficha show`. --live stays for compatibility, hidden so
 	// help steers people to `ficha watch`; --no-follow only matters with it.
@@ -120,6 +123,10 @@ func addProjectFlags(cmd *cobra.Command, cfg *config) {
 	// Validated with a clearer message in PersistentPreRunE; marking the group
 	// as well stops completion offering the second flag once one is set.
 	cmd.MarkFlagsMutuallyExclusive("project", "project-dir")
+	_ = cmd.RegisterFlagCompletionFunc("project", func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveFilterDirs
+	})
+	_ = cmd.RegisterFlagCompletionFunc("project-dir", completeProjectDirs)
 }
 
 // addLiveFlags registers --live and --no-follow on a command that can run the

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
@@ -26,7 +27,8 @@ Examples:
   ficha global --top 20          Show top 20 projects
   ficha global --sort-by name    Sort by project name
   ficha global -f json           Output every project as JSON`,
-		Args: noArgs,
+		Args:              noArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGlobal(cfg)
 		},
@@ -37,6 +39,7 @@ Examples:
 	globalCmd.Flags().StringVar(&cfg.globalSortBy, "sort-by", "cost", "Sort by: cost, sessions, name, activity")
 	globalCmd.Flags().BoolVar(&cfg.globalNoCache, "no-cache", false, "Skip cache, force fresh analysis (reserved for future use)")
 	_ = globalCmd.Flags().MarkHidden("no-cache")
+	_ = globalCmd.RegisterFlagCompletionFunc("sort-by", fixedValues(sortByValues))
 
 	return globalCmd
 }
@@ -44,9 +47,10 @@ Examples:
 func runGlobal(cfg *config) error {
 	// Validate --sort-by
 	validSortValues := map[string]bool{"cost": true, "sessions": true, "name": true, "activity": true}
-	if !validSortValues[cfg.globalSortBy] {
+	if !validSortValues[strings.ToLower(cfg.globalSortBy)] {
 		return fmt.Errorf("invalid --sort-by value %q: must be one of cost, sessions, name, activity", cfg.globalSortBy)
 	}
+	cfg.globalSortBy = strings.ToLower(cfg.globalSortBy)
 
 	// Validate --top (0 = show no project rows, just the summary)
 	if cfg.globalTopN < 0 {

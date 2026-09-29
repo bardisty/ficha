@@ -28,7 +28,8 @@ Examples:
   ficha breakdown              Show breakdown and auto-follow latest session
   ficha breakdown --no-follow  Show breakdown for latest, don't auto-follow
   ficha breakdown abc123       Show breakdown for specific session (pinned)`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeSessionIDs(cfg),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runBreakdown(cfg, args)
 		},
