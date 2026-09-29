@@ -67,6 +67,12 @@ type BreakdownModel struct {
 	// lineRows maps each viewport content line to the display Index of the
 	// message on it, or 0 for a day divider.
 	lineRows []int
+	// sortByCost orders the table most expensive first (s toggles it).
+	// timeYOffset and timeFollow are the time-ordered view's scroll position
+	// and follow state, which s restores.
+	sortByCost  bool
+	timeYOffset int
+	timeFollow  bool
 
 	// Header state: project name, and the newest message timestamp (else the
 	// session file's mtime, with activityFromFile set) that the header ages.
@@ -250,6 +256,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "p":
 			m.selectNextTop()
 
+		case "s":
+			m.toggleSort()
+
 		case "-":
 			// Back to the previous session, as in watch; it pins there too.
 			if m.prevSessionPath != "" {
@@ -328,6 +337,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Track new messages for highlighting
 		m.detectNewMessages(msg.messages)
+		anchor := m.sortAnchor()
 		if m.pausePending {
 			m.pausedAt = len(msg.messages)
 			m.pausePending = false
@@ -353,6 +363,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastUpdated = time.Now()
 		m.err = nil
 		m.refreshViewport()
+		m.keepSortAnchor(anchor)
 		// Re-arm the file watcher only when no waiter is in flight: this reload
 		// may have been poll-triggered, in which case the file-change waiter is
 		// still blocked on the watcher
@@ -532,6 +543,7 @@ func (m BreakdownModel) switchTo(path, id string, back bool) (tea.Model, tea.Cmd
 	m.pausePending = false
 	m.selectedKey = ""
 	m.lineRows = nil
+	m.sortByCost = false
 	if m.ready {
 		m.viewport.SetContent("")
 		m.viewport.GotoTop()
@@ -844,9 +856,12 @@ func (m BreakdownModel) renderStatsTotals() string {
 
 // renderHelpLine is the key-hint row.
 func (m BreakdownModel) renderHelpLine() string {
-	// watch's line, plus p, which only breakdown has. r isn't listed: the
-	// view is already live, and the notify row offers it as a retry.
-	helpText := helpLine("q quit", "j/k scroll", "space/b page", "g/G top/bottom", "f follow", "p peak")
+	// watch's line, plus p and s, which only breakdown has. r isn't listed:
+	// the view is already live, and the notify row offers it as a retry. A
+	// hint that doesn't fit goes whole, not cut mid-word, and f goes first:
+	// the header already shows the follow mode.
+	helpText := joinSegments([]string{"q quit", "j/k scroll", "space/b page", "g/G top/bottom", "p/s peak/sort", "f follow"},
+		" "+styles.Bullet+" ", m.width-2)
 	if !m.noColor {
 		helpText = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(helpText)
 	}
@@ -1039,11 +1054,14 @@ func (m BreakdownModel) renderTableContent() (string, []int) {
 	var sb strings.Builder
 	layout := m.layout()
 	lineRows := make([]int, 0, len(m.messages))
+	order := m.rowOrder()
 
-	for i, msg := range m.messages {
+	for n, i := range order {
+		msg := m.messages[i]
 		// Rows carry only a time, so mark where the local day changes. A
 		// zero timestamp (unparseable in the transcript) has no day to mark.
-		if i > 0 && !msg.Timestamp.IsZero() && !m.messages[i-1].Timestamp.IsZero() &&
+		// In cost order neighbors aren't neighbors in time: no days to mark.
+		if !m.sortByCost && i > 0 && !msg.Timestamp.IsZero() && !m.messages[i-1].Timestamp.IsZero() &&
 			!render.SameLocalDay(m.messages[i-1].Timestamp, msg.Timestamp) {
 			sb.WriteString(m.renderDayMarker(msg.Timestamp))
 			sb.WriteString("\n")
@@ -1052,7 +1070,7 @@ func (m BreakdownModel) renderTableContent() (string, []int) {
 		highlight := m.isNewMessage(msg) || (m.selectedKey != "" && !m.noColor && breakdownMsgKey(msg) == m.selectedKey)
 		sb.WriteString(m.renderRow(msg, highlight, layout))
 		lineRows = append(lineRows, msg.Index)
-		if i < len(m.messages)-1 {
+		if n < len(order)-1 {
 			sb.WriteString("\n")
 		}
 	}
