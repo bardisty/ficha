@@ -21,13 +21,14 @@ type AmbiguousProjectError struct {
 	Matches  []models.ProjectInfo
 }
 
+// Error lists the matching projects by the path Claude Code ran in. The cmd
+// layer turns it into commands the user can run; see ambiguousProjectError.
 func (e *AmbiguousProjectError) Error() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("ambiguous project name %q matches %d directories:\n", e.Basename, len(e.Matches)))
+	sb.WriteString(fmt.Sprintf("ambiguous project name %q matches %d projects:", e.Basename, len(e.Matches)))
 	for _, m := range e.Matches {
-		sb.WriteString(fmt.Sprintf("  %s (original: %s)\n", m.EncodedPath, m.OriginalPath))
+		sb.WriteString("\n  " + m.OriginalPath)
 	}
-	sb.WriteString("\nUse --project-dir to specify the exact directory")
 	return sb.String()
 }
 
@@ -240,7 +241,7 @@ func ResolveProjectDir(projectDirFlag string) (string, error) {
 	if filepath.IsAbs(projectDirFlag) {
 		// Absolute path - use directly but validate it exists
 		fullPath = projectDirFlag
-	} else if looksLikePath(projectDirFlag) {
+	} else if LooksLikePath(projectDirFlag) {
 		// Relative path - convert to absolute before validating
 		absPath, err := filepath.Abs(projectDirFlag)
 		if err != nil {
@@ -259,10 +260,13 @@ func ResolveProjectDir(projectDirFlag string) (string, error) {
 	// Verify it exists
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("project directory not found: %s", projectDirFlag)
+		if !os.IsNotExist(err) {
+			return "", err
 		}
-		return "", err
+		if fullPath == projectDirFlag || LooksLikePath(projectDirFlag) {
+			return "", fmt.Errorf("no such directory: %s", projectDirFlag)
+		}
+		return "", fmt.Errorf("no project directory %s in %s. Run 'ficha global' to see every project.", projectDirFlag, filepath.Dir(fullPath))
 	}
 	if !info.IsDir() {
 		return "", fmt.Errorf("not a directory: %s", fullPath)
@@ -271,14 +275,14 @@ func ResolveProjectDir(projectDirFlag string) (string, error) {
 	return fullPath, nil
 }
 
-// looksLikePath reports whether a --project-dir value is a filesystem path
+// LooksLikePath reports whether a --project-dir value is a filesystem path
 // rather than an encoded project directory name. Encoded names are a flat
 // token like "-home-user-foo" that never contains a path separator, so any
 // value carrying one — either '/' or '\' — or a Windows drive/volume prefix
 // is a path. Recognizing '\' and drive-relative "C:proj" (via VolumeName)
 // keeps Windows-style relative paths out of the encoded-name branch, where
 // they would be joined under ~/.claude/projects and never resolve.
-func looksLikePath(v string) bool {
+func LooksLikePath(v string) bool {
 	return v == "." || v == ".." ||
 		strings.ContainsAny(v, `/\`) ||
 		filepath.VolumeName(v) != ""

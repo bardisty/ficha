@@ -48,17 +48,29 @@ func rootRun(cfg *config, cmd *cobra.Command, args []string) error {
 // digits and dashes, optionally followed by the .jsonl extension of a pasted
 // transcript filename.
 func looksLikeSessionID(arg string) bool {
-	id := arg
-	if len(id) >= len(".jsonl") && strings.EqualFold(id[len(id)-len(".jsonl"):], ".jsonl") {
-		id = id[:len(id)-len(".jsonl")]
-	}
-	for _, r := range id {
+	for _, r := range trimJSONL(arg) {
 		isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
 		if !isHex && r != '-' {
 			return false
 		}
 	}
 	return true
+}
+
+// trimJSONL strips a trailing .jsonl, in any case, from a pasted transcript
+// filename.
+func trimJSONL(arg string) string {
+	if len(arg) >= len(".jsonl") && strings.EqualFold(arg[len(arg)-len(".jsonl"):], ".jsonl") {
+		return arg[:len(arg)-len(".jsonl")]
+	}
+	return arg
+}
+
+// normalizeSessionID turns what the user typed into what session IDs look
+// like on disk: lowercase (UUIDs are case-insensitive, and some tools print
+// them in uppercase) with no .jsonl extension.
+func normalizeSessionID(arg string) string {
+	return strings.ToLower(trimJSONL(arg))
 }
 
 func unknownCommandError(cmd *cobra.Command, arg string) error {

@@ -19,11 +19,45 @@ var (
 	sortByValues = []string{"cost", "sessions", "name", "activity"}
 )
 
-// countBudgetBytes bounds how much transcript data session-ID completion
+// countBudgetBytes bounds how much transcript data a session description
 // parses for message counts. Counting reads each file in full, and a single
-// long session can run to hundreds of MB, so when the candidates together are
+// long session can run to hundreds of MB, so when the sessions together are
 // larger than this the descriptions show the age alone and Tab stays fast.
 const countBudgetBytes = 8 << 20
+
+// describeSessions describes each session as "modified 4d ago · 10 msgs",
+// counting agent messages too, as `list` does. The count is left out when the
+// transcripts, agents included, exceed countBudgetBytes.
+func describeSessions(sessions []models.SessionEntry, now time.Time) []string {
+	var totalBytes int64
+	for _, s := range sessions {
+		for _, path := range append([]string{s.FullPath}, s.AgentPaths...) {
+			if info, err := os.Stat(path); err == nil {
+				totalBytes += info.Size()
+			}
+		}
+	}
+	count := totalBytes <= countBudgetBytes
+	out := make([]string, len(sessions))
+	for i, s := range sessions {
+		out[i] = "modified " + render.Ago(s.Modified, now)
+		if !count {
+			continue
+		}
+		res, err := parser.ParseJSONLFileWithResult(s.FullPath)
+		if err != nil {
+			continue
+		}
+		n := len(res.Messages)
+		for _, path := range s.AgentPaths {
+			if agent, err := parser.ParseJSONLFileWithResult(path); err == nil {
+				n += len(agent.Messages)
+			}
+		}
+		out[i] += fmt.Sprintf(" · %d msgs", n)
+	}
+	return out
+}
 
 // completeSessionIDs completes the positional session ID of show, watch and
 // breakdown with this project's sessions, newest first.
@@ -42,27 +76,16 @@ func completeSessionIDs(cfg *config) cobra.CompletionFunc {
 		sortSessionsByModified(sessions)
 
 		var candidates []models.SessionEntry
-		var totalBytes int64
 		for _, s := range sessions {
 			if strings.HasPrefix(s.SessionID, toComplete) {
 				candidates = append(candidates, s)
-				if info, err := os.Stat(s.FullPath); err == nil {
-					totalBytes += info.Size()
-				}
 			}
 		}
-		count := totalBytes <= countBudgetBytes
 
-		now := time.Now()
+		descs := describeSessions(candidates, time.Now())
 		out := make([]cobra.Completion, 0, len(candidates))
-		for _, s := range candidates {
-			desc := "modified " + render.Ago(s.Modified, now)
-			if count {
-				if res, err := parser.ParseJSONLFileWithResult(s.FullPath); err == nil {
-					desc += fmt.Sprintf(" · %d msgs", len(res.Messages))
-				}
-			}
-			out = append(out, cobra.CompletionWithDesc(completionValue(s.SessionID, sessions, len(toComplete)), desc))
+		for i, s := range candidates {
+			out = append(out, cobra.CompletionWithDesc(completionValue(s.SessionID, sessions, len(toComplete)), descs[i]))
 		}
 		return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveKeepOrder
 	}

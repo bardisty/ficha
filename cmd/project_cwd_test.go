@@ -86,7 +86,7 @@ func TestSimilarProjectsSuggestsDashP(t *testing.T) {
 	if err == nil {
 		t.Fatal("want a no-project error")
 	}
-	want := "ficha -p " + shellQuote(filepath.Join(home, "work", "webapp"))
+	want := "ficha show -p " + shellQuote(filepath.Join(home, "work", "webapp"))
 	if !strings.Contains(err.Error(), want) {
 		t.Errorf("error should suggest %q:\n%v", want, err)
 	}

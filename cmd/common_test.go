@@ -69,65 +69,56 @@ func TestFindSessionByPartialID(t *testing.T) {
 	})
 }
 
-func TestFormatNoProjectError(t *testing.T) {
-	t.Run("no similar projects", func(t *testing.T) {
-		err := formatNoProjectError("/path/to/myproject", nil)
-		if !strings.Contains(err.Error(), "no Claude sessions found for") {
-			t.Errorf("error should contain 'no Claude sessions found for': %v", err)
-		}
-		if strings.Contains(err.Error(), "Similar projects") {
-			t.Error("should not contain 'Similar projects' when none match")
+func TestSimilarProjects(t *testing.T) {
+	t.Run("no projects", func(t *testing.T) {
+		if got := similarProjects("/path/to/myproject", nil); len(got) != 0 {
+			t.Errorf("want none, got %v", got)
 		}
 	})
 
-	t.Run("with similar project", func(t *testing.T) {
+	t.Run("name prefix match", func(t *testing.T) {
 		projects := []models.ProjectInfo{
 			{EncodedPath: "-home-user-myproject", OriginalPath: "/home/user/myproject"},
-		}
-		err := formatNoProjectError("/other/path/myproject", projects)
-		want := "Similar projects:\n  ficha -p /home/user/myproject"
-		if runtime.GOOS == "windows" {
-			// A Unix path isn't absolute on Windows
-			want = "Similar projects:\n  ficha --project-dir=-home-user-myproject"
-		}
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error should suggest the -p command for the similar project: %v", err)
-		}
-		if runtime.GOOS != "windows" && strings.Contains(err.Error(), "-home-user-myproject") {
-			t.Errorf("the suggestion should not ask for the encoded name: %v", err)
-		}
-	})
-
-	t.Run("no basename match", func(t *testing.T) {
-		projects := []models.ProjectInfo{
 			{EncodedPath: "-home-user-otherproject", OriginalPath: "/home/user/otherproject"},
 		}
-		err := formatNoProjectError("/path/to/myproject", projects)
-		if strings.Contains(err.Error(), "Similar projects") {
-			t.Error("should not contain 'Similar projects' when basenames don't match")
+		got := similarProjects("/other/path/myproj", projects)
+		if len(got) != 1 || got[0].EncodedPath != "-home-user-myproject" {
+			t.Errorf("want only myproject, got %v", got)
 		}
 	})
 
 	// A Windows-style originalPath (WSL sharing a Windows config dir) must
 	// still surface as a suggestion; filepath.Base does not split on backslash
 	// on Linux, so BasenameCrossOS is required for the basename comparison.
-	t.Run("windows-style originalPath suggested", func(t *testing.T) {
+	t.Run("windows-style originalPath", func(t *testing.T) {
 		projects := []models.ProjectInfo{
 			{EncodedPath: "C--Users-user-source-foo", OriginalPath: `C:\Users\user\source\foo`},
 		}
-		err := formatNoProjectError("/mnt/c/Users/user/source/foo", projects)
-		if !strings.Contains(err.Error(), "Similar projects") {
-			t.Errorf("expected Windows-style originalPath to be suggested: %v", err)
-		}
-		// Not absolute on Linux, so -p couldn't resolve it: the encoded name can
-		want := "ficha --project-dir=C--Users-user-source-foo"
-		if runtime.GOOS == "windows" {
-			want = `ficha -p 'C:\Users\user\source\foo'`
-		}
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("suggestion should be %q: %v", want, err)
+		if got := similarProjects("/mnt/c/Users/user/source/foo", projects); len(got) != 1 {
+			t.Errorf("want the Windows project suggested, got %v", got)
 		}
 	})
+}
+
+func TestProjectArgs(t *testing.T) {
+	unix := models.ProjectInfo{EncodedPath: "-home-user-myproject", OriginalPath: "/home/user/myproject"}
+	windows := models.ProjectInfo{EncodedPath: "C--Users-user-source-foo", OriginalPath: `C:\Users\user\source\foo`}
+	noPath := models.ProjectInfo{EncodedPath: "-home-user-gone"}
+
+	// A path from the other OS isn't absolute here, so -p couldn't resolve
+	// it and the encoded name stands in.
+	wantUnix, wantWindows := "-p /home/user/myproject", "--project-dir=C--Users-user-source-foo"
+	if runtime.GOOS == "windows" {
+		wantUnix, wantWindows = "--project-dir=-home-user-myproject", `-p 'C:\Users\user\source\foo'`
+	}
+	for _, tt := range []struct {
+		p    models.ProjectInfo
+		want string
+	}{{unix, wantUnix}, {windows, wantWindows}, {noPath, "--project-dir=-home-user-gone"}} {
+		if got := projectArgs(tt.p); got != tt.want {
+			t.Errorf("projectArgs(%s) = %q, want %q", tt.p.EncodedPath, got, tt.want)
+		}
+	}
 }
 
 func TestShellQuote(t *testing.T) {

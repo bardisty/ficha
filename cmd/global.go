@@ -8,6 +8,7 @@ import (
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
 	"github.com/bardisty/ficha/internal/parser"
+	"github.com/bardisty/ficha/internal/paths"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +18,7 @@ func newGlobalCmd(cfg *config) *cobra.Command {
 		Short: "Show aggregated stats across ALL projects",
 		Long: `Show aggregate statistics across all Claude Code projects.
 
-This calculates total cost and token usage across every project in ~/.claude/projects/.
+This calculates total cost and token usage across every project in ` + projectsDirForHelp() + `.
 
 json/csv always export every project; --top and --details only shape the table
 (filter downstream with jq/head if you need a subset).
@@ -65,7 +66,11 @@ func runGlobal(cfg *config) error {
 	}
 
 	if len(projects) == 0 {
-		return fmt.Errorf("no Claude projects found in ~/.claude/projects/")
+		projectsDir, err := paths.GetProjectsDir()
+		if err != nil {
+			return err
+		}
+		return noDataError(projectsDir)
 	}
 
 	// Analyze all projects (analyzeProject handles empty-session projects internally)
@@ -122,4 +127,15 @@ func runGlobal(cfg *config) error {
 
 	printReport(cfg, &warnings, output)
 	return nil
+}
+
+// projectsDirForHelp names the projects directory global reads, resolved the
+// same way the command resolves it, so help doesn't claim ~/.claude when
+// CLAUDE_CONFIG_DIR points elsewhere.
+func projectsDirForHelp() string {
+	dir, err := paths.GetProjectsDir()
+	if err != nil {
+		return "~/.claude/projects (or $CLAUDE_CONFIG_DIR/projects)"
+	}
+	return fmt.Sprintf("%s (%s)", dir, projectsDirOrigin())
 }
