@@ -159,6 +159,13 @@ func TestLightPaletteContrast(t *testing.T) {
 		{"ContextFree", ContextFreeColor, graphic},
 		{"Separator", SeparatorColor, graphic},
 	}
+	for i, c := range AgentColors {
+		tests = append(tests, struct {
+			name  string
+			color lipgloss.AdaptiveColor
+			min   float64
+		}{"Agent" + strconv.Itoa(i+1), c, text})
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := contrastOnWhite(t, tt.color.Light); got < tt.min {

@@ -104,10 +104,10 @@ func ASCIIChart(s string) string {
 // ratio holds under both the 256-color and truecolor profiles.
 //
 // The background is detected once per process, by Bubble Tea's init asking
-// the terminal (OSC 11) before a TUI can take stdin. Without a reply (not a
-// terminal, or inside tmux or screen, which termenv doesn't ask) it goes by
-// COLORFGBG, and failing that reads as dark, so the dark values are the
-// fallback.
+// the terminal (OSC 11) before a TUI can take stdin. Inside tmux or screen,
+// which termenv doesn't ask, it goes by COLORFGBG. Anywhere else it can't
+// tell, including when stdout isn't a terminal and always on Windows, it
+// reads as dark, so the dark values are the fallback.
 var (
 	PrimaryColor   = lipgloss.AdaptiveColor{Light: "92", Dark: "99"}   // Purple
 	SecondaryColor = lipgloss.AdaptiveColor{Light: "242", Dark: "245"} // Gray (dimmed but readable)
@@ -231,8 +231,10 @@ var (
 	ContextLowColor      = SuccessColor // Green - 0-65%
 	ContextHighColor     = OrangeColor  // Orange - 65-75% (approaching compaction)
 	ContextCriticalColor = ErrorColor   // Red - 75%+ (compaction territory)
-	// Bright gray - clearly visible free space
-	ContextFreeColor = lipgloss.AdaptiveColor{Light: "244", Dark: "252"}
+	// Bright gray - clearly visible free space. The light value is darker
+	// than a 3:1 bar needs because ░ is a stipple, inked at a fraction of
+	// its color.
+	ContextFreeColor = lipgloss.AdaptiveColor{Light: "241", Dark: "252"}
 )
 
 // GetContextUsageColor returns the appropriate color based on context usage percentage.
@@ -250,11 +252,13 @@ func GetContextUsageColor(usagePct float64) lipgloss.AdaptiveColor {
 
 // Agent marker colors - cycling palette for distinguishing sub-agents
 var AgentColors = []lipgloss.AdaptiveColor{
-	AccentColor,  // Pink - A1
-	OrangeColor,  // Orange - A2
-	WarningColor, // Yellow - A3
-	BlueColor,    // Blue - A4
-	InfoColor,    // Cyan - A5
+	AccentColor, // Pink - A1
+	OrangeColor, // Orange - A2
+	// Yellow - A3. On white WarningColor's amber is too close to OrangeColor
+	// to tell two agents apart, so this slot takes an olive instead.
+	{Light: "58", Dark: "221"},
+	BlueColor, // Blue - A4
+	InfoColor, // Cyan - A5
 }
 
 // GetAgentColor returns a color for the given agent ID (cycles through palette).
