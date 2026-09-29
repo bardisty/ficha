@@ -176,6 +176,13 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 			meta, _ := parser.ParseWorkflowMeta(projectDir, sessionID, agent.WorkflowID)
 			analysis.Workflows = append(analysis.Workflows, meta)
 		}
+		for i := range analysis.Workflows {
+			for _, agent := range analysis.Agents {
+				if agent.WorkflowID == analysis.Workflows[i].RunID {
+					analysis.Workflows[i].Cost += agent.TotalCost.TotalCost
+				}
+			}
+		}
 		analysis.WorkflowCount = len(analysis.Workflows)
 
 		// Recalculate duration after including agents

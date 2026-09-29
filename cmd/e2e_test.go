@@ -123,7 +123,7 @@ func TestE2ECommands(t *testing.T) {
 			name: "show table",
 			args: []string{"show", projFlag, e2eAlphaID},
 			check: func(t *testing.T, out string) {
-				mustContainAll(t, out, e2eAlphaID, "$", "TOTAL")
+				mustContainAll(t, out, e2eAlphaID, "$", "API-equivalent estimate")
 			},
 		},
 		{
@@ -183,6 +183,16 @@ func TestE2ECommands(t *testing.T) {
 				}
 				if wf := a.Workflows[0]; wf.RunID != "wf_e2e-run1" || wf.Name != "e2e-flow" || wf.Status != "completed" {
 					t.Errorf("workflow meta: got %+v", wf)
+				}
+				// The run's cost is its one agent's.
+				var runAgents float64
+				for _, ag := range a.Agents {
+					if ag.WorkflowID == "wf_e2e-run1" {
+						runAgents += ag.TotalCost.TotalCost
+					}
+				}
+				if wf := a.Workflows[0]; runAgents == 0 || wf.Cost != runAgents {
+					t.Errorf("workflow cost = %v, want its agents' %v", wf.Cost, runAgents)
 				}
 				sum := a.ParentCost.TotalCost + a.AgentsCost.TotalCost
 				if diff := a.TotalCost.TotalCost - sum; diff > 1e-9 || diff < -1e-9 {
@@ -323,7 +333,7 @@ func TestE2ECommands(t *testing.T) {
 			check: func(t *testing.T, out string) {
 				// Which session is "latest" depends on write mtimes; only assert a
 				// session rendered at all.
-				mustContainAll(t, out, "$", "TOTAL")
+				mustContainAll(t, out, "$", "API-equivalent estimate")
 			},
 		},
 		{
@@ -364,7 +374,7 @@ func TestE2ECommands(t *testing.T) {
 			name: "summary table",
 			args: []string{"summary", projFlag},
 			check: func(t *testing.T, out string) {
-				mustContainAll(t, out, "Summary:", "$", "TOTAL")
+				mustContainAll(t, out, "Summary:", "$", "API-equivalent estimate")
 			},
 		},
 		{
@@ -556,7 +566,7 @@ func TestE2ECommands(t *testing.T) {
 			args: []string{"global"},
 			check: func(t *testing.T, out string) {
 				// Default --top is 10 >= 2 projects, so the header reports all 2.
-				mustContainAll(t, out, "PROJECTS (all 2, by cost)", "Projects: 2", "TOTAL")
+				mustContainAll(t, out, "PROJECTS (all 2, by cost)", "Projects: 2", "API-equivalent estimate")
 			},
 		},
 		{

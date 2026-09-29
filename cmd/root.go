@@ -27,6 +27,7 @@ func newRootCmd() *cobra.Command {
 		Long: `Track your Claude Code API-equivalent costs, token usage, and context window.
 
 Figures are API list-price estimates. On a subscription this is not your bill.
+'ficha help output' explains the terms the reports use.
 
 Run ficha from the directory Claude Code is running in, or point -p at it.
 
@@ -120,6 +121,7 @@ Examples:
 	rootCmd.AddCommand(newGlobalCmd(cfg))
 	rootCmd.AddCommand(newBreakdownCmd(cfg))
 	rootCmd.AddCommand(newVersionCmd())
+	rootCmd.AddCommand(newOutputHelpTopic())
 
 	return rootCmd
 }
