@@ -198,14 +198,21 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 // goldenWatchView builds a watch Model at a fixed size, feeds it the fixture
 // analysis, pins the time-dependent state, and returns View().
 // First load records no change highlights (m.analysis is nil in detectChanges'
-// guard), so the rendered frame is deterministic once lastUpdated is pinned.
+// guard), so the rendered frame is deterministic once lastUpdated and the
+// clock are pinned. The clock sits 1m after the fixture's last message, so
+// the 10m rate window holds its last two.
 func goldenWatchView(t *testing.T, noColor bool) string {
 	t.Helper()
-	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", false, noColor, "", false)
 	// Height 60: tall enough that the whole analysis body fits the viewport,
-	// so the golden pins every section (autoScroll pins the window to the
-	// bottom and would otherwise clip the hero cost / token rows)
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 60})
+	// so the golden pins every section
+	return goldenWatchViewSized(t, noColor, 100, 60)
+}
+
+func goldenWatchViewSized(t *testing.T, noColor bool, width, height int) string {
+	t.Helper()
+	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", false, noColor, "", false)
+	m.now = func() time.Time { return goldenTime(10, 26, 0) }
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	m = updated.(Model)
 	updated, _ = m.Update(analysisMsg{analysis: goldenViewAnalysis()})
 	m = updated.(Model)
@@ -221,6 +228,13 @@ func TestGoldenWatchView(t *testing.T) {
 func TestGoldenWatchViewColor(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
 	checkGolden(t, "watch_view_color", goldenWatchView(t, false))
+}
+
+// At a common terminal size the first screen is the top of the body — the
+// total and the token rows — with the rest flagged in the footer rule.
+func TestGoldenWatchView80x24(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	checkGolden(t, "watch_view_80x24", goldenWatchViewSized(t, true, 80, 24))
 }
 
 func goldenBreakdownMessages() []models.BreakdownMessage {

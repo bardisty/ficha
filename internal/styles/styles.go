@@ -42,6 +42,8 @@ var (
 	TreeLast       string // └─ last tree connector
 	GroupRule      string // ── lead-in of a group or day divider
 	ScrollKeys     string // ↑↓ scroll keys in help lines
+	MoreAbove      string // ↑ content hidden above a viewport
+	MoreBelow      string // ↓ content hidden below a viewport
 	Ellipsis       string // … truncation marker
 )
 
@@ -61,6 +63,7 @@ func SetASCII(ascii bool) {
 		TrendUp, TrendDown, TrendFlat = "^", "v", "="
 		TreeBranch, TreeLast, GroupRule = "+-", "`-", "--"
 		ScrollKeys, Ellipsis = "j/k", "..."
+		MoreAbove, MoreBelow = "^", "v"
 		return
 	}
 	BoxTopLeft, BoxTopRight, BoxBottomLeft, BoxBottomRight = "╔", "╗", "╚", "╝"
@@ -71,6 +74,7 @@ func SetASCII(ascii bool) {
 	TrendUp, TrendDown, TrendFlat = "▲", "▼", "═"
 	TreeBranch, TreeLast, GroupRule = "├─", "└─", "──"
 	ScrollKeys, Ellipsis = "↑↓", "…"
+	MoreAbove, MoreBelow = "↑", "↓"
 }
 
 // ASCII reports whether the ASCII glyph set is active.

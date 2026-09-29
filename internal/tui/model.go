@@ -3,6 +3,7 @@ package tui
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -56,10 +57,14 @@ type Model struct {
 	deltaTokens map[string]int64 // Delta values for token counts
 	deltaCount  int              // Delta for message count
 
-	// Viewport for scrolling
-	viewport   viewport.Model
-	autoScroll bool
-	ready      bool // viewport initialized
+	// Viewport for scrolling. watch is a dashboard, not a log: it opens at the
+	// top and keeps the reader's position across reloads and resizes.
+	viewport viewport.Model
+	ready    bool // viewport initialized
+
+	// now stands in for time.Now where the view reads the wall clock (the
+	// rolling rate); nil means time.Now. Tests pin it.
+	now func() time.Time
 
 	spinner   spinner.Model
 	watcher   *fsnotify.Watcher
@@ -135,7 +140,6 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 		verbose:     verbose,
 		noColor:     noColor,
 		loading:     true,
-		autoScroll:  true,
 		spinner:     newSpinner(noColor),
 		done:        make(chan struct{}),
 		closing:     closing,
@@ -165,50 +169,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.loadAnalysis
 
 		case "up", "k":
-			m.autoScroll = false
 			m.viewport.ScrollUp(1)
 
 		case "down", "j":
 			m.viewport.ScrollDown(1)
-			if m.viewport.AtBottom() {
-				m.autoScroll = true
-			}
 
 		case "pgup":
-			m.autoScroll = false
 			m.viewport.HalfPageUp()
 
 		case "pgdown":
 			m.viewport.HalfPageDown()
-			if m.viewport.AtBottom() {
-				m.autoScroll = true
-			}
 
 		case "g", "home":
-			m.autoScroll = false
 			m.viewport.GotoTop()
 
 		case "G", "end":
 			m.viewport.GotoBottom()
-			m.autoScroll = true
 		}
 
 	case tea.WindowSizeMsg:
-		// Header: panel(3 lines) + blank/notify(1) = 4 lines fixed
-		// Footer: separator(1) + stats(1) + separator(1) + help(1) = 4 lines fixed
-		headerHeight := 4
-		footerHeight := 4
-
-		if !m.ready {
-			m.viewport = viewport.New(msg.Width, viewportHeight(msg.Height, headerHeight, footerHeight))
-			m.viewport.YPosition = headerHeight
-			m.ready = true
-		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = viewportHeight(msg.Height, headerHeight, footerHeight)
-		}
 		m.width = msg.Width
 		m.height = msg.Height
+		if !m.ready {
+			m.viewport = viewport.New(msg.Width, 1)
+			m.viewport.YPosition = watchHeaderHeight
+			m.ready = true
+		}
+		m.viewport.Width = msg.Width
+		m.layoutViewport()
 
 		// Re-window the cost chart to the new width. A plain Resize would keep the
 		// old width's pushed points (and its scale), so the drawn window and the
@@ -218,10 +206,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Re-render content with new dimensions
 		if m.analysis != nil {
-			m.viewport.SetContent(clipToWidth(m.renderAnalysis(), m.width))
-			if m.autoScroll {
-				m.viewport.GotoBottom()
-			}
+			m.refreshContent()
 		}
 
 	case spinner.TickMsg:
@@ -253,10 +238,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update viewport content
 		if m.ready {
-			m.viewport.SetContent(clipToWidth(m.renderAnalysis(), m.width))
-			if m.autoScroll {
-				m.viewport.GotoBottom()
-			}
+			m.refreshContent()
 		}
 		// Re-arm the file watcher only when no waiter is in flight: this reload
 		// may have been poll-triggered, in which case the file-change waiter is
@@ -348,6 +330,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// covers anything already on disk
 		m.subagentSig = subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
 
+		// A new session opens at the top, like the first one, and drops the old
+		// session's warning rows from the layout.
+		if m.ready {
+			m.viewport.SetContent("")
+			m.viewport.GotoTop()
+			m.layoutViewport()
+		}
+
 		// Reset cost chart for new session
 		m.costHistory = make([]float64, 0)
 		m.costChart = newCostChart(m.getChartWidth(), m.noColor)
@@ -380,7 +370,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cleanupStaleChanges()
 		// Re-render to update highlight fading (only if there are active highlights)
 		if m.ready && m.analysis != nil && len(m.changedAt) > 0 {
-			m.viewport.SetContent(clipToWidth(m.renderAnalysis(), m.width))
+			m.refreshContent()
 		}
 		// Continue the animation tick for highlight fade
 		return m, tickCmd()
@@ -396,6 +386,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// layoutViewport sizes the viewport to the rows the header and footer leave.
+// The footer grows with its warning rows, so this runs whenever the width or
+// the analysis changes, not only on resize.
+func (m *Model) layoutViewport() {
+	if !m.ready {
+		return
+	}
+	m.viewport.Height = viewportHeight(m.height, watchHeaderHeight, m.footerHeight())
+}
+
+// refreshContent re-renders the body into the viewport and keeps the scroll
+// position, clamped so a shorter body or a taller window never leaves the
+// view scrolled past its last line.
+func (m *Model) refreshContent() {
+	m.layoutViewport()
+	// The body's edge blank lines would count as hidden lines in the footer
+	// rule's overflow marker, and a leading one would open the view on an
+	// empty row.
+	body := trimBlankEdges(clipToWidth(m.renderAnalysis(), m.width))
+	m.viewport.SetContent(body)
+	m.viewport.SetYOffset(m.viewport.YOffset)
+}
+
+// trimBlankEdges drops whitespace-only lines from both ends of s. Rendered
+// lines are space-padded to a common width, so a blank one isn't empty.
+func trimBlankEdges(s string) string {
+	lines := strings.Split(s, "\n")
+	start, end := 0, len(lines)
+	for start < end && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	for end > start && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	return strings.Join(lines[start:end], "\n")
 }
 
 // detectChanges compares old and new analysis and marks changed fields
