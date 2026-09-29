@@ -632,7 +632,9 @@ func (m BreakdownModel) View() string {
 	if m.tooSmall() {
 		return clipToWidth("  terminal too small", m.width)
 	}
-	panelWidth := m.panelWidth()
+	// The layout walks every row; work it out once per frame.
+	layout := m.layout()
+	panelWidth := m.frameWidth(layout)
 	compact := m.compact()
 
 	var lines []string
@@ -658,9 +660,9 @@ func (m BreakdownModel) View() string {
 	default:
 		lines = append(lines, insights)
 	}
-	lines = append(lines, m.renderTableHeader())
+	lines = append(lines, m.renderTableHeader(layout))
 	if !compact {
-		lines = append(lines, m.renderTableSeparator())
+		lines = append(lines, m.renderTableSeparator(panelWidth))
 	}
 	if m.ready {
 		lines = append(lines, m.viewport.View())
@@ -796,74 +798,102 @@ func (m BreakdownModel) headerParams(width int) liveHeaderParams {
 	}
 }
 
-// renderCompactInsights renders a single line of insights
+// Breakdown's insights cover the merged parent+agent messages, unlike
+// show's and watch's parent-only insights, so the figures can legitimately
+// differ; when agents ran, the line says so. The short form is for a line
+// too narrow for the long one. It answers watch's "agents excluded" and
+// can't be read as a count.
+const (
+	insightsScope      = "main conversation + agents"
+	insightsScopeShort = "incl. agents"
+)
+
+// renderCompactInsights renders a single line of insights:
+//
+//	main conversation + agents │ Peak: #231 $0.4419 @ 20:44:29 [Aa499eb9] (5.9x avg) │ Trend: ═ flat
+//
+// When the line doesn't fit, detail goes in this order: the long scope label
+// for the short one, the Peak's multiplier, its time and agent marker, then
+// the Trend, then the scope. The Trend goes late because nothing else on
+// screen says it, and it never shows without the scope, since the scope is
+// why it can differ from watch's.
 func (m BreakdownModel) renderCompactInsights() string {
-	if m.insights == nil {
+	// The scope qualifies the figures; with neither figure it says nothing.
+	if m.insights == nil || (m.insights.HighestCost == nil && !m.insights.HasTrend()) {
 		return ""
 	}
+	style := func(text string, color lipgloss.Color) string {
+		if m.noColor || text == "" {
+			return text
+		}
+		return lipgloss.NewStyle().Foreground(color).Render(text)
+	}
 
-	var parts []string
-
-	// Peak cost, with the row number, time to the second and agent marker, so
-	// the row can be found by number or matched by eye.
+	// The Peak, from most detail to least. The row number and cost find the
+	// row, so they are what always stays; the time to the second and the
+	// agent marker match it by eye.
+	peaks := []string{""}
 	if peak := m.insights.HighestCost; peak != nil {
-		peakStr := fmt.Sprintf("Peak: #%d %s @ %s", peak.Index, render.Cost(peak.Cost), render.Clock(peak.Timestamp))
+		short := fmt.Sprintf("Peak: #%d %s", peak.Index, render.Cost(peak.Cost))
+		timed := short + " @ " + render.Clock(peak.Timestamp)
 		if marker := m.peakAgentMarker(); marker != "" {
-			peakStr += " " + marker
+			timed += " " + marker
 		}
-		peakStr += fmt.Sprintf(" (%.1fx avg)", m.insights.CostMultiplier())
-		// Too narrow for the whole of it: the row number and cost are what
-		// find the row, so they are what stays.
-		if m.width > 0 && lipgloss.Width(peakStr) > m.width-2 {
-			peakStr = fmt.Sprintf("Peak: #%d %s", peak.Index, render.Cost(peak.Cost))
-		}
-		if !m.noColor {
-			parts = append(parts, lipgloss.NewStyle().Foreground(styles.WarningColor).Render(peakStr))
-		} else {
-			parts = append(parts, peakStr)
+		full := timed + fmt.Sprintf(" (%.1fx avg)", m.insights.CostMultiplier())
+		peaks = []string{full, timed, short}
+		for i := range peaks {
+			peaks[i] = style(peaks[i], styles.WarningColor)
 		}
 	}
 
 	// Trend (only once the analyzer actually computed one — see HasTrend)
+	trends := []string{""}
 	if m.insights.HasTrend() {
-		trendDesc := m.insights.TrendDescription()
-		trendSymbol := render.TrendSymbol(m.insights.CostTrend)
-		trendStr := fmt.Sprintf("Trend: %s %s", trendSymbol, trendDesc)
-		if !m.noColor {
-			var color lipgloss.Color
-			switch m.insights.CostTrend {
-			case models.TrendIncreasing:
-				color = styles.WarningColor
-			case models.TrendDecreasing:
-				color = styles.SuccessColor
-			default:
-				color = styles.SecondaryColor
-			}
-			parts = append(parts, lipgloss.NewStyle().Foreground(color).Render(trendStr))
-		} else {
-			parts = append(parts, trendStr)
+		color := styles.SecondaryColor
+		switch m.insights.CostTrend {
+		case models.TrendIncreasing:
+			color = styles.WarningColor
+		case models.TrendDecreasing:
+			color = styles.SuccessColor
 		}
+		trendStr := fmt.Sprintf("Trend: %s %s", render.TrendSymbol(m.insights.CostTrend), m.insights.TrendDescription())
+		trends = []string{style(trendStr, color), ""}
 	}
 
-	// Label the scope when agents ran: the breakdown computes Peak/trend over the
-	// merged parent+agent messages, unlike show/watch's parent-only insights, so
-	// the figures can legitimately differ. Without agents the sets are identical,
-	// so no label (and no churn for the common case). It leads the line because
-	// it explains the figures after it, but it is worthless on its own: when
-	// the first figure won't fit beside it, the label goes and the figures stay.
+	// Without agents the two scopes are the same messages: no label.
+	scopes := []string{""}
+	if m.hasAgents {
+		scopes = []string{style(insightsScope, styles.SecondaryColor), style(insightsScopeShort, styles.SecondaryColor)}
+	}
+
 	sep := " " + styles.BoxVerticalSep + " "
 	width := m.width - 2
-	if m.hasAgents && len(parts) > 0 {
-		scope := "main conversation + agents"
-		if !m.noColor {
-			scope = lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(scope)
+	join := func(parts ...string) string {
+		var kept []string
+		for _, p := range parts {
+			if p != "" {
+				kept = append(kept, p)
+			}
 		}
-		if width <= 0 || lipgloss.Width(scope+sep+parts[0]) <= width {
-			parts = append([]string{scope}, parts...)
+		return strings.Join(kept, sep)
+	}
+	for _, trend := range trends {
+		for i, scope := range scopes {
+			variants := peaks
+			// The long label is worth less than any of the Peak's detail.
+			if i == 0 && len(scopes) > 1 {
+				variants = peaks[:1]
+			}
+			for _, peak := range variants {
+				if line := join(scope, peak, trend); width <= 0 || lipgloss.Width(line) <= width {
+					return "  " + line
+				}
+			}
 		}
 	}
-
-	return "  " + joinSegments(parts, sep, width)
+	// Narrower than the least a scoped line needs: the bare Peak, clipped by
+	// the frame if it must be.
+	return "  " + peaks[len(peaks)-1]
 }
 
 // joinSegments joins parts with sep, leaving off whole trailing parts that
@@ -902,8 +932,8 @@ func (m BreakdownModel) peakAgentMarker() string {
 }
 
 // renderTableHeader renders the table header row
-func (m BreakdownModel) renderTableHeader() string {
-	header := m.layout().header()
+func (m BreakdownModel) renderTableHeader(layout breakdownLayout) string {
+	header := layout.header()
 	if !m.noColor {
 		return headerStyle.Render(header)
 	}
@@ -912,8 +942,8 @@ func (m BreakdownModel) renderTableHeader() string {
 
 // renderTableSeparator renders the table separator rule, dimmed unless color
 // is off.
-func (m BreakdownModel) renderTableSeparator() string {
-	sep := "  " + strings.Repeat(styles.LineHorizontal, m.panelWidth())
+func (m BreakdownModel) renderTableSeparator(panelWidth int) string {
+	sep := "  " + strings.Repeat(styles.LineHorizontal, panelWidth)
 	if !m.noColor {
 		return tableBorderStyle.Render(sep)
 	}
