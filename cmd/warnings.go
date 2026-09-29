@@ -161,19 +161,38 @@ func markUnpriced(a *models.SessionAnalysis) {
 	}
 }
 
+// releasesURL is where a model ficha can't price may already have one.
+const releasesURL = "https://github.com/bardisty/ficha/releases"
+
 // warnUnknownModels warns about models priced at the fallback rate, and says
 // what that rate is, so the reader can judge how far off the total may be.
-// unknownModels comes from unpricedModels.
+// Prices ship with the binary, so a second line names this build and points
+// at the releases: a newer ficha often knows the model already, and ficha
+// makes no network requests to find out for itself. unknownModels comes from
+// unpricedModels.
 func warnUnknownModels(w io.Writer, unknownModels []string) {
+	writeUnknownModels(w, unknownModels, version())
+}
+
+func writeUnknownModels(w io.Writer, unknownModels []string, ver string) {
 	if len(unknownModels) == 0 {
 		return
 	}
 	// Every unknown model gets the same fallback row.
 	p := pricing.GetModelPricing(unknownModels[0])
 	rates := fmt.Sprintf("$%g/$%g per MTok", p.InputRate, p.OutputRate)
+	them := "it"
 	if len(unknownModels) == 1 {
 		fmt.Fprintf(w, "Warning: unknown model %q priced at fallback %s\n", unknownModels[0], rates)
+	} else {
+		fmt.Fprintf(w, "Warning: %d unknown models priced at fallback %s: %s\n", len(unknownModels), rates, strings.Join(unknownModels, ", "))
+		them = "them"
+	}
+	// A build with no version was built from source, most likely from a
+	// checkout, where the fix is a catalog row rather than an upgrade.
+	if ver == "dev" {
+		fmt.Fprintf(w, "  This development build of ficha has no price for %s. Add %s to modelCatalog in internal/pricing/pricing.go.\n", them, them)
 		return
 	}
-	fmt.Fprintf(w, "Warning: %d unknown models priced at fallback %s: %s\n", len(unknownModels), rates, strings.Join(unknownModels, ", "))
+	fmt.Fprintf(w, "  ficha %s has no price for %s. A newer release may know %s: %s\n", ver, them, them, releasesURL)
 }

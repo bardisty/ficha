@@ -114,6 +114,16 @@ go install github.com/bardisty/ficha@latest
 
 This puts `ficha` in `$(go env GOPATH)/bin`, usually `~/go/bin`, or in `$GOBIN` if you set it. Add that folder to your `PATH` if `ficha` isn't found. To install a particular release, replace `@latest` with its tag from the releases page, such as `@v0.52.0`.
 
+### Upgrading and uninstalling
+
+ficha never checks for updates, because it makes no network requests. To hear about new releases, watch the repository for releases only (Watch, Custom, Releases), follow the [releases feed](https://github.com/bardisty/ficha/releases.atom), or run `gh release list -R bardisty/ficha`. `ficha version` prints the version you have.
+
+To upgrade, run your install block again, or `go install github.com/bardisty/ficha@latest`.
+
+If you script against `-f json` or `-f csv`, read the [release notes](https://github.com/bardisty/ficha/releases) before you upgrade. Before 1.0, a minor release can rename or remove keys, and [Compatibility](docs/machine-output.md#compatibility) says how that's announced.
+
+To uninstall, delete the binary and undo the completion setup, if you did it: remove the completion file, or in PowerShell the `ficha completion` line from each `$PROFILE` you added it to. On Windows, also delete the `%LOCALAPPDATA%\Programs\ficha` folder and take it off your user `PATH` with `rundll32 sysdm.cpl,EditEnvironmentVariables`. ficha writes nothing else.
+
 ## Usage
 
 Run ficha from the same directory Claude Code is running in. It finds that project's sessions automatically:
@@ -267,7 +277,7 @@ A few things ficha does not model:
 - Web search, which Anthropic charges per search on top of the tokens.
 - Bedrock and Vertex billing. Their model IDs are recognized and priced at Anthropic's first-party rates. Both platforms bill on their own terms, so treat the figures as a proxy.
 
-Unknown models are priced at $3 input and $15 output per million tokens with a 200K context, and ficha prints a warning naming the model so you know a number is a placeholder. The `<synthetic>` model Claude Code writes on API-error lines isn't unknown: those lines cost nothing and get no warning. When a new model ships, its prices need a ficha update. Open a [pricing update issue](https://github.com/bardisty/ficha/issues/new?template=pricing_update.yml) with the model ID and the published rates, or send a PR. It's one catalog row plus tests, and [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-models-pricing) walks through it.
+Unknown models are priced at $3 input and $15 output per million tokens with a 200K context, and ficha prints a warning naming the model so you know a number is a placeholder. The `<synthetic>` model Claude Code writes on API-error lines isn't unknown: those lines cost nothing and get no warning. When a new model ships, its prices need a ficha update, so the warning also names your version and links the releases page. [Upgrade](#upgrading-and-uninstalling) first. If the warning is still there afterwards, open a [pricing update issue](https://github.com/bardisty/ficha/issues/new?template=pricing_update.yml) with the model ID and the published rates, or send a PR. It's one catalog row plus tests, and [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-models-pricing) walks through it.
 
 Claude Code's transcript format is undocumented and can change between releases. ficha counts what it could not parse instead of guessing, so if the skip warnings or the `skipped_*` counters jump after a Claude Code update, that is the signal to file a bug.
 
