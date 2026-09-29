@@ -153,12 +153,15 @@ type AgentAnalysis struct {
 }
 
 // WorkflowMeta identifies a workflow run whose agents appear in a session's
-// Agents list. Display metadata only — costs are aggregated per-agent, never
-// per-workflow, so there is a single source of aggregation truth.
+// Agents list. Agents stay the unit costs aggregate from: Cost is their sum
+// for this run, derived once the agents are analyzed, and never added into
+// another total.
 type WorkflowMeta struct {
 	RunID  string `json:"run_id"`
 	Name   string `json:"name,omitempty"`   // workflowName from wf_*.json; "" if unreadable
 	Status string `json:"status,omitempty"` // e.g. "completed"; "" if unreadable
+	// Cost is the total cost of this run's agents in the session.
+	Cost float64 `json:"cost"`
 }
 
 // SessionAnalysis represents the complete analysis of a session

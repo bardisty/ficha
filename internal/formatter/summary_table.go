@@ -10,6 +10,7 @@ import (
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // FormatSummaryTableWithDetails renders the summary table with per-session
@@ -189,7 +190,6 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 		cumulatives = append(cumulatives, running)
 	}
 	cumulatives = append(cumulatives, totalCost)
-	costWidth := render.CostCellWidth(8, costs...)
 	cumWidth := render.CostCellWidth(10, cumulatives...)
 	analyses := make([]*models.SessionAnalysis, 0, len(sessionData))
 	for _, sd := range sessionData {
@@ -197,10 +197,41 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 	}
 	agentsWidth := agentsColumnWidth(analyses)
 
+	// The expanded view prints agent costs under COST, so the column holds
+	// them too, and MODEL widens when the deepest agent row would otherwise
+	// run into it.
+	modelWidth := 10
+	costWidth := render.CostCellWidth(8, costs...)
+	if expandAgents {
+		for _, a := range analyses {
+			if a == nil {
+				continue
+			}
+			for _, agent := range a.Agents {
+				costWidth = max(costWidth, render.CostCellWidth(0, agent.TotalCost.TotalCost))
+				if agent.WorkflowID != "" {
+					costWidth = max(costWidth, render.CostCellWidth(0, workflowCost(a.Agents, agent.WorkflowID)))
+				}
+			}
+			modelWidth = max(modelWidth, agentTreeWidth(a)+2-expandedCostColumn+10)
+		}
+		// Workflow labels widen it too, as far as the 76-column report allows;
+		// past that they're cut.
+		maxModelWidth := 10 + 76 - (expandedCostColumn + costWidth + 2 + cumWidth)
+		for _, a := range analyses {
+			if a == nil {
+				continue
+			}
+			for _, wf := range a.Workflows {
+				label := treeIndent + treeStep + runewidth.StringWidth(render.WorkflowLabel(wf)) + 2
+				modelWidth = max(modelWidth, min(label-expandedCostColumn+10, maxModelWidth))
+			}
+		}
+	}
+
 	var headerRow string
 	if expandAgents {
-		// Expanded view: simple 5-column layout (72 chars max for RFC brutalist compliance)
-		headerRow = fmt.Sprintf("  %4s %-8s  %-12s  %-10s  %*s  %*s", "#", "SESSION", "MODIFIED", "MODEL", costWidth, "COST", cumWidth, "CUMULATIVE")
+		headerRow = fmt.Sprintf("  %4s %-8s  %-12s  %-*s  %*s  %*s", "#", "SESSION", "MODIFIED", modelWidth, "MODEL", costWidth, "COST", cumWidth, "CUMULATIVE")
 	} else {
 		// Default view: 7 columns, 73 chars - AGENTS before COST groups metadata together
 		headerRow = fmt.Sprintf("  %4s %-8s  %-12s  %-10s %*s  %*s %*s", "#", "SESSION", "MODIFIED", "MODEL", agentsWidth, "AGENTS", costWidth, "COST", cumWidth, "CUMULATIVE")
@@ -235,13 +266,13 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 			skipped++
 			if expandAgents {
 				if noColor {
-					sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-10s  %*s  %*s\n", num, shortID, modifiedStr, "-", costWidth, "(error)", cumWidth, "-"))
+					sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-*s  %*s  %*s\n", num, shortID, modifiedStr, modelWidth, "-", costWidth, "(error)", cumWidth, "-"))
 				} else {
 					sb.WriteString(fmt.Sprintf("  %s %s  %s  %s  %s  %s\n",
 						dimStyle.Render(fmt.Sprintf("%4d", num)),
 						fmt.Sprintf("%-8s", shortID),
 						dimStyle.Render(fmt.Sprintf("%-12s", modifiedStr)),
-						dimStyle.Render(fmt.Sprintf("%-10s", "-")),
+						dimStyle.Render(fmt.Sprintf("%-*s", modelWidth, "-")),
 						dimStyle.Render(fmt.Sprintf("%*s", costWidth, "(error)")),
 						dimStyle.Render(fmt.Sprintf("%*s", cumWidth, "-"))))
 				}
@@ -286,7 +317,7 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 			if noColor {
 				costStr := render.CostCell(sd.cost, costWidth)
 				cumStr := render.CostCell(cumulativeSum, cumWidth)
-				sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-10s  %s  %s\n", num, shortID, modifiedStr, modelLabel, costStr, cumStr))
+				sb.WriteString(fmt.Sprintf("  %4d %-8s  %-12s  %-*s  %s  %s\n", num, shortID, modifiedStr, modelWidth, modelLabel, costStr, cumStr))
 			} else {
 				costColor := styles.GetCostGradientColor(sd.cost, minCost, maxCost)
 				costStyled := render.CostColored(sd.cost, costColor, costWidth)
@@ -294,7 +325,7 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 
 				// Color model name by tier
 				modelColor := styles.GetModelColor(modelName)
-				modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-10s", modelLabel))
+				modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-*s", modelWidth, modelLabel))
 
 				sb.WriteString(fmt.Sprintf("  %s %s  %s  %s  %s  %s\n",
 					dimStyle.Render(fmt.Sprintf("%4d", num)),
@@ -307,7 +338,7 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 
 			// Render agent tree rows if this session has agents
 			if sd.analysis != nil && sd.analysis.HasAgents && len(sd.analysis.Agents) > 0 {
-				sb.WriteString(renderAgentTreeRows(sd.analysis, noColor))
+				sb.WriteString(renderAgentTreeRows(sd.analysis, noColor, expandedCostColumn+modelWidth-10, costWidth))
 			}
 		} else {
 			// Default view: AGENTS before COST (groups metadata, then costs)
@@ -401,85 +432,120 @@ func formatAgentsColumn(analysis *models.SessionAnalysis, width int, noColor boo
 	return padding + dimStyle.Render(cell)
 }
 
-// renderAgentTreeRows renders indented agent sub-session rows with tree connectors
-// Tree connectors: ├─ for all but last, └─ for final agent
-// Compact format: "    ├─ [Aa1b2c3d] Haiku 4.5  45 msgs  $0.1800"
-// Follows RFC brutalist principle: remove the unnecessary (no agent ID - it's noise)
-// Workflow agents get a dim group-header line before each run's first agent.
-func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool) string {
+// expandedCostColumn is where COST starts in the expanded view with the
+// MODEL column at its base width of 10.
+const expandedCostColumn = 2 + 4 + 1 + 8 + 2 + 12 + 2 + 10 + 2
+
+// Agent tree rows: a 7-space indent puts the connectors under SESSION, and
+// each level adds a 3-column connector ("├─ ") or rail ("│  ").
+const (
+	treeIndent = 7
+	treeStep   = 3
+)
+
+// agentTreeWidth is how wide an analysis's agent rows get before their cost:
+// connectors, marker, model and message count. Workflow agents sit a level
+// deeper than the rest.
+func agentTreeWidth(a *models.SessionAnalysis) int {
+	depth := 1
+	for _, agent := range a.Agents {
+		if agent.WorkflowID != "" {
+			depth = 2
+		}
+	}
+	return treeIndent + depth*treeStep + 10 + 1 + 10 + 1 + agentMsgsWidth(a.Agents)
+}
+
+// renderAgentTreeRows renders a session's agents as a tree under its row,
+// each cost in a costWidth cell starting at costCol, under the session's
+// COST. A workflow run is a node carrying its subtotal, dimmed since the
+// agents under it repeat it, with its agents one level deeper:
+//
+//	├─ [Aa1b2c3d] Haiku 4.5   12 msgs   $0.4200
+//	└─ workflow: audit (completed)      $1.65
+//	   ├─ [Aw1a2b3c] Opus 4.8 21 msgs   $1.10
+//	   └─ [Aw6e5d4c] Sonnet 5  1 msg    $0.5500
+func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, costCol, costWidth int) string {
 	var sb strings.Builder
 	agents := analysis.Agents
-
-	branchChar, lastBranchChar := styles.TreeBranch, styles.TreeLast
-
-	// Shared msgs column width: grows past 8 only when a count overflows, so
-	// every sibling row's trailing cost stays mutually aligned.
 	msgsWidth := agentMsgsWidth(agents)
-	agentCosts := make([]float64, len(agents))
-	for i, a := range agents {
-		agentCosts[i] = a.TotalCost.TotalCost
+	indent := strings.Repeat(" ", treeIndent)
+
+	// Top-level nodes: each regular agent, and each workflow run in the
+	// order its first agent appears.
+	type node struct {
+		agent    *models.AgentAnalysis
+		workflow string
+		children []*models.AgentAnalysis
 	}
-	costWidth := render.CostCellWidth(0, agentCosts...)
-
-	prevWorkflow := ""
-	for i, agent := range agents {
-		if agent.WorkflowID != prevWorkflow {
-			prevWorkflow = agent.WorkflowID
-			if agent.WorkflowID != "" {
-				label := render.WorkflowLabel(analysis.WorkflowByID(agent.WorkflowID))
-				if noColor {
-					sb.WriteString("       " + styles.GroupRule + " " + label + "\n")
-				} else {
-					sb.WriteString("       " + dimStyle.Render(styles.GroupRule+" "+label) + "\n")
-				}
-			}
+	var nodes []*node
+	runs := map[string]*node{}
+	for i := range agents {
+		a := &agents[i]
+		if a.WorkflowID == "" {
+			nodes = append(nodes, &node{agent: a})
+			continue
 		}
-		isLast := i == len(agents)-1
-
-		// Tree connector
-		var connector string
-		if isLast {
-			connector = lastBranchChar
-		} else {
-			connector = branchChar
+		n, ok := runs[a.WorkflowID]
+		if !ok {
+			n = &node{workflow: a.WorkflowID}
+			runs[a.WorkflowID] = n
+			nodes = append(nodes, n)
 		}
+		n.children = append(n.children, a)
+	}
 
-		// Get primary model for this agent
-		modelName := render.PrimaryModel(agent.CostByModel)
-		modelLabel := render.ClampModel(modelName, 10)
-
-		// Format message count
-		msgStr := agentMsgs(agent.MessageCount)
-
-		// [A<id>] carries the abbreviated real agent ID (%-10s fits [A1234567]),
-		// matching the breakdown TUI's scheme
-		agentLabel := "[A" + render.ShortAgentID(agent.AgentID) + "]"
-
-		// Format: "       ├─ [Aa1b2c3d] Haiku 4.5  45 msgs  $0.1800"
-		// 7-space indent aligns tree connector under SESSION column
+	connector := func(last bool) string {
+		if last {
+			return styles.TreeLast + " "
+		}
+		return styles.TreeBranch + " "
+	}
+	rail := func(last bool) string {
+		if last {
+			return strings.Repeat(" ", treeStep)
+		}
+		return styles.TreeRail + strings.Repeat(" ", treeStep-runewidth.StringWidth(styles.TreeRail))
+	}
+	// line pads left out to costCol and appends the cost cell.
+	line := func(left string, cost float64, costColor lipgloss.Color) string {
+		pad := strings.Repeat(" ", max(costCol-lipgloss.Width(left), 1))
 		if noColor {
-			costStr := render.CostCell(agent.TotalCost.TotalCost, costWidth)
-			sb.WriteString(fmt.Sprintf("       %s %-10s %-10s %*s  %s\n",
-				connector, agentLabel, modelLabel, msgsWidth, msgStr, costStr))
-		} else {
-			// Color the marker by hashing the full agent ID (matches breakdown)
-			agentColor := styles.GetAgentColor(agent.AgentID)
-			labelStyled := lipgloss.NewStyle().Foreground(agentColor).Render(fmt.Sprintf("%-10s", agentLabel))
+			return left + pad + render.CostCell(cost, costWidth) + "\n"
+		}
+		return left + pad + render.CostColored(cost, costColor, costWidth) + "\n"
+	}
+	dim := func(s string) string {
+		if noColor {
+			return s
+		}
+		return dimStyle.Render(s)
+	}
+	agentRow := func(prefix string, agent *models.AgentAnalysis) string {
+		modelName := render.PrimaryModel(agent.CostByModel)
+		marker := fmt.Sprintf("%-10s", "[A"+render.ShortAgentID(agent.AgentID)+"]")
+		model := fmt.Sprintf("%-10s", render.ClampModel(modelName, 10))
+		msgs := fmt.Sprintf("%*s", msgsWidth, agentMsgs(agent.MessageCount))
+		if !noColor {
+			marker = lipgloss.NewStyle().Foreground(styles.GetAgentColor(agent.AgentID)).Render(marker)
+			model = lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName)).Render(model)
+			msgs = dimStyle.Render(msgs)
+		}
+		return line(prefix+marker+" "+model+" "+msgs, agent.TotalCost.TotalCost, styles.SecondaryColor)
+	}
 
-			// Color model name by tier
-			modelColor := styles.GetModelColor(modelName)
-			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-10s", modelLabel))
-
-			// Dim the message count and cost
-			msgStyled := dimStyle.Render(fmt.Sprintf("%*s", msgsWidth, msgStr))
-			costStyled := render.CostColored(agent.TotalCost.TotalCost, styles.SecondaryColor, costWidth)
-
-			sb.WriteString(fmt.Sprintf("       %s %s %s %s  %s\n",
-				dimStyle.Render(connector),
-				labelStyled,
-				modelStyled,
-				msgStyled,
-				costStyled))
+	for i, n := range nodes {
+		last := i == len(nodes)-1
+		prefix := indent + dim(connector(last))
+		if n.agent != nil {
+			sb.WriteString(agentRow(prefix, n.agent))
+			continue
+		}
+		room := costCol - treeIndent - treeStep - 2
+		label := truncateRight(render.WorkflowLabel(analysis.WorkflowByID(n.workflow)), room)
+		sb.WriteString(line(prefix+dim(label), workflowCost(agents, n.workflow), styles.SecondaryColor))
+		for j, child := range n.children {
+			sb.WriteString(agentRow(indent+dim(rail(last)+connector(j == len(n.children)-1)), child))
 		}
 	}
 

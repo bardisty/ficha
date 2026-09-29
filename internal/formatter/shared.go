@@ -141,10 +141,12 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 	return sb.String()
 }
 
-// renderHeroCost renders the total cost integrated into a section header
-// Format: ─────────────────────[ $12.67 TOTAL ]─────────────────────
+// renderHeroCost renders the total cost integrated into a section header.
+// It's the report's most prominent figure, so it's where the output says the
+// number is a list-price estimate and not a bill.
+// Format: ──────────[ $12.67 API-equivalent estimate ]──────────
 func renderHeroCost(cost float64, width int, noColor bool) string {
-	costStr := render.Cost(cost) + " TOTAL"
+	costStr := render.Cost(cost) + " API-equivalent estimate"
 	bracketedCost := "[ " + costStr + " ]"
 	costLen := len(bracketedCost)
 	sideLen := (width - costLen) / 2

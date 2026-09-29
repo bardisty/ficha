@@ -72,7 +72,7 @@ func TestProjectNameFallbackUsesTranscriptCwd(t *testing.T) {
 		!strings.Contains(stderr, filepath.Join(home, "work", "webapp")) {
 		t.Errorf("stderr should note the name match and the real path, got:\n%s", stderr)
 	}
-	if !strings.Contains(out, "TOTAL") {
+	if !strings.Contains(out, "API-equivalent estimate") {
 		t.Errorf("show should render the matched project:\n%s", out)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // FormatSessionTable renders a session analysis as a table (single session or
@@ -227,11 +228,17 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 		if agent.WorkflowID != prevWorkflow {
 			prevWorkflow = agent.WorkflowID
 			if agent.WorkflowID != "" {
-				label := render.WorkflowLabel(analysis.WorkflowByID(agent.WorkflowID))
+				// The run's subtotal sits in the cost column, so a workflow
+				// compares with the parent session at a glance.
+				heading := truncateRight(styles.GroupRule+" "+render.WorkflowLabel(analysis.WorkflowByID(agent.WorkflowID)), 40)
+				pad := strings.Repeat(" ", 40-runewidth.StringWidth(heading)+3)
+				cost := workflowCost(analysis.Agents, agent.WorkflowID)
 				if noColor {
-					sb.WriteString("  " + styles.GroupRule + " " + label + "\n")
+					sb.WriteString("  " + heading + pad + render.CostCell(cost, 11) + "\n")
 				} else {
-					sb.WriteString("  " + dimStyle.Render(styles.GroupRule+" "+label) + "\n")
+					// Dim like its heading: the subtotal repeats the rows
+					// below it and isn't part of the column's sum.
+					sb.WriteString("  " + dimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, 11) + "\n")
 				}
 			}
 		}
@@ -277,6 +284,17 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 	}
 
 	return sb.String()
+}
+
+// workflowCost sums the cost of a workflow run's agents.
+func workflowCost(agents []models.AgentAnalysis, runID string) float64 {
+	var sum float64
+	for _, a := range agents {
+		if a.WorkflowID == runID {
+			sum += a.TotalCost.TotalCost
+		}
+	}
+	return sum
 }
 
 // formatInsightsSectionContent renders message insights rows (content only, no header)

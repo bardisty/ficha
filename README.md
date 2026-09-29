@@ -178,7 +178,7 @@ Agent sub-sessions are included, both regular subagents and Claude Code Workflow
 
 ### What the numbers mean
 
-The figures are API-equivalent estimates from list prices. On a Claude subscription you aren't billed per token, so read the total as what the same work would have cost through the API, not as a bill.
+The figures are API-equivalent estimates from list prices. On a Claude subscription you aren't billed per token, so read the total as what the same work would have cost through the API, not as a bill. `ficha help output` explains the rest of the terms on screen: cache TTLs, Savings, messages, insights and Context.
 
 A few things ficha does not model:
 

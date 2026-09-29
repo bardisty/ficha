@@ -26,6 +26,10 @@ Sessions that fail to parse are omitted from detail output and reported on stder
 
 Two fields name where a record came from. `project_path` is the Claude project directory (`~/.claude/projects/<encoded>`) — identical on `show`, the `summary` aggregate, and every per-session record, so machine outputs join on it. `session_file` is the transcript `.jsonl` path; it is empty on the `summary` aggregate, which spans many files. In csv, session rows carry both columns and agent rows leave them empty (join back through `session_id`). (`list` names the same transcript path `fullPath` / `full_path`, and its `projectPath` is the original working directory, not this encoded project dir.)
 
+## Workflow runs
+
+Each entry in `workflows` (on `show` json and each per-session record in `summary -d` json) names a workflow run whose agents appear in `agents`, with `cost`: the sum of those agents' `total_cost.total_cost`. It's derived from the agent records, which remain the unit every total is summed from, so don't add it to `agents_cost` or `total_cost` again.
+
 ## Session titles
 
 `title` on `show` json and on each per-session record in `summary -d` json is the session's latest `ai-title` record, as Claude Code wrote it. Claude Code rewrites the title as a session goes on, and the key is undocumented, so `title` is absent when a transcript has none. It's raw transcript text: escape it before you print it to a terminal.

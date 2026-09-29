@@ -41,6 +41,7 @@ var (
 	TrendFlat      string // ═ session trend stable
 	TreeBranch     string // ├─ tree connector
 	TreeLast       string // └─ last tree connector
+	TreeRail       string // │ tree rail past a node with more siblings below
 	GroupRule      string // ── lead-in of a group or day divider
 	ScrollKeys     string // ↑↓ scroll keys in help lines
 	MoreAbove      string // ↑ content hidden above a viewport
@@ -62,7 +63,7 @@ func SetASCII(ascii bool) {
 		Bullet, LiveDot, Warning, Arrow = "|", "*", "!", "->"
 		RowUp, RowDown, RowFlat = "^", "v", "."
 		TrendUp, TrendDown, TrendFlat = "^", "v", "="
-		TreeBranch, TreeLast, GroupRule = "+-", "`-", "--"
+		TreeBranch, TreeLast, TreeRail, GroupRule = "+-", "`-", "|", "--"
 		ScrollKeys, Ellipsis = "j/k", "..."
 		MoreAbove, MoreBelow = "^", "v"
 		IdleDot = "o"
@@ -74,7 +75,7 @@ func SetASCII(ascii bool) {
 	Bullet, LiveDot, Warning, Arrow = "•", "●", "⚠", "→"
 	RowUp, RowDown, RowFlat = "↑", "↓", "·"
 	TrendUp, TrendDown, TrendFlat = "▲", "▼", "═"
-	TreeBranch, TreeLast, GroupRule = "├─", "└─", "──"
+	TreeBranch, TreeLast, TreeRail, GroupRule = "├─", "└─", "│", "──"
 	ScrollKeys, Ellipsis = "↑↓", "…"
 	MoreAbove, MoreBelow = "↑", "↓"
 	IdleDot = "○"

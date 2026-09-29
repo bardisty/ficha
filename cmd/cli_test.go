@@ -111,3 +111,24 @@ func TestGlobalRejectsNegativeTop(t *testing.T) {
 		t.Errorf("expected --top validation error, got: %v", err)
 	}
 }
+
+// `ficha help output` is a help topic: the glossary prints, and root help
+// points at it.
+func TestOutputHelpTopic(t *testing.T) {
+	out, _, err := executeCLISplit(t, "help", "output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, term := range []string{"API-equivalent estimate", "5m TTL", "Savings", "Messages and turns", "Context"} {
+		if !strings.Contains(out, term) {
+			t.Errorf("glossary missing %q", term)
+		}
+	}
+	root, _, err := executeCLISplit(t, "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(root, "ficha help output") {
+		t.Errorf("root help should point at the glossary:\n%s", root)
+	}
+}

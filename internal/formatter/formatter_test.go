@@ -538,8 +538,8 @@ func TestFormatSessionTable_Plain(t *testing.T) {
 	if !strings.Contains(output, "Session: test-session-123") {
 		t.Error("Table output missing session header")
 	}
-	if !strings.Contains(output, "TOTAL") {
-		t.Error("Table output missing TOTAL row")
+	if !strings.Contains(output, "API-equivalent estimate") {
+		t.Error("Table output missing the hero total")
 	}
 	if !strings.Contains(output, "Messages: 10") {
 		t.Error("Table output missing message count")
@@ -555,8 +555,8 @@ func TestFormatSessionTable_WithColor(t *testing.T) {
 	if !strings.Contains(output, "test-session-123") {
 		t.Error("Colored table output missing session ID")
 	}
-	if !strings.Contains(output, "TOTAL") {
-		t.Error("Colored table output missing TOTAL row")
+	if !strings.Contains(output, "API-equivalent estimate") {
+		t.Error("Colored table output missing the hero total")
 	}
 }
 
@@ -754,8 +754,8 @@ func TestFormatGlobalTable(t *testing.T) {
 	if !strings.Contains(output, "project-beta") {
 		t.Error("output should contain 'project-beta'")
 	}
-	if !strings.Contains(output, "TOTAL") {
-		t.Error("output should contain 'TOTAL'")
+	if !strings.Contains(output, "API-equivalent estimate") {
+		t.Error("output should contain the hero total")
 	}
 }
 
