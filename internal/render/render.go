@@ -362,64 +362,122 @@ func SectionHeader(name string, width int, noColor bool) string {
 	return styles.DimStyle.Render(leftLine) + "[ " + styles.SectionHeaderStyle.Render(name) + " ]" + styles.DimStyle.Render(rightLine)
 }
 
-// ContextBar renders a used(█)/free(░) progress bar of context-window usage.
-// The width is fixed at 38 so the whole "Context [bar] 380.0K (38% of 1.00M)"
-// line fits the 76-column live panel; a wider bar wraps and desyncs the TUI's
-// fixed header/footer height math.
-func ContextBar(contextSize, freeSpace int64, maxContext int, noColor bool) string {
-	const barWidth = 38
+// ContextBar renders a context-window bar of width cells between brackets:
+// used (█) then free (░), with a tick (│) at the ~compaction point so the
+// warning survives --no-color. Only the used part carries the usage color.
+func ContextBar(contextSize int64, maxContext, width int, noColor bool) string {
+	width = max(width, 1)
+	used := 0
+	if maxContext > 0 {
+		used = int(float64(contextSize) / float64(maxContext) * float64(width))
+	}
+	used = min(max(used, 0), width)
+	tick := min(int(math.Round(CompactionPct/100*float64(width))), width-1)
 
-	usedGlyph, freeGlyph := styles.BarUsed, styles.BarFree
-
-	if maxContext == 0 {
-		return strings.Repeat(freeGlyph, barWidth)
+	usedStyle := lipgloss.NewStyle()
+	freeStyle := lipgloss.NewStyle().Foreground(styles.ContextFreeColor)
+	tickStyle := lipgloss.NewStyle().Bold(true)
+	if maxContext > 0 {
+		usedStyle = usedStyle.Foreground(styles.GetContextUsageColor(float64(contextSize) / float64(maxContext) * 100))
+	}
+	paint := func(st lipgloss.Style, s string) string {
+		if noColor || s == "" {
+			return s
+		}
+		return st.Render(s)
 	}
 
-	// Calculate proportions
-	usedRatio := float64(contextSize) / float64(maxContext)
-	freeRatio := float64(freeSpace) / float64(maxContext)
+	usedCells := func(n int) string { return strings.Repeat(styles.BarUsed, n) }
+	freeCells := func(n int) string { return strings.Repeat(styles.BarFree, n) }
+	var bar string
+	if tick < used {
+		bar = paint(usedStyle, usedCells(tick)) + paint(tickStyle, styles.BoxVerticalSep) +
+			paint(usedStyle, usedCells(used-tick-1)) + paint(freeStyle, freeCells(width-used))
+	} else {
+		bar = paint(usedStyle, usedCells(used)) + paint(freeStyle, freeCells(tick-used)) +
+			paint(tickStyle, styles.BoxVerticalSep) + paint(freeStyle, freeCells(width-tick-1))
+	}
+	return "[" + bar + "]"
+}
 
-	// Convert to bar segments
-	usedChars := int(usedRatio * float64(barWidth))
-	freeChars := int(freeRatio * float64(barWidth))
+// CompactionPct is where Claude Code auto-compacts, as a share of the context
+// window (see styles.GetContextUsageColor, which turns red at the same
+// point). It is approximate, and unconfirmed for 1M windows, so the UI
+// always calls it "~compaction".
+const CompactionPct = 75.0
 
-	// Adjust for rounding to hit exactly barWidth
-	total := usedChars + freeChars
-	if total < barWidth {
-		freeChars += barWidth - total
-	} else if total > barWidth {
-		diff := total - barWidth
-		if freeChars >= diff {
-			freeChars -= diff
-		} else {
-			diff -= freeChars
-			freeChars = 0
-			usedChars -= diff
+// minContextBar is the narrowest bar worth drawing, brackets excluded.
+const minContextBar = 10
+
+// ContextGauge renders the context line's content and the note under it,
+// fitted to width columns:
+//
+//	95% [████████████████████████████│░░░░░░] 190.1K / 200.0K
+//	past ~compaction at 75% (main session, last request)
+//
+// The percentage leads because it is the reading people look for; the bar
+// takes whatever width is left. When the line can't fit, whole fields drop
+// (the token counts, then the bar) rather than clipping inside a number.
+// highlight marks the token counts as just changed.
+func ContextGauge(contextSize int64, maxContext, width int, noColor, highlight bool) (line, note string) {
+	pct := 0.0
+	if maxContext > 0 {
+		pct = float64(contextSize) / float64(maxContext) * 100
+	}
+	pctStr := fmt.Sprintf("%3.0f%%", pct)
+	value := Number(contextSize) + " / " + Number(int64(maxContext))
+
+	style := func(st lipgloss.Style, s string) string {
+		if noColor {
+			return s
+		}
+		return st.Render(s)
+	}
+	pctStyled := style(lipgloss.NewStyle().Foreground(styles.GetContextUsageColor(pct)), pctStr)
+	valueStyled := value
+	if highlight {
+		valueStyled = style(styles.HighlightStyle, value)
+	}
+
+	// "95% [" + bar + "] " + value
+	inner := width - len(pctStr) - 1 - 2 - 1 - lipgloss.Width(value)
+	switch {
+	case inner >= minContextBar:
+		line = pctStyled + " " + ContextBar(contextSize, maxContext, inner, noColor) + " " + valueStyled
+	case width-len(pctStr)-3 >= minContextBar:
+		line = pctStyled + " " + ContextBar(contextSize, maxContext, width-len(pctStr)-3, noColor)
+	case width >= len(pctStr)+1+lipgloss.Width(value):
+		line = pctStyled + " " + valueStyled
+	default:
+		line = pctStyled
+	}
+
+	return line, contextNote(contextSize, maxContext, width-1)
+}
+
+// contextNote is the line under the gauge, laid out one column in (under
+// the percentage's digits) within width. It sheds the scope before the
+// reading, and a shorter reading before nothing at all, so a narrow
+// terminal never cuts the headroom figure or the warning mid-word.
+func contextNote(contextSize int64, maxContext, width int) string {
+	if maxContext <= 0 {
+		return ""
+	}
+	const scope = " (main session, last request)"
+	var forms []string
+	if headroom := int64(float64(maxContext)*CompactionPct/100) - contextSize; headroom > 0 {
+		reading := Number(headroom) + " to ~compaction"
+		forms = []string{reading + scope, reading, Number(headroom) + " left"}
+	} else {
+		reading := fmt.Sprintf("past ~compaction at %.0f%%", CompactionPct)
+		forms = []string{reading + scope, reading, "past ~compaction"}
+	}
+	for _, f := range forms {
+		if lipgloss.Width(f) <= width {
+			return f
 		}
 	}
-
-	// Final safety: ensure non-negative for strings.Repeat
-	usedChars = max(0, usedChars)
-	freeChars = max(0, freeChars)
-	if total := usedChars + freeChars; total < barWidth {
-		freeChars += barWidth - total
-	}
-
-	usedStr := strings.Repeat(usedGlyph, usedChars)
-	freeStr := strings.Repeat(freeGlyph, freeChars)
-
-	if noColor {
-		return "[" + usedStr + freeStr + "]"
-	}
-
-	// Get usage color based on percentage - only the used portion is colored
-	usagePct := usedRatio * 100
-	usageColor := styles.GetContextUsageColor(usagePct)
-
-	usedStyled := lipgloss.NewStyle().Foreground(usageColor).Render(usedStr)
-	freeStyled := lipgloss.NewStyle().Foreground(styles.ContextFreeColor).Render(freeStr)
-
-	return "[" + usedStyled + freeStyled + "]"
+	return ""
 }
 
 // CostStyled renders a CostCell with the value in the default color. Only

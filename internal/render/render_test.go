@@ -10,6 +10,7 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func TestCost(t *testing.T) {
@@ -416,38 +417,108 @@ func TestSectionHeader(t *testing.T) {
 }
 
 func TestContextBar(t *testing.T) {
-	// 50% usage: 38-char bar + 2 brackets = 40 runes.
-	bar := ContextBar(50000, 50000, 100000, true)
-	if !strings.HasPrefix(bar, "[") || !strings.HasSuffix(bar, "]") {
-		t.Errorf("bar should be bracketed: %q", bar)
+	tests := []struct {
+		name  string
+		size  int64
+		max   int
+		width int
+		want  string
+	}{
+		{"half full: tick in the free part", 50, 100, 20, "[██████████░░░░░│░░░░]"},
+		{"past compaction: tick inside the used part", 90, 100, 20, "[███████████████│██░░]"},
+		{"exactly at the tick", 75, 100, 20, "[███████████████│░░░░]"},
+		{"full", 100, 100, 8, "[██████│█]"},
+		{"over full clamps", 150, 100, 8, "[██████│█]"},
+		{"unknown window", 10, 0, 8, "[░░░░░░│░]"},
 	}
-	if n := len([]rune(bar)); n != 40 {
-		t.Errorf("bar rune length = %d, want 40 (38 bar + 2 brackets)", n)
-	}
-	// no-color keeps the Unicode blocks; only the escapes go.
-	if !strings.ContainsRune(bar, '█') || !strings.ContainsRune(bar, '░') {
-		t.Errorf("bar should contain both used (█) and free (░) segments: %q", bar)
-	}
-	if strings.Contains(bar, "\x1b[") {
-		t.Errorf("noColor bar should not contain ANSI codes: %q", bar)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ContextBar(tt.size, tt.max, tt.width, true)
+			if got != tt.want {
+				t.Errorf("ContextBar(%d, %d, %d) = %q, want %q", tt.size, tt.max, tt.width, got, tt.want)
+			}
+			if n := len([]rune(got)); n != tt.width+2 {
+				t.Errorf("width = %d runes, want %d", n, tt.width+2)
+			}
+		})
 	}
 
-	// maxContext == 0 returns 38 free cells with no brackets.
-	if got, want := ContextBar(0, 0, 0, true), strings.Repeat("░", 38); got != want {
-		t.Errorf("ContextBar(maxContext=0) = %q, want %q", got, want)
+	// Color touches only the escapes, never the cells.
+	r := lipgloss.DefaultRenderer()
+	orig := r.ColorProfile()
+	r.SetColorProfile(termenv.ANSI256)
+	t.Cleanup(func() { r.SetColorProfile(orig) })
+	colored := ContextBar(90, 100, 20, false)
+	if !strings.Contains(colored, "\x1b[") {
+		t.Errorf("colored bar has no escapes: %q", colored)
 	}
 
-	// The ASCII glyph set: '#' used, '-' free, with or without color.
+	// The ASCII glyph set: '#' used, '-' free, '|' tick.
 	styles.SetASCII(true)
 	t.Cleanup(func() { styles.SetASCII(false) })
-	for _, noColor := range []bool{true, false} {
-		bar := ContextBar(50000, 50000, 100000, noColor)
-		if !strings.ContainsRune(bar, '#') || !strings.ContainsRune(bar, '-') {
-			t.Errorf("noColor=%v: ASCII bar should contain # and - segments: %q", noColor, bar)
+	if got, want := ContextBar(50, 100, 20, true), "[##########-----|----]"; got != want {
+		t.Errorf("ASCII bar = %q, want %q", got, want)
+	}
+}
+
+// The note keeps its reading whole at any width, shedding the scope first.
+func TestContextNote(t *testing.T) {
+	tests := []struct {
+		size  int64
+		width int
+		want  string
+	}{
+		{100_000, 60, "50.0K to ~compaction (main session, last request)"},
+		{100_000, 40, "50.0K to ~compaction"},
+		{100_000, 15, "50.0K left"},
+		{100_000, 5, ""},
+		{190_100, 60, "past ~compaction at 75% (main session, last request)"},
+		{190_100, 30, "past ~compaction at 75%"},
+		{190_100, 20, "past ~compaction"},
+	}
+	for _, tt := range tests {
+		if got := contextNote(tt.size, 200_000, tt.width); got != tt.want {
+			t.Errorf("contextNote(%d, width %d) = %q, want %q", tt.size, tt.width, got, tt.want)
 		}
-		if strings.ContainsRune(bar, '█') || strings.ContainsRune(bar, '░') {
-			t.Errorf("noColor=%v: ASCII bar should not contain Unicode blocks: %q", noColor, bar)
-		}
+	}
+	if got := contextNote(10, 0, 80); got != "" {
+		t.Errorf("unknown window: note = %q, want none", got)
+	}
+}
+
+func TestContextGauge(t *testing.T) {
+	tests := []struct {
+		name     string
+		size     int64
+		width    int
+		wantLine string
+		wantNote string
+	}{
+		{"fits: bar takes the rest", 190_100, 50,
+			" 95% [████████████████████│████░░] 190.1K / 200.0K",
+			"past ~compaction at 75%"},
+		{"headroom before compaction", 100_000, 50,
+			" 50% [█████████████░░░░░░░│░░░░░░] 100.0K / 200.0K",
+			"50.0K to ~compaction (main session, last request)"},
+		// The bar outranks the counts: it carries the compaction tick.
+		{"narrow drops the counts before clipping", 190_100, 25,
+			" 95% [██████████████│██░]", ""},
+		{"narrower still keeps a floor-width bar", 190_100, 17, " 95% [████████│░]", ""},
+		{"narrowest keeps the percentage", 190_100, 8, " 95%", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line, note := ContextGauge(tt.size, 200_000, tt.width, true, false)
+			if line != tt.wantLine {
+				t.Errorf("line = %q, want %q", line, tt.wantLine)
+			}
+			if n := len([]rune(line)); n > tt.width {
+				t.Errorf("line is %d wide, over %d", n, tt.width)
+			}
+			if tt.wantNote != "" && note != tt.wantNote {
+				t.Errorf("note = %q, want %q", note, tt.wantNote)
+			}
+		})
 	}
 }
 

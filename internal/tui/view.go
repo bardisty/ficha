@@ -192,58 +192,30 @@ func (m Model) renderAnalysis() string {
 	return sb.String()
 }
 
-// renderContextSection renders the context window progress bar and stats
+// renderContextSection renders the context gauge sized to the panel, with
+// its scope and headroom note under the bar.
 func (m Model) renderContextSection() string {
-	var sb strings.Builder
-
 	contextSize := m.analysis.LastMessageUsage.ContextWindowSize()
 	if contextSize == 0 {
 		return ""
 	}
+	maxContext := pricing.GetModelPricing(m.analysis.LastMessageModel).MaxContextTokens
 
-	modelPricing := pricing.GetModelPricing(m.analysis.LastMessageModel)
-	maxContext := modelPricing.MaxContextTokens
-	contextPct := pricing.GetContextPercentage(modelPricing, contextSize)
-	freeSpace := pricing.GetFreeSpace(modelPricing, contextSize)
-	freePct := float64(freeSpace) / float64(maxContext) * 100
-
-	highlighted := m.isHighlighted("context_window")
-	usageColor := styles.GetContextUsageColor(contextPct)
-
-	// Context label with value
-	contextVal := render.Number(contextSize)
-	contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, render.Number(int64(maxContext)))
-
-	if m.noColor {
-		sb.WriteString(fmt.Sprintf("    Context  %s  %s %s\n", render.ContextBar(contextSize, freeSpace, maxContext, true), contextVal, contextMeta))
-		sb.WriteString(fmt.Sprintf("             Free: %s (%.1f%%)\n", render.Number(freeSpace), freePct))
-	} else {
-		// Progress bar with context info
-		if highlighted {
-			sb.WriteString(fmt.Sprintf("    Context  %s  %s %s\n",
-				render.ContextBar(contextSize, freeSpace, maxContext, false),
-				highlightStyle.Render(contextVal),
-				dimStyle.Render(contextMeta)))
-		} else {
-			coloredMeta := lipgloss.NewStyle().Foreground(usageColor).Render(contextMeta)
-			sb.WriteString(fmt.Sprintf("    Context  %s  %s %s\n",
-				render.ContextBar(contextSize, freeSpace, maxContext, false),
-				contextVal, coloredMeta))
-		}
-
-		// Free space info
-		freeVal := render.Number(freeSpace)
-		freeValWithPct := fmt.Sprintf("%s (%.1f%%)", freeVal, freePct)
-		var freeStyled string
-		if highlighted {
-			freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render("Free: ") + highlightStyle.Render(freeValWithPct)
-		} else {
-			freeStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(fmt.Sprintf("Free: %s", freeValWithPct))
-		}
-		sb.WriteString(fmt.Sprintf("             %s\n", freeStyled))
+	// The panel's 2-column inner indent and the "Context " label come first;
+	// the gauge right-aligns its percentage, so "Context  95%" and
+	// "Context 100%" align.
+	// The panel keeps a 40-column minimum and clips below it; size the gauge
+	// to the columns actually on screen so it drops fields instead.
+	avail := panelWidthFor(m.width)
+	if m.width > 0 {
+		avail = min(avail, m.width-2)
 	}
-
-	return sb.String()
+	width := avail - 2 - 8
+	line, note := render.ContextGauge(contextSize, maxContext, width, m.noColor, m.isHighlighted("context_window"))
+	if !m.noColor {
+		note = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(note)
+	}
+	return "    Context " + line + "\n             " + note + "\n"
 }
 
 // cacheWriteTokenKeys returns the highlight/delta map keys for the 5m and 1h

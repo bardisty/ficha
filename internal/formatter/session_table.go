@@ -129,45 +129,23 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	return sb.String()
 }
 
-// renderContextSection renders the context window section
+// renderContextSection renders the context window section: the gauge line,
+// then its scope and headroom note under the bar.
 func renderContextSection(analysis *models.SessionAnalysis, noColor bool) string {
-	var sb strings.Builder
-
 	contextSize := analysis.LastMessageUsage.ContextWindowSize()
 	if contextSize == 0 {
 		return ""
 	}
+	maxContext := pricing.GetModelPricing(analysis.LastMessageModel).MaxContextTokens
 
-	modelPricing := pricing.GetModelPricing(analysis.LastMessageModel)
-	maxContext := modelPricing.MaxContextTokens
-	contextPct := pricing.GetContextPercentage(modelPricing, contextSize)
-	freeSpace := pricing.GetFreeSpace(modelPricing, contextSize)
-	freePct := float64(freeSpace) / float64(maxContext) * 100
-
-	usageColor := styles.GetContextUsageColor(contextPct)
-
-	// Context label with value
-	contextVal := render.Number(contextSize)
-	contextMeta := fmt.Sprintf("(%.0f%% of %s)", contextPct, render.Number(int64(maxContext)))
-
-	if noColor {
-		sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n", render.ContextBar(contextSize, freeSpace, maxContext, true), contextVal, contextMeta))
-		sb.WriteString(fmt.Sprintf("           Free: %s (%.1f%%)\n", render.Number(freeSpace), freePct))
-	} else {
-		// Progress bar with context info
-		coloredMeta := lipgloss.NewStyle().Foreground(usageColor).Render(contextMeta)
-		sb.WriteString(fmt.Sprintf("  Context  %s  %s %s\n",
-			render.ContextBar(contextSize, freeSpace, maxContext, false),
-			contextVal, coloredMeta))
-
-		// Free space info
-		freeVal := render.Number(freeSpace)
-		freeValWithPct := fmt.Sprintf("%s (%.1f%%)", freeVal, freePct)
-		freeStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(fmt.Sprintf("Free: %s", freeValWithPct))
-		sb.WriteString(fmt.Sprintf("           %s\n", freeStyled))
+	// Fill the 76-column section after the "  Context " label; the gauge
+	// right-aligns its percentage, so "Context  95%" and "Context 100%" align.
+	const gaugeWidth = 76 - 10
+	line, note := render.ContextGauge(contextSize, maxContext, gaugeWidth, noColor, false)
+	if !noColor {
+		note = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(note)
 	}
-
-	return sb.String()
+	return "  Context " + line + "\n           " + note + "\n"
 }
 
 // agentMsgs formats an agent's message count ("45 msgs", "1 msg").
