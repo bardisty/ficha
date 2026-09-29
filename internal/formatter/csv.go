@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -182,8 +183,10 @@ func formatMessagesCSV(analysis *models.SessionAnalysis) (string, error) {
 	return sb.String(), nil
 }
 
-// FormatSessionListCSV formats a list of sessions as CSV
-func FormatSessionListCSV(entries []models.SessionEntry) (string, error) {
+// FormatSessionListCSV formats `list` output as CSV, with the fields of
+// FormatSessionListJSON. A session that failed to parse leaves the analysis
+// columns (start_time through title) empty.
+func FormatSessionListCSV(results []models.SessionResult, originalPath string) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
 
@@ -192,31 +195,54 @@ func FormatSessionListCSV(entries []models.SessionEntry) (string, error) {
 		"session_id",
 		"full_path",
 		"message_count",
-		"created",
 		"modified",
 		"agent_count",
 		"agent_message_count",
 		"skipped_sessions",
 		"skipped_agents",
 		"skipped_lines",
+		"project_path",
+		"original_path",
+		"start_time",
+		"duration_seconds",
+		"model",
+		"total_cost",
+		"title",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing session list CSV header: %w", err)
 	}
 
 	// Write session rows
-	for _, entry := range entries {
+	for _, r := range results {
+		entry := r.Entry
 		row := []string{
 			csvCell(entry.SessionID),
 			csvCell(entry.FullPath),
 			fmt.Sprintf("%d", entry.MessageCount),
-			entry.Created.Format("2006-01-02T15:04:05Z07:00"),
-			entry.Modified.Format("2006-01-02T15:04:05Z07:00"),
+			entry.Modified.Format(csvTimeFormat),
 			fmt.Sprintf("%d", entry.AgentCount),
 			fmt.Sprintf("%d", entry.AgentMessageCount),
 			fmt.Sprintf("%d", entry.SkippedSessions),
 			fmt.Sprintf("%d", entry.SkippedAgents),
 			fmt.Sprintf("%d", entry.SkippedLines),
+			csvCell(filepath.Dir(entry.FullPath)),
+			csvCell(originalPath),
+		}
+		if a := r.Analysis; a != nil {
+			start := ""
+			if !a.StartTime.IsZero() {
+				start = a.StartTime.Format(csvTimeFormat)
+			}
+			row = append(row,
+				start,
+				fmt.Sprintf("%.0f", a.Duration.Seconds()),
+				csvCell(primarySessionModelID(a)),
+				fmt.Sprintf("%.6f", a.TotalCost.TotalCost),
+				csvCell(a.Title),
+			)
+		} else {
+			row = append(row, "", "", "", "", "")
 		}
 		if err := w.Write(row); err != nil {
 			return "", fmt.Errorf("writing session entry row: %w", err)

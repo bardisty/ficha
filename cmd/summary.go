@@ -84,6 +84,7 @@ func runSummary(cfg *config) error {
 	for _, r := range results {
 		if r.Analysis != nil {
 			markUnpriced(r.Analysis)
+			r.Analysis.Context = sessionContext(r.Analysis)
 		}
 	}
 	warnUnknownModels(&warnings, analysis.UnpricedModels)

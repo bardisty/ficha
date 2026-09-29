@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/bardisty/ficha/internal/models"
 )
 
 // machineOutputs is every command shape that has json and csv output.
@@ -275,5 +278,223 @@ func TestE2EUnpricedModelsAgree(t *testing.T) {
 	// With agent rows, the agent and its session both name it.
 	if got := named(csvColumn("summary", projFlag, "-d", "--expand-agents")); !slices.Equal(got, []string{"claude-zeta-9", "claude-zeta-9"}) {
 		t.Errorf("summary -d --expand-agents csv unpriced_models = %q, want the session row and the agent row", got)
+	}
+}
+
+// TestE2EListCarriesTheTableFields: list json prices each session the way
+// summary -d does, cross-session duplicates counted once, and names its
+// project the way show does.
+func TestE2EListCarriesTheTableFields(t *testing.T) {
+	root := setupE2EFixture(t)
+	// A resumed session repeats alpha's first message; summary -d counts it
+	// under alpha only, and list must agree.
+	const resumedID = "eeeeeeee-1111-2222-3333-444444444444"
+	resumed := `{"type":"ai-title","aiTitle":"Resumed work"}` + "\n" +
+		e2eMsg("2026-02-01T10:00:00Z", "a1", "claude-opus-4-8", 1200, 800, 3000, 1000, 20000) + "\n" +
+		e2eMsg("2026-02-05T10:00:00Z", "r1", "claude-opus-4-8", 100, 100, 0, 0, 0) + "\n"
+	if err := os.WriteFile(filepath.Join(root, "projects", e2eProjDir, resumedID+".jsonl"), []byte(resumed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	type cost struct {
+		TotalCost float64 `json:"total_cost"`
+	}
+	type record struct {
+		SessionID       string  `json:"session_id"`
+		ProjectPath     string  `json:"project_path"`
+		OriginalPath    *string `json:"original_path"`
+		Title           string  `json:"title"`
+		Model           string  `json:"model"`
+		StartTime       string  `json:"start_time"`
+		DurationSeconds float64 `json:"duration_seconds"`
+		TotalCost       *cost   `json:"total_cost"`
+	}
+	run := func(args ...string) string {
+		t.Helper()
+		out, stderr, err := executeCLISplit(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, stderr)
+		}
+		return out
+	}
+
+	var list []record
+	mustJSON(t, run("list", projFlag, "-f", "json"), &list)
+	var detail struct {
+		Sessions []record `json:"sessions"`
+	}
+	mustJSON(t, run("summary", projFlag, "-d", "-f", "json"), &detail)
+	summaryCost := map[string]float64{}
+	summaryRecord := map[string]record{}
+	for _, s := range detail.Sessions {
+		summaryCost[s.SessionID] = s.TotalCost.TotalCost
+		summaryRecord[s.SessionID] = s
+	}
+	if len(list) != 3 || len(summaryCost) != 3 {
+		t.Fatalf("want 3 sessions in list and summary -d, got %d and %d", len(list), len(summaryCost))
+	}
+	var show record
+	mustJSON(t, run("show", projFlag, e2eBetaID, "-f", "json"), &show)
+	for _, r := range list {
+		if r.TotalCost == nil {
+			t.Fatalf("%s: no total_cost", r.SessionID)
+		}
+		if got, want := r.TotalCost.TotalCost, summaryCost[r.SessionID]; math.Abs(got-want) > 1e-9 {
+			t.Errorf("%s: list total_cost %v, summary -d %v", r.SessionID, got, want)
+		}
+		if r.ProjectPath != show.ProjectPath {
+			t.Errorf("%s: project_path %q, show has %q", r.SessionID, r.ProjectPath, show.ProjectPath)
+		}
+		if r.OriginalPath == nil {
+			t.Errorf("%s: original_path missing", r.SessionID)
+		}
+		if r.Model == "" || r.StartTime == "" {
+			t.Errorf("%s: model %q, start_time %q", r.SessionID, r.Model, r.StartTime)
+		}
+		// The analysis fields are the summary -d record's. For the resumed
+		// session that means the part it added, not the history it repeats.
+		if sd := summaryRecord[r.SessionID]; r.StartTime != sd.StartTime || r.DurationSeconds != sd.DurationSeconds {
+			t.Errorf("%s: start_time %s, duration %v; summary -d has %s, %v",
+				r.SessionID, r.StartTime, r.DurationSeconds, sd.StartTime, sd.DurationSeconds)
+		}
+		if r.SessionID == e2eBetaID && (r.StartTime != show.StartTime || r.DurationSeconds != show.DurationSeconds) {
+			t.Errorf("beta: start_time %s / duration %v, show has %s / %v", r.StartTime, r.DurationSeconds, show.StartTime, show.DurationSeconds)
+		}
+	}
+	// The dedup is what the comparison above tests, so make sure it happened.
+	if resumedAlone := summaryCost[resumedID]; resumedAlone <= 0 {
+		t.Fatalf("resumed session cost %v", resumedAlone)
+	}
+	var resumedShow struct {
+		TotalCost cost   `json:"total_cost"`
+		Title     string `json:"title"`
+	}
+	mustJSON(t, run("show", projFlag, resumedID, "-f", "json"), &resumedShow)
+	// The title isn't deduplicated: it's the transcript's latest, as on show.
+	for _, r := range list {
+		if r.SessionID == resumedID && (r.Title != resumedShow.Title || r.Title != "Resumed work") {
+			t.Errorf("resumed session title %q, show has %q", r.Title, resumedShow.Title)
+		}
+	}
+	if resumedShow.TotalCost.TotalCost <= summaryCost[resumedID] {
+		t.Error("the fixture should give the resumed session a duplicate that show counts and summary -d doesn't")
+	}
+
+	// A --project-dir typed with a trailing separator still joins with show.
+	dirFlag := "--project-dir=" + filepath.Join(root, "projects", e2eProjDir) + string(filepath.Separator)
+	var slashed []record
+	mustJSON(t, run("list", dirFlag, "-f", "json"), &slashed)
+	var slashedShow record
+	mustJSON(t, run("show", dirFlag, e2eBetaID, "-f", "json"), &slashedShow)
+	if len(slashed) == 0 {
+		t.Fatal("list with a trailing separator found no sessions")
+	}
+	if slashed[0].ProjectPath != slashedShow.ProjectPath {
+		t.Errorf("with a trailing separator, list project_path %q, show %q", slashed[0].ProjectPath, slashedShow.ProjectPath)
+	}
+
+	// csv carries the same cost.
+	records := mustCSV(t, run("list", projFlag, "-f", "csv"))
+	id, total := slices.Index(records[0], "session_id"), slices.Index(records[0], "total_cost")
+	for _, r := range records[1:] {
+		if got := mustFloat(t, r[total]); math.Abs(got-summaryCost[r[id]]) > 1e-6 {
+			t.Errorf("%s: list csv total_cost %v, summary -d %v", r[id], got, summaryCost[r[id]])
+		}
+	}
+}
+
+// TestE2EListKeepsUnreadableSessions: the table lists a session that failed
+// to parse as unreadable, and json and csv keep it too, with its skip
+// counter and without the fields only a parse can give.
+func TestE2EListKeepsUnreadableSessions(t *testing.T) {
+	setupKeysFixture(t)
+	out, _, err := executeCLISplit(t, "list", keysProj, "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list []map[string]any
+	mustJSON(t, out, &list)
+	i := slices.IndexFunc(list, func(r map[string]any) bool { return r["session_id"] == keysBrokenID })
+	if i < 0 {
+		t.Fatalf("unreadable session missing from list json:\n%s", out)
+	}
+	broken := list[i]
+	if broken["skipped_sessions"] != 1.0 {
+		t.Errorf("skipped_sessions = %v, want 1", broken["skipped_sessions"])
+	}
+	for _, k := range []string{"total_cost", "model", "start_time", "duration_seconds"} {
+		if v, ok := broken[k]; ok {
+			t.Errorf("unreadable session: %s = %v, want it absent", k, v)
+		}
+	}
+
+	out, _, err = executeCLISplit(t, "list", keysProj, "-f", "csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := mustCSV(t, out)
+	col := func(name string) int { return slices.Index(records[0], name) }
+	row := slices.IndexFunc(records, func(r []string) bool { return r[0] == keysBrokenID })
+	if row < 0 {
+		t.Fatalf("unreadable session missing from list csv:\n%s", out)
+	}
+	if got := records[row][col("skipped_sessions")]; got != "1" {
+		t.Errorf("csv skipped_sessions = %q, want 1", got)
+	}
+	if got := records[row][col("total_cost")]; got != "" {
+		t.Errorf("csv total_cost = %q, want empty", got)
+	}
+}
+
+// TestE2EContextMatchesTheGauge: show json's context is the table's gauge
+// reading. The summary aggregate spans sessions, so it has none; each
+// summary -d session has its own.
+func TestE2EContextMatchesTheGauge(t *testing.T) {
+	setupE2EFixture(t)
+	out, _, err := executeCLISplit(t, "show", projFlag, e2eBetaID, "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var show struct {
+		Context *models.ContextUsage `json:"context"`
+		Last    models.TokenUsage    `json:"last_message_usage"`
+	}
+	mustJSON(t, out, &show)
+	if show.Context == nil {
+		t.Fatalf("show json has no context:\n%s", out)
+	}
+	c := show.Context
+	if c.Tokens != show.Last.ContextWindowSize() || c.Window <= 0 {
+		t.Errorf("context %+v, last message's context size %d", c, show.Last.ContextWindowSize())
+	}
+	if want := float64(c.Tokens) / float64(c.Window) * 100; math.Abs(c.Percent-want) > 1e-9 {
+		t.Errorf("percent %v, want %v", c.Percent, want)
+	}
+	table, _, err := executeCLISplit(t, "show", projFlag, e2eBetaID, "--ascii")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gauge := fmt.Sprintf("Context %3.0f%%", c.Percent); !strings.Contains(table, gauge) {
+		t.Errorf("table should show %q:\n%s", gauge, table)
+	}
+
+	out, _, err = executeCLISplit(t, "summary", projFlag, "-d", "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detail struct {
+		Summary  map[string]any `json:"summary"`
+		Sessions []struct {
+			Context *models.ContextUsage `json:"context"`
+		} `json:"sessions"`
+	}
+	mustJSON(t, out, &detail)
+	if _, ok := detail.Summary["context"]; ok {
+		t.Error("the summary aggregate should have no context")
+	}
+	for i, s := range detail.Sessions {
+		if s.Context == nil {
+			t.Errorf("summary -d session %d has no context", i)
+		}
 	}
 }

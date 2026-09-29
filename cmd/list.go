@@ -42,7 +42,7 @@ func runList(cfg *config) error {
 	}
 
 	// list displays per-session message counts, so request the discovery-time scan.
-	sessions, err := loadProjectSessions(cfg, true)
+	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, true)
 	if err != nil {
 		return err
 	}
@@ -50,10 +50,20 @@ func runList(cfg *config) error {
 	// Sort sessions by modified time (most recent first)
 	sortSessionsByModified(sessions)
 
-	// The counts below come from the same parse `show` runs, so warn about the
+	// Priced the way the table is, so costs match summary -d. Counts stay
+	// the scan's, which match show's.
+	aggregate, results, err := analyzer.AnalyzeMultipleSessions(sessions)
+	if err != nil {
+		results = make([]models.SessionResult, len(sessions))
+		for i, s := range sessions {
+			results[i] = models.SessionResult{Entry: s}
+		}
+	}
+
+	// The counts come from the same parse `show` runs, so warn about the
 	// inputs it dropped — otherwise a session whose transcript could not be read
 	// is indistinguishable from one that holds no messages.
-	skips := skipWarning{counts: "message counts"}
+	skips := skipWarning{counts: "message counts and costs"}
 	var details []models.SkipDetail
 	for _, s := range sessions {
 		skips.sessions += s.SkippedSessions
@@ -71,14 +81,18 @@ func runList(cfg *config) error {
 	skips.details = labelSkips("", details)
 	var warnings bytes.Buffer
 	skips.write(&warnings, cfg.verbose)
+	if aggregate != nil {
+		warnEstimatedCosts(&warnings, aggregate.EstimatedCostMessages)
+		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
+	}
 
-	// Output in requested format
+	originalPath := parser.ProjectOriginalPath(projectDir)
 	var output string
 	switch cfg.format {
 	case "json":
-		output, err = formatter.FormatSessionListJSON(sessions, true)
+		output, err = formatter.FormatSessionListJSON(results, originalPath, true)
 	case "csv":
-		output, err = formatter.FormatSessionListCSV(sessions)
+		output, err = formatter.FormatSessionListCSV(results, originalPath)
 	}
 	if err != nil {
 		return fmt.Errorf("formatting output: %w", err)

@@ -47,6 +47,10 @@ agents_cost.cache_write_5m_cost number
 agents_cost.input_cost number
 agents_cost.output_cost number
 agents_cost.total_cost number
+context object
+context.percent number
+context.tokens number
+context.window number
 cost_by_model object
 cost_by_model.* object
 cost_by_model.*.cache_read_cost number

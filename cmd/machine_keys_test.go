@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/csv"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -90,21 +89,12 @@ func setupKeysFixture(t *testing.T) {
 	))
 	write(filepath.Join(keysNoAgentsDirID, "subagents"), "not a directory\n")
 
-	// list reads project_path only from sessions-index.json.
-	write("sessions-index.json", `{"entries":[{"sessionId":"`+keysFullID+`","fullPath":"`+
-		jsonEscape(filepath.Join(proj, keysFullID+".jsonl"))+`","projectPath":"/home/test/keys"}]}`)
-
 	// A dangling symlink lists like a transcript and fails to open on every OS.
 	if err := os.Symlink(filepath.Join(proj, "missing.jsonl"), filepath.Join(proj, keysBrokenID+".jsonl")); err != nil {
 		t.Skipf("can't create a symlink for the unreadable session: %v", err)
 	}
 
 	t.Setenv("CLAUDE_CONFIG_DIR", root)
-}
-
-func jsonEscape(s string) string {
-	b, _ := json.Marshal(s)
-	return strings.Trim(string(b), `"`)
 }
 
 // keyCase is one machine output. Its golden is the union of the keys every

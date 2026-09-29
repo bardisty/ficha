@@ -1,1 +1,1 @@
-session_id,full_path,message_count,created,modified,agent_count,agent_message_count,skipped_sessions,skipped_agents,skipped_lines
+session_id,full_path,message_count,modified,agent_count,agent_message_count,skipped_sessions,skipped_agents,skipped_lines,project_path,original_path,start_time,duration_seconds,model,total_cost,title
