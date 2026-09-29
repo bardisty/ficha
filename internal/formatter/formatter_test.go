@@ -3,7 +3,9 @@ package formatter
 import (
 	"encoding/csv"
 	"encoding/json"
+	"maps"
 	"math"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -307,10 +309,29 @@ func TestFormatSessionCSV_AgentMessageRows(t *testing.T) {
 	}
 }
 
-func TestFormatSessionListCSV(t *testing.T) {
+// sampleListResults is list's input: session-001 analyzed, session-002
+// unreadable.
+func sampleListResults() ([]models.SessionResult, string) {
 	entries := sampleSessionEntries()
+	entries[1].SkippedSessions = 1
+	analysis := &models.SessionAnalysis{
+		SessionID:         "session-001",
+		Title:             "Fix the parser",
+		StartTime:         time.Date(2024, 1, 1, 10, 30, 0, 0, time.UTC),
+		Duration:          models.Duration(90 * time.Minute),
+		TotalCost:         models.CostBreakdown{InputCost: 1, TotalCost: 1.5},
+		ParentCostByModel: map[string]models.CostBreakdown{"claude-opus-4-8": {TotalCost: 1.5}},
+	}
+	return []models.SessionResult{{Entry: entries[0], Analysis: analysis}, {Entry: entries[1]}},
+		"/home/u/work/proj"
+}
 
-	output, err := FormatSessionListCSV(entries)
+func TestFormatSessionListCSV(t *testing.T) {
+	results, originalPath := sampleListResults()
+	// The transcript's own directory, spelled the way this OS spells it.
+	projectPath := filepath.Dir(results[0].Entry.FullPath)
+
+	output, err := FormatSessionListCSV(results, originalPath)
 	if err != nil {
 		t.Fatalf("FormatSessionListCSV returned error: %v", err)
 	}
@@ -319,74 +340,51 @@ func TestFormatSessionListCSV(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to parse CSV output: %v", err)
 	}
-
-	// Verify row count: 1 header + 2 data rows
 	if len(records) != 3 {
 		t.Fatalf("Expected 3 rows (header + 2 data), got %d", len(records))
 	}
 
-	// Verify header columns
 	expectedHeader := []string{
-		"session_id", "full_path", "message_count", "created",
+		"session_id", "full_path", "message_count",
 		"modified", "agent_count", "agent_message_count",
 		"skipped_sessions", "skipped_agents", "skipped_lines",
+		"project_path", "original_path", "start_time", "duration_seconds",
+		"model", "total_cost", "title",
 	}
-	header := records[0]
-	if len(header) != len(expectedHeader) {
-		t.Fatalf("Header column count: got %d, want %d", len(header), len(expectedHeader))
+	if !slices.Equal(records[0], expectedHeader) {
+		t.Fatalf("header:\n got %q\nwant %q", records[0], expectedHeader)
 	}
-	for i, col := range expectedHeader {
-		if header[i] != col {
-			t.Errorf("Header column %d: got %q, want %q", i, header[i], col)
+	row := func(r []string) map[string]string {
+		m := map[string]string{}
+		for i, col := range expectedHeader {
+			m[col] = r[i]
 		}
+		return m
 	}
 
-	// Verify first data row
-	row1 := records[1]
-	if row1[0] != "session-001" {
-		t.Errorf("Row 1 session_id (col 0): got %q, want %q", row1[0], "session-001")
+	want1 := map[string]string{
+		"session_id": "session-001", "full_path": "/path/to/session-001.jsonl", "message_count": "5",
+		"modified": "2024-01-01T12:00:00Z", "agent_count": "0", "agent_message_count": "0",
+		"skipped_sessions": "0", "skipped_agents": "0", "skipped_lines": "0",
+		"project_path": projectPath, "original_path": "/home/u/work/proj",
+		"start_time": "2024-01-01T10:30:00Z", "duration_seconds": "5400",
+		"model": "claude-opus-4-8", "total_cost": "1.500000", "title": "Fix the parser",
 	}
-	if row1[1] != "/path/to/session-001.jsonl" {
-		t.Errorf("Row 1 full_path (col 1): got %q, want %q", row1[1], "/path/to/session-001.jsonl")
-	}
-	if row1[2] != "5" {
-		t.Errorf("Row 1 message_count (col 2): got %q, want %q", row1[2], "5")
-	}
-	if row1[3] != "2024-01-01T10:00:00Z" {
-		t.Errorf("Row 1 created (col 3): got %q, want %q", row1[3], "2024-01-01T10:00:00Z")
-	}
-	if row1[4] != "2024-01-01T12:00:00Z" {
-		t.Errorf("Row 1 modified (col 4): got %q, want %q", row1[4], "2024-01-01T12:00:00Z")
-	}
-	if row1[5] != "0" {
-		t.Errorf("Row 1 agent_count (col 5): got %q, want %q", row1[5], "0")
-	}
-	if row1[6] != "0" {
-		t.Errorf("Row 1 agent_message_count (col 6): got %q, want %q", row1[6], "0")
+	if got := row(records[1]); !maps.Equal(got, want1) {
+		t.Errorf("row 1:\n got %v\nwant %v", got, want1)
 	}
 
-	// Verify second data row
-	row2 := records[2]
-	if row2[0] != "session-002" {
-		t.Errorf("Row 2 session_id (col 0): got %q, want %q", row2[0], "session-002")
+	// The unreadable session keeps its scan fields and leaves the analysis
+	// columns empty.
+	want2 := map[string]string{
+		"session_id": "session-002", "full_path": "/path/to/session-002.jsonl", "message_count": "10",
+		"modified": "2024-01-02T14:00:00Z", "agent_count": "2", "agent_message_count": "0",
+		"skipped_sessions": "1", "skipped_agents": "0", "skipped_lines": "0",
+		"project_path": projectPath, "original_path": "/home/u/work/proj",
+		"start_time": "", "duration_seconds": "", "model": "", "total_cost": "", "title": "",
 	}
-	if row2[1] != "/path/to/session-002.jsonl" {
-		t.Errorf("Row 2 full_path (col 1): got %q, want %q", row2[1], "/path/to/session-002.jsonl")
-	}
-	if row2[2] != "10" {
-		t.Errorf("Row 2 message_count (col 2): got %q, want %q", row2[2], "10")
-	}
-	if row2[3] != "2024-01-02T10:00:00Z" {
-		t.Errorf("Row 2 created (col 3): got %q, want %q", row2[3], "2024-01-02T10:00:00Z")
-	}
-	if row2[4] != "2024-01-02T14:00:00Z" {
-		t.Errorf("Row 2 modified (col 4): got %q, want %q", row2[4], "2024-01-02T14:00:00Z")
-	}
-	if row2[5] != "2" {
-		t.Errorf("Row 2 agent_count (col 5): got %q, want %q", row2[5], "2")
-	}
-	if row2[6] != "0" {
-		t.Errorf("Row 2 agent_message_count (col 6): got %q, want %q", row2[6], "0")
+	if got := row(records[2]); !maps.Equal(got, want2) {
+		t.Errorf("row 2:\n got %v\nwant %v", got, want2)
 	}
 }
 
@@ -509,21 +507,49 @@ func TestFormatSessionJSON_Pretty(t *testing.T) {
 }
 
 func TestFormatSessionListJSON(t *testing.T) {
-	entries := sampleSessionEntries()
+	results, originalPath := sampleListResults()
 
-	output, err := FormatSessionListJSON(entries, true)
+	output, err := FormatSessionListJSON(results, originalPath, true)
 	if err != nil {
 		t.Fatalf("FormatSessionListJSON returned error: %v", err)
 	}
 
-	// Verify it's valid JSON array
-	var parsed []models.SessionEntry
+	var parsed []map[string]any
 	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
 		t.Fatalf("FormatSessionListJSON output is not valid JSON: %v", err)
 	}
-
 	if len(parsed) != 2 {
-		t.Errorf("Expected 2 entries, got %d", len(parsed))
+		t.Fatalf("Expected 2 entries, got %d", len(parsed))
+	}
+
+	analyzed := parsed[0]
+	for k, want := range map[string]any{
+		"project_path":     filepath.Dir(results[0].Entry.FullPath),
+		"original_path":    originalPath,
+		"title":            "Fix the parser",
+		"model":            "claude-opus-4-8",
+		"start_time":       "2024-01-01T10:30:00Z",
+		"duration_seconds": 5400.0,
+	} {
+		if analyzed[k] != want {
+			t.Errorf("%s: got %v, want %v", k, analyzed[k], want)
+		}
+	}
+	if cost, _ := analyzed["total_cost"].(map[string]any); cost["total_cost"] != 1.5 {
+		t.Errorf("total_cost should be the breakdown object: %v", analyzed["total_cost"])
+	}
+	if _, ok := analyzed["created"]; ok {
+		t.Error("created is gone: it was the file's mtime, not a creation time")
+	}
+
+	unreadable := parsed[1]
+	for _, k := range []string{"title", "model", "start_time", "duration_seconds", "total_cost"} {
+		if v, ok := unreadable[k]; ok {
+			t.Errorf("unreadable session: %s = %v, want it absent", k, v)
+		}
+	}
+	if unreadable["skipped_sessions"] != 1.0 || unreadable["project_path"] != filepath.Dir(results[1].Entry.FullPath) {
+		t.Errorf("unreadable session keeps its scan fields: %v", unreadable)
 	}
 }
 

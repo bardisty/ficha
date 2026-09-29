@@ -38,7 +38,7 @@ Sessions that fail to parse are omitted from detail output and reported on stder
 
 ## Record provenance
 
-Two fields name where a record came from. `project_path` is the Claude project directory (`~/.claude/projects/<encoded>`) — identical on `show`, the `summary` aggregate, and every per-session record, so machine outputs join on it. `session_file` is the transcript `.jsonl` path; it is empty on the `summary` aggregate, which spans many files. In csv, session rows carry both columns and agent rows leave them empty (join back through `session_id`). (`list` names the same transcript path `full_path`, and its `project_path` is the original working directory, not this encoded project dir. `global` names each project by `encoded_path`, `full_path`, `original_path` and `display_name`.)
+Two fields name where a record came from. `project_path` is the Claude project directory (`~/.claude/projects/<encoded>`) — identical on `show`, the `summary` aggregate, every per-session record and every `list` record, so machine outputs join on it. `session_file` is the transcript `.jsonl` path; it is empty on the `summary` aggregate, which spans many files. In csv, session rows carry both columns and agent rows leave them empty (join back through `session_id`). (`list` names the transcript path `full_path`, and adds `original_path`, the working directory the project stands for, empty when no transcript records it. `global` names each project by `encoded_path`, `full_path`, `original_path` and `display_name`.)
 
 ## Agent order
 
@@ -54,6 +54,29 @@ A session row's `total_cost` already includes its agents, so summing the whole c
 - Sum `agent` rows for agent spend.
 
 Each session row also carries `parent_cost` and `agents_cost`, which add up to its `total_cost`, so the file reconciles against itself. Agent rows leave both empty, as they leave `cumulative_cost`, `project_path` and `session_file`. Join an agent row to its session through `session_id`.
+
+## Session list (`list`)
+
+`list -f json` is an array with one record per session, newest first, and `list -f csv` has a row per session with the same fields. Besides the discovery fields (`session_id`, `full_path`, `modified`, the counts and the skip counters), each record carries what the table shows: `title`, `model`, `start_time`, `duration_seconds` and `total_cost`.
+
+- `total_cost` is the same breakdown object as on `show` and `summary`, so `.total_cost.total_cost` reads the same on all three. csv has only the total.
+- `model`, `start_time`, `duration_seconds` and `total_cost` come from the same analysis as the session's `summary -d` record and the list table. That analysis counts a message repeated across sessions once, under the session it first appeared in. So for a resumed or forked session, which starts with a copy of earlier history, these fields describe what it added: `start_time` is its first new message, and its `total_cost` can be lower than `show`'s, which analyzes the session alone.
+- `title` is the transcript's latest `ai-title` record, as on `show`. A fork that hasn't been retitled yet carries the original's title.
+- `message_count` and `agent_count` come from the same parse as `show`'s, so the two agree, repeated history included.
+- `model` is the session's costliest model in the parent transcript, spelled as a `cost_by_model` key, like `summary -d` csv's `model`.
+- A session that fails to parse is still listed, with `skipped_sessions: 1`. It has no `title`, `model`, `start_time`, `duration_seconds` or `total_cost`, and csv leaves those cells empty. A session that holds nothing but repeated history parses fine, so it has `total_cost` (zero) and `duration_seconds`, but no `start_time` or `model`.
+
+## Context window
+
+`context` on `show` json and on each per-session record in `summary -d` json is the reading the table's Context gauge shows: how full the context window was at the session's last parent request.
+
+| Key | Meaning |
+| --- | --- |
+| `tokens` | input tokens of that request, cache reads and writes included, as Claude Code's `/context` counts them |
+| `window` | the model's context window, from ficha's price list |
+| `percent` | `tokens / window * 100`, unrounded. The table rounds it |
+
+It's absent when the session has no parent request, and on the `summary` aggregate, which spans many sessions. A `summary -d` session made only of history repeated from an earlier session has no request of its own, so it has no `context` there, though `show` gives it one.
 
 ## Workflow runs
 

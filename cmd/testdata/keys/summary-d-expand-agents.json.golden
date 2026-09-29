@@ -49,6 +49,10 @@ sessions[].agents_cost.cache_write_5m_cost number
 sessions[].agents_cost.input_cost number
 sessions[].agents_cost.output_cost number
 sessions[].agents_cost.total_cost number
+sessions[].context object
+sessions[].context.percent number
+sessions[].context.tokens number
+sessions[].context.window number
 sessions[].cost_by_model object
 sessions[].cost_by_model.* object
 sessions[].cost_by_model.*.cache_read_cost number

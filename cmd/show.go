@@ -8,6 +8,7 @@ import (
 	"github.com/bardisty/ficha/internal/formatter"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
+	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -103,6 +104,7 @@ func runShow(cfg *config, args []string, live bool) error {
 	skipWarning{counts: "totals", agents: analysis.SkippedAgents, lines: analysis.SkippedLines}.write(&warnings, cfg.verbose)
 	warnEstimatedCosts(&warnings, analysis.EstimatedCostMessages)
 	markUnpriced(analysis)
+	analysis.Context = sessionContext(analysis)
 	warnUnknownModels(&warnings, analysis.UnpricedModels)
 
 	analysis.Project = parser.ProjectDisplayName(projectDir)
@@ -115,6 +117,17 @@ func runShow(cfg *config, args []string, live bool) error {
 
 	printReport(cfg, &warnings, output)
 	return nil
+}
+
+// sessionContext is the reading the table's context gauge shows, or nil when
+// the session has no parent request to read it from.
+func sessionContext(a *models.SessionAnalysis) *models.ContextUsage {
+	tokens := a.LastMessageUsage.ContextWindowSize()
+	if tokens == 0 {
+		return nil
+	}
+	p := pricing.GetModelPricing(a.LastMessageModel)
+	return &models.ContextUsage{Tokens: tokens, Window: p.MaxContextTokens, Percent: pricing.GetContextPercentage(p, tokens)}
 }
 
 func runLiveMode(cfg *config, session *models.SessionEntry, projectDir string, followMode bool) error {

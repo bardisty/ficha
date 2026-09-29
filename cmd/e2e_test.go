@@ -1602,7 +1602,7 @@ func TestE2EWarningsNameTheirSessions(t *testing.T) {
 	const (
 		linesSummary = "Warning: 2 unparseable line(s) skipped; totals may be undercounted\n"
 		linesList    = "Warning: 2 unparseable line(s) skipped; costs may be undercounted\n"
-		linesListCSV = "Warning: 2 unparseable line(s) skipped; message counts may be undercounted\n"
+		linesListCSV = "Warning: 2 unparseable line(s) skipped; message counts and costs may be undercounted\n"
 		hint         = "  Run with -v to list the affected sessions.\n"
 		unknown      = "Warning: unknown model \"claude-nova-9\" priced at fallback $3/$15 per MTok\n"
 	)
@@ -1615,7 +1615,7 @@ func TestE2EWarningsNameTheirSessions(t *testing.T) {
 		{"summary -v", []string{"summary", proj, "-v"}, linesSummary + "  22222222: 2 lines\n" + unknown},
 		{"list", []string{"list", proj}, linesList + hint + unknown},
 		{"list -v", []string{"list", proj, "-v"}, linesList + "  22222222: 2 lines\n" + unknown},
-		{"list csv", []string{"list", proj, "-f", "csv"}, linesListCSV + hint},
+		{"list csv", []string{"list", proj, "-f", "csv"}, linesListCSV + hint + unknown},
 		{"global -v", []string{"global", "-v"}, linesSummary + "  -home-test-warn/22222222: 2 lines\n" + unknown},
 		// A single session is the one on screen: nothing to name.
 		{"show", []string{"show", proj, "22222222", "-v"}, linesSummary + unknown},

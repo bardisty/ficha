@@ -244,6 +244,10 @@ type SessionAnalysis struct {
 	// Last parent message usage for context window calculation (matches /context output)
 	LastMessageUsage TokenUsage `json:"last_message_usage"`
 	LastMessageModel string     `json:"last_message_model"` // Model used for last message (for context limit lookup)
+	// Context is the table's context gauge: the last parent request against
+	// its model's window. Set by the command on single sessions; nil on the
+	// summary aggregate and on a session with no parent request.
+	Context *ContextUsage `json:"context,omitempty"`
 	// Agent-related fields
 	Agents             []AgentAnalysis          `json:"agents,omitempty"`
 	ParentCost         CostBreakdown            `json:"parent_cost"`          // Cost excluding agents
@@ -273,6 +277,14 @@ type SessionAnalysis struct {
 	// consumers can pair it with skipped_sessions to compute coverage, like
 	// global's session_count.
 	SessionCount int `json:"session_count"`
+}
+
+// ContextUsage is how full a session's context window was at its last parent
+// request, as the table's gauge and Claude Code's /context show it.
+type ContextUsage struct {
+	Tokens  int64   `json:"tokens"`  // TokenUsage.ContextWindowSize of that request
+	Window  int     `json:"window"`  // The model's context window, from ficha's catalog
+	Percent float64 `json:"percent"` // Tokens / Window * 100, unrounded
 }
 
 // WorkflowByID returns the metadata for a workflow run in this session, or a
