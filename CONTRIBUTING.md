@@ -4,13 +4,11 @@ Thanks for looking. This is a small Go CLI with one job, so the rules below are 
 
 ## Setup
 
-You need Go 1.25.6 or newer and golangci-lint v1.64.8:
+You need Go 1.25.6 or newer. Any later release works, 1.27 included. There's nothing else to install.
 
-```sh
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
-```
+`make lint` builds golangci-lint v1.64.8 with `go run` the first time you call it, using the Go named on go.mod's `toolchain` line. So the first run may download that Go, 1.25.14 today, before it builds the linter. Later runs use the cached build.
 
-Install it from source like that rather than grabbing the prebuilt release. The prebuilt binary is compiled with an older Go than go.mod targets, and golangci-lint refuses to run when its own Go trails the target. CI builds it the same way.
+Don't lint with a golangci-lint you installed yourself. With Go 1.27 or later, v1.64.8 can't read the standard library and reports dozens of bogus typecheck errors. v2 rejects this repo's config.
 
 ## The gate
 
