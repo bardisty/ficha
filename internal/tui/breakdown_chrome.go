@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -48,7 +49,7 @@ func (m BreakdownModel) tooSmall() bool {
 	if m.height > 0 && m.height < tooSmallHeight {
 		return true
 	}
-	return m.width > 0 && m.width < breakdownLayout{indexWidth: m.layout().indexWidth}.width()
+	return m.width > 0 && m.width < breakdownLayout{indexWidth: m.table.indexWidth}.width()
 }
 
 // headerRows is the number of rows View draws above the viewport.
@@ -63,7 +64,7 @@ func (m BreakdownModel) headerRows() int {
 // the table's when the table is wider, so the frame never falls short of the
 // rows it frames. Unlike panelWidthFor it has no 40-column floor: the compact
 // frame has no box, so its rules can shrink to the terminal.
-func (m BreakdownModel) panelWidth() int { return m.frameWidth(m.layout()) }
+func (m BreakdownModel) panelWidth() int { return m.frameWidth(m.table) }
 
 // frameWidth is panelWidth for a layout already worked out.
 func (m BreakdownModel) frameWidth(layout breakdownLayout) int {
@@ -80,6 +81,21 @@ func (m BreakdownModel) clock() time.Time {
 		return m.now()
 	}
 	return time.Now()
+}
+
+// clockInterval paces clockMsg; see the function of the same name.
+func (m BreakdownModel) clockInterval() time.Duration {
+	return clockInterval(m.lastActivity, m.clock())
+}
+
+// spinnerCmd restarts the spinner when a load begins. The header shows it
+// for every load, background reloads included. A second chain is harmless:
+// the spinner drops ticks with a stale tag.
+func (m BreakdownModel) spinnerCmd() tea.Cmd {
+	if m.loading {
+		return m.spinner.Tick
+	}
+	return nil
 }
 
 // breakdownLastActivity is the newest message timestamp, else the session

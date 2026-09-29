@@ -87,6 +87,15 @@ type BreakdownModel struct {
 	// 1..N, so a positional key would flag old rows that merely shifted when a new
 	// agent message inserts mid-list.
 	newMsgKeys map[string]time.Time // message identity -> when it was added
+	// fading is set while a fadeMsg is scheduled for the earliest highlight
+	// expiry; see fadeCmd.
+	fading bool
+	// clockGen identifies the live clockMsg chain, as in watch.
+	clockGen int
+	// table is layout() for the current rows, run tags and width. Working
+	// it out walks every row, so it's redone only when one of those
+	// changes; see relayout.
+	table breakdownLayout
 
 	spinner   spinner.Model
 	watcher   *fsnotify.Watcher
@@ -140,6 +149,11 @@ type (
 		// current session so it can't overwrite the new session's data.
 		sessionPath string
 	}
+	// fadeMsg fires when the earliest highlight expires.
+	fadeMsg struct{}
+	// notifyExpiredMsg fires when the switch notice's time is up. Bubble
+	// Tea redraws after every message, and that redraw is all it's for.
+	notifyExpiredMsg  struct{}
 	breakdownErrorMsg struct {
 		err error
 		// sessionPath as in breakdownMsgsMsg: a stale load error for the old
@@ -173,6 +187,7 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 	if sessionPath != "" {
 		m.subagentSig = subagentTreeSignature(filepath.Dir(sessionPath), sessionID)
 	}
+	m.relayout()
 	return m
 }
 
@@ -193,7 +208,7 @@ func (m BreakdownModel) waiting() bool { return m.sessionPath == "" }
 
 // Init initializes the breakdown TUI
 func (m BreakdownModel) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.spinner.Tick, tickCmd(), subagentPollCmd()}
+	cmds := []tea.Cmd{m.spinnerCmd(), clockCmd(time.Second, 0), subagentPollCmd()}
 	if !m.waiting() {
 		cmds = append(cmds, m.loadBreakdown, func() tea.Msg { return m.watchFile() })
 	}
@@ -251,7 +266,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.loading = true
-			return m, tea.Batch(m.loadBreakdownCmd(), m.retryWatchNow())
+			return m, tea.Batch(m.loadBreakdownCmd(), m.retryWatchNow(), m.spinnerCmd())
 
 		case "p":
 			m.selectNextTop()
@@ -300,11 +315,12 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading = true
-		return m, m.loadBreakdownCmd()
+		return m, tea.Batch(m.loadBreakdownCmd(), m.spinnerCmd())
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.relayout()
 		// The chrome's row count depends on the size (see headerRows), so the
 		// viewport gets exactly the rows View leaves it.
 		vpHeight := viewportHeight(msg.Height, m.headerRows(), breakdownFooterRows)
@@ -322,6 +338,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetYOffset(m.viewport.YOffset)
 
 	case spinner.TickMsg:
+		// Let the spinner stop once nothing shows it; spinnerCmd restarts it.
+		if !m.loading {
+			return m, nil
+		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
@@ -358,7 +378,17 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, run := range msg.workflows {
 			m.runNames[m.runTags[run.RunID]] = runName(run)
 		}
+		m.relayout()
+		slowClock := m.clockInterval() > time.Second
 		m.lastActivity, m.activityFromFile = breakdownLastActivity(msg.messages, msg.modTime)
+		// A message after an idle stretch: the pending clock tick is up to
+		// 15s out, so start a 1s chain now for the seconds count and let the
+		// slow one lapse.
+		var clock tea.Cmd
+		if slowClock && m.clockInterval() == time.Second {
+			m.clockGen++
+			clock = clockCmd(time.Second, m.clockGen)
+		}
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.err = nil
@@ -369,7 +399,8 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// still blocked on the watcher
 		// Call before return: the arm must mutate the m the caller receives
 		armCmd := m.armFileWaiter()
-		return m, armCmd
+		fade := m.fadeCmd()
+		return m, tea.Batch(armCmd, fade, clock)
 
 	case breakdownErrorMsg:
 		if msg.sessionPath != "" && msg.sessionPath != m.sessionPath {
@@ -397,7 +428,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fileWaiterActive = false
 		m.loading = true
 		armCmd := m.armFileWaiter()
-		return m, tea.Batch(m.loadBreakdownCmd(), armCmd)
+		return m, tea.Batch(m.loadBreakdownCmd(), armCmd, m.spinnerCmd())
 
 	case watcherFailedMsg:
 		// Another session's attempt, or one that lost a race to a watcher
@@ -425,7 +456,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var catchUp tea.Cmd
 		if m.fallback.active() {
 			m.loading = true
-			catchUp = m.loadBreakdownCmd()
+			catchUp = tea.Batch(m.loadBreakdownCmd(), m.spinnerCmd())
 		}
 		m.fallback.reset()
 		// A replacement watcher (rapid session switches can have two watchFile
@@ -466,7 +497,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// breakdownMsgsMsg/breakdownErrorMsg arms its replacement
 		m.fileWaiterActive = false
 		m.loading = true
-		return m, m.loadBreakdownCmd()
+		return m, tea.Batch(m.loadBreakdownCmd(), m.spinnerCmd())
 
 	case sessionSwitchedMsg:
 		// Pinned (f toggles it): stay put and keep watching. Waiting, any
@@ -476,17 +507,29 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.switchTo(msg.newSessionPath, msg.newSessionID, false)
 
-	case tickMsg:
-		// Re-render only while highlights are active — an idle table would
-		// otherwise be fully re-rendered every tick. Capture before cleanup:
-		// the tick that expires the last highlight still needs one final
-		// re-render to un-highlight its rows.
-		hadHighlights := len(m.newMsgKeys) > 0
+	case fadeMsg:
+		// A highlight is on or off, so the table is redrawn once per expiry,
+		// not every frame in between.
+		m.fading = false
+		before := len(m.newMsgKeys)
 		m.cleanupExpiredHighlights()
-		if hadHighlights && len(m.messages) > 0 {
+		if len(m.newMsgKeys) != before && len(m.messages) > 0 {
 			m.refreshViewport()
 		}
-		return m, tickCmd()
+		// Call before return, as with armFileWaiter
+		fade := m.fadeCmd()
+		return m, fade
+
+	case clockMsg:
+		// The redraw after every message re-reads the clock for the header's
+		// age; the table has no time-based text.
+		if msg.gen != m.clockGen {
+			return m, nil // superseded by a faster chain; see breakdownMsgsMsg
+		}
+		return m, clockCmd(m.clockInterval(), m.clockGen)
+
+	case notifyExpiredMsg:
+		return m, nil
 
 	case subagentPollMsg:
 		if m.waiting() {
@@ -498,7 +541,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fileChanged := m.fallback.pollChanged(m.sessionPath)
 		if treeChanged || fileChanged {
 			m.loading = true
-			return m, tea.Batch(m.loadBreakdownCmd(), subagentPollCmd())
+			return m, tea.Batch(m.loadBreakdownCmd(), subagentPollCmd(), m.spinnerCmd())
 		}
 		return m, subagentPollCmd()
 	}
@@ -544,6 +587,7 @@ func (m BreakdownModel) switchTo(path, id string, back bool) (tea.Model, tea.Cmd
 	m.selectedKey = ""
 	m.lineRows = nil
 	m.sortByCost = false
+	m.relayout()
 	if m.ready {
 		m.viewport.SetContent("")
 		m.viewport.GotoTop()
@@ -573,7 +617,10 @@ func (m BreakdownModel) switchTo(path, id string, back bool) (tea.Model, tea.Cmd
 	// Reload data, restart file watcher, and restart session watcher
 	// We must explicitly restart waitForNewSession because the goroutine that
 	// detected this switch has already exited after returning sessionSwitchedMsg
-	cmds := []tea.Cmd{m.loadBreakdownCmd(), func() tea.Msg { return m.watchFile() }}
+	cmds := []tea.Cmd{
+		m.loadBreakdownCmd(), func() tea.Msg { return m.watchFile() }, m.spinnerCmd(),
+		tea.Tick(switchNotifyDuration, func(time.Time) tea.Msg { return notifyExpiredMsg{} }),
+	}
 	if m.sessionWatcher != nil {
 		cmds = append(cmds, m.waitForNewSession())
 	}
@@ -622,15 +669,38 @@ func (m *BreakdownModel) detectNewMessages(newMessages []models.BreakdownMessage
 	}
 }
 
-// cleanupExpiredHighlights removes highlight entries older than highlightDuration.
-// This also bounds the map: keys for messages whose content changed (or that
-// vanished) are pruned once their window lapses.
+// cleanupExpiredHighlights removes the highlight entries isNewMessage no
+// longer lights. This also bounds the map: keys for messages whose content
+// changed (or that vanished) are pruned once their window lapses.
 func (m *BreakdownModel) cleanupExpiredHighlights() {
 	for key, addedAt := range m.newMsgKeys {
-		if time.Since(addedAt) > highlightDuration {
+		if time.Since(addedAt) >= highlightDuration {
 			delete(m.newMsgKeys, key)
 		}
 	}
+}
+
+// fadeCmd schedules one fadeMsg for when the earliest highlight expires, or
+// nothing when no row is lit or a fadeMsg is already pending. A pending one
+// is always due first, since a later highlight expires later, and it
+// re-arms for the rest when it fires.
+func (m *BreakdownModel) fadeCmd() tea.Cmd {
+	if m.fading || len(m.newMsgKeys) == 0 {
+		return nil
+	}
+	m.fading = true
+	return tea.Tick(m.nextFade(), func(time.Time) tea.Msg { return fadeMsg{} })
+}
+
+// nextFade is how long until the earliest highlight expires.
+func (m BreakdownModel) nextFade() time.Duration {
+	var earliest time.Time
+	for _, addedAt := range m.newMsgKeys {
+		if earliest.IsZero() || addedAt.Before(earliest) {
+			earliest = addedAt
+		}
+	}
+	return max(time.Until(earliest.Add(highlightDuration)), 0)
 }
 
 // isNewMessage checks if a message should be highlighted as new
@@ -651,8 +721,7 @@ func (m BreakdownModel) View() string {
 	if m.tooSmall() {
 		return clipToWidth("  terminal too small", m.width)
 	}
-	// The layout walks every row; work it out once per frame.
-	layout := m.layout()
+	layout := m.table
 	panelWidth := m.frameWidth(layout)
 	compact := m.compact()
 
@@ -1052,7 +1121,7 @@ func (m BreakdownModel) renderTableSeparator(panelWidth int) string {
 // line the display Index of the message on it (0 for a day divider).
 func (m BreakdownModel) renderTableContent() (string, []int) {
 	var sb strings.Builder
-	layout := m.layout()
+	layout := m.table
 	lineRows := make([]int, 0, len(m.messages))
 	order := m.rowOrder()
 
@@ -1119,7 +1188,12 @@ func (m BreakdownModel) agentCell(msg models.BreakdownMessage, withTag bool) str
 	return marker
 }
 
-// layout picks the columns this frame draws. See breakdownLayout.
+// relayout works out the table's layout again. Call it whenever the rows,
+// the run tags or the width change, or columns misalign.
+func (m *BreakdownModel) relayout() { m.table = m.layout() }
+
+// layout picks the columns the table draws. See breakdownLayout. It walks
+// every row; View reads the copy in m.table.
 func (m BreakdownModel) layout() breakdownLayout {
 	markerWidth, cellWidth, lastIndex, modelWant := 0, 0, 0, 0
 	for _, msg := range m.messages {

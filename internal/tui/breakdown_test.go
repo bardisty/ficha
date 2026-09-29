@@ -259,62 +259,103 @@ func TestBreakdownModel_DetectNewMessages_FirstLoad(t *testing.T) {
 	}
 }
 
-// tickReadyBreakdownModel returns a model with an initialized viewport holding
-// sentinel content, so tests can observe whether a tick re-rendered the table.
-func tickReadyBreakdownModel() BreakdownModel {
+// fadeReadyBreakdownModel returns a model with an initialized viewport holding
+// sentinel content, so tests can observe whether a fade re-rendered the table.
+func fadeReadyBreakdownModel() BreakdownModel {
 	m := NewBreakdownModel("/test/path", "test-session", true, "", false)
 	m.ready = true
 	m.viewport = viewport.New(80, 10)
-	m.messages = []models.BreakdownMessage{{Index: 1, Timestamp: time.Now()}}
+	m.messages = []models.BreakdownMessage{bdMsg(1, 0, ""), bdMsg(2, 1, "")}
+	m.relayout()
 	m.viewport.SetContent("SENTINEL")
 	return m
 }
 
-func TestBreakdownModel_TickSkipsRenderWhenIdle(t *testing.T) {
-	m := tickReadyBreakdownModel()
-
-	updated, _ := m.Update(tickMsg(time.Now()))
+// Nothing lit, nothing scheduled: the first load has nothing to diff
+// against, so it lights no row.
+func TestBreakdownFade_NothingToFade(t *testing.T) {
+	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
+	updated, _ := m.Update(breakdownMsgsMsg{messages: []models.BreakdownMessage{bdMsg(1, 0, "")}})
 	m = updated.(BreakdownModel)
-
-	if !strings.Contains(m.viewport.View(), "SENTINEL") {
-		t.Error("idle tick re-rendered the table; expected viewport content untouched")
+	if m.fading || m.fadeCmd() != nil {
+		t.Error("a fade was scheduled with no row lit")
 	}
 }
 
-func TestBreakdownModel_TickRendersWhileHighlightsActive(t *testing.T) {
-	m := tickReadyBreakdownModel()
-	m.newMsgKeys[breakdownMsgKey(m.messages[0])] = time.Now()
-
-	updated, _ := m.Update(tickMsg(time.Now()))
+// A load that lights rows schedules one fade, for the earliest expiry. A
+// second load while it's pending lights more rows but starts no second
+// chain.
+func TestBreakdownFade_OneAtEarliestExpiry(t *testing.T) {
+	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
+	updated, _ := m.Update(breakdownMsgsMsg{messages: []models.BreakdownMessage{bdMsg(1, 0, "")}})
 	m = updated.(BreakdownModel)
 
-	if strings.Contains(m.viewport.View(), "SENTINEL") {
-		t.Error("tick with active highlights should re-render the table")
+	updated, _ = m.Update(breakdownMsgsMsg{messages: []models.BreakdownMessage{bdMsg(1, 0, ""), bdMsg(2, 1, "")}})
+	m = updated.(BreakdownModel)
+	if !m.fading {
+		t.Fatal("a new row lit, but no fade was scheduled")
+	}
+	if d := m.nextFade(); d <= highlightDuration-time.Second || d > highlightDuration {
+		t.Errorf("fade due in %v, want just under %v", d, highlightDuration)
+	}
+
+	updated, _ = m.Update(breakdownMsgsMsg{messages: []models.BreakdownMessage{bdMsg(1, 0, ""), bdMsg(2, 1, ""), bdMsg(3, 2, "")}})
+	m = updated.(BreakdownModel)
+	if len(m.newMsgKeys) != 2 {
+		t.Fatalf("%d rows lit, want 2", len(m.newMsgKeys))
+	}
+	if m.fadeCmd() != nil {
+		t.Error("a second fade chain started while one was pending")
 	}
 }
 
-func TestBreakdownModel_TickRendersFinalFadeFrame(t *testing.T) {
-	m := tickReadyBreakdownModel()
-	// Expired highlight: this tick prunes it, but must still re-render once
-	// so the row doesn't stay highlighted forever
-	m.newMsgKeys[breakdownMsgKey(m.messages[0])] = time.Now().Add(-2 * highlightDuration)
+// A fade redraws once for the highlights that expired and re-arms for the
+// ones still lit; the one after the last leaves nothing scheduled.
+func TestBreakdownFade_ClearsAndReArms(t *testing.T) {
+	m := fadeReadyBreakdownModel()
+	m.fading = true
+	m.newMsgKeys[breakdownMsgKey(m.messages[0])] = time.Now().Add(-highlightDuration)
+	m.newMsgKeys[breakdownMsgKey(m.messages[1])] = time.Now().Add(-highlightDuration / 2)
 
-	updated, _ := m.Update(tickMsg(time.Now()))
+	updated, cmd := m.Update(fadeMsg{})
 	m = updated.(BreakdownModel)
-
 	if strings.Contains(m.viewport.View(), "SENTINEL") {
-		t.Error("the tick that expires the last highlight must re-render once to un-highlight rows")
+		t.Error("the fade that expired a highlight didn't redraw the table")
 	}
-	if len(m.newMsgKeys) != 0 {
-		t.Errorf("expired highlight not pruned: %d entries remain", len(m.newMsgKeys))
+	if len(m.newMsgKeys) != 1 {
+		t.Errorf("%d highlights left, want 1", len(m.newMsgKeys))
+	}
+	if cmd == nil || !m.fading {
+		t.Fatal("no fade scheduled for the row still lit")
+	}
+	if d := m.nextFade(); d <= 0 || d > highlightDuration/2 {
+		t.Errorf("next fade in %v, want within %v", d, highlightDuration/2)
 	}
 
-	// Subsequent ticks are idle again
 	m.viewport.SetContent("SENTINEL")
-	updated, _ = m.Update(tickMsg(time.Now()))
+	m.newMsgKeys[breakdownMsgKey(m.messages[1])] = time.Now().Add(-highlightDuration)
+	updated, cmd = m.Update(fadeMsg{})
+	m = updated.(BreakdownModel)
+	if strings.Contains(m.viewport.View(), "SENTINEL") {
+		t.Error("the fade that expired the last highlight didn't redraw the table")
+	}
+	if cmd != nil || m.fading || len(m.newMsgKeys) != 0 {
+		t.Errorf("after the last highlight: cmd %v, fading %v, %d lit", cmd != nil, m.fading, len(m.newMsgKeys))
+	}
+}
+
+// A fade with nothing expired, as after a session switch dropped the
+// highlights it was scheduled for, leaves the table alone.
+func TestBreakdownFade_NothingExpiredNoRedraw(t *testing.T) {
+	m := fadeReadyBreakdownModel()
+	m.fading = true
+	updated, cmd := m.Update(fadeMsg{})
 	m = updated.(BreakdownModel)
 	if !strings.Contains(m.viewport.View(), "SENTINEL") {
-		t.Error("tick after the fade frame should not re-render")
+		t.Error("a fade with nothing to expire redrew the table")
+	}
+	if cmd != nil || m.fading {
+		t.Error("a fade with nothing lit re-armed")
 	}
 }
 

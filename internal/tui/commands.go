@@ -40,6 +40,16 @@ func clockCmd(d time.Duration, gen int) tea.Cmd {
 	return tea.Tick(d, func(time.Time) tea.Msg { return clockMsg{gen: gen} })
 }
 
+// clockInterval paces clockMsg for a header that ages lastActivity: every
+// second while the age counts seconds, and every 15s once it reads in
+// minutes or more.
+func clockInterval(lastActivity, now time.Time) time.Duration {
+	if !lastActivity.IsZero() && now.Sub(lastActivity) < time.Minute {
+		return time.Second
+	}
+	return 15 * time.Second
+}
+
 // Commands
 
 func (m Model) loadAnalysis() tea.Msg {
