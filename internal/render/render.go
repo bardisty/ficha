@@ -65,6 +65,34 @@ func DurationLong(d time.Duration) string {
 	return fmt.Sprintf("%dd", days)
 }
 
+// Clock formats t as a local wall-clock time ("15:04:05"). Transcript
+// timestamps parse as UTC, and the clocks shown next to them (the live
+// header's update time, show's "Last active") are local, so every display
+// site converts here. Machine output (json, csv) formats the parsed value
+// directly and stays UTC.
+func Clock(t time.Time) string {
+	return t.Local().Format("15:04:05")
+}
+
+// ClockShort is Clock without seconds ("15:04"), for compact one-line summaries.
+func ClockShort(t time.Time) string {
+	return t.Local().Format("15:04")
+}
+
+// DayMarker labels a local calendar day ("Tue 29 Sep"), for the divider
+// a per-message table draws where the day changes, since its rows show only
+// a time.
+func DayMarker(t time.Time) string {
+	return t.Local().Format("Mon 02 Jan")
+}
+
+// SameLocalDay reports whether a and b fall on the same local calendar day.
+func SameLocalDay(a, b time.Time) bool {
+	ay, am, ad := a.Local().Date()
+	by, bm, bd := b.Local().Date()
+	return ay == by && am == bm && ad == bd
+}
+
 // TruncateID shortens an ID to a maxLen-character prefix. maxLen is a parameter
 // because callers have different width budgets — the static header shows the
 // full 36-char UUID, the compact live header an 8-char prefix. The cut is a

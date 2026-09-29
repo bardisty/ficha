@@ -148,9 +148,9 @@ func buildLiveHeaderContent(p liveHeaderParams, showPrev, timeOnly bool) string 
 		case p.err != nil:
 			statusPart = "Error"
 		case timeOnly:
-			statusPart = p.lastUpdated.Format("15:04:05")
+			statusPart = render.Clock(p.lastUpdated)
 		default:
-			statusPart = fmt.Sprintf("Updated: %s", p.lastUpdated.Format("15:04:05"))
+			statusPart = fmt.Sprintf("Updated: %s", render.Clock(p.lastUpdated))
 		}
 		sessionPart := fmt.Sprintf("Session: %s", sessionDisplay)
 		return fmt.Sprintf("%s  %s  %s  %s  %s", sessionPart, sep, livePart, sep, statusPart)
@@ -167,9 +167,9 @@ func buildLiveHeaderContent(p liveHeaderParams, showPrev, timeOnly bool) string 
 	case p.err != nil:
 		statusStyled = lipgloss.NewStyle().Foreground(styles.ErrorColor).Render("Error")
 	case timeOnly:
-		statusStyled = p.lastUpdated.Format("15:04:05")
+		statusStyled = render.Clock(p.lastUpdated)
 	default:
-		statusStyled = fmt.Sprintf("Updated: %s", p.lastUpdated.Format("15:04:05"))
+		statusStyled = fmt.Sprintf("Updated: %s", render.Clock(p.lastUpdated))
 	}
 	sepStyled := panelBorderStyle.Render(sep)
 	return sessionStyled + "  " + sepStyled + "  " + liveStyled + "  " + sepStyled + "  " + statusStyled

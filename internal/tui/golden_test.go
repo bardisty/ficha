@@ -17,6 +17,13 @@ import (
 
 var update = flag.Bool("update", false, "rewrite .golden files with current rendered output")
 
+// TestMain pins the process timezone: per-message times and the header clock
+// render in local time, so goldens would otherwise depend on the machine's TZ.
+func TestMain(m *testing.M) {
+	time.Local = time.UTC
+	os.Exit(m.Run())
+}
+
 // forceProfile pins the lipgloss default renderer's color profile for the
 // duration of a test (see internal/formatter/golden_test.go). It must be set
 // BEFORE Update() runs: the sparkline chart is drawn during message handling,

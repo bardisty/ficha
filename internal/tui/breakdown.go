@@ -617,7 +617,7 @@ func (m BreakdownModel) renderCompactInsights() string {
 		peakStr := fmt.Sprintf("Peak: #%d %s @ %s (%.1fx avg)",
 			m.insights.HighestCost.Index,
 			formatCompactCost(m.insights.HighestCost.Cost),
-			m.insights.HighestCost.Timestamp.Format("15:04"),
+			render.ClockShort(m.insights.HighestCost.Timestamp),
 			mult)
 		if !m.noColor {
 			parts = append(parts, lipgloss.NewStyle().Foreground(styles.WarningColor).Render(peakStr))
@@ -700,6 +700,13 @@ func (m BreakdownModel) renderTableContent() string {
 
 	for i, msg := range m.messages {
 		isFirst := i == 0
+		// Rows carry only a time, so mark where the local day changes. A
+		// zero timestamp (unparseable in the transcript) has no day to mark.
+		if !isFirst && !msg.Timestamp.IsZero() && !m.messages[i-1].Timestamp.IsZero() &&
+			!render.SameLocalDay(m.messages[i-1].Timestamp, msg.Timestamp) {
+			sb.WriteString(m.renderDayMarker(msg.Timestamp))
+			sb.WriteString("\n")
+		}
 		sb.WriteString(m.renderRow(msg, m.isNewMessage(msg), prevCost, isFirst))
 		prevCost = msg.Cost.TotalCost
 		if i < len(m.messages)-1 {
@@ -710,11 +717,20 @@ func (m BreakdownModel) renderTableContent() string {
 	return sb.String()
 }
 
+// renderDayMarker renders the divider row placed above the first message of a
+// new local day.
+func (m BreakdownModel) renderDayMarker(t time.Time) string {
+	if m.noColor {
+		return "  -- " + render.DayMarker(t) + " --"
+	}
+	return "  " + dimStyle.Render("── "+render.DayMarker(t)+" ──")
+}
+
 // renderRow renders a single message row
 func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, prevCost float64, isFirst bool) string {
 	// Format column values
 	indexStr := fmt.Sprintf("%-5d", msg.Index)
-	timeStr := fmt.Sprintf("%-8s", msg.Timestamp.Format("15:04:05"))
+	timeStr := fmt.Sprintf("%-8s", render.Clock(msg.Timestamp))
 	modelName := pricing.GetModelDisplayName(msg.Model)
 	// Flag fallback-priced rows inline; the footer explains the marker. Clamp
 	// first so a long raw ID can't push it out of the column (or off it).
