@@ -52,3 +52,21 @@ func TestFormatSessionCSV_NeutralizesMessageCells(t *testing.T) {
 		t.Errorf("model: got %q, want %q", records[1][2], "'@SUM(A1)")
 	}
 }
+
+func TestUnpricedModelsCell(t *testing.T) {
+	for _, tc := range []struct {
+		ids  []string
+		want string
+	}{
+		{nil, "[]"},
+		{[]string{"claude-zeta-9"}, `["claude-zeta-9"]`},
+		{[]string{"claude-zeta-9", "us.anthropic.claude-omega-1-v1:0"}, `["claude-zeta-9","us.anthropic.claude-omega-1-v1:0"]`},
+		// Raw transcript IDs: an absent model, a space, a quote, a comma and a
+		// formula all survive, and the cell never opens like a formula.
+		{[]string{"", "=cmd", "my model", `a"b,c`, "<x>"}, `["","=cmd","my model","a\"b,c","<x>"]`},
+	} {
+		if got := unpricedModelsCell(tc.ids); got != tc.want {
+			t.Errorf("unpricedModelsCell(%q) = %q, want %q", tc.ids, got, tc.want)
+		}
+	}
+}

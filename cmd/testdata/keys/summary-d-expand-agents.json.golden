@@ -38,6 +38,8 @@ sessions[].agents[].total_usage.cache_creation_input_tokens number
 sessions[].agents[].total_usage.cache_read_input_tokens number
 sessions[].agents[].total_usage.input_tokens number
 sessions[].agents[].total_usage.output_tokens number
+sessions[].agents[].unpriced_models array
+sessions[].agents[].unpriced_models[] string
 sessions[].agents[].workflow_id string
 sessions[].agents_cost object
 sessions[].agents_cost.cache_read_cost number
@@ -137,6 +139,8 @@ sessions[].total_usage.cache_creation_input_tokens number
 sessions[].total_usage.cache_read_input_tokens number
 sessions[].total_usage.input_tokens number
 sessions[].total_usage.output_tokens number
+sessions[].unpriced_models array
+sessions[].unpriced_models[] string
 sessions[].workflow_count number
 sessions[].workflows array
 sessions[].workflows[] object
@@ -217,6 +221,8 @@ summary.total_usage.cache_creation_input_tokens number
 summary.total_usage.cache_read_input_tokens number
 summary.total_usage.input_tokens number
 summary.total_usage.output_tokens number
+summary.unpriced_models array
+summary.unpriced_models[] string
 summary.window object
 summary.window.since string
 summary.window.until string

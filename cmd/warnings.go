@@ -139,19 +139,35 @@ func warnEstimatedCosts(w io.Writer, estimatedCostMessages int) {
 	}
 }
 
-// warnUnknownModels warns about models priced at the fallback rate, and says
-// what that rate is, so the reader can judge how far off the total may be.
-func warnUnknownModels(w io.Writer, costByModel map[string]models.CostBreakdown) {
-	var unknownModels []string
+// unpricedModels returns the cost_by_model keys ficha has no price for,
+// sorted, or nil. json's unpriced_models and the stderr warning both come
+// from here, so they always name the same models.
+func unpricedModels(costByModel map[string]models.CostBreakdown) []string {
+	var unknown []string
 	for model := range costByModel {
 		if !pricing.IsKnownModel(model) {
-			unknownModels = append(unknownModels, model)
+			unknown = append(unknown, model)
 		}
 	}
+	sort.Strings(unknown)
+	return unknown
+}
+
+// markUnpriced fills unpriced_models on a session and each of its agents.
+func markUnpriced(a *models.SessionAnalysis) {
+	a.UnpricedModels = unpricedModels(a.CostByModel)
+	for i := range a.Agents {
+		a.Agents[i].UnpricedModels = unpricedModels(a.Agents[i].CostByModel)
+	}
+}
+
+// warnUnknownModels warns about models priced at the fallback rate, and says
+// what that rate is, so the reader can judge how far off the total may be.
+// unknownModels comes from unpricedModels.
+func warnUnknownModels(w io.Writer, unknownModels []string) {
 	if len(unknownModels) == 0 {
 		return
 	}
-	sort.Strings(unknownModels)
 	// Every unknown model gets the same fallback row.
 	p := pricing.GetModelPricing(unknownModels[0])
 	rates := fmt.Sprintf("$%g/$%g per MTok", p.InputRate, p.OutputRate)

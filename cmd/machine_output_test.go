@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -129,5 +131,149 @@ func TestE2EExpandAgentsCSVReconciles(t *testing.T) {
 	mustJSON(t, jsonOut, &summary)
 	if math.Abs(sessionSum-summary.TotalCost.TotalCost) > float64(len(records))*tol {
 		t.Errorf("session rows sum to %v, summary -f json total_cost.total_cost is %v", sessionSum, summary.TotalCost.TotalCost)
+	}
+}
+
+// TestE2EUnpricedModelsAgree: a model ficha can't price is named in json's
+// unpriced_models, csv's unpriced_models column and the stderr warning, the
+// same way on every surface, and spelled as its cost_by_model key.
+func TestE2EUnpricedModelsAgree(t *testing.T) {
+	root := setupE2EFixture(t)
+	const zetaID = "dddddddd-1111-2222-3333-444444444444"
+	// Only the session's agent runs on the unknown model.
+	sessionPath := filepath.Join(root, "projects", e2eProjDir, zetaID+".jsonl")
+	agentPath := filepath.Join(root, "projects", e2eProjDir, zetaID, "subagents", "agent-z.jsonl")
+	if err := os.MkdirAll(filepath.Dir(agentPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for path, line := range map[string]string{
+		sessionPath: e2eMsg("2026-02-04T10:00:00Z", "z1", "claude-opus-4-8", 1000, 500, 0, 0, 0),
+		agentPath:   e2eMsg("2026-02-04T10:01:00Z", "z2", "claude-zeta-9", 1000, 500, 0, 0, 0),
+	} {
+		if err := os.WriteFile(path, []byte(line+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []string{"claude-zeta-9"}
+	const warning = `Warning: unknown model "claude-zeta-9" priced at fallback`
+
+	type priced struct {
+		CostByModel    map[string]any `json:"cost_by_model"`
+		UnpricedModels []string       `json:"unpriced_models"`
+	}
+	check := func(what string, p priced, want []string) {
+		t.Helper()
+		if !slices.Equal(p.UnpricedModels, want) {
+			t.Errorf("%s: unpriced_models = %q, want %q", what, p.UnpricedModels, want)
+		}
+		for _, id := range p.UnpricedModels {
+			if _, ok := p.CostByModel[id]; !ok {
+				t.Errorf("%s: %q isn't a cost_by_model key", what, id)
+			}
+		}
+	}
+	run := func(args ...string) (string, string) {
+		t.Helper()
+		out, stderr, err := executeCLISplit(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		return out, stderr
+	}
+
+	out, stderr := run("show", projFlag, zetaID, "-f", "json")
+	var show struct {
+		priced
+		Agents []priced `json:"agents"`
+	}
+	mustJSON(t, out, &show)
+	check("show", show.priced, want)
+	if len(show.Agents) != 1 {
+		t.Fatalf("want the one agent, got %d", len(show.Agents))
+	}
+	check("show agent", show.Agents[0], want)
+	mustContainAll(t, stderr, warning)
+
+	out, _ = run("show", projFlag, e2eAlphaID, "-f", "json")
+	if strings.Contains(out, "unpriced_models") {
+		t.Errorf("a session with only known models should leave unpriced_models out:\n%s", out)
+	}
+
+	out, stderr = run("summary", projFlag, "-d", "-f", "json")
+	var detail struct {
+		Summary  priced `json:"summary"`
+		Sessions []struct {
+			SessionID string `json:"session_id"`
+			priced
+		} `json:"sessions"`
+	}
+	mustJSON(t, out, &detail)
+	check("summary", detail.Summary, want)
+	for _, s := range detail.Sessions {
+		if s.SessionID == zetaID {
+			check("summary -d session", s.priced, want)
+		} else {
+			check("summary -d session", s.priced, nil)
+		}
+	}
+	mustContainAll(t, stderr, warning)
+
+	out, stderr = run("global", "-f", "json")
+	var global struct {
+		priced
+		Projects []struct {
+			EncodedPath string `json:"encoded_path"`
+			priced
+		} `json:"projects"`
+	}
+	mustJSON(t, out, &global)
+	check("global", global.priced, want)
+	for _, p := range global.Projects {
+		if p.EncodedPath == e2eProjDir {
+			check("global project", p.priced, want)
+		} else {
+			check("global project", p.priced, nil)
+		}
+	}
+	mustContainAll(t, stderr, warning)
+
+	// Each cell is a json array of IDs. Rows that name nothing hold [].
+	csvColumn := func(args ...string) [][]string {
+		t.Helper()
+		out, _ := run(append(args, "-f", "csv")...)
+		records := mustCSV(t, out)
+		i := slices.Index(records[0], "unpriced_models")
+		if i < 0 {
+			t.Fatalf("%v: no unpriced_models column in %v", args, records[0])
+		}
+		var cells [][]string
+		for _, r := range records[1:] {
+			var ids []string
+			mustJSON(t, r[i], &ids)
+			cells = append(cells, ids)
+		}
+		return cells
+	}
+	// One row per session or project; only the one with the model names it.
+	named := func(cells [][]string) []string {
+		var ids []string
+		for _, c := range cells {
+			ids = append(ids, c...)
+		}
+		return ids
+	}
+	for _, args := range [][]string{
+		{"show", projFlag, zetaID},
+		{"summary", projFlag},
+		{"summary", projFlag, "-d"},
+		{"global"},
+	} {
+		if got := named(csvColumn(args...)); !slices.Equal(got, want) {
+			t.Errorf("%v csv unpriced_models = %q, want %q", args, got, want)
+		}
+	}
+	// With agent rows, the agent and its session both name it.
+	if got := named(csvColumn("summary", projFlag, "-d", "--expand-agents")); !slices.Equal(got, []string{"claude-zeta-9", "claude-zeta-9"}) {
+		t.Errorf("summary -d --expand-agents csv unpriced_models = %q, want the session row and the agent row", got)
 	}
 }

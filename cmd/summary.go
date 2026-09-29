@@ -80,7 +80,13 @@ func runSummary(cfg *config) error {
 		details:  labelSkips("", analyzer.SkipDetails(results)),
 	}.write(&warnings, cfg.verbose)
 	warnEstimatedCosts(&warnings, analysis.EstimatedCostMessages)
-	warnUnknownModels(&warnings, analysis.CostByModel)
+	analysis.UnpricedModels = unpricedModels(analysis.CostByModel)
+	for _, r := range results {
+		if r.Analysis != nil {
+			markUnpriced(r.Analysis)
+		}
+	}
+	warnUnknownModels(&warnings, analysis.UnpricedModels)
 
 	// Mark as summary (don't overwrite SessionID). SessionCount is already the
 	// skip-adjusted count — AnalyzeMultipleSessions sets it where the totals

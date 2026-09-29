@@ -36,6 +36,8 @@ agents[].total_usage.cache_creation_input_tokens number
 agents[].total_usage.cache_read_input_tokens number
 agents[].total_usage.input_tokens number
 agents[].total_usage.output_tokens number
+agents[].unpriced_models array
+agents[].unpriced_models[] string
 agents[].workflow_id string
 agents_cost object
 agents_cost.cache_read_cost number
@@ -156,6 +158,8 @@ total_usage.cache_creation_input_tokens number
 total_usage.cache_read_input_tokens number
 total_usage.input_tokens number
 total_usage.output_tokens number
+unpriced_models array
+unpriced_models[] string
 workflow_count number
 workflows array
 workflows[] object

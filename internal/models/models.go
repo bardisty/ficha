@@ -187,6 +187,8 @@ type AgentAnalysis struct {
 	SkippedLines int                      `json:"skipped_lines,omitempty"` // JSONL lines skipped (malformed or oversized)
 	// Messages whose cache-write cost is a 5m-rate estimate (see MessageAnalysis.EstimatedCost)
 	EstimatedCostMessages int `json:"estimated_cost_messages,omitempty"`
+	// CostByModel keys priced at a fallback rate (see SessionAnalysis)
+	UnpricedModels []string `json:"unpriced_models,omitempty"`
 }
 
 // WorkflowMeta identifies a workflow run whose agents appear in a session's
@@ -258,9 +260,14 @@ type SessionAnalysis struct {
 	SkippedLines       int                      `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized), incl. agents
 	// Messages (incl. agents) whose cache-write cost is a 5m-rate estimate
 	// because the session data didn't attribute every write token to a TTL
-	// (see MessageAnalysis.EstimatedCost). Zero means all costs are exact.
-	EstimatedCostMessages int  `json:"estimated_cost_messages,omitempty"`
-	IsSummary             bool `json:"-"` // True for aggregate summaries
+	// (see MessageAnalysis.EstimatedCost). Zero means no cache write was
+	// estimated; a model priced at the fallback rate is in UnpricedModels.
+	EstimatedCostMessages int `json:"estimated_cost_messages,omitempty"`
+	// UnpricedModels lists the CostByModel keys ficha has no price for, which
+	// it priced at a fallback rate, sorted. Set by the command, from the same
+	// check as its stderr warning.
+	UnpricedModels []string `json:"unpriced_models,omitempty"`
+	IsSummary      bool     `json:"-"` // True for aggregate summaries
 	// Sessions this analysis covers: N (minus skipped) on the summary
 	// aggregate, always 1 on a per-session analysis. Exported so machine
 	// consumers can pair it with skipped_sessions to compute coverage, like
@@ -588,6 +595,8 @@ type ProjectAnalysis struct {
 	SkipDetails []SkipDetail `json:"-"`
 	// Messages whose cache-write cost is a 5m-rate estimate (see SessionAnalysis)
 	EstimatedCostMessages int `json:"estimated_cost_messages,omitempty"`
+	// CostByModel keys priced at a fallback rate (see SessionAnalysis)
+	UnpricedModels []string `json:"unpriced_models,omitempty"`
 }
 
 // GlobalAnalysis represents aggregated stats across all projects
@@ -609,8 +618,10 @@ type GlobalAnalysis struct {
 	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
 	SkippedLines    int `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized)
 	// Messages whose cache-write cost is a 5m-rate estimate (see SessionAnalysis)
-	EstimatedCostMessages int       `json:"estimated_cost_messages,omitempty"`
-	FirstActive           time.Time `json:"first_active"`
-	LastActive            time.Time `json:"last_active"`
-	Duration              Duration  `json:"duration"`
+	EstimatedCostMessages int `json:"estimated_cost_messages,omitempty"`
+	// CostByModel keys priced at a fallback rate (see SessionAnalysis)
+	UnpricedModels []string  `json:"unpriced_models,omitempty"`
+	FirstActive    time.Time `json:"first_active"`
+	LastActive     time.Time `json:"last_active"`
+	Duration       Duration  `json:"duration"`
 }
