@@ -63,12 +63,12 @@ func TestSessionActivityFollowAndHint(t *testing.T) {
 }
 
 // The switch notice names the old total and stays until a key is pressed;
-// p goes back and pins.
+// - goes back and pins.
 func TestSwitchNoticeAndGoBack(t *testing.T) {
 	m := followModel(t, true)
 	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB, created: true})
 
-	want := "→ new session bbbbbbbb (previous aaaaaaaa: $30.05) • p to go back"
+	want := "→ new session bbbbbbbb (previous aaaaaaaa: $30.05) • - to go back"
 	if !strings.Contains(m.View(), want) {
 		t.Fatalf("missing switch notice %q:\n%s", want, m.View())
 	}
@@ -78,9 +78,9 @@ func TestSwitchNoticeAndGoBack(t *testing.T) {
 	}
 
 	m = load(t, m, tallAnalysis(0.04))
-	m = key(t, m, "p")
+	m = key(t, m, "-")
 	if m.sessionID != sessA || m.followMode {
-		t.Fatalf("after p: session %s follow=%v, want %s pinned", m.sessionID, m.followMode, sessA)
+		t.Fatalf("after -: session %s follow=%v, want %s pinned", m.sessionID, m.followMode, sessA)
 	}
 	if !strings.Contains(m.View(), "switched to aaaaaaaa (previous bbbbbbbb: $0.0400)") {
 		t.Errorf("go-back notice missing:\n%s", m.View())
@@ -96,6 +96,15 @@ func TestSwitchNoticeAndGoBack(t *testing.T) {
 	m = key(t, m, "f")
 	if !m.followMode || !strings.Contains(m.View(), "FOLLOWING") {
 		t.Errorf("f didn't resume following:\n%s", m.View())
+	}
+}
+
+// p is peak in breakdown, so in watch it must not change session.
+func TestPDoesNotGoBack(t *testing.T) {
+	m := followModel(t, true)
+	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB, created: true})
+	if m = key(t, m, "p"); m.sessionID != sessB || !m.followMode {
+		t.Fatalf("after p: session %s follow=%v, want %s still following", m.sessionID, m.followMode, sessB)
 	}
 }
 

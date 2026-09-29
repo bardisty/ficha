@@ -286,13 +286,16 @@ func TestBreakdownWaitingForFirstSession(t *testing.T) {
 		t.Errorf("waiting isn't the empty state:\n%s", out)
 	}
 	// Keys that act on rows or a session are harmless with neither
-	for _, k := range []string{"p", "r", "j", "g", "G"} {
+	for _, k := range []string{"p", "-", "r", "j", "g", "G"} {
 		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
 		m = updated.(BreakdownModel)
 	}
 	updated, _ = m.Update(sessionSwitchedMsg{newSessionPath: "/projects/-work-webapp/first.jsonl", newSessionID: "first"})
 	if m = updated.(BreakdownModel); m.sessionPath != "/projects/-work-webapp/first.jsonl" || !m.loading {
 		t.Errorf("a waiting breakdown should open the first session, pinned or not (path %q)", m.sessionPath)
+	}
+	if got := m.renderNotifyRow(); strings.Contains(got, "go back") {
+		t.Errorf("offers going back to nothing: %q", got)
 	}
 }
 
@@ -311,5 +314,39 @@ func TestBreakdownCtrlZSuspends(t *testing.T) {
 		t.Fatal("ctrl+z returned no command")
 	} else if _, ok := cmd().(tea.SuspendMsg); !ok {
 		t.Error("ctrl+z didn't suspend")
+	}
+}
+
+// - goes back to the session open before the last switch and pins there, as
+// in watch. p stays peak and never changes session.
+func TestBreakdownGoBack(t *testing.T) {
+	press := func(m BreakdownModel, k string) BreakdownModel {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
+		return updated.(BreakdownModel)
+	}
+	m := loadedBreakdown(t, 100, 24, chromeRows(goldenTime(10, 0, 0), 5))
+	if m = press(m, "-"); m.sessionPath != "/fixture/sess.jsonl" {
+		t.Fatalf("- with no previous session switched to %s", m.sessionPath)
+	}
+
+	m.followMode = true
+	updated, _ := m.Update(sessionSwitchedMsg{newSessionPath: "/fixture/new.jsonl", newSessionID: "new"})
+	m = updated.(BreakdownModel)
+	if got := m.renderNotifyRow(); !strings.Contains(got, "[Switched to new session] • - to go back") {
+		t.Errorf("switch notice = %q, want it to offer going back", got)
+	}
+	if m = press(m, "p"); m.sessionPath != "/fixture/new.jsonl" {
+		t.Fatalf("p switched sessions to %s", m.sessionPath)
+	}
+
+	m = press(m, "-")
+	if m.sessionPath != "/fixture/sess.jsonl" || m.followMode {
+		t.Fatalf("after -: session %s follow=%v, want /fixture/sess.jsonl pinned", m.sessionPath, m.followMode)
+	}
+	if got := m.renderNotifyRow(); !strings.Contains(got, "[Switched back to 0a1b2c3d] • - to go back") {
+		t.Errorf("go-back notice = %q", got)
+	}
+	if !strings.Contains(m.View(), "PINNED") {
+		t.Errorf("header doesn't say PINNED after going back:\n%s", m.View())
 	}
 }
