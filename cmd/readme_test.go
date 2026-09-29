@@ -9,7 +9,7 @@ import (
 )
 
 // TestREADMEDocumentsCLISurface fails when the README drifts from the actual
-// CLI surface: every registered app command and every persistent flag must be
+// CLI surface: every registered app command and every visible flag must be
 // mentioned. cobra's built-in help/completion commands are not app commands and
 // are only registered during Execute, so they never appear here.
 func TestREADMEDocumentsCLISurface(t *testing.T) {
@@ -40,5 +40,18 @@ func TestREADMEDocumentsCLISurface(t *testing.T) {
 				t.Errorf("README.md does not mention persistent flag --%s", f.Name)
 			}
 		})
+	})
+
+	t.Run("command flags", func(t *testing.T) {
+		for _, c := range append(root.Commands(), root) {
+			if builtin[c.Name()] || c.Hidden {
+				continue
+			}
+			c.LocalNonPersistentFlags().VisitAll(func(f *pflag.Flag) {
+				if !f.Hidden && !strings.Contains(readme, "--"+f.Name) {
+					t.Errorf("README.md does not mention %s flag --%s", c.Name(), f.Name)
+				}
+			})
+		}
 	})
 }

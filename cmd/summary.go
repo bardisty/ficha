@@ -30,6 +30,7 @@ Examples:
 		},
 	}
 
+	addProjectFlags(summaryCmd, cfg)
 	summaryCmd.Flags().BoolVarP(&cfg.showDetails, "details", "d", false, "Add a per-session breakdown (table rows / json sessions / csv rows)")
 	summaryCmd.Flags().BoolVar(&cfg.expandAgents, "expand-agents", false, "Include per-agent records: tree rows (table), nested agents (json), agent rows (csv); requires --details")
 

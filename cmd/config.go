@@ -8,13 +8,17 @@ import "io"
 // runs, and an in-process caller can execute commands back to back.
 type config struct {
 	// Persistent flags (bound on the root command).
+	format  string
+	verbose bool
+	noColor bool
+
+	// Project flags (root, show, watch, breakdown, list, summary).
 	projectPath string
 	projectDir  string // --project-dir: explicit Claude project directory name
-	format      string
-	verbose     bool
-	noColor     bool
-	live        bool
-	noFollow    bool
+
+	// Live flags (root, show, watch, breakdown).
+	live     bool
+	noFollow bool
 
 	// show flags.
 	messages bool // --messages: per-message rows/records in json/csv instead of the session summary

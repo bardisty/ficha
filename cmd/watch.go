@@ -5,7 +5,7 @@ import (
 )
 
 func newWatchCmd(cfg *config) *cobra.Command {
-	return &cobra.Command{
+	watchCmd := &cobra.Command{
 		Use:   "watch [session-id]",
 		Short: "Watch session in real-time (alias for show --live)",
 		Long: `Watch a Claude Code session in real-time, updating as new messages arrive.
@@ -27,4 +27,10 @@ Examples:
 			return runShow(cfg, args, true)
 		},
 	}
+
+	addProjectFlags(watchCmd, cfg)
+	// watch is always live; --live is accepted, hidden, for scripts that pass it.
+	addLiveFlags(watchCmd, cfg, true)
+
+	return watchCmd
 }

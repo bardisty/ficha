@@ -1175,3 +1175,79 @@ func TestE2ERootShowsNonHexSessionID(t *testing.T) {
 		t.Errorf("session_id = %q, want agent-a1b2c3d4", a.SessionID)
 	}
 }
+
+// TestE2EFlagScope: flags are registered only on the commands that use them,
+// so a misplaced one fails at parse time instead of being silently ignored,
+// and the flags that remain but do nothing in context say so on stderr.
+func TestE2EFlagScope(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantErr    string // exact error; empty means the command must succeed
+		wantStderr string
+	}{
+		{name: "list rejects --live", args: []string{"list", projFlag, "--live"}, wantErr: "unknown flag: --live"},
+		{name: "summary rejects --no-follow", args: []string{"summary", projFlag, "--no-follow"}, wantErr: "unknown flag: --no-follow"},
+		{name: "global rejects -p", args: []string{"global", "-p", "."}, wantErr: "unknown shorthand flag: 'p' in -p"},
+		{name: "global rejects --project-dir", args: []string{"global", projFlag}, wantErr: "unknown flag: --project-dir"},
+		{
+			name:    "-p and --project-dir are exclusive",
+			args:    []string{"list", "-p", ".", projFlag},
+			wantErr: "use either -p or --project-dir, not both: -p is the directory Claude Code ran in, --project-dir a Claude project directory name",
+		},
+		// Parsing --live on root and watch is what reaches the TUI format check.
+		{name: "root still accepts hidden --live", args: []string{projFlag, "--live", "-f", "json"}, wantErr: "--format json is not supported in live/TUI mode"},
+		{name: "watch still accepts hidden --live", args: []string{"watch", projFlag, "--live", "-f", "json"}, wantErr: "--format json is not supported in live/TUI mode"},
+		{
+			name:       "--messages on a table warns",
+			args:       []string{"show", projFlag, e2eAlphaID, "--messages"},
+			wantStderr: "Warning: --messages has no effect on table output (use -f json or -f csv)",
+		},
+		{
+			name:       "--no-follow outside live mode warns",
+			args:       []string{"show", projFlag, e2eAlphaID, "--no-follow"},
+			wantStderr: "Warning: --no-follow has no effect outside live/watch/breakdown mode",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupE2EFixture(t)
+			stdout, stderr, err := executeCLISplit(t, tt.args...)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error %q, got nil\nstdout: %s", tt.wantErr, stdout)
+				}
+				if err.Error() != tt.wantErr {
+					t.Errorf("error:\n got: %s\nwant: %s", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr)
+			}
+			if !strings.Contains(stderr, tt.wantStderr) {
+				t.Errorf("stderr missing %q, got: %q", tt.wantStderr, stderr)
+			}
+		})
+	}
+}
+
+// TestRootHelp: root help leads with the live commands, says the figures are
+// estimates, and keeps the legacy --live spelling out of sight.
+func TestRootHelp(t *testing.T) {
+	out, err := executeCLI(t, "--help")
+	if err != nil {
+		t.Fatalf("--help: %v", err)
+	}
+	mustContainAll(t, out,
+		"API-equivalent costs",
+		"On a subscription this is not your bill.",
+		"ficha watch ", "ficha breakdown ", "ficha summary ", "ficha global ",
+		"--project-dir",
+	)
+	for _, hidden := range []string{"-l, --live", "--no-follow"} {
+		if strings.Contains(out, hidden) {
+			t.Errorf("root help should not list %s:\n%s", hidden, out)
+		}
+	}
+}

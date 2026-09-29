@@ -53,11 +53,6 @@ func runGlobal(cfg *config) error {
 		return fmt.Errorf("invalid --top value %d: must be >= 0", cfg.globalTopN)
 	}
 
-	// Global command shows all projects — reject project-specific flags
-	if cfg.projectPath != "" || cfg.projectDir != "" {
-		return fmt.Errorf("--project and --project-dir flags are not supported with the global command")
-	}
-
 	// Discover all projects
 	projects, err := parser.DiscoverAllProjects()
 	if err != nil {
