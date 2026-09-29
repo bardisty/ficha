@@ -750,7 +750,7 @@ func TestFormatGlobalJSON(t *testing.T) {
 
 func TestFormatGlobalTable(t *testing.T) {
 	analysis := sampleGlobalAnalysis()
-	output := FormatGlobalTable(analysis, true, 10, false)
+	output := FormatGlobalTable(analysis, true, GlobalTableOptions{TopN: 10})
 
 	// Verify key strings present in plain output
 	if !strings.Contains(output, "project-alpha") {

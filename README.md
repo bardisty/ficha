@@ -124,7 +124,7 @@ Per-command flags:
 | `summary` | `--expand-agents` | Per-agent records (requires `--details`) |
 | `global` | `-n, --top <n>` | Top N projects in table (default 10) |
 | `global` | `--sort-by <key>` | Sort: cost, sessions, name, activity |
-| `global` | `-d, --details` | All projects + cumulative column (table) |
+| `global` | `-d, --details` | All projects in the table, with a cumulative column when sorted by cost |
 
 Bare `ficha` works like `show` and takes the same project flags. A flag on a command that doesn't use it is an error, and `--no-follow` or `--messages` where they'd have no effect print a warning.
 

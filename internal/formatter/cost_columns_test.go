@@ -70,7 +70,7 @@ func TestGlobalTableLargeCostsStayAligned(t *testing.T) {
 		names,
 	)
 	for _, details := range []bool{false, true} {
-		out := renderProjectsTable(analysis, true, 10, details)
+		out := projectsTable(analysis, true, GlobalTableOptions{TopN: 10, Details: details})
 		assertRowsAligned(t, out, "PROJECT", names)
 	}
 }

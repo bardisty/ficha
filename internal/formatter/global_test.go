@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -34,6 +35,18 @@ func globalAnalysisWithProjects(costs map[string]float64, order []string) *model
 	return analysis
 }
 
+// projectsTable renders the projects section alone, laid out as
+// FormatGlobalTable would with opts, in cost order unless opts says otherwise.
+func projectsTable(analysis *models.GlobalAnalysis, noColor bool, opts GlobalTableOptions) string {
+	if opts.SortBy == "" {
+		opts.SortBy = "cost"
+	}
+	if opts.Now.IsZero() {
+		opts.Now = time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	}
+	return renderProjectsTable(analysis, noColor, newProjectsLayout(analysis.Projects, opts), opts)
+}
+
 // A negative topN must be clamped, not used as a slice index (projects[-1] panics).
 func TestRenderProjectsTable_NegativeTopN(t *testing.T) {
 	analysis := globalAnalysisWithProjects(
@@ -41,8 +54,8 @@ func TestRenderProjectsTable_NegativeTopN(t *testing.T) {
 		[]string{"beta", "alpha"},
 	)
 
-	out := renderProjectsTable(analysis, true, -1, false)
-	if !strings.Contains(out, "(2 more projects totaling $3.00)") {
+	out := projectsTable(analysis, true, GlobalTableOptions{TopN: -1})
+	if !strings.Contains(out, "(2 projects totaling $3.00)") {
 		t.Errorf("negative topN should show all projects as remaining, got:\n%s", out)
 	}
 	if strings.Contains(out, "alpha") || strings.Contains(out, "beta") {
@@ -50,9 +63,9 @@ func TestRenderProjectsTable_NegativeTopN(t *testing.T) {
 	}
 
 	// The full-table entry point clamps too, not just renderProjectsTable.
-	full := FormatGlobalTable(analysis, true, -1, false)
-	if !strings.Contains(full, "TOP PROJECTS (0)") {
-		t.Errorf("negative topN should clamp header count to 0, got:\n%s", full)
+	full := FormatGlobalTable(analysis, true, GlobalTableOptions{TopN: -1})
+	if strings.Contains(full, "PROJECTS (") || !strings.Contains(full, "(2 projects totaling $3.00)") {
+		t.Errorf("negative topN should render like --top 0, got:\n%s", full)
 	}
 }
 
@@ -62,9 +75,9 @@ func TestRenderProjectsTable_TopNZero(t *testing.T) {
 		[]string{"alpha"},
 	)
 
-	out := renderProjectsTable(analysis, true, 0, false)
-	if !strings.Contains(out, "(1 more projects totaling $1.00)") {
-		t.Errorf("topN=0 should show all projects as remaining, got:\n%s", out)
+	out := projectsTable(analysis, true, GlobalTableOptions{TopN: 0})
+	if out != "  (1 project totaling $1.00)\n" {
+		t.Errorf("topN=0 should print only the remainder line, got:\n%s", out)
 	}
 }
 
@@ -81,7 +94,7 @@ func TestRenderProjectsTable_GradientIgnoresSortOrder(t *testing.T) {
 	// Name order: cheapest first, so positional bounds would give maxCost < minCost
 	byName := globalAnalysisWithProjects(costs, []string{"alpha", "beta", "zeta"})
 
-	out := renderProjectsTable(byName, false, 10, false)
+	out := projectsTable(byName, false, GlobalTableOptions{TopN: 10})
 
 	// The most expensive project must get the top-of-gradient color computed
 	// from the true min/max, regardless of slice order
@@ -125,7 +138,7 @@ func TestRenderProjectsTableWideNamesAlign(t *testing.T) {
 			} else {
 				forceProfile(t, termenv.ANSI256)
 			}
-			out := renderProjectsTable(analysis, tc.noColor, 10, tc.showDetails)
+			out := projectsTable(analysis, tc.noColor, GlobalTableOptions{TopN: 10, Details: tc.showDetails})
 
 			var headerWidth int
 			var rowWidths []int
@@ -206,4 +219,119 @@ func TestTruncateLeft(t *testing.T) {
 			t.Errorf("string with display width 20 should fit in 25, got %q", got)
 		}
 	})
+}
+
+// maxLineWidth is the widest line of out in display columns.
+func maxLineWidth(out string) int {
+	w := 0
+	for _, line := range strings.Split(out, "\n") {
+		w = max(w, lipgloss.Width(line))
+	}
+	return w
+}
+
+// Piped, the report keeps a fixed layout that fits in 80 columns whatever
+// the path lengths, with or without the cumulative column.
+func TestGlobalTableFitsEightyColumnsWhenPiped(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	for _, details := range []bool{false, true} {
+		opts := goldenGlobalOptions(details)
+		out := FormatGlobalTable(goldenGlobalAnalysis(), true, opts)
+		if w := maxLineWidth(out); w > 80 {
+			t.Errorf("details=%v: widest line is %d columns, want <= 80:\n%s", details, w, out)
+		}
+		// Long paths don't widen the piped layout.
+		long := goldenGlobalAnalysis()
+		long.Projects[0].DisplayName = "~/" + strings.Repeat("deep/", 30) + "project"
+		if got, want := maxLineWidth(FormatGlobalTable(long, true, opts)), maxLineWidth(out); got != want {
+			t.Errorf("details=%v: a long path changed the piped width from %d to %d", details, want, got)
+		}
+	}
+}
+
+// On a terminal, PROJECT widens to show a long path whole, up to the
+// terminal's width, and no line runs past it. The other columns take 50.
+func TestGlobalTableSizesProjectToTerminal(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	analysis := goldenGlobalAnalysis()
+	path := "~/source/github.com/acme/billing-service/fix-round"
+	if len(path) != 50 {
+		t.Fatalf("path is %d columns, want 50", len(path))
+	}
+	analysis.Projects[0].DisplayName = path
+
+	for _, width := range []int{60, 80, 100, 200} {
+		opts := goldenGlobalOptions(false)
+		opts.Width = width
+		out := FormatGlobalTable(analysis, true, opts)
+		if w := maxLineWidth(out); w > width {
+			t.Errorf("width %d: widest line is %d columns:\n%s", width, w, out)
+		}
+		if whole := strings.Contains(out, path); whole != (width >= 100) {
+			t.Errorf("width %d: path shown whole = %v:\n%s", width, whole, out)
+		}
+	}
+}
+
+// However wide the terminal, one deep path doesn't spread every row: past
+// 64 columns it loses its head.
+func TestGlobalTableCapsProjectWidth(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	analysis := goldenGlobalAnalysis()
+	analysis.Projects[0].DisplayName = "~/" + strings.Repeat("deep/", 30) + "project"
+	opts := goldenGlobalOptions(false)
+	opts.Width = 300
+	out := FormatGlobalTable(analysis, true, opts)
+	if w := maxLineWidth(out); w != 50+64 {
+		t.Errorf("widest line is %d columns, want %d:\n%s", w, 50+64, out)
+	}
+	if !strings.Contains(out, "…/deep/deep/deep/deep/deep/deep/deep/deep/deep/deep/deep/project ") {
+		t.Errorf("want the path's tail kept:\n%s", out)
+	}
+}
+
+// A terminal too narrow for every column drops LAST ACTIVE rather than
+// wrapping each row, unless the rows are sorted by it.
+func TestGlobalTableNarrowTerminalDropsLastActive(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	opts := goldenGlobalOptions(false)
+	opts.Width = 60
+	if out := FormatGlobalTable(goldenGlobalAnalysis(), true, opts); strings.Contains(out, "LAST ACTIVE") {
+		t.Errorf("LAST ACTIVE should give way at 60 columns:\n%s", out)
+	}
+	opts.SortBy = "activity"
+	if out := FormatGlobalTable(goldenGlobalAnalysis(), true, opts); !strings.Contains(out, "LAST ACTIVE") {
+		t.Errorf("LAST ACTIVE is the sort key and should stay:\n%s", out)
+	}
+}
+
+// The title names the sort, LAST ACTIVE shows the key for --sort-by activity,
+// and a running total only appears where it means something: cost order.
+func TestGlobalTableNamesItsSort(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	for _, tc := range []struct {
+		sortBy     string
+		details    bool
+		title      string
+		cumulative bool
+	}{
+		{"cost", false, "PROJECTS (3 of 5, by cost)", false},
+		{"cost", true, "PROJECTS (5, by cost)", true},
+		{"name", true, "PROJECTS (5, by name)", false},
+		{"sessions", true, "PROJECTS (5, by sessions)", false},
+		{"activity", false, "PROJECTS (3 of 5, by activity)", false},
+	} {
+		opts := goldenGlobalOptions(tc.details)
+		opts.SortBy = tc.sortBy
+		out := FormatGlobalTable(goldenGlobalAnalysis(), true, opts)
+		if !strings.Contains(out, tc.title) {
+			t.Errorf("%s details=%v: missing title %q:\n%s", tc.sortBy, tc.details, tc.title, out)
+		}
+		if got := strings.Contains(out, "CUMULATIVE"); got != tc.cumulative {
+			t.Errorf("%s details=%v: CUMULATIVE shown = %v, want %v", tc.sortBy, tc.details, got, tc.cumulative)
+		}
+		if !strings.Contains(out, "LAST ACTIVE") || !strings.Contains(out, "30m ago") {
+			t.Errorf("%s details=%v: want LAST ACTIVE with relative times:\n%s", tc.sortBy, tc.details, out)
+		}
+	}
 }
