@@ -31,7 +31,7 @@ func TestRenderCostChartTruncationDisclosed(t *testing.T) {
 			forceProfile(t, termenv.ANSI256)
 		}
 		got := renderCostChart(chartFixture(80), noColor)
-		if !strings.Contains(got, "last 68 of 80 sessions, oldest") {
+		if !strings.Contains(got, "last 68 of 80 sessions with a cost, oldest") {
 			t.Errorf("noColor=%v: count label must disclose truncation, got:\n%s", noColor, got)
 		}
 		if strings.Contains(got, "max: $50") || !strings.Contains(got, "max: $0.80") {
@@ -53,7 +53,7 @@ func TestRenderCostChartSizedToPoints(t *testing.T) {
 			t.Errorf("chart line is %d columns, want at most 19 for 15 points: %q", w, l)
 		}
 	}
-	if !strings.Contains(got, "15 sessions, oldest") || !strings.Contains(got, "newest") {
+	if !strings.Contains(got, "15 sessions with a cost, oldest") || !strings.Contains(got, "newest") {
 		t.Errorf("want an axis label, got:\n%s", got)
 	}
 	if strings.Contains(got, "JAN") || strings.Contains(got, "Jan") {

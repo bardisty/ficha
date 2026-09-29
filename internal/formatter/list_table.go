@@ -235,17 +235,22 @@ func shortSessionIDs(results []models.SessionResult) []string {
 	return ids
 }
 
-// cleanTitle makes a transcript's title safe to print on one line. It comes
-// from the transcript, so a control character could otherwise move the
-// cursor or recolor the terminal.
+// cleanTitle makes a transcript's title safe to print on one line, with
+// runs of whitespace collapsed.
 func cleanTitle(s string) string {
-	s = strings.Map(func(r rune) rune {
+	return strings.Join(strings.Fields(stripControl(s)), " ")
+}
+
+// stripControl replaces control characters with spaces. Titles and project
+// paths come from transcripts, so one could otherwise move the cursor or
+// recolor the terminal, and throw off the width of the line it's in.
+func stripControl(s string) string {
+	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
 		}
 		return r
 	}, s)
-	return strings.Join(strings.Fields(s), " ")
 }
 
 // truncateRight fits s into width display columns, ending in an ellipsis

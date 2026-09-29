@@ -198,3 +198,29 @@ func TestListLongSessionStaysAligned(t *testing.T) {
 		}
 	}
 }
+
+// A project path comes from a transcript's cwd, so an escape in it must not
+// reach the terminal or throw off the header box.
+func TestHeaderStripsControlCharacters(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	out := renderPanel("/tmp/x\x1b[31mred", []string{"3 sessions"}, 76, true)
+	if strings.Contains(out, "\x1b") {
+		t.Errorf("escape reached the header: %q", out)
+	}
+	lines := strings.Split(out, "\n")
+	for _, l := range lines {
+		if w := lipgloss.Width(l); w != 76 {
+			t.Errorf("header line is %d columns, want 76: %q", w, l)
+		}
+	}
+}
+
+// Trailing padding goes, spaces between escape codes included, and the codes
+// themselves stay, since one may close a style opened earlier on the line.
+func TestTrimLineEnds(t *testing.T) {
+	in := "a  $1.00  \n\x1b[32m$1.00\x1b[0m  \nbar \x1b[2m \x1b[0m\x1b[2m  \x1b[0m\nkeep"
+	want := "a  $1.00\n\x1b[32m$1.00\x1b[0m\nbar\x1b[2m\x1b[0m\x1b[2m\x1b[0m\nkeep"
+	if got := trimLineEnds(in); got != want {
+		t.Errorf("trimLineEnds:\n got %q\nwant %q", got, want)
+	}
+}

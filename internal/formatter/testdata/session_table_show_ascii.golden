@@ -11,8 +11,8 @@
   Cache read         $2.25           1.50M tokens
   Savings           $20.25    (from cache reads)
 
-  Context  [##############------------------------]  380.0K (38% of 1.00M)
-           Free: 620.0K (62.0%)
+  Context  38% [################-----------------|----------] 380.0K / 1.00M
+           370.0K to ~compaction (main session, last request)
 
 -----------------------------[ COST BY MODEL ]------------------------------
 
@@ -23,7 +23,7 @@
 ---------------------------[ AGENT SUB-SESSIONS ]---------------------------
 
   Parent session                                 $7.90
-  [Aa1b2c3d] Haiku 4.5    12 msgs                $0.4200
+  [A1b2c3d4] Haiku 4.5    12 msgs                $0.4200
   [Af6e5d4c] Sonnet 5       1 msg                $1.58
   Agents subtotal                                $2.00
 

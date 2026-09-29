@@ -73,9 +73,11 @@ func renderCostChart(costs []float64, noColor bool) string {
 		}
 	}
 
-	count := fmt.Sprintf("%d sessions", len(visibleCosts))
+	// costs leaves out sessions that cost nothing, so the count says which
+	// sessions it covers, beside a table that lists every one.
+	count := fmt.Sprintf("%d sessions with a cost", len(visibleCosts))
 	if len(visibleCosts) < len(costs) {
-		count = fmt.Sprintf("last %d of %d sessions", len(visibleCosts), len(costs))
+		count = fmt.Sprintf("last %d of %d sessions with a cost", len(visibleCosts), len(costs))
 	}
 	labels := []string{
 		fmt.Sprintf("%s, oldest %s newest", count, styles.Arrow),

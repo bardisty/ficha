@@ -36,14 +36,18 @@ func sessionsWord(n int) string {
 // trailingPad matches spaces at the end of a line, before any SGR codes
 // that close it. A two-decimal cost pads two spaces after itself to keep
 // decimal points aligned, which leaves them trailing when it ends a line.
-var trailingPad = regexp.MustCompile(` +((?:\x1b\[[0-9;]*m)*)$`)
+var trailingPad = regexp.MustCompile(`(?:\x1b\[[0-9;]*m| )+$`)
+
+var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // trimLineEnds drops the padding at the end of each line of a report, keeping
-// any escape codes that end it.
+// any escape codes among it, which may close a style opened earlier.
 func trimLineEnds(s string) string {
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
-		lines[i] = trailingPad.ReplaceAllString(l, "$1")
+		lines[i] = trailingPad.ReplaceAllStringFunc(l, func(tail string) string {
+			return strings.Join(sgr.FindAllString(tail, -1), "")
+		})
 	}
 	return strings.Join(lines, "\n")
 }
@@ -101,6 +105,7 @@ func renderPanel(lead string, fields []string, width int, noColor bool) string {
 	}
 	rest := strings.Join(fields, sep)
 	if lead != "" {
+		lead = stripControl(lead)
 		room := inner - lipgloss.Width(rest) - lipgloss.Width(sep)
 		if room < minProjectWidth {
 			lead = ""

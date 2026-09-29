@@ -65,9 +65,9 @@ func summaryTableRows(t *testing.T, results []models.SessionResult, expandAgents
 
 // The MODEL column is fixed-width, but Go's "%-Ns" pads without truncating. A
 // display name wider than the column (every "Sonnet 4.x"/"Sonnet 3.x" is 10
-// chars) or an unknown model's raw ID fallback (24+ chars) used to push AGENTS,
-// COST and CUMULATIVE right on that row alone, misaligning it against the
-// header and its neighbours.
+// chars) or an unknown model's raw ID fallback (24+ chars) must be clamped,
+// or it would push AGENTS and COST right on that row alone, misaligning it
+// against the header and its neighbours.
 func TestSummaryTableModelColumnNeverShiftsRow(t *testing.T) {
 	for _, expandAgents := range []bool{false, true} {
 		name := "default"
@@ -102,7 +102,7 @@ func TestSummaryTableModelColumnNeverShiftsRow(t *testing.T) {
 }
 
 // sessionRowWithAgents extends sessionRow with agent aggregates so the AGENTS
-// column renders "N [$X.XX]" content instead of "-".
+// column renders a count instead of "-".
 func sessionRowWithAgents(id, modelID string, day int, cost float64, agentCount int, agentsCost float64) models.SessionResult {
 	r := sessionRow(id, modelID, day, cost)
 	r.Analysis.HasAgents = true
@@ -111,9 +111,8 @@ func sessionRowWithAgents(id, modelID string, day int, cost float64, agentCount 
 	return r
 }
 
-// The AGENTS column is fixed-width like MODEL, but "N [$X.XX]" grows with the
-// agent count and subtotal: "1 [$100.00]" and "10 [$10.00]" are 11 chars and
-// used to push COST and CUMULATIVE right on that row alone.
+// The AGENTS column is fixed-width like MODEL, and whatever the agent count
+// and subtotal, a row with agents is as wide as one without.
 func TestSummaryTableAgentsColumnNeverShiftsRow(t *testing.T) {
 	rows := summaryTableRows(t, []models.SessionResult{
 		sessionRow("aaaa1111", "claude-opus-4-8", 10, 1.00),                          // no agents: "-"
@@ -164,8 +163,8 @@ func TestSummaryTableAgentsColumnAlignsWithColor(t *testing.T) {
 	}
 }
 
-// The Sum figure must right-align exactly under the CUMULATIVE column — the
-// two lines end at the same display column — in both views and color paths.
+// The Sum figure must right-align exactly under the COST column (the two
+// lines end at the same display column) in both views and color paths.
 func TestSummaryTableSumAlignsUnderCost(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
@@ -293,12 +292,10 @@ func TestSummaryTableModelColumnAlignsWithColor(t *testing.T) {
 	}
 }
 
-// Sessions whose file mtimes tie must appear in the same order — with the same
-// cumulative value on each row — in the SESSION BREAKDOWN table and the detail
-// CSV. Both surfaces sort by Modified with a stable sort, so ties keep input
-// order; an unstable sort on either side would let the surfaces disagree on
-// intermediate cumulative values (the final sum always matches). 40 rows so an
-// unstable sort has room to actually permute equal keys.
+// Sessions whose file mtimes tie must come in a stable order: the SESSION
+// BREAKDOWN table lists them newest first, exactly the detail CSV's order
+// reversed. Both sort by Modified with a stable sort, so ties keep input
+// order. 40 rows so an unstable sort has room to actually permute equal keys.
 func TestSummaryTableTieMtimeOrderMirrorsDetailCSV(t *testing.T) {
 	tied := time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC)
 	const n = 40
