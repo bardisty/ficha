@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,7 +11,6 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/paths"
-	"github.com/bardisty/ficha/internal/pricing"
 )
 
 // ErrSessionNotFound is returned when a specific session ID cannot be matched
@@ -69,8 +67,10 @@ func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.Sessi
 		return nil, "", fmt.Errorf("no sessions found in %s", projDir)
 	}
 
-	// Warn about orphans (only in verbose mode - this is common and usually not actionable)
-	if orphanCount > 0 && cfg.verbose {
+	// Sessions missing from an index are only worth a note when there is an
+	// index: current Claude Code doesn't write one, so without it every
+	// session would count.
+	if orphanCount > 0 && cfg.verbose && index != nil {
 		fmt.Fprintf(cfg.stderr, "Note: Found %d session(s) not in sessions-index.json\n", orphanCount)
 	}
 
@@ -157,61 +157,6 @@ func formatNoProjectError(projPath string, allProjects []models.ProjectInfo) err
 	}
 
 	return errors.New(sb.String())
-}
-
-// warnSkippedLines prints a stderr warning when JSONL lines were skipped
-// during parsing (malformed or oversized), so undercounted totals don't
-// look authoritative. Stderr keeps -f json/csv stdout clean.
-func warnSkippedLines(w io.Writer, skippedLines int) {
-	if skippedLines > 0 {
-		fmt.Fprintf(w, "Warning: %d unparseable line(s) skipped (malformed or oversized) — totals may be undercounted\n", skippedLines)
-	}
-}
-
-// warnSkippedSessions prints a stderr warning when whole session files could
-// not be parsed. Their cost is missing from every total on the surface.
-func warnSkippedSessions(w io.Writer, skippedSessions int) {
-	if skippedSessions > 0 {
-		fmt.Fprintf(w, "Warning: %d session(s) could not be parsed\n", skippedSessions)
-	}
-}
-
-// warnSkippedAgents prints a stderr warning when agent sub-sessions could not
-// be read. "read" rather than "parsed": the count also covers agent
-// directories that could not be listed, whose agent files were never seen —
-// there the number is a lower bound on the sub-sessions actually missing.
-func warnSkippedAgents(w io.Writer, skippedAgents int) {
-	if skippedAgents > 0 {
-		fmt.Fprintf(w, "Warning: %d agent sub-session(s) could not be read\n", skippedAgents)
-	}
-}
-
-// warnEstimatedCosts prints a stderr warning when some messages' cache-write
-// tokens carried no TTL attribution and were priced at the 5m rate — the
-// cheapest write tier, so the affected totals are lower-bound estimates
-// rather than exact.
-func warnEstimatedCosts(w io.Writer, estimatedCostMessages int) {
-	if estimatedCostMessages > 0 {
-		fmt.Fprintf(w, "Warning: %d message(s) lack cache-write TTL detail; their write cost assumes the 5m rate and may be underestimated\n", estimatedCostMessages)
-	}
-}
-
-// warnUnknownModels prints a warning if any models have unknown pricing
-func warnUnknownModels(w io.Writer, costByModel map[string]models.CostBreakdown) {
-	var unknownModels []string
-	for model := range costByModel {
-		if !pricing.IsKnownModel(model) {
-			unknownModels = append(unknownModels, model)
-		}
-	}
-	if len(unknownModels) > 0 {
-		sort.Strings(unknownModels)
-		if len(unknownModels) == 1 {
-			fmt.Fprintf(w, "Warning: unknown model %q using fallback pricing\n", unknownModels[0])
-		} else {
-			fmt.Fprintf(w, "Warning: %d unknown models using fallback pricing: %v\n", len(unknownModels), unknownModels)
-		}
-	}
 }
 
 // selectSession finds the appropriate session based on CLI args.

@@ -227,6 +227,33 @@ func footerSep(noColor bool) string {
 	return styles.BoxVerticalSep
 }
 
+// footerStats joins footer fields with footerSep, starting a new line when the
+// next field would run past width. Callers put the total first, so it's on
+// screen whenever the footer is.
+func footerStats(fields []string, width int, noColor bool) string {
+	sep := "  " + footerSep(noColor) + "  "
+	var lines []string
+	line := ""
+	for _, f := range fields {
+		switch {
+		case line == "":
+			line = f
+		case lipgloss.Width(line+sep+f) > width:
+			lines = append(lines, line)
+			line = f
+		default:
+			line += sep + f
+		}
+	}
+	lines = append(lines, line)
+	if !noColor {
+		for i, l := range lines {
+			lines[i] = footerStyle.Render(l)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // renderFooterDoubleRule renders the heavy separator that closes a table body.
 func renderFooterDoubleRule(width int, noColor bool) string {
 	if noColor {

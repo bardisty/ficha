@@ -83,15 +83,12 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, topN int, 
 	sb.WriteString(renderFooterDoubleRule(sectionWidth, noColor))
 	sb.WriteString("\n")
 
-	footerText := fmt.Sprintf("Messages: %s  %s  Sessions: %d  %s  Projects: %d",
-		render.Number(int64(analysis.MessageCount)), footerSep(noColor),
-		analysis.SessionCount, footerSep(noColor),
-		analysis.ProjectCount)
-	if noColor {
-		sb.WriteString(footerText)
-	} else {
-		sb.WriteString(footerStyle.Render(footerText))
-	}
+	sb.WriteString(footerStats([]string{
+		"Total: " + render.Cost(analysis.TotalCost.TotalCost),
+		"Messages: " + render.Number(int64(analysis.MessageCount)),
+		fmt.Sprintf("Sessions: %d", analysis.SessionCount),
+		fmt.Sprintf("Projects: %d", analysis.ProjectCount),
+	}, sectionWidth, noColor))
 	sb.WriteString("\n")
 	sb.WriteString(renderFooterSingleRule(sectionWidth, noColor))
 

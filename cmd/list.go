@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 
@@ -46,17 +47,24 @@ func runList(cfg *config) error {
 	// The counts below come from the same parse `show` runs, so warn about the
 	// inputs it dropped — otherwise a session whose transcript could not be read
 	// is indistinguishable from one that holds no messages.
-	skippedSessions := 0
-	skippedAgents := 0
-	skippedLines := 0
+	skips := skipWarning{counts: "message counts"}
+	var details []models.SkipDetail
 	for _, s := range sessions {
-		skippedSessions += s.SkippedSessions
-		skippedAgents += s.SkippedAgents
-		skippedLines += s.SkippedLines
+		skips.sessions += s.SkippedSessions
+		skips.agents += s.SkippedAgents
+		skips.lines += s.SkippedLines
+		if s.SkippedSessions+s.SkippedAgents+s.SkippedLines > 0 {
+			details = append(details, models.SkipDetail{
+				SessionID:  s.SessionID,
+				Unreadable: s.SkippedSessions > 0,
+				Lines:      s.SkippedLines,
+				Agents:     s.SkippedAgents,
+			})
+		}
 	}
-	warnSkippedSessions(cfg.stderr, skippedSessions)
-	warnSkippedAgents(cfg.stderr, skippedAgents)
-	warnSkippedLines(cfg.stderr, skippedLines)
+	skips.details = labelSkips("", details)
+	var warnings bytes.Buffer
+	skips.write(&warnings, cfg.verbose)
 
 	// Output in requested format
 	var output string
@@ -75,7 +83,7 @@ func runList(cfg *config) error {
 		output = formatter.FormatSessionListTable(sessions, cfg.noColor)
 	}
 
-	fmt.Fprintln(cfg.stdout, output)
+	printReport(cfg, &warnings, output)
 	return nil
 }
 

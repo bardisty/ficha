@@ -530,3 +530,30 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 
 	return aggregate, results, nil
 }
+
+// SkipDetails lists the sessions in results that contributed to the skip
+// counters, in results order. A session whose transcript failed to parse is
+// Unreadable, and its agents count as skipped, as they do in
+// AnalyzeMultipleSessions' SkippedAgents, since none of them was analyzed.
+func SkipDetails(results []models.SessionResult) []models.SkipDetail {
+	var details []models.SkipDetail
+	for _, r := range results {
+		if r.Analysis == nil {
+			agentPaths, unreadableDirs := parser.DiscoverAgentSessions(filepath.Dir(r.Entry.FullPath), r.Entry.SessionID)
+			details = append(details, models.SkipDetail{
+				SessionID:  r.Entry.SessionID,
+				Unreadable: true,
+				Agents:     len(agentPaths) + unreadableDirs,
+			})
+			continue
+		}
+		if r.Analysis.SkippedLines > 0 || r.Analysis.SkippedAgents > 0 {
+			details = append(details, models.SkipDetail{
+				SessionID: r.Entry.SessionID,
+				Lines:     r.Analysis.SkippedLines,
+				Agents:    r.Analysis.SkippedAgents,
+			})
+		}
+	}
+	return details
+}

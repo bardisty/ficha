@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -150,6 +151,42 @@ func TestCompletionValue(t *testing.T) {
 	for _, tt := range tests {
 		if got := completionValue(tt.id, sessions, tt.typed); got != tt.want {
 			t.Errorf("completionValue(%q, typed=%d) = %q, want %q", tt.id, tt.typed, got, tt.want)
+		}
+	}
+}
+
+// On a terminal the warnings follow the report; redirected, they lead.
+func TestWriteReportOrder(t *testing.T) {
+	for _, tt := range []struct {
+		warningsLast bool
+		want         string
+	}{
+		{true, "report\nWarning: w\n"},
+		{false, "Warning: w\nreport\n"},
+	} {
+		var both bytes.Buffer
+		warnings := bytes.NewBufferString("Warning: w\n")
+		writeReport(&both, &both, warnings, "report", tt.warningsLast)
+		if both.String() != tt.want {
+			t.Errorf("warningsLast=%v: got %q, want %q", tt.warningsLast, both.String(), tt.want)
+		}
+	}
+}
+
+func TestProjectLabel(t *testing.T) {
+	tests := []struct {
+		name string
+		p    models.ProjectInfo
+		want string
+	}{
+		{"original path wins", models.ProjectInfo{EncodedPath: "-home-u-src-app", OriginalPath: "/home/u/src/app", DisplayName: "home/u/src/app"}, "/home/u/src/app"},
+		{"Windows original path kept as is", models.ProjectInfo{EncodedPath: "C--Users-u-app", OriginalPath: `C:\Users\u\app`}, `C:\Users\u\app`},
+		// DisplayName's decoding of the encoded name differs by OS; the raw name doesn't.
+		{"no original path: encoded name", models.ProjectInfo{EncodedPath: "-home-u-src-app", DisplayName: "home-u-src-app"}, "-home-u-src-app"},
+	}
+	for _, tt := range tests {
+		if got := projectLabel(tt.p); got != tt.want {
+			t.Errorf("%s: projectLabel = %q, want %q", tt.name, got, tt.want)
 		}
 	}
 }
