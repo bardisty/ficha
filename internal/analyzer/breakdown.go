@@ -3,6 +3,7 @@ package analyzer
 import (
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
@@ -30,8 +31,10 @@ type BreakdownResult struct {
 	// Snapshot indices are always display Indexes, since the table's row
 	// numbers are the only handle a reader has to find a row.
 	Insights *models.MessageInsights
-	// Workflows lists the workflow runs whose agents appear in Messages, in
-	// discovery order (alphabetical by run ID).
+	// Workflows lists the workflow runs whose agents appear in Messages,
+	// ordered by their earliest message the way show and summary order runs
+	// (see agentOrder): a run with no timestamped message last, ties in
+	// discovery order.
 	Workflows []models.WorkflowMeta
 }
 
@@ -82,6 +85,7 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 	agentPaths, skippedAgents := parser.DiscoverAgentSessions(projectDir, sessionID)
 	var workflows []models.WorkflowMeta
 	seenRuns := make(map[string]bool)
+	runStart := make(map[string]time.Time) // earliest message of any of the run's agents
 
 	for _, agentPath := range agentPaths {
 		agentAnalyses, agentSkipped, err := loadAgentMessages(agentPath, cache)
@@ -102,6 +106,11 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 			meta, _ := parser.ParseWorkflowMeta(projectDir, sessionID, runID)
 			workflows = append(workflows, meta)
 		}
+		if runID != "" {
+			if start, _ := timeRange(agentAnalyses); earlierStart(start, runStart[runID]) {
+				runStart[runID] = start
+			}
+		}
 
 		// Convert agent messages to breakdown format (already cost-annotated by
 		// loadAgentMessages)
@@ -119,6 +128,11 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 			})
 		}
 	}
+
+	// Discovery walks run directories by name, and run IDs are random.
+	sort.SliceStable(workflows, func(i, j int) bool {
+		return earlierStart(runStart[workflows[i].RunID], runStart[workflows[j].RunID])
+	})
 
 	// Insights are order-sensitive; see BreakdownResult.Insights for which
 	// order applies. The agent-free case is computed here, before the sort.

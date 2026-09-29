@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"sort"
+	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -50,8 +51,15 @@ func agentOrder(agents []models.AgentAnalysis) []int {
 // startsBefore is agentOrder's order for two agents: by first message, with
 // an agent that has none after one that has.
 func startsBefore(x, y models.AgentAnalysis) bool {
-	if x.StartTime.IsZero() || y.StartTime.IsZero() {
-		return !x.StartTime.IsZero() && y.StartTime.IsZero()
+	return earlierStart(x.StartTime, y.StartTime)
+}
+
+// earlierStart reports whether start x sorts before start y. A zero start,
+// meaning no timestamped message, sorts after any real one. Every view that
+// orders agents or workflow runs by start uses this rule.
+func earlierStart(x, y time.Time) bool {
+	if x.IsZero() || y.IsZero() {
+		return !x.IsZero() && y.IsZero()
 	}
-	return x.StartTime.Before(y.StartTime)
+	return x.Before(y)
 }
