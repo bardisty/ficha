@@ -63,9 +63,12 @@ func (m Model) loadAnalysis() tea.Msg {
 	return msg
 }
 
-// watcherStartedMsg is sent when the watcher is successfully created
+// watcherStartedMsg is sent when the watcher is successfully created.
+// sessionPath drops a watcher that comes up after a session switch; an empty
+// path applies, as in analysisMsg.
 type watcherStartedMsg struct {
-	watcher *fsnotify.Watcher
+	watcher     *fsnotify.Watcher
+	sessionPath string
 }
 
 // sessionWatcherStartedMsg is sent when the session watcher is ready
@@ -80,7 +83,16 @@ type sessionWatcherRestartMsg struct{}
 // error message.
 func (m Model) wrapErr(err error) tea.Msg { return errorMsg{err: err, sessionPath: m.sessionPath} }
 
-func (m Model) watchFile() tea.Msg { return watchFileCmd(m.sessionPath, m.wrapErr) }
+func (m Model) watchFile() tea.Msg { return watchFileCmd(m.sessionPath) }
+
+// retryWatchNow is r's watcher retry while polling for want of one; nil
+// otherwise. A failure leaves the backoff timer as it was.
+func (m Model) retryWatchNow() tea.Cmd {
+	if !m.fallback.active() || m.watcher != nil {
+		return nil
+	}
+	return m.watchFile
+}
 
 // armFileWaiter starts a file-change waiter unless one is already blocked on
 // the watcher. Every reload — file-triggered, poll-triggered, manual "r",

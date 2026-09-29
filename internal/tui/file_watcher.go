@@ -209,17 +209,18 @@ func subagentTreeSignature(projectDir, sessionID string) string {
 }
 
 // The watch and breakdown models run the same file/session-watching state
-// machine and differ only in their error-message type, so each passes an onErr
-// constructor to wrap failures in its own message.
+// machine and differ only in their error-message type, so the session watcher
+// takes an onErr constructor to wrap failures in each model's own message.
 
 // watchFileCmd creates the file watcher for sessionPath, returning a
-// watcherStartedMsg on success or onErr(err) on failure.
-func watchFileCmd(sessionPath string, onErr func(error) tea.Msg) tea.Msg {
-	watcher, err := newSessionFileWatcher(sessionPath)
+// watcherStartedMsg on success or a watcherFailedMsg, which starts the poll
+// fallback (see watchFallback), on failure.
+func watchFileCmd(sessionPath string) tea.Msg {
+	watcher, err := newFileWatcher(sessionPath)
 	if err != nil {
-		return onErr(err)
+		return watcherFailedMsg{err: err, sessionPath: sessionPath}
 	}
-	return watcherStartedMsg{watcher: watcher}
+	return watcherStartedMsg{watcher: watcher, sessionPath: sessionPath}
 }
 
 // fileWatchErrMsg reports an error from an in-flight file-change waiter. It is
