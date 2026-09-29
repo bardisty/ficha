@@ -19,7 +19,7 @@ func TestFormatSessionTable_AggregateOmitsAgentSection(t *testing.T) {
 	analysis.AgentsCost = models.CostBreakdown{TotalCost: 0.01}
 	analysis.Agents = nil
 
-	output := FormatSessionTable(analysis, true)
+	output := FormatSessionTable(analysis, true, 0)
 	if strings.Contains(output, "AGENT SUB-SESSIONS") {
 		t.Error("aggregate table rendered an agent section with no per-agent records")
 	}
@@ -37,7 +37,7 @@ func TestFormatSessionTable_SessionRendersAgentSection(t *testing.T) {
 		TotalCost:   models.CostBreakdown{TotalCost: 0.01},
 	}}
 
-	output := FormatSessionTable(analysis, true)
+	output := FormatSessionTable(analysis, true, 0)
 	if !strings.Contains(output, "AGENT SUB-SESSIONS") {
 		t.Error("single-session table dropped the agent section")
 	}

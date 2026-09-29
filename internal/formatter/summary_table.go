@@ -16,13 +16,14 @@ import (
 // breakdown. results carries each session's pre-computed analysis (from
 // AnalyzeMultipleSessions), so the formatter never re-parses. storageDir is
 // the Claude project directory, printed under the footer when it's set
-// (with -v). Color and glyph choices are driven by noColor.
-func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []models.SessionResult, storageDir string, noColor bool, expandAgents bool) string {
+// (with -v). Color and glyph choices are driven by noColor. width is the
+// terminal's width, or 0 when stdout isn't a terminal (see reportWidth).
+func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []models.SessionResult, storageDir string, noColor bool, expandAgents bool, width int) string {
 	if analysis.Window != nil && analysis.MessageCount == 0 {
 		return emptyWindow(*analysis.Window)
 	}
 	var sb strings.Builder
-	const sectionWidth = 76
+	sectionWidth := reportWidth(width)
 
 	// Header panel
 	sb.WriteString(renderHeaderPanel(analysis, sectionWidth, noColor))
@@ -32,32 +33,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 	sb.WriteString(renderHeroCost(analysis.TotalCost.TotalCost, sectionWidth, noColor))
 	sb.WriteString("\n\n")
 
-	// Unified cost+token rows (same as FormatSessionTable)
-	sb.WriteString(renderUnifiedCostRow("Input", analysis.TotalCost.InputCost, analysis.TotalUsage.InputTokens, lipgloss.Color(""), "", noColor))
-	sb.WriteString(renderUnifiedCostRow("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, styles.OutputTokenColor, "", noColor))
-
-	// Cache write rows
-	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
-	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
-	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
-
-	if has5mCost {
-		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite5mCost, cache5mTokens, styles.CacheWriteTokenColor, "5m TTL", noColor))
-	}
-
-	if has1hCost {
-		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite1hCost, cache1hTokens, styles.CacheWriteTokenColor, "1h TTL", noColor))
-	}
-
-	// Cache read
-	if analysis.TotalCost.CacheReadCost > 0 || analysis.TotalUsage.CacheReadInputTokens > 0 {
-		sb.WriteString(renderUnifiedCostRow("Cache read", analysis.TotalCost.CacheReadCost, analysis.TotalUsage.CacheReadInputTokens, styles.CacheReadTokenColor, "", noColor))
-	}
-
-	// Savings row
-	if analysis.TotalCost.CacheSavings > 0 {
-		sb.WriteString(renderSavingsRow(analysis.TotalCost.CacheSavings, noColor))
-	}
+	sb.WriteString(renderCostRows(analysis.TotalCost, analysis.TotalUsage, sectionWidth, noColor))
 
 	// Cost by model section, left out for the same reason as in show
 	if len(analysis.CostByModel) > 0 {
@@ -68,7 +44,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 	}
 
 	// Get session breakdown data (needed for both chart and table)
-	breakdownResult := renderSessionBreakdown(results, noColor, expandAgents)
+	breakdownResult := renderSessionBreakdown(results, sectionWidth, noColor, expandAgents)
 
 	// Session breakdown section (includes chart and table)
 	sb.WriteString("\n")
@@ -76,7 +52,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 	sb.WriteString("\n\n")
 
 	// Cost chart at the top of the section, for sessions that cost anything
-	if chart := renderCostChart(breakdownResult.costs, noColor); chart != "" {
+	if chart := renderCostChart(breakdownResult.costs, sectionWidth, noColor); chart != "" {
 		sb.WriteString(chart)
 		sb.WriteString("\n")
 	}
@@ -124,7 +100,7 @@ type sessionBreakdownResult struct {
 //
 // Each result carries its session's pre-computed analysis (nil when the session
 // failed to parse, rendered as an "(error)" row); the formatter does no parsing.
-func renderSessionBreakdown(results []models.SessionResult, noColor bool, expandAgents bool) sessionBreakdownResult {
+func renderSessionBreakdown(results []models.SessionResult, width int, noColor bool, expandAgents bool) sessionBreakdownResult {
 	var sb strings.Builder
 
 	// Oldest first, stable, as the machine detail formats order their rows
@@ -138,9 +114,12 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 	var chartCosts, costs []float64
 	var totalCost float64
 	valid := 0
-	modifiedWidth := len("MODIFIED")
+	// MODIFIED is a date and time, or just the date when the table would
+	// otherwise be too wide.
+	timeWidth, dateWidth := len("MODIFIED"), len("MODIFIED")
 	for _, r := range sorted {
-		modifiedWidth = max(modifiedWidth, len(render.DateTime(r.Entry.Modified, now())))
+		timeWidth = max(timeWidth, len(render.DateTime(r.Entry.Modified, now())))
+		dateWidth = max(dateWidth, len(render.Date(r.Entry.Modified, now())))
 		if r.Analysis == nil {
 			continue
 		}
@@ -163,8 +142,6 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 	// COST holds the sum too, and in the expanded view every agent and run
 	// subtotal, so a large value widens the column for every row.
 	costWidth := render.CostCellWidth(8, append(costs, totalCost)...)
-	modelWidth := 10
-	costCol := func() int { return 2 + 4 + 1 + 8 + 2 + modifiedWidth + 2 + modelWidth + 2 }
 	if expandAgents {
 		for _, r := range sorted {
 			if r.Analysis == nil {
@@ -177,25 +154,92 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 				}
 			}
 		}
+	}
+
+	// deepestTree is the widest agent tree before its costs, with a 10-column
+	// model, or 0 without one.
+	deepestTree := 0
+	if expandAgents {
+		for _, r := range sorted {
+			if r.Analysis != nil && len(r.Analysis.Agents) > 0 {
+				deepestTree = max(deepestTree, agentTreeWidth(r.Analysis, 10, true))
+			}
+		}
+	}
+
+	dateOnly := false
+	modifiedWidth := func() int {
+		if dateOnly {
+			return dateWidth
+		}
+		return timeWidth
+	}
+	// lead is the room before MODEL: the indent, #, SESSION and MODIFIED,
+	// with their gaps.
+	lead := func() int { return 2 + 4 + 1 + 8 + 2 + modifiedWidth() + 2 }
+	modelWidth := 10
+	costCol := func() int { return lead() + modelWidth + 2 }
+	showAgents := !expandAgents
+	rowWidth := func() int {
+		if showAgents {
+			return costCol() + len("AGENTS") + 2 + costWidth
+		}
+		return costCol() + costWidth
+	}
+	// When the rows or the agent trees under them don't fit width, MODIFIED
+	// loses its time, then AGENTS (a count the expanded tree replaces) goes,
+	// with the time back if that makes room for it, and then MODEL narrows,
+	// down to a stub.
+	fits := func() bool { return rowWidth() <= width && deepestTree+2+costWidth <= width }
+	layouts := [][2]bool{{false, true}, {true, true}, {false, false}, {true, false}}
+	for i, l := range layouts {
+		dateOnly = l[0]
+		showAgents = !expandAgents && l[1]
+		if fits() || i == len(layouts)-1 {
+			break
+		}
+	}
+	modelWidth = max(modelWidth-max(rowWidth()-width, 0), minModelWidth)
+
+	// treeMsgs is whether agent rows show their message count, which goes
+	// from every row before any model would be cut to fit before COST: the
+	// model tells agents apart, the count doesn't.
+	treeMsgs := true
+	if expandAgents {
 		// MODEL widens when the deepest agent row or a workflow label would
-		// run into COST, as far as the 76-column report allows; past that,
-		// labels are cut.
-		maxModelWidth := modelWidth + 76 - (costCol() + costWidth)
+		// run into COST, as far as the report's width allows; past that,
+		// agents' models and workflow labels are cut.
+		maxModelWidth := modelWidth + max(width-rowWidth(), 0)
+		maxCostCol := costCol() + maxModelWidth - modelWidth
+		for _, r := range sorted {
+			if r.Analysis != nil && len(r.Analysis.Agents) > 0 && agentTreeWidth(r.Analysis, 10, true)+2 > maxCostCol {
+				treeMsgs = false
+			}
+		}
 		for _, r := range sorted {
 			if r.Analysis == nil {
 				continue
 			}
-			modelWidth = max(modelWidth, agentTreeWidth(r.Analysis)+2-costCol()+modelWidth)
+			if len(r.Analysis.Agents) > 0 {
+				full := agentTreeWidth(r.Analysis, 10, treeMsgs) + 2 - costCol() + modelWidth
+				cut := agentTreeWidth(r.Analysis, minModelWidth, treeMsgs) + 2 - costCol() + modelWidth
+				modelWidth = max(modelWidth, min(full, max(maxModelWidth, cut)))
+			}
 			for _, wf := range r.Analysis.Workflows {
 				label := treeIndent + treeStep + runewidth.StringWidth(render.WorkflowLabel(wf)) + 2
 				modelWidth = max(modelWidth, min(label-costCol()+modelWidth, maxModelWidth))
 			}
 		}
 	}
+	var analyses []*models.SessionAnalysis
+	for _, r := range sorted {
+		analyses = append(analyses, r.Analysis)
+	}
+	treeStatus := workflowStatuses("", costCol()-treeIndent-treeStep-2, analyses...)
 
 	row := func(num, id, modified, model, agents, cost string) string {
 		line := fmt.Sprintf("  %s %s  %s  %s", num, id, modified, model)
-		if !expandAgents {
+		if showAgents {
 			line += "  " + agents
 		}
 		return line + "  " + cost
@@ -204,12 +248,12 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 	headerRow := row(
 		fmt.Sprintf("%4s", "#"),
 		fmt.Sprintf("%-8s", "SESSION"),
-		fmt.Sprintf("%-*s", modifiedWidth, "MODIFIED"),
+		fmt.Sprintf("%-*s", modifiedWidth(), "MODIFIED"),
 		fmt.Sprintf("%-*s", modelWidth, "MODEL"),
 		fmt.Sprintf("%*s", len("AGENTS"), "AGENTS"),
 		fmt.Sprintf("%*s", costWidth, "COST"),
 	)
-	contentWidth := max(72, lipgloss.Width(headerRow)-2)
+	contentWidth := max(width-4, lipgloss.Width(headerRow)-2)
 	rule := "  " + strings.Repeat(styles.LineHorizontal, contentWidth)
 	if noColor {
 		sb.WriteString(headerRow + "\n" + rule + "\n")
@@ -227,7 +271,11 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 		r := sorted[i]
 		num := dim(fmt.Sprintf("%4d", len(sorted)-i))
 		id := fmt.Sprintf("%-8s", render.TruncateID(r.Entry.SessionID, 8))
-		modified := dim(pad(render.DateTime(r.Entry.Modified, now()), modifiedWidth))
+		modifiedAt := render.DateTime(r.Entry.Modified, now())
+		if dateOnly {
+			modifiedAt = render.Date(r.Entry.Modified, now())
+		}
+		modified := dim(pad(modifiedAt, modifiedWidth()))
 
 		if r.Analysis == nil {
 			sb.WriteString(row(num, id, modified,
@@ -241,7 +289,7 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 
 		// The parent's model: agents' models show in their own rows.
 		modelName := parentPrimaryModel(a)
-		model := pad(render.ClampModel(modelName, modelWidth), modelWidth)
+		model := pad(clampModel(modelName, modelWidth), modelWidth)
 		agents := fmt.Sprintf("%*s", len("AGENTS"), "-")
 		if a.AgentCount > 0 {
 			agents = fmt.Sprintf("%*d", len("AGENTS"), a.AgentCount)
@@ -255,7 +303,13 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 		sb.WriteString(row(num, id, modified, model, agents, costStr) + "\n")
 
 		if expandAgents && a.HasAgents && len(a.Agents) > 0 {
-			sb.WriteString(renderAgentTreeRows(a, noColor, costCol(), costWidth))
+			sb.WriteString(renderAgentTreeRows(a, noColor, treeLayout{
+				costCol:   costCol(),
+				costWidth: costWidth,
+				msgs:      treeMsgs,
+				status:    treeStatus,
+				narrowed:  width < staticReportWidth,
+			}))
 		}
 	}
 
@@ -283,30 +337,48 @@ const (
 	treeStep   = 3
 )
 
+// minModelWidth is as narrow as a MODEL column or an agent row's model gets
+// on a narrow terminal: enough to tell Opus from Sonnet.
+const minModelWidth = 6
+
 // agentTreeWidth is how wide an analysis's agent rows get before their cost:
-// connectors, marker, model and message count. Workflow agents sit a level
-// deeper than the rest.
-func agentTreeWidth(a *models.SessionAnalysis) int {
+// connectors, marker, a modelWidth model and, with msgs, message count.
+// Workflow agents sit a level deeper than the rest.
+func agentTreeWidth(a *models.SessionAnalysis, modelWidth int, msgs bool) int {
 	depth := 1
 	for _, agent := range a.Agents {
 		if agent.WorkflowID != "" {
 			depth = 2
 		}
 	}
-	return treeIndent + depth*treeStep + 10 + 1 + 10 + 1 + agentMsgsWidth(a.Agents)
+	width := treeIndent + depth*treeStep + 10 + 1 + modelWidth
+	if msgs {
+		width += 1 + agentMsgsWidth(a.Agents)
+	}
+	return width
+}
+
+// treeLayout places an agent tree's rows: each cost in a costWidth cell at
+// costCol, message counts shown with msgs, workflow statuses with status,
+// and narrowed when the report is narrower than its piped width.
+type treeLayout struct {
+	costCol, costWidth     int
+	msgs, status, narrowed bool
 }
 
 // renderAgentTreeRows renders a session's agents as a tree under its row,
 // each cost in a costWidth cell starting at costCol, under the session's
-// COST. A workflow run is a node carrying its subtotal, dimmed since the
-// agents under it repeat it, with its agents one level deeper:
+// COST, and each model cut when it would run into it. A workflow run is a
+// node carrying its subtotal, dimmed since the agents under it repeat it,
+// with its agents one level deeper:
 //
 //	├─ [Aa1b2c3d] Haiku 4.5   12 msgs   $0.4200
 //	└─ workflow: audit (completed)      $1.65
 //	   ├─ [Aw1a2b3c] Opus 4.8 21 msgs   $1.10
 //	   └─ [Aw6e5d4c] Sonnet 5  1 msg    $0.5500
-func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, costCol, costWidth int) string {
+func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout treeLayout) string {
 	var sb strings.Builder
+	costCol, costWidth := layout.costCol, layout.costWidth
 	agents := analysis.Agents
 	msgsWidth := agentMsgsWidth(agents)
 	indent := strings.Repeat(" ", treeIndent)
@@ -364,14 +436,24 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, costCol
 	agentRow := func(prefix string, agent *models.AgentAnalysis) string {
 		modelName := render.PrimaryModel(agent.CostByModel)
 		marker := fmt.Sprintf("%-10s", "[A"+render.ShortAgentID(agent.AgentID)+"]")
-		model := fmt.Sprintf("%-10s", render.ClampModel(modelName, 10))
+		// Up to 10 columns, as many as leave the 2-column gap before COST.
+		room := costCol - 2 - lipgloss.Width(prefix) - 10 - 1
+		if layout.msgs {
+			room -= 1 + msgsWidth
+		}
+		modelWidth := min(10, max(room, minModelWidth))
+		model := fmt.Sprintf("%-*s", modelWidth, clampModel(modelName, modelWidth))
 		msgs := fmt.Sprintf("%*s", msgsWidth, agentMsgs(agent.MessageCount))
 		if !noColor {
 			marker = lipgloss.NewStyle().Foreground(styles.GetAgentColor(agent.AgentID)).Render(marker)
 			model = lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName)).Render(model)
 			msgs = dimStyle.Render(msgs)
 		}
-		return line(prefix+marker+" "+model+" "+msgs, agent.TotalCost.TotalCost, styles.SecondaryColor)
+		left := prefix + marker + " " + model
+		if layout.msgs {
+			left += " " + msgs
+		}
+		return line(left, agent.TotalCost.TotalCost, styles.SecondaryColor)
 	}
 
 	for i, n := range nodes {
@@ -382,7 +464,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, costCol
 			continue
 		}
 		room := costCol - treeIndent - treeStep - 2
-		label := truncateRight(render.WorkflowLabel(analysis.WorkflowByID(n.workflow)), room)
+		label := fitWorkflowLabel("", analysis.WorkflowByID(n.workflow), room, layout.narrowed, layout.status)
 		sb.WriteString(line(prefix+dim(label), workflowCost(agents, n.workflow), styles.SecondaryColor))
 		for j, child := range n.children {
 			sb.WriteString(agentRow(indent+dim(rail(last)+connector(j == len(n.children)-1)), child))
@@ -390,4 +472,47 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, costCol
 	}
 
 	return sb.String()
+}
+
+// clampModel is render.ClampModel for a column that narrows with the
+// terminal, where a cut can land after a space: "Haiku…", not "Haiku …".
+func clampModel(label string, width int) string {
+	return strings.Replace(render.ClampModel(label, width), " "+styles.Ellipsis, styles.Ellipsis, 1)
+}
+
+// workflowStatuses reports whether the workflow labels of analyses, after
+// prefix, keep their statuses in width: all do when each fits with its own,
+// else none does, so a label without one can't read as a run that had none.
+func workflowStatuses(prefix string, width int, analyses ...*models.SessionAnalysis) bool {
+	for _, a := range analyses {
+		if a == nil {
+			continue
+		}
+		for _, agent := range a.Agents {
+			if agent.WorkflowID != "" && runewidth.StringWidth(prefix+render.WorkflowLabel(a.WorkflowByID(agent.WorkflowID))) > width {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// fitWorkflowLabel fits a workflow run's label, after prefix, into width.
+// In a narrowed report the label loses its status unless status is set
+// (see workflowStatuses) before the name is cut, and a cut never leaves a
+// space before its ellipsis. At the piped width the label is cut where it
+// ends, so redirected output stays as it's always been.
+func fitWorkflowLabel(prefix string, meta models.WorkflowMeta, width int, narrowed, status bool) string {
+	if !narrowed {
+		return truncateRight(prefix+render.WorkflowLabel(meta), width)
+	}
+	if !status {
+		meta.Status = ""
+	}
+	label := prefix + render.WorkflowLabel(meta)
+	if runewidth.StringWidth(label) <= width {
+		return label
+	}
+	cut := strings.TrimSuffix(truncateRight(label, width), styles.Ellipsis)
+	return strings.TrimRight(cut, " ") + styles.Ellipsis
 }

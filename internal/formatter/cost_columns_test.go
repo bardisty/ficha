@@ -103,7 +103,7 @@ func TestSummaryTableLargeCostsStayAligned(t *testing.T) {
 		sessionRow("cccc3333", "claude-opus-4-8", 12, 12345.67),
 	}
 	for _, expand := range []bool{false, true} {
-		out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", true, expand)
+		out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", true, expand, 0)
 		assertRowsAligned(t, out, "MODIFIED", []string{"aaaa1111", "bbbb2222", "cccc3333"})
 		if !strings.Contains(out, "$13580.48") {
 			t.Errorf("expand=%v: sum missing:\n%s", expand, out)
@@ -115,7 +115,7 @@ func TestSummaryTableLargeCostsStayAligned(t *testing.T) {
 func TestShowTableBillionTokens(t *testing.T) {
 	analysis := goldenShowAnalysis()
 	analysis.TotalUsage.CacheReadInputTokens = 1_638_000_000
-	out := FormatSessionTable(analysis, true)
+	out := FormatSessionTable(analysis, true, 0)
 	if !strings.Contains(out, "1.64B tokens") || strings.Contains(out, "1638.00M") {
 		t.Errorf("want a B suffix for 1.638B tokens:\n%s", out)
 	}
@@ -255,7 +255,7 @@ func TestListLongSessionStaysAligned(t *testing.T) {
 // reach the terminal or throw off the header box.
 func TestHeaderStripsControlCharacters(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	out := renderPanel("/tmp/x\x1b[31mred", []string{"3 sessions"}, 76, true)
+	out := renderPanel("/tmp/x\x1b[31mred", []string{"3 sessions"}, []int{panelLead}, 76, true)
 	if strings.Contains(out, "\x1b") {
 		t.Errorf("escape reached the header: %q", out)
 	}

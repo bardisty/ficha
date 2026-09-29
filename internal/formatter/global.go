@@ -58,31 +58,7 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 	sb.WriteString(renderHeroCost(analysis.TotalCost.TotalCost, sectionWidth, noColor))
 	sb.WriteString("\n\n")
 
-	// Token breakdown rows
-	sb.WriteString(renderUnifiedCostRow("Input", analysis.TotalCost.InputCost, analysis.TotalUsage.InputTokens, lipgloss.Color(""), "", noColor))
-	sb.WriteString(renderUnifiedCostRow("Output", analysis.TotalCost.OutputCost, analysis.TotalUsage.OutputTokens, styles.OutputTokenColor, "", noColor))
-
-	// Cache write rows
-	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(analysis.TotalUsage)
-	has5mCost := analysis.TotalCost.CacheWrite5mCost > 0
-	has1hCost := analysis.TotalCost.CacheWrite1hCost > 0
-
-	if has5mCost {
-		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite5mCost, cache5mTokens, styles.CacheWriteTokenColor, "5m TTL", noColor))
-	}
-	if has1hCost {
-		sb.WriteString(renderUnifiedCostRow("Cache write", analysis.TotalCost.CacheWrite1hCost, cache1hTokens, styles.CacheWriteTokenColor, "1h TTL", noColor))
-	}
-
-	// Cache read
-	if analysis.TotalCost.CacheReadCost > 0 || analysis.TotalUsage.CacheReadInputTokens > 0 {
-		sb.WriteString(renderUnifiedCostRow("Cache read", analysis.TotalCost.CacheReadCost, analysis.TotalUsage.CacheReadInputTokens, styles.CacheReadTokenColor, "", noColor))
-	}
-
-	// Savings row
-	if analysis.TotalCost.CacheSavings > 0 {
-		sb.WriteString(renderSavingsRow(analysis.TotalCost.CacheSavings, noColor))
-	}
+	sb.WriteString(renderCostRows(analysis.TotalCost, analysis.TotalUsage, sectionWidth, noColor))
 
 	// Cost by model section, left out for the same reason as in show
 	if len(analysis.CostByModel) > 0 {
@@ -227,7 +203,7 @@ func renderGlobalHeaderPanel(analysis *models.GlobalAnalysis, width int, noColor
 		fmt.Sprintf("%d %s", analysis.ProjectCount, projectsWord(analysis.ProjectCount)),
 		fmt.Sprintf("%d %s", analysis.SessionCount, sessionsWord(analysis.SessionCount)),
 		spanOrWindow(analysis.Window, analysis.FirstActive, analysis.LastActive),
-	}, width, noColor)
+	}, []int{2, 1}, width, noColor)
 }
 
 // formatGlobalCostByModel renders cost by model for global stats
