@@ -13,6 +13,8 @@ GOCMD=go
 # -race needs it.
 GOBUILD=CGO_ENABLED=0 $(GOCMD) build -trimpath
 GOTEST=$(GOCMD) test
+# Extra go test flags, e.g. TESTFLAGS=-v or TESTFLAGS='-run TestGolden'
+TESTFLAGS=
 GOMOD=$(GOCMD) mod
 
 # golangci-lint v1.64.8 can't read the standard library's export data from Go
@@ -61,7 +63,7 @@ build-all: build-linux build-linux-arm64 build-windows build-darwin build-darwin
 
 # Run tests
 test:
-	$(GOTEST) -v ./...
+	$(GOTEST) $(TESTFLAGS) ./...
 
 # Regenerate golden files after an intentional rendering change, then review the diff
 update-golden:
@@ -69,7 +71,7 @@ update-golden:
 
 # Run tests with coverage
 test-coverage:
-	$(GOTEST) -v -coverprofile=coverage.out ./...
+	$(GOTEST) $(TESTFLAGS) -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 
 # Install to GOPATH/bin
