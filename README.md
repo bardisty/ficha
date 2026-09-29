@@ -203,7 +203,7 @@ Claude Code's transcript format is undocumented and can change between releases.
 
 ## Contributing
 
-Bug reports and PRs are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, the `make check` gate, versioning, and how to add a model's pricing.
+Bug reports and PRs are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, the `make check` and `make ci` gates, versioning, and how to add a model's pricing.
 
 ## License
 

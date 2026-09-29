@@ -1,4 +1,4 @@
-.PHONY: all build build-linux build-linux-arm64 build-windows build-darwin build-darwin-arm64 build-all test update-golden test-coverage install clean deps tidy run lint fmt vet check screenshots help
+.PHONY: all build build-linux build-linux-arm64 build-windows build-darwin build-darwin-arm64 build-all test update-golden test-coverage install clean deps tidy run lint fmt fmt-check vet check test-race ci screenshots help
 
 # Binary name
 BINARY=ficha
@@ -111,6 +111,35 @@ vet:
 # Run all checks
 check: fmt lint test
 
+# Fail on unformatted files and name them, without rewriting anything. Hidden
+# directories are skipped: gofmt would otherwise descend into other worktrees
+# nested under the checkout and fail on their work in progress.
+fmt-check:
+	@files=$$(find . -path './.*' -prune -o -name '*.go' -print | xargs gofmt -l) || exit 1; \
+	if [ -n "$$files" ]; then echo "gofmt would reformat:"; echo "$$files"; exit 1; fi
+
+# Run the tests with the race detector. -race needs cgo and a C compiler, so
+# without them this runs plain tests and says why, rather than failing a
+# local run over a missing toolchain. In CI, where GitHub sets CI, it fails
+# instead: a job that quietly lost cgo would stop checking for races.
+test-race:
+	@reason=""; \
+	cc=$$($(GOCMD) env CC); \
+	if ! command -v "$${cc%% *}" >/dev/null 2>&1; then reason="the C compiler $$cc is not on PATH"; \
+	elif [ "$$($(GOCMD) env CGO_ENABLED)" != 1 ]; then reason="CGO_ENABLED is 0"; fi; \
+	if [ -z "$$reason" ]; then \
+		echo "$(GOTEST) -race $(TESTFLAGS) ./..."; $(GOTEST) -race $(TESTFLAGS) ./...; \
+	elif [ -n "$$CI" ]; then \
+		echo "test-race: -race needs cgo, and $$reason" >&2; exit 1; \
+	else \
+		echo "test-race: skipping -race because $$reason; running plain tests"; \
+		CGO_ENABLED=0 $(GOTEST) $(TESTFLAGS) ./...; \
+	fi
+
+# What CI's check job runs, except govulncheck. Slower than check, and it
+# never rewrites files.
+ci: fmt-check lint test-race build-all
+
 # Regenerate the README screenshots from a synthetic fixture. Needs vhs
 # (charmbracelet/vhs) with its ttyd and ffmpeg dependencies, python3, and the
 # DejaVu Sans Mono font the tapes are sized for.
@@ -145,5 +174,8 @@ help:
 	@echo "  lint            - Run golangci-lint"
 	@echo "  fmt             - Format all Go files"
 	@echo "  vet             - Run go vet"
+	@echo "  fmt-check       - Fail on unformatted files without rewriting them"
+	@echo "  test-race       - Run tests with the race detector (plain tests without cgo)"
 	@echo "  check           - Run fmt, lint, and test"
+	@echo "  ci              - Run what CI runs: fmt-check, lint, test-race, build-all"
 	@echo "  screenshots     - Regenerate the README screenshots (needs vhs)"

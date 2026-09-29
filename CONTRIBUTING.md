@@ -12,11 +12,23 @@ Don't lint with a golangci-lint you installed yourself. With Go 1.27 or later, v
 
 ## The gate
 
+While you work, run:
+
 ```sh
 make check
 ```
 
-That runs `gofmt -w`, then the linter, then the tests. CI runs the same checks and then fails if gofmt changed anything, so run it before you push. CI also runs the tests on Linux, macOS and Windows, with `-race` on Linux.
+That runs `gofmt -w`, then the linter, then the tests. It's the quick loop.
+
+Before you push, run what CI runs:
+
+```sh
+make ci
+```
+
+That lists any file gofmt would change instead of rewriting it, then lints, runs the tests with `-race`, and cross-compiles all five release binaries. `-race` needs cgo and a C compiler. Without them, `make ci` runs the plain tests and prints a line saying why it skipped `-race`. In CI that's an error.
+
+CI's `check` job runs `make ci` and then govulncheck. govulncheck isn't in `make ci`, because it needs a newer Go than go.mod and a fresh advisory isn't your PR's fault. CI also runs the plain tests on macOS and Windows.
 
 `make test` prints one line per package. Pass `go test` flags through `TESTFLAGS` when you want more, as in `make test TESTFLAGS=-v` or `make test TESTFLAGS='-run TestGolden'`.
 
