@@ -194,13 +194,43 @@ ficha list -p /path/to/dir    # list sessions for different project
 
 Claude project directory names start with `-`, so complete them with `--project-dir=<Tab>`. Without the `=`, the shell reads what you've typed as a flag.
 
-```sh
-source <(ficha completion bash)                                   # bash, current shell
-ficha completion zsh > "${fpath[1]}/_ficha"                       # zsh, then restart the shell
-ficha completion fish > ~/.config/fish/completions/ficha.fish     # fish
+Each setup below writes only to your home directory. Run it once, then open a new shell.
+
+bash:
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+ficha completion bash > ~/.local/share/bash-completion/completions/ficha
 ```
 
-`ficha completion <shell> --help` has the persistent setup for each shell.
+The bash-completion package, version 2, loads that file the first time you press Tab after `ficha`. Without the package, Tab completes file names instead, and the older `source <(ficha completion bash)` fails with `_get_comp_words_by_ref: command not found`. Most desktop Linux installs have it loaded already. If `type _init_completion` in a new shell says not found, install it (`sudo apt-get install bash-completion` on Debian and Ubuntu), and if a new shell still says not found, add `. /usr/share/bash-completion/bash_completion` to `~/.bashrc`. On macOS, the system bash is 3.2, too old for bash-completion 2, so use zsh, the macOS default. Homebrew's `bash` and `bash-completion@2` work too, but only once that bash is the shell your terminal starts.
+
+zsh:
+
+```zsh
+mkdir -p ~/.zfunc
+ficha completion zsh > ~/.zfunc/_ficha
+```
+
+Then add `fpath=(~/.zfunc $fpath)` to `~/.zshrc`, above the line that runs `compinit` (with oh-my-zsh, above the line that sources `oh-my-zsh.sh`). If nothing in `~/.zshrc` runs `compinit`, add `autoload -Uz compinit && compinit` below the `fpath` line. If the new shell still doesn't complete `ficha`, `compinit` is working from a stale cache. Run `rm -f ~/.zcompdump*` and open another shell.
+
+fish:
+
+```fish
+mkdir -p ~/.config/fish/completions
+ficha completion fish > ~/.config/fish/completions/ficha.fish
+```
+
+PowerShell. Windows PowerShell 5.1 and PowerShell 7 keep separate profiles, so run this in each one you use:
+
+```powershell
+New-Item -ItemType Directory -Force (Split-Path $PROFILE) | Out-Null
+Add-Content $PROFILE '', 'ficha completion powershell | Out-String | Invoke-Expression'
+```
+
+The empty string starts a new line, in case your profile doesn't end with one. If the new PowerShell then says running scripts is disabled, the execution policy is blocking your profile. `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` lets it load.
+
+For bash and zsh, `ficha completion <shell> --help` describes a system-wide setup instead, which needs root on Linux.
 
 ## Machine output (json / csv)
 
