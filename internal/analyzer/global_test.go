@@ -1,8 +1,12 @@
 package analyzer
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -512,5 +516,46 @@ func TestAnalyzeAllProjects_ActivityFallsBackToMtimes(t *testing.T) {
 	if !p.FirstActive.Equal(mtime) || !p.LastActive.Equal(mtime) {
 		t.Errorf("FirstActive=%v LastActive=%v, want both %v (mtime fallback)",
 			p.FirstActive, p.LastActive, mtime)
+	}
+}
+
+// Float addition isn't associative, so summing projects in the order workers
+// finish would change the last digits of the totals between runs. The same
+// input must give byte-identical json every time.
+func TestAnalyzeAllProjects_RepeatRunsIdentical(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(8))
+	tmpDir := t.TempDir()
+	var projects []models.ProjectInfo
+	for i := range 16 {
+		name := fmt.Sprintf("project-%02d", i)
+		dir := filepath.Join(tmpDir, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Token counts chosen so the per-project costs aren't round numbers.
+		writeJSONLFile(t, filepath.Join(dir, "sess.jsonl"), []string{
+			fmt.Sprintf(`{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"id":"m%d","model":"claude-sonnet-4-5","usage":{"input_tokens":%d,"output_tokens":%d}}}`,
+				i, 1237*(i+1)+i*i*31, 7919*(i+3)%10007),
+		})
+		projects = append(projects, models.ProjectInfo{EncodedPath: name, FullPath: dir, DisplayName: name})
+	}
+
+	var first []byte
+	for run := range 30 {
+		result, err := AnalyzeAllProjects(projects)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if run == 0 {
+			first = got
+			continue
+		}
+		if !bytes.Equal(got, first) {
+			t.Fatalf("run %d differs from run 0:\n%s\n%s", run, got, first)
+		}
 	}
 }

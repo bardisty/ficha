@@ -42,6 +42,9 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 	if opts.Now.IsZero() {
 		opts.Now = now()
 	}
+	if analysis.Window != nil && len(analysis.Projects) == 0 {
+		return emptyWindow(*analysis.Window)
+	}
 	layout := newProjectsLayout(analysis.Projects, opts)
 	sectionWidth := layout.width
 
@@ -215,7 +218,7 @@ func renderGlobalHeaderPanel(analysis *models.GlobalAnalysis, width int, noColor
 	return renderPanel("", []string{
 		fmt.Sprintf("%d %s", analysis.ProjectCount, projectsWord(analysis.ProjectCount)),
 		fmt.Sprintf("%d %s", analysis.SessionCount, sessionsWord(analysis.SessionCount)),
-		"Span: " + span(analysis.FirstActive, analysis.LastActive),
+		spanOrWindow(analysis.Window, analysis.FirstActive, analysis.LastActive),
 	}, width, noColor)
 }
 

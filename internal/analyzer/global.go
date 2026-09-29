@@ -18,6 +18,13 @@ type projectResult struct {
 
 // AnalyzeAllProjects analyzes all projects in parallel and returns aggregated stats
 func AnalyzeAllProjects(projects []models.ProjectInfo) (*models.GlobalAnalysis, error) {
+	return AnalyzeAllProjectsInWindow(projects, models.TimeWindow{})
+}
+
+// AnalyzeAllProjectsInWindow is AnalyzeAllProjects counting only the
+// messages inside window. A project with nothing inside it is left out, like
+// one with no sessions.
+func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.TimeWindow) (*models.GlobalAnalysis, error) {
 	if len(projects) == 0 {
 		return &models.GlobalAnalysis{
 			CostByModel: make(map[string]models.CostBreakdown),
@@ -30,42 +37,41 @@ func AnalyzeAllProjects(projects []models.ProjectInfo) (*models.GlobalAnalysis, 
 		numWorkers = len(projects)
 	}
 
-	// Channels for work distribution
-	jobs := make(chan models.ProjectInfo, len(projects))
-	results := make(chan projectResult, len(projects))
-
-	// Start workers
+	// Each worker writes its result to the project's own slot. The totals
+	// are summed afterwards in input order: float addition isn't
+	// associative, so summing as workers finish would change the last
+	// digits of the json totals from run to run.
+	jobs := make(chan int, len(projects))
+	results := make([]projectResult, len(projects))
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for project := range jobs {
-				analysis, err := analyzeProject(project)
-				results <- projectResult{analysis: analysis, err: err}
+			for idx := range jobs {
+				analysis, err := analyzeProject(projects[idx], window)
+				results[idx] = projectResult{analysis: analysis, err: err}
 			}
 		}()
 	}
-
-	// Queue all projects
-	for _, project := range projects {
-		jobs <- project
+	for idx := range projects {
+		jobs <- idx
 	}
 	close(jobs)
+	wg.Wait()
 
-	// Wait for workers to finish and close results
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// Collect results and aggregate
+	// Projects starts empty, not nil, so json has [] to iterate even when a
+	// window leaves nothing in it.
 	global := &models.GlobalAnalysis{
+		Projects:    []models.ProjectAnalysis{},
 		CostByModel: make(map[string]models.CostBreakdown),
+	}
+	if !window.IsZero() {
+		global.Window = &window
 	}
 
 	firstActiveSet := false
-	for result := range results {
+	for _, result := range results {
 		if result.err != nil {
 			global.SkippedProjects++
 			continue
@@ -117,8 +123,8 @@ func AnalyzeAllProjects(projects []models.ProjectInfo) (*models.GlobalAnalysis, 
 		global.Duration = models.Duration(global.LastActive.Sub(global.FirstActive))
 	}
 
-	// Sort projects by cost descending
-	sort.Slice(global.Projects, func(i, j int) bool {
+	// Sort projects by cost descending; equal costs keep input order.
+	sort.SliceStable(global.Projects, func(i, j int) bool {
 		return global.Projects[i].TotalCost.TotalCost > global.Projects[j].TotalCost.TotalCost
 	})
 
@@ -126,7 +132,7 @@ func AnalyzeAllProjects(projects []models.ProjectInfo) (*models.GlobalAnalysis, 
 }
 
 // analyzeProject analyzes a single project directory
-func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error) {
+func analyzeProject(project models.ProjectInfo, window models.TimeWindow) (*models.ProjectAnalysis, error) {
 	// Discover sessions on disk. AnalyzeMultipleSessions recomputes message
 	// counts from its own parse below, so skip the discovery-time count scan.
 	diskSessions, err := parser.DiscoverSessionsFromDisk(project.FullPath, false)
@@ -153,7 +159,7 @@ func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error)
 	// fork-copied transcripts happens inside AnalyzeMultipleSessions, scoped
 	// per project: forks never land in another project's directory, and a
 	// project-local seen set keeps the parallel project workers lock-free.
-	aggregate, results, err := AnalyzeMultipleSessions(sessions)
+	aggregate, results, err := AnalyzeMultipleSessionsInWindow(sessions, window)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +172,7 @@ func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error)
 		TotalCost:             aggregate.TotalCost,
 		TotalUsage:            aggregate.TotalUsage,
 		CostByModel:           aggregate.CostByModel,
-		SessionCount:          len(sessions) - aggregate.SkippedSessions,
+		SessionCount:          aggregate.SessionCount,
 		MessageCount:          aggregate.MessageCount,
 		SkippedSessions:       aggregate.SkippedSessions,
 		SkippedAgents:         aggregate.SkippedAgents,
@@ -185,6 +191,11 @@ func analyzeProject(project models.ProjectInfo) (*models.ProjectAnalysis, error)
 	}
 
 	// No session carried a usable message timestamp — fall back to file mtimes.
+	// A window's messages all have timestamps, so with one there's nothing to
+	// fall back from, and mtimes outside it would misstate the span.
+	if !window.IsZero() {
+		return analysis, nil
+	}
 	for _, session := range sessions {
 		if session.Modified.After(analysis.LastActive) {
 			analysis.LastActive = session.Modified

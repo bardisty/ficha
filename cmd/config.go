@@ -28,6 +28,10 @@ type config struct {
 	showDetails  bool
 	expandAgents bool
 
+	// Window flags (summary, global): --since and --until as typed.
+	since string
+	until string
+
 	// global flags.
 	globalDetails bool
 	globalTopN    int

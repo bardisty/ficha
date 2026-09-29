@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -109,6 +110,14 @@ func executeCLISplit(t *testing.T, args ...string) (stdout, stderr string, err e
 // projFlag is the --project-dir token for the fixture's first project. The `=`
 // form is required: a bare leading-dash value is parsed as flags.
 var projFlag = "--project-dir=" + e2eProjDir
+
+// listJSONEntry decodes the `list -f json` fields the tests read.
+type listJSONEntry struct {
+	SessionID    string `json:"session_id"`
+	MessageCount int    `json:"message_count"`
+	AgentCount   int    `json:"agent_count"`
+	SkippedLines int    `json:"skipped_lines"`
+}
 
 // TestE2ECommands drives each command end-to-end and asserts on output shape and
 // exit behavior. Success cases run check(stdout); error cases match wantErr.
@@ -348,7 +357,7 @@ func TestE2ECommands(t *testing.T) {
 			name: "list json",
 			args: []string{"list", projFlag, "-f", "json"},
 			check: func(t *testing.T, out string) {
-				var entries []models.SessionEntry
+				var entries []listJSONEntry
 				mustJSON(t, out, &entries)
 				if len(entries) != 2 {
 					t.Fatalf("got %d sessions, want 2", len(entries))
@@ -985,7 +994,7 @@ func TestE2EListShowCountParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v\nstderr: %s", err, listErr)
 	}
-	var entries []models.SessionEntry
+	var entries []listJSONEntry
 	mustJSON(t, listOut, &entries)
 	if len(entries) != 1 {
 		t.Fatalf("list entries: got %d, want 1", len(entries))
@@ -1315,7 +1324,7 @@ func TestE2ECompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var entries []models.SessionEntry
+	var entries []listJSONEntry
 	mustJSON(t, listOut, &entries)
 	for _, e := range entries {
 		if want := map[string]int{e2eAlphaID: 2, e2eBetaID: 4}[e.SessionID]; e.MessageCount != want {
@@ -1372,7 +1381,7 @@ func TestE2ECaseInsensitiveValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("-f JSON: %v", err)
 	}
-	var entries []models.SessionEntry
+	var entries []listJSONEntry
 	mustJSON(t, out, &entries)
 
 	out, _, err = executeCLISplit(t, "global", "--sort-by", "Name", "-f", "CSV")
@@ -1586,5 +1595,64 @@ func TestE2EVerboseNamesUnreadableSession(t *testing.T) {
 		"  33333333: unreadable, 1 agent\n"
 	if stderr = withoutDebug(stderr); stderr != want {
 		t.Errorf("stderr:\n got: %q\nwant: %q", stderr, want)
+	}
+}
+
+// TestE2EJSONKeysAreSnakeCase: every json output names its fields the same
+// way, so a jq path that works on one command works on the others. Map keys
+// under *cost_by_model are model IDs, not field names.
+func TestE2EJSONKeysAreSnakeCase(t *testing.T) {
+	setupE2EFixture(t)
+	snake := regexp.MustCompile(`^[a-z0-9]+(_[a-z0-9]+)*$`)
+	var walk func(path string, v any)
+	walk = func(path string, v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			for k, child := range v {
+				if !strings.HasSuffix(path, "cost_by_model") && !snake.MatchString(k) {
+					t.Errorf("%s: key %q isn't snake_case", path, k)
+				}
+				walk(path+"."+k, child)
+			}
+		case []any:
+			for _, child := range v {
+				walk(path+"[]", child)
+			}
+		}
+	}
+	for _, args := range [][]string{
+		{"show", projFlag, e2eBetaID},
+		{"show", projFlag, e2eBetaID, "--messages"},
+		{"summary", projFlag, "-d", "--expand-agents"},
+		{"list", projFlag},
+		{"global"},
+	} {
+		out, _, err := executeCLISplit(t, append(args, "-f", "json")...)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		var v any
+		mustJSON(t, out, &v)
+		walk(strings.Join(args[:1], " "), v)
+	}
+
+	// Durations come as seconds too, beside the Go duration string.
+	out, _, err := executeCLISplit(t, "show", projFlag, e2eBetaID, "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var show struct {
+		Duration        string  `json:"duration"`
+		DurationSeconds float64 `json:"duration_seconds"`
+		Agents          []struct {
+			DurationSeconds *float64 `json:"duration_seconds"`
+		} `json:"agents"`
+	}
+	mustJSON(t, out, &show)
+	if show.Duration != "10m0s" || show.DurationSeconds != 600 {
+		t.Errorf("duration %q / duration_seconds %v, want 10m0s / 600", show.Duration, show.DurationSeconds)
+	}
+	if len(show.Agents) == 0 || show.Agents[0].DurationSeconds == nil {
+		t.Errorf("agents should carry duration_seconds: %s", out)
 	}
 }

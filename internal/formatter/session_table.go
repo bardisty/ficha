@@ -23,6 +23,9 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 
 	// A session nobody has replied to yet has nothing to price, and a report
 	// of empty sections reads like a broken tool or the wrong session.
+	if isSummary && analysis.Window != nil && analysis.MessageCount == 0 {
+		return emptyWindow(*analysis.Window)
+	}
 	if !isSummary && analysis.MessageCount == 0 {
 		return fmt.Sprintf("No assistant messages in session %s yet.", render.TruncateID(analysis.SessionID, 8))
 	}

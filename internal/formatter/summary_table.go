@@ -18,6 +18,9 @@ import (
 // the Claude project directory, printed under the footer when it's set
 // (with -v). Color and glyph choices are driven by noColor.
 func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []models.SessionResult, storageDir string, noColor bool, expandAgents bool) string {
+	if analysis.Window != nil && analysis.MessageCount == 0 {
+		return emptyWindow(*analysis.Window)
+	}
 	var sb strings.Builder
 	const sectionWidth = 76
 
