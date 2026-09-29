@@ -88,13 +88,15 @@ func FormatSummaryDetailJSON(summary *models.SessionAnalysis, results []models.S
 // expandAgents is set. project_path (the project dir, shared with the summary
 // aggregate for joining) and session_file (the transcript path) ride the session
 // rows only — join agent rows back through session_id. Session rows carry the
-// session total (message_count,
-// costs and skipped_lines include agents); agent rows break out each agent — do
-// not sum across row types. cumulative_cost is the running session total in
-// modified order and is empty on agent rows. agent_id holds the agent's real ID
-// — the same key `show --messages` and the json agents[] array use, so the
-// exports join. skipped_agents says how many agents a session row's agent_count
-// does not include, and is empty on agent rows.
+// session total (message_count, costs and skipped_lines include agents); agent
+// rows break out each agent — do not sum across row types: sum session rows for
+// totals, agent rows for agent spend. On session rows parent_cost + agents_cost
+// = total_cost, so the file reconciles against itself; agent rows leave both
+// empty. cumulative_cost is the running session total in modified order and is
+// empty on agent rows. agent_id holds the agent's real ID — the same key `show
+// --messages` and the json agents[] array use, so the exports join.
+// skipped_agents says how many agents a session row's agent_count does not
+// include, and is empty on agent rows.
 func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
@@ -121,6 +123,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 		"skipped_agents",
 		"skipped_lines",
 		"estimated_cost_messages",
+		"parent_cost",
+		"agents_cost",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing summary detail CSV header: %w", err)
@@ -153,6 +157,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 			fmt.Sprintf("%d", a.SkippedAgents),
 			fmt.Sprintf("%d", a.SkippedLines),
 			fmt.Sprintf("%d", a.EstimatedCostMessages),
+			fmt.Sprintf("%.6f", a.ParentCost.TotalCost),
+			fmt.Sprintf("%.6f", a.AgentsCost.TotalCost),
 		}
 		if err := w.Write(sessionRow); err != nil {
 			return "", fmt.Errorf("writing summary detail session row: %w", err)
@@ -184,6 +190,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 				"", // skipped_agents is a session-row concept
 				fmt.Sprintf("%d", agent.SkippedLines),
 				fmt.Sprintf("%d", agent.EstimatedCostMessages),
+				"", // parent_cost and agents_cost split a session row's total
+				"",
 			}
 			if err := w.Write(agentRow); err != nil {
 				return "", fmt.Errorf("writing summary detail agent row: %w", err)
