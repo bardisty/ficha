@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/bardisty/ficha/internal/tui"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -58,10 +55,5 @@ func runBreakdown(cfg *config, args []string) error {
 
 	// Run the breakdown TUI
 	model := tui.NewBreakdownModel(session.FullPath, session.SessionID, cfg.noColor, projectDir, followMode)
-	p := tea.NewProgram(model, tea.WithAltScreen())
-
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("running TUI: %w", err)
-	}
-	return nil
+	return runTUI(cfg.stdout, model)
 }

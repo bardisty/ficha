@@ -92,6 +92,15 @@ type Model struct {
 	hint            *sessionHint    // Another session's activity, not followed
 	windowTitle     string          // Last title sent, to send only changes
 
+	// ticking is set while the 100ms highlight tick is scheduled; it runs
+	// only while a highlight is fading, so an idle view doesn't redraw ten
+	// times a second.
+	ticking bool
+
+	// clockGen identifies the live clockMsg chain; a tick from an older
+	// chain ends it.
+	clockGen int
+
 	// lastActivity is the newest message timestamp (parent or agent), else
 	// the session file's mtime (activityFromFile); the header ages it.
 	lastActivity     time.Time
@@ -212,7 +221,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "r":
 			m.loading = true
-			return m, m.loadAnalysis
+			return m, tea.Batch(m.loadAnalysis, m.spinnerCmd())
 
 		case "p":
 			// Going back is a deliberate choice of session, so it pins.
@@ -271,9 +280,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case spinner.TickMsg:
+		// Let the spinner stop once nothing shows it; spinnerCmd restarts it.
+		if !m.showLoading() {
+			return m, nil
+		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+
+	case clockMsg:
+		// Nothing to update: the redraw after every message re-reads the
+		// clock for the header's age, the rate and the hint's expiry.
+		if msg.gen != m.clockGen {
+			return m, nil // superseded by a faster chain; see analysisMsg
+		}
+		return m, clockCmd(m.clockInterval(), m.clockGen)
 
 	case analysisMsg:
 		if msg.sessionPath != "" && msg.sessionPath != m.sessionPath {
@@ -286,14 +307,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Detect changes and mark them for highlighting
 		// Compare current analysis (before update) with new analysis
+		var tick tea.Cmd
 		if m.analysis != nil && msg.analysis != nil {
 			m.detectChanges(m.analysis, msg.analysis)
+			if len(m.changedAt) > 0 && !m.ticking {
+				m.ticking = true
+				tick = tickCmd()
+			}
 		}
 		m.analysis = msg.analysis
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.err = nil
+		slowClock := m.clockInterval() > time.Second
 		m.lastActivity = lastActivity(msg.analysis, msg.modTime)
+		// A message after an idle stretch: the pending clock tick is up to
+		// 15s out, so start a 1s chain now for the seconds count and let the
+		// slow one lapse.
+		var clock tea.Cmd
+		if slowClock && m.clockInterval() == time.Second {
+			m.clockGen++
+			clock = clockCmd(time.Second, m.clockGen)
+		}
 		m.activityFromFile = !m.lastActivity.IsZero() && m.lastActivity.Equal(msg.modTime)
 
 		// Update cost chart with new message costs
@@ -308,7 +343,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// still blocked on the watcher
 		// Call before return: the arm must mutate the m the caller receives
 		armCmd := m.armFileWaiter()
-		return m, tea.Batch(armCmd, m.titleCmd())
+		return m, tea.Batch(armCmd, m.titleCmd(), tick, clock)
 
 	case errorMsg:
 		if msg.sessionPath != "" && msg.sessionPath != m.sessionPath {
@@ -340,7 +375,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, armCmd
 		}
 		m.loading = true
-		return m, tea.Batch(m.loadAnalysis, armCmd)
+		return m, tea.Batch(m.loadAnalysis, armCmd, m.spinnerCmd())
 
 	case watcherStartedMsg:
 		// A replacement watcher (rapid session switches can have two watchFile
@@ -374,7 +409,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// analysisMsg/errorMsg arms its replacement
 		m.fileWaiterActive = false
 		m.loading = true
-		return m, m.loadAnalysis
+		return m, tea.Batch(m.loadAnalysis, m.spinnerCmd())
 
 	case sessionSwitchedMsg:
 		return m.switchTo(msg.newSessionPath, msg.newSessionID, true)
@@ -395,11 +430,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// Clean up stale change tracking entries to prevent unbounded map growth
 		m.cleanupStaleChanges()
-		// Re-render to update highlight fading (only if there are active highlights)
-		if m.ready && m.analysis != nil && len(m.changedAt) > 0 {
+		// Re-render so highlights fade, and once more after the last one
+		// expires so it doesn't stay lit
+		if m.ready && m.analysis != nil {
 			m.refreshContent()
 		}
-		// Continue the animation tick for highlight fade
+		if !m.anyHighlight() {
+			m.ticking = false
+			return m, nil
+		}
 		return m, tickCmd()
 
 	case subagentPollMsg:
@@ -407,7 +446,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sig != m.subagentSig {
 			m.subagentSig = sig
 			m.loading = true
-			return m, tea.Batch(m.loadAnalysis, subagentPollCmd())
+			return m, tea.Batch(m.loadAnalysis, subagentPollCmd(), m.spinnerCmd())
 		}
 		return m, subagentPollCmd()
 	}
@@ -478,6 +517,7 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.waitForNewSession())
 		}
 	}
+	cmds = append(cmds, m.spinnerCmd())
 	return m, tea.Batch(cmds...)
 }
 
@@ -485,6 +525,31 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 // the other session has been quiet for idleAfter, and n stops acting on it.
 func (m Model) hintVisible() bool {
 	return m.hint != nil && m.clock().Sub(m.hint.at) < idleAfter
+}
+
+// spinnerCmd restarts the spinner when a reload will show "Loading...". A
+// second chain is harmless: the spinner drops ticks with a stale tag.
+func (m Model) spinnerCmd() tea.Cmd {
+	if m.showLoading() {
+		return m.spinner.Tick
+	}
+	return nil
+}
+
+// showLoading reports whether the header shows "Loading...": only while
+// there is no data yet, on the first load and after a switch. A background
+// reload keeps the last status up instead of flickering on every write.
+func (m Model) showLoading() bool {
+	return m.loading && m.analysis == nil
+}
+
+// clockInterval paces clockMsg: every second while the header counts
+// seconds, and every 15s once the age reads in minutes or more.
+func (m Model) clockInterval() time.Duration {
+	if !m.lastActivity.IsZero() && m.clock().Sub(m.lastActivity) < time.Minute {
+		return time.Second
+	}
+	return 15 * time.Second
 }
 
 // lastActivity is the newest message timestamp in the analysis (agents
@@ -531,7 +596,7 @@ func (m *Model) layoutViewport() {
 	if !m.ready {
 		return
 	}
-	m.viewport.Height = viewportHeight(m.height, watchHeaderHeight, m.footerHeight())
+	m.viewport.Height = viewportHeight(m.height, m.headerHeight(), m.footerHeight())
 }
 
 // refreshContent re-renders the body into the viewport and keeps the scroll
@@ -543,6 +608,9 @@ func (m *Model) refreshContent() {
 	// rule's overflow marker, and a leading one would open the view on an
 	// empty row.
 	body := trimBlankEdges(clipToWidth(m.renderAnalysis(), m.width))
+	if m.compact() {
+		body = dropBlankLines(body)
+	}
 	m.viewport.SetContent(body)
 	m.viewport.SetYOffset(m.viewport.YOffset)
 }
@@ -559,6 +627,19 @@ func trimBlankEdges(s string) string {
 		end--
 	}
 	return strings.Join(lines[start:end], "\n")
+}
+
+// dropBlankLines removes whitespace-only lines, for compact layouts where
+// every row goes to data.
+func dropBlankLines(s string) string {
+	lines := strings.Split(s, "\n")
+	kept := lines[:0]
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			kept = append(kept, l)
+		}
+	}
+	return strings.Join(kept, "\n")
 }
 
 // detectChanges compares old and new analysis and marks changed fields
@@ -720,6 +801,18 @@ func (m Model) cleanupStaleChanges() {
 			delete(m.deltaTokens, field)
 		}
 	}
+}
+
+// anyHighlight reports whether any field is still inside its highlight
+// window. The 100ms tick stops once none is, and changedAt entries past it
+// are pruned on the next change.
+func (m Model) anyHighlight() bool {
+	for field := range m.changedAt {
+		if m.recentlyChanged(field) {
+			return true
+		}
+	}
+	return false
 }
 
 // recentlyChanged checks if a field was recently changed (within highlight duration)
