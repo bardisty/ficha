@@ -50,10 +50,12 @@ func waitingBreakdown(cfg *config) func(dir, projectPath string) tea.Model {
 // or a better answer: an explicit --project-dir, a missing or empty projects
 // directory (usually a wrong CLAUDE_CONFIG_DIR), a path that isn't a
 // directory, a path that resolves to some other project by name, a -p path
-// with similarly named projects (a likely typo), or a subdirectory of a
-// project with sessions. A repository or worktree root nested in such a
-// project still waits: Claude Code records sessions under the directory it
-// starts in, and that is where it would start.
+// with similarly named projects (a likely typo), a subdirectory of a project
+// with sessions, or a directory inside WSL seen from the Windows build, whose
+// sessions go to the WSL home and will never show up here. A repository or
+// worktree root nested in such a project still waits: Claude Code records
+// sessions under the directory it starts in, and that is where it would
+// start.
 func waitingProject(cfg *config) (dir, projectPath string, ok bool) {
 	if cfg.projectDir != "" {
 		return "", "", false
@@ -71,6 +73,9 @@ func waitingProject(cfg *config) (dir, projectPath string, ok bool) {
 	}
 	canonical, err := paths.CanonicalizePath(projPath)
 	if err != nil {
+		return "", "", false
+	}
+	if windowsBuildInWSL(canonical) {
 		return "", "", false
 	}
 	if !isRepoRoot(canonical) && ancestorWithProject(canonical, projectsDir) != "" {
