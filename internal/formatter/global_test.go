@@ -294,20 +294,25 @@ func TestGlobalTableSizesProjectToTerminal(t *testing.T) {
 	}
 }
 
-// A terminal too narrow for every column gives up % TOTAL, then LAST ACTIVE
-// unless the rows are sorted by it, rather than wrapping each row.
+// A terminal too narrow for every column gives up % TOTAL, then LAST ACTIVE,
+// then SESSIONS, each unless the rows are sorted by it, rather than wrapping
+// each row.
 func TestGlobalTableNarrowTerminalDropsColumns(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	for _, tc := range []struct {
-		width       int
-		sortBy      string
-		pct, active bool
+		width                 int
+		sortBy                string
+		pct, active, sessions bool
 	}{
-		{80, "cost", true, true},
-		{60, "cost", false, true},
-		{60, "activity", false, true},
-		{50, "cost", false, false},
-		{50, "activity", false, true},
+		{80, "cost", true, true, true},
+		{60, "cost", false, true, true},
+		{60, "activity", false, true, true},
+		{50, "cost", false, false, true},
+		{50, "activity", false, true, false},
+		{50, "sessions", false, false, true},
+		{43, "cost", false, false, false},
+		{44, "sessions", false, false, true},
+		{36, "name", false, false, false},
 	} {
 		opts := goldenGlobalOptions(false)
 		opts.Width = tc.width
@@ -319,8 +324,45 @@ func TestGlobalTableNarrowTerminalDropsColumns(t *testing.T) {
 		if got := strings.Contains(out, "LAST ACTIVE"); got != tc.active {
 			t.Errorf("width %d by %s: LAST ACTIVE shown = %v, want %v:\n%s", tc.width, tc.sortBy, got, tc.active, out)
 		}
-		if w := maxLineWidth(out); tc.width >= 60 && w > tc.width {
-			t.Errorf("width %d by %s: widest line is %d columns", tc.width, tc.sortBy, w)
+		if got := strings.Contains(out, "SESSIONS"); got != tc.sessions {
+			t.Errorf("width %d by %s: SESSIONS shown = %v, want %v:\n%s", tc.width, tc.sortBy, got, tc.sessions, out)
+		}
+		// Below 60, the cost rows above the table are wider than the
+		// terminal, so only the header box, the table and the footer are
+		// held to it.
+		table := out
+		if tc.width < 60 {
+			lines := strings.Split(out, "\n")
+			table = strings.Join(lines[:3], "\n") + "\n" + out[strings.Index(out, "PROJECTS ("):]
+		}
+		if w := maxLineWidth(table); w > tc.width {
+			t.Errorf("width %d by %s: widest line is %d columns:\n%s", tc.width, tc.sortBy, w, table)
+		}
+	}
+}
+
+// A footer that needs two lines splits into even halves, not a full line and
+// a lone field, and never runs past the width when the fields fit.
+func TestSplitFooterFields(t *testing.T) {
+	const sep = " | "
+	global := []string{"Total: $124.42", "Messages: 1,532", "Sessions: 41", "Projects: 20"}
+	for _, tc := range []struct {
+		fields []string
+		width  int
+		want   []string
+	}{
+		{global, 80, []string{"Total: $124.42 | Messages: 1,532 | Sessions: 41 | Projects: 20"}},
+		{global, 60, []string{"Total: $124.42 | Messages: 1,532", "Sessions: 41 | Projects: 20"}},
+		{global, 20, []string{"Total: $124.42", "Messages: 1,532", "Sessions: 41", "Projects: 20"}},
+		// Three fields over two lines: the fuller line comes first.
+		{[]string{"aaaa", "bbbb", "cccc"}, 12, []string{"aaaa | bbbb", "cccc"}},
+		// A field wider than the width still gets its own line.
+		{[]string{"a-very-long-field", "b"}, 10, []string{"a-very-long-field", "b"}},
+		{[]string{"only"}, 2, []string{"only"}},
+	} {
+		got := splitFooterFields(tc.fields, sep, tc.width)
+		if strings.Join(got, "\n") != strings.Join(tc.want, "\n") {
+			t.Errorf("width %d: got %q, want %q", tc.width, got, tc.want)
 		}
 	}
 }

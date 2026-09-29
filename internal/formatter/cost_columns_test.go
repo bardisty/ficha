@@ -157,7 +157,7 @@ func TestListTitlesFitTerminal(t *testing.T) {
 		listResult("aaaaaaaa-1", long, 1.5),
 		listResult("bbbbbbbb-2", "evil\x1b[31mred\x07title", 0.25),
 	}
-	for _, width := range []int{60, 80, 120} {
+	for _, width := range []int{40, 50, 55, 57, 60, 80, 120} {
 		out := FormatSessionListTable(results, true, ListTableOptions{Width: width})
 		if w := maxLineWidth(out); w > width {
 			t.Errorf("width %d: widest line is %d:\n%s", width, w, out)
@@ -170,6 +170,58 @@ func TestListTitlesFitTerminal(t *testing.T) {
 	if strings.ContainsAny(piped, "\x1b\x07") || !strings.Contains(piped, "evil [31mred title") {
 		t.Errorf("control characters should become spaces:\n%q", piped)
 	}
+}
+
+// A narrow terminal gives up LENGTH and AGENTS, then MODEL once TITLE would
+// get less than 12 columns. Past that, TITLE shrinks, to nothing at the
+// narrowest, rather than the rows wrap.
+func TestListNarrowTerminalDropsColumns(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	results := []models.SessionResult{
+		listResult("aaaaaaaa-1", "Refactor the auth middleware", 1.5),
+		listResult("bbbbbbbb-2", "Fix flaky test", 0.25),
+	}
+	for _, tc := range []struct {
+		width                 int
+		length, agents, model bool
+		title                 string // what's left of TITLE's header
+	}{
+		{90, true, true, true, "TITLE"},
+		{66, false, false, true, "TITLE"},
+		{55, false, false, true, "TITLE"},
+		{54, false, false, false, "TITLE"},
+		{35, false, false, false, "TIT…"},
+		{31, false, false, false, ""},
+	} {
+		out := FormatSessionListTable(results, true, ListTableOptions{Width: tc.width})
+		header := findLine(t, out, "WHEN")
+		for _, col := range []struct {
+			name string
+			want bool
+		}{{"LENGTH", tc.length}, {"AGENTS", tc.agents}, {"MODEL", tc.model}} {
+			if got := strings.Contains(header, col.name); got != col.want {
+				t.Errorf("width %d: %s shown = %v, want %v:\n%s", tc.width, col.name, got, col.want, out)
+			}
+		}
+		if !strings.HasSuffix(strings.TrimRight(header, " "), "COST"+map[bool]string{true: "  " + tc.title, false: ""}[tc.title != ""]) {
+			t.Errorf("width %d: header should end in %q:\n%q", tc.width, tc.title, header)
+		}
+		if w := maxLineWidth(out); w > tc.width {
+			t.Errorf("width %d: widest line is %d:\n%s", tc.width, w, out)
+		}
+	}
+}
+
+// findLine returns the first line of out containing needle.
+func findLine(t *testing.T, out, needle string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, needle) {
+			return line
+		}
+	}
+	t.Fatalf("no line containing %q in:\n%s", needle, out)
+	return ""
 }
 
 // A session left open for days has a LENGTH wider than "12h 34m"; the

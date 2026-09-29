@@ -136,7 +136,7 @@ func span(first, last time.Time) string {
 // a project path in the global table, then trailing fields go. An empty lead
 // is left out.
 func renderPanel(lead string, fields []string, width int, noColor bool) string {
-	if width < 40 {
+	if width <= 0 {
 		width = 76
 	}
 	inner := width - 6 // 2 for borders, 2 for padding on each side
@@ -262,31 +262,58 @@ func footerSep() string {
 	return styles.BoxVerticalSep
 }
 
-// footerStats joins footer fields with footerSep, starting a new line when the
-// next field would run past width. Callers put the total first, so it's on
-// screen whenever the footer is.
+// footerStats joins footer fields with footerSep on as few lines as fit in
+// width. Callers put the total first, so it's on screen whenever the footer
+// is.
 func footerStats(fields []string, width int, noColor bool) string {
-	sep := "  " + footerSep() + "  "
-	var lines []string
-	line := ""
-	for _, f := range fields {
-		switch {
-		case line == "":
-			line = f
-		case lipgloss.Width(line+sep+f) > width:
-			lines = append(lines, line)
-			line = f
-		default:
-			line += sep + f
-		}
-	}
-	lines = append(lines, line)
+	lines := splitFooterFields(fields, "  "+footerSep()+"  ", width)
 	if !noColor {
 		for i, l := range lines {
 			lines[i] = footerStyle.Render(l)
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// splitFooterFields breaks fields, in order, into the fewest lines that fit
+// in width, and of those splits takes the one with the shortest longest line,
+// so a footer that needs two lines reads as two even halves rather than a
+// full line and a lone field. Ties go to the fuller first line. A field wider
+// than width gets a line to itself. Footers hold a handful of fields, so
+// trying every split is cheap.
+func splitFooterFields(fields []string, sep string, width int) []string {
+	if len(fields) == 0 {
+		return []string{""}
+	}
+	var best []string
+	bestWidest, bestFirst := 0, 0
+	// Bit i of breaks set means a new line starts after fields[i].
+	for breaks := 0; breaks < 1<<(len(fields)-1); breaks++ {
+		lines := []string{fields[0]}
+		fits := true
+		for i, f := range fields[1:] {
+			if breaks&(1<<i) != 0 {
+				lines = append(lines, f)
+			} else {
+				lines[len(lines)-1] += sep + f
+				fits = fits && lipgloss.Width(lines[len(lines)-1]) <= width
+			}
+		}
+		if !fits {
+			continue
+		}
+		widest := 0
+		for _, l := range lines {
+			widest = max(widest, lipgloss.Width(l))
+		}
+		first := lipgloss.Width(lines[0])
+		better := best == nil || len(lines) < len(best) ||
+			(len(lines) == len(best) && (widest < bestWidest || (widest == bestWidest && first > bestFirst)))
+		if better {
+			best, bestWidest, bestFirst = lines, widest, first
+		}
+	}
+	return best
 }
 
 // renderFooterDoubleRule renders the heavy separator that closes a table body.
