@@ -382,7 +382,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastUpdated = time.Now()
 		m.err = nil
 		slowClock := m.clockInterval() > time.Second
-		m.lastActivity = lastActivity(msg.analysis, msg.modTime)
+		m.lastActivity, m.activityFromFile = lastActivity(msg.analysis, msg.modTime)
 		// A message after an idle stretch: the pending clock tick is up to
 		// 15s out, so start a 1s chain now for the seconds count and let the
 		// slow one lapse.
@@ -391,7 +391,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.clockGen++
 			clock = clockCmd(time.Second, m.clockGen)
 		}
-		m.activityFromFile = !m.lastActivity.IsZero() && m.lastActivity.Equal(msg.modTime)
 
 		// Update cost chart with new message costs
 		m.updateCostChart()
@@ -664,20 +663,21 @@ func (m Model) clockInterval() time.Duration {
 // lastActivity is the newest message timestamp in the analysis (agents
 // included), falling back to the file's mtime for a session with no
 // timestamped message yet, so a long-dead empty session still reads idle.
-func lastActivity(a *models.SessionAnalysis, modTime time.Time) time.Time {
-	var newest time.Time
+// fromFile reports the fallback; comparing the result with modTime can't,
+// because a message stamped at the file's mtime is equal to it.
+func lastActivity(a *models.SessionAnalysis, modTime time.Time) (t time.Time, fromFile bool) {
 	if a != nil {
-		newest = a.EndTime
+		t = a.EndTime
 		for _, msg := range a.Messages {
-			if msg.Timestamp.After(newest) {
-				newest = msg.Timestamp
+			if msg.Timestamp.After(t) {
+				t = msg.Timestamp
 			}
 		}
 	}
-	if newest.IsZero() {
-		return modTime
+	if t.IsZero() {
+		return modTime, !modTime.IsZero()
 	}
-	return newest
+	return t, false
 }
 
 // titleCmd sets the terminal title to "ficha · webapp · $30.05" when it
