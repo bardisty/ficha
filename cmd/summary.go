@@ -24,7 +24,7 @@ Examples:
   ficha summary --details                 Show per-session cost breakdown
   ficha summary --details --expand-agents Include agent sub-sessions
   ficha summary --details -f json         Per-session records as JSON`,
-		Args: cobra.NoArgs,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSummary(cfg)
 		},

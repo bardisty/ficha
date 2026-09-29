@@ -21,7 +21,7 @@ Examples:
   ficha list                    List all sessions
   ficha list -f json            Output as JSON
   ficha list -f csv             Output as CSV`,
-		Args: cobra.NoArgs,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runList(cfg)
 		},

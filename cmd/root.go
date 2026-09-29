@@ -62,12 +62,16 @@ Examples:
 			}
 			return nil
 		},
-		Args: cobra.MaximumNArgs(1),
+		Args: rootArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runShow(cfg, args, cfg.live)
+			return rootRun(cfg, cmd, args)
 		},
 	}
 	rootCmd.SetVersionTemplate("ficha {{.Version}}\n")
+	rootCmd.SetFlagErrorFunc(flagError)
+	// cobra defaults this lazily, only on its own unknown-command path, and
+	// rootArgs calls SuggestionsFor directly.
+	rootCmd.SuggestionsMinimumDistance = 2
 
 	// Global flags
 	rootCmd.PersistentFlags().StringVarP(&cfg.projectPath, "project", "p", "", "Project directory (default: current directory)")

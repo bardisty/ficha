@@ -114,3 +114,18 @@ func TestFormatNoProjectError(t *testing.T) {
 		}
 	})
 }
+
+func TestShellQuote(t *testing.T) {
+	tests := map[string]string{
+		"/home/u/source/webapp": "/home/u/source/webapp",
+		"~/src/app-2.0":         "~/src/app-2.0",
+		"/home/u/my project":    "'/home/u/my project'",
+		"/tmp/it's":             `'/tmp/it'\''s'`,
+		"":                      "''",
+	}
+	for in, want := range tests {
+		if got := shellQuote(in); got != want {
+			t.Errorf("shellQuote(%q) = %s, want %s", in, got, want)
+		}
+	}
+}

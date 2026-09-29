@@ -1112,3 +1112,66 @@ func TestE2ESummarySessionCountExcludesUnparseable(t *testing.T) {
 		t.Errorf("global session_count: got %d, want 1 (must agree with summary)", g.Projects[0].SessionCount)
 	}
 }
+
+// TestE2EUsageErrors pins the messages for input mistakes caught before any
+// analysis: a mistyped command at the root (which otherwise takes a session
+// ID), stray args, and flag values pflag can't parse.
+func TestE2EUsageErrors(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my project")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{"typo suggests the command", []string{"lst"}, `unknown command "lst" for "ficha". Did you mean "list"?`},
+		{"prefix lists every match", []string{"s"}, `unknown command "s" for "ficha". Did you mean "show" or "summary"?`},
+		{"unrelated word points at help", []string{"frobnicate"}, `unknown command "frobnicate" for "ficha". Run 'ficha --help' to see the commands.`},
+		{"directory points at -p", []string{dir}, "unknown command " + strconv.Quote(dir) + ` for "ficha". To analyze that directory, run: ficha -p ` + shellQuote(dir)},
+		{"unmatched word in the project", []string{projFlag, "frobnicate"}, `unknown command "frobnicate" for "ficha". Run 'ficha --help' to see the commands.`},
+		{"hex arg is still a session lookup", []string{projFlag, "abc123"}, "session not found: abc123"},
+		{"uppercase hex is a session lookup", []string{projFlag, "ABC123"}, "session not found: ABC123"},
+		{"pasted filename is a session lookup", []string{projFlag, "abc123.jsonl"}, "session not found: abc123.jsonl"},
+		{"stray arg on a no-arg command", []string{"list", "extra"}, `ficha list takes no arguments, got "extra"`},
+		{"non-numeric int flag", []string{"global", "--top", "abc"}, `invalid --top value "abc": must be a whole number`},
+		{"overflowing int flag", []string{"global", "--top", "99999999999999999999"}, `invalid --top value "99999999999999999999": is out of range`},
+		{"non-boolean bool flag", []string{"global", "--details=maybe"}, `invalid --details value "maybe": must be true or false`},
+		{"unknown flag passes through", []string{"global", "--bogus"}, "unknown flag: --bogus"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupE2EFixture(t)
+			stdout, _, err := executeCLISplit(t, tt.args...)
+			if err == nil {
+				t.Fatalf("expected error %q, got nil\nstdout: %s", tt.wantErr, stdout)
+			}
+			if err.Error() != tt.wantErr {
+				t.Errorf("error:\n got: %s\nwant: %s", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestE2ERootShowsNonHexSessionID: older Claude Code wrote agent-<id>.jsonl
+// transcripts at the project root, and they list as sessions. Bare `ficha
+// <id>` must still show them rather than call the ID an unknown command.
+func TestE2ERootShowsNonHexSessionID(t *testing.T) {
+	root := setupE2EFixture(t)
+	legacy := filepath.Join(root, "projects", e2eProjDir, "agent-a1b2c3d4.jsonl")
+	line := e2eMsg("2026-02-01T11:00:00Z", "l1", "claude-opus-4-8", 100, 50, 0, 0, 0) + "\n"
+	if err := os.WriteFile(legacy, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, err := executeCLISplit(t, projFlag, "agent-a1b2c3d4", "-f", "json")
+	if err != nil {
+		t.Fatalf("ficha agent-a1b2c3d4: %v\nstderr: %s", err, stderr)
+	}
+	var a models.SessionAnalysis
+	mustJSON(t, stdout, &a)
+	if a.SessionID != "agent-a1b2c3d4" {
+		t.Errorf("session_id = %q, want agent-a1b2c3d4", a.SessionID)
+	}
+}
