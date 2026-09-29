@@ -91,6 +91,9 @@ type BreakdownModel struct {
 	// poll-triggered reloads can't stack extra waiters
 	fileWaiterActive bool
 
+	// fallback polls the session file while its watcher can't be created
+	fallback watchFallback
+
 	// Auto-follow mode for tracking new sessions
 	projectDir     string          // Project directory to watch for new sessions
 	followMode     bool            // Whether to auto-follow new sessions
@@ -238,7 +241,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.loading = true
-			return m, m.loadBreakdownCmd()
+			return m, tea.Batch(m.loadBreakdownCmd(), m.retryWatchNow())
 
 		case "p":
 			m.selectNextTop()
@@ -370,7 +373,35 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		armCmd := m.armFileWaiter()
 		return m, tea.Batch(m.loadBreakdownCmd(), armCmd)
 
+	case watcherFailedMsg:
+		// Another session's attempt, or one that lost a race to a watcher
+		// that did start: neither says anything about the current file.
+		if msg.sessionPath != m.sessionPath || m.watcher != nil {
+			return m, nil
+		}
+		retry := m.fallback.fail(msg.err)
+		return m, retry
+
+	case watchRetryMsg:
+		if !m.fallback.retryDue(msg) || m.watcher != nil || m.waiting() {
+			return m, nil
+		}
+		return m, m.watchFile
+
 	case watcherStartedMsg:
+		if msg.sessionPath != "" && msg.sessionPath != m.sessionPath {
+			// Started for a session the view has since left.
+			msg.watcher.Close()
+			return m, nil
+		}
+		// The new watcher sees only writes from now on; one that landed
+		// since the last poll would otherwise wait for the next write.
+		var catchUp tea.Cmd
+		if m.fallback.active() {
+			m.loading = true
+			catchUp = m.loadBreakdownCmd()
+		}
+		m.fallback.reset()
 		// A replacement watcher (rapid session switches can have two watchFile
 		// calls in flight) supersedes the current one: close it so its waiter
 		// exits, and account for that exit here since it carries no message
@@ -381,7 +412,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.watcher = msg.watcher
 		// Call before return: the arm must mutate the m the caller receives
 		armCmd := m.armFileWaiter()
-		return m, armCmd
+		return m, tea.Batch(armCmd, catchUp)
 
 	case sessionWatcherStartedMsg:
 		// Store the session watcher and start waiting for new sessions
@@ -436,8 +467,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, subagentPollCmd()
 		}
 		sig := subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
-		if sig != m.subagentSig {
-			m.subagentSig = sig
+		treeChanged := sig != m.subagentSig
+		m.subagentSig = sig
+		fileChanged := m.fallback.pollChanged(m.sessionPath)
+		if treeChanged || fileChanged {
 			m.loading = true
 			return m, tea.Batch(m.loadBreakdownCmd(), subagentPollCmd())
 		}
@@ -499,6 +532,8 @@ func (m BreakdownModel) switchTo(path, id string) (tea.Model, tea.Cmd) {
 		m.watcher = nil
 	}
 	m.fileWaiterActive = false
+	// The new file gets its own watcher attempt, and its own backoff
+	m.fallback.reset()
 
 	// Update session watcher's current session
 	if m.sessionWatcher != nil {
@@ -626,8 +661,10 @@ func (m BreakdownModel) View() string {
 	return clipToWidth(strings.Join(lines, "\n"), m.width)
 }
 
-// renderNotifyRow is a load error in words, or the switch notice for a few
-// seconds after following a new session, and blank otherwise.
+// renderNotifyRow is a load error in words, then p's selection, the switch
+// notice for a few seconds after following a new session, or a missing file
+// watcher, and blank otherwise. The watcher notice comes last because the
+// others are brief and answer something the reader just did or saw.
 func (m BreakdownModel) renderNotifyRow() string {
 	if m.err != nil {
 		text := styles.Warning + " " + describeErr(m.err)
@@ -646,13 +683,20 @@ func (m BreakdownModel) renderNotifyRow() string {
 		}
 		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Render(text)
 	}
-	if m.switchNotifyAt.IsZero() || time.Since(m.switchNotifyAt) >= switchNotifyDuration {
-		return ""
+	if !m.switchNotifyAt.IsZero() && time.Since(m.switchNotifyAt) < switchNotifyDuration {
+		if m.noColor {
+			return "  [Switched to new session]"
+		}
+		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session")
 	}
-	if m.noColor {
-		return "  [Switched to new session]"
+	if m.fallback.active() {
+		text := m.fallback.notice(m.panelWidth())
+		if m.noColor {
+			return "  " + text
+		}
+		return "  " + lipgloss.NewStyle().Foreground(styles.WarningColor).Render(text)
 	}
-	return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render("Switched to new session")
+	return ""
 }
 
 // renderStatsLine is the footer's totals, plus anything the totals can't
@@ -1075,7 +1119,15 @@ func (m BreakdownModel) wrapErr(err error) tea.Msg {
 	return breakdownErrorMsg{err: err, sessionPath: m.sessionPath}
 }
 
-func (m BreakdownModel) watchFile() tea.Msg { return watchFileCmd(m.sessionPath, m.wrapErr) }
+func (m BreakdownModel) watchFile() tea.Msg { return watchFileCmd(m.sessionPath) }
+
+// retryWatchNow is r's watcher retry; see Model.retryWatchNow.
+func (m BreakdownModel) retryWatchNow() tea.Cmd {
+	if !m.fallback.active() || m.watcher != nil {
+		return nil
+	}
+	return m.watchFile
+}
 
 // armFileWaiter starts a file-change waiter unless one is already blocked on
 // the watcher; see Model.armFileWaiter. Returns nil when a waiter is already

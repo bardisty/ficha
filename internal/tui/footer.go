@@ -352,8 +352,9 @@ func clipRows(rows []string, width int) []string {
 }
 
 // renderNotifyRow renders the row under the header, or "" when there is
-// nothing to say. An error wins over the switch notice, which wins over a
-// hint about another session.
+// nothing to say. An error wins over the switch notice, then a missing file
+// watcher, then a hint about another session. The switch notice outranks the
+// watcher because it lasts only until the next key, and answers one.
 func (m Model) renderNotifyRow(width int) string {
 	style := func(c lipgloss.Color, s string) string {
 		if m.noColor {
@@ -385,6 +386,9 @@ func (m Model) renderNotifyRow(width int) string {
 		if m.prevSessionPath != "" {
 			text += " " + styles.Bullet + " p to go back"
 		}
+	case m.fallback.active():
+		color = styles.WarningColor
+		text = m.fallback.notice(width)
 	case m.hintVisible():
 		id := render.TruncateID(m.hint.id, sessionIDDisplayLen)
 		if m.hint.created {
@@ -405,7 +409,10 @@ func (m Model) renderNotifyRow(width int) string {
 // describeErr turns a load or watch error into notify-row text. A missing
 // file gets words a user can act on instead of an "open …: no such file".
 func describeErr(err error) string {
+	var unavailable watchUnavailableError
 	switch {
+	case errors.As(err, &unavailable):
+		return describeWatchUnavailable(unavailable.err)
 	case errors.Is(err, errSessionFileGone), errors.Is(err, fs.ErrNotExist):
 		return "session file removed"
 	case errors.Is(err, fs.ErrPermission):
