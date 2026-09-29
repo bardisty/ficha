@@ -65,6 +65,10 @@ func runGlobal(cfg *config) error {
 	if cfg.globalTopN < 0 {
 		return fmt.Errorf("invalid --top value %d: must be >= 0", cfg.globalTopN)
 	}
+	window, err := cfg.timeWindow(time.Now())
+	if err != nil {
+		return err
+	}
 
 	// Discover all projects
 	projects, err := parser.DiscoverAllProjects()
@@ -81,10 +85,6 @@ func runGlobal(cfg *config) error {
 	}
 
 	// Analyze all projects (analyzeProject handles empty-session projects internally)
-	window, err := cfg.timeWindow(time.Now())
-	if err != nil {
-		return err
-	}
 	analysis, err := analyzer.AnalyzeAllProjectsInWindow(projects, window)
 	if err != nil {
 		return fmt.Errorf("analyzing projects: %w", err)
