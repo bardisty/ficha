@@ -38,4 +38,8 @@ type config struct {
 	// SetOut/SetErr, so every command's output is capturable.
 	stdout io.Writer
 	stderr io.Writer
+
+	// commandPath names the command as typed ("ficha watch", "ficha show
+	// --live") for messages that refer to it.
+	commandPath string
 }

@@ -52,6 +52,9 @@ func runBreakdown(cfg *config, args []string) error {
 	// - User specified a session ID explicitly (pinned to that session)
 	// - User passed --no-follow flag
 	followMode := !explicitSessionID && !cfg.noFollow
+	if err := requireTerminal(cfg.stdout, cfg.commandPath, "For per-message rows in a script, use 'ficha show -f csv --messages'."); err != nil {
+		return err
+	}
 
 	// Run the breakdown TUI
 	model := tui.NewBreakdownModel(session.FullPath, session.SessionID, cfg.noColor, projectDir, followMode)

@@ -61,6 +61,9 @@ func runShow(cfg *config, args []string, live bool) error {
 		// - User specified a session ID explicitly (pinned to that session)
 		// - User passed --no-follow flag
 		followMode := !explicitSessionID && !cfg.noFollow
+		if err := requireTerminal(cfg.stdout, cfg.commandPath, "For scripting, use 'ficha show -f json' (add --messages for per-message rows)."); err != nil {
+			return err
+		}
 		return runLiveMode(cfg, session, projectDir, followMode)
 	}
 
