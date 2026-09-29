@@ -7,6 +7,7 @@ import (
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -98,6 +99,8 @@ func runShow(cfg *config, args []string, live bool) error {
 	skipWarning{counts: "totals", agents: analysis.SkippedAgents, lines: analysis.SkippedLines}.write(&warnings, cfg.verbose)
 	warnEstimatedCosts(&warnings, analysis.EstimatedCostMessages)
 	warnUnknownModels(&warnings, analysis.CostByModel)
+
+	analysis.Project = parser.ProjectDisplayName(projectDir)
 
 	// Output in requested format
 	output, err := formatOutput(cfg, analysis, includeMessages)

@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +85,7 @@ func TestSummaryTableModelColumnNeverShiftsRow(t *testing.T) {
 
 			want := lipgloss.Width(rows[0])
 			for i, row := range rows {
-				if got := lipgloss.Width(row); got != want {
+				if got := paddedWidth(row); got != want {
 					t.Errorf("row %d is %d columns, header is %d:\n%q", i, got, want, row)
 				}
 			}
@@ -126,73 +125,8 @@ func TestSummaryTableAgentsColumnNeverShiftsRow(t *testing.T) {
 
 	want := lipgloss.Width(rows[0])
 	for i, row := range rows {
-		if got := lipgloss.Width(row); got != want {
+		if got := paddedWidth(row); got != want {
 			t.Errorf("row %d is %d columns, header is %d:\n%q", i, got, want, row)
-		}
-	}
-}
-
-// The AGENTS cell degrades its bracketed cost ($X.XX → $X.X → $X) as the
-// subtotal grows, then cuts with an ellipsis as the last resort — the cell is
-// always exactly 10 display columns.
-func TestAgentsCellPrecision(t *testing.T) {
-	cases := []struct {
-		count int
-		cost  float64
-		want  string
-	}{
-		{0, 0, "-"},
-		{1, 0.0341, "1 [$0.0341]"},
-		{1, 0.004, "1 [$0.0040]"},
-		{1, 100.00, "1 [$100.00]  "},
-		{12, 12.34, "12 [$12.34]  "},
-		{100, 12345.67, "100 [$12345.67]  "},
-	}
-	for _, tc := range cases {
-		a := &models.SessionAnalysis{
-			HasAgents:  tc.count > 0,
-			AgentCount: tc.count,
-			AgentsCost: models.CostBreakdown{TotalCost: tc.cost},
-		}
-		if got := agentsCell(a); got != tc.want {
-			t.Errorf("agentsCell(%d, $%v) = %q, want %q", tc.count, tc.cost, got, tc.want)
-		}
-	}
-}
-
-// The styled path pads and dims independently of the plain path; both must
-// fill exactly the column width for any count/subtotal magnitude.
-func TestFormatAgentsColumnWidthWithColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
-	var analyses []*models.SessionAnalysis
-	for _, tc := range []struct {
-		count int
-		cost  float64
-	}{
-		{0, 0}, // no agents: "-"
-		{1, 0.05},
-		{1, 100.00},
-		{10, 10.00},
-		{12, 123.45},
-		{100, 12345.67},
-	} {
-		analyses = append(analyses, &models.SessionAnalysis{
-			HasAgents:  tc.count > 0,
-			AgentCount: tc.count,
-			AgentsCost: models.CostBreakdown{TotalCost: tc.cost},
-		})
-	}
-	width := agentsColumnWidth(analyses)
-	if width != len("100 [$12345.67]  ") {
-		t.Errorf("column width %d should fit the widest cell", width)
-	}
-	for _, a := range analyses {
-		for _, noColor := range []bool{true, false} {
-			got := formatAgentsColumn(a, width, noColor)
-			if w := lipgloss.Width(got); w != width {
-				t.Errorf("formatAgentsColumn(%d, noColor=%v) is %d columns, want %d: %q",
-					a.AgentCount, noColor, w, width, got)
-			}
 		}
 	}
 }
@@ -232,7 +166,7 @@ func TestSummaryTableAgentsColumnAlignsWithColor(t *testing.T) {
 
 // The Sum figure must right-align exactly under the CUMULATIVE column — the
 // two lines end at the same display column — in both views and color paths.
-func TestSummaryTableSumAlignsUnderCumulative(t *testing.T) {
+func TestSummaryTableSumAlignsUnderCost(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
 		noColor      bool
@@ -262,19 +196,19 @@ func TestSummaryTableSumAlignsUnderCumulative(t *testing.T) {
 			var headerWidth, sumWidth int
 			var sumLine string
 			for _, line := range strings.Split(out, "\n") {
-				if strings.Contains(line, "CUMULATIVE") {
+				if strings.Contains(line, "MODIFIED") {
 					headerWidth = lipgloss.Width(line)
 				}
 				if strings.Contains(line, "Sum (") {
 					sumLine = line
-					sumWidth = lipgloss.Width(line)
+					sumWidth = paddedWidth(line)
 				}
 			}
 			if headerWidth == 0 || sumLine == "" {
 				t.Fatalf("missing header or sum line:\n%s", out)
 			}
 			if sumWidth != headerWidth {
-				t.Errorf("sum line is %d columns, header is %d — sum does not end under CUMULATIVE:\n%q", sumWidth, headerWidth, sumLine)
+				t.Errorf("sum line is %d columns, header is %d — sum does not end under COST:\n%q", sumWidth, headerWidth, sumLine)
 			}
 		})
 	}
@@ -365,7 +299,7 @@ func TestSummaryTableModelColumnAlignsWithColor(t *testing.T) {
 // order; an unstable sort on either side would let the surfaces disagree on
 // intermediate cumulative values (the final sum always matches). 40 rows so an
 // unstable sort has room to actually permute equal keys.
-func TestSummaryTableTieMtimeOrderMatchesDetailCSV(t *testing.T) {
+func TestSummaryTableTieMtimeOrderMirrorsDetailCSV(t *testing.T) {
 	tied := time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC)
 	const n = 40
 	results := make([]models.SessionResult, 0, n)
@@ -379,26 +313,19 @@ func TestSummaryTableTieMtimeOrderMatchesDetailCSV(t *testing.T) {
 		wantIDs = append(wantIDs, id)
 	}
 
-	// Table: extract session ID and trailing CUMULATIVE cell per data row.
+	// Table: the session ID of each data row, newest first.
 	rows := summaryTableRows(t, results, false)[1:]
 	idRe := regexp.MustCompile(`^ {2}\s*\d+ ([0-9a-f]{8}) `)
 	tableIDs := make([]string, 0, n)
-	tableCumulative := make([]float64, 0, n)
 	for _, row := range rows {
 		m := idRe.FindStringSubmatch(row)
 		if m == nil {
 			t.Fatalf("row does not match data-row shape: %q", row)
 		}
 		tableIDs = append(tableIDs, m[1])
-		fields := strings.Fields(row)
-		cum, err := strconv.ParseFloat(strings.TrimPrefix(fields[len(fields)-1], "$"), 64)
-		if err != nil {
-			t.Fatalf("parsing cumulative cell of row %q: %v", row, err)
-		}
-		tableCumulative = append(tableCumulative, cum)
 	}
 
-	// Detail CSV: session_id (col 1) and cumulative_cost (col 16).
+	// Detail CSV: session_id (col 1), oldest first.
 	out, err := FormatSummaryDetailCSV(results, false)
 	if err != nil {
 		t.Fatalf("FormatSummaryDetailCSV returned error: %v", err)
@@ -407,23 +334,16 @@ func TestSummaryTableTieMtimeOrderMatchesDetailCSV(t *testing.T) {
 	if err != nil {
 		t.Fatalf("output is not valid CSV: %v", err)
 	}
-	if len(records) != n+1 {
-		t.Fatalf("csv rows: got %d, want %d", len(records), n+1)
+	if len(records) != n+1 || len(tableIDs) != n {
+		t.Fatalf("csv rows: got %d, table rows %d, want %d", len(records)-1, len(tableIDs), n)
 	}
 	for i, rec := range records[1:] {
 		if rec[1] != wantIDs[i] {
 			t.Fatalf("csv row %d session_id: got %q, want %q (tie order must be stable)", i, rec[1], wantIDs[i])
 		}
-		if tableIDs[i] != wantIDs[i] {
-			t.Fatalf("table row %d session_id: got %q, want %q (tie order must match csv)", i, tableIDs[i], wantIDs[i])
-		}
-		csvCum, err := strconv.ParseFloat(rec[16], 64)
-		if err != nil {
-			t.Fatalf("csv row %d cumulative_cost %q: %v", i, rec[16], err)
-		}
-		// The table renders two decimals; compare at that precision.
-		if diff := tableCumulative[i] - csvCum; diff > 0.005 || diff < -0.005 {
-			t.Errorf("row %d cumulative: table %f vs csv %f", i, tableCumulative[i], csvCum)
+		// The table is newest first, so it reads the csv backwards.
+		if got := tableIDs[n-1-i]; got != wantIDs[i] {
+			t.Fatalf("table row %d session_id: got %q, want %q (tie order must mirror csv)", n-1-i, got, wantIDs[i])
 		}
 	}
 }

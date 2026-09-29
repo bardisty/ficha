@@ -105,20 +105,17 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	sb.WriteString("\n")
 
 	// Footer stats
-	msgStr := fmt.Sprintf("%d", analysis.MessageCount)
-	if analysis.AgentMessageCount > 0 {
-		msgStr = fmt.Sprintf("%d (%d parent, %d agents)",
-			analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
+	fields := []string{
+		"Total: " + render.Cost(analysis.TotalCost.TotalCost),
+		messagesField(analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount),
 	}
-
-	fields := []string{"Total: " + render.Cost(analysis.TotalCost.TotalCost), "Messages: " + msgStr}
 	if isSummary {
 		if sessionCount := analysis.SessionCount; sessionCount > 0 {
 			fields = append(fields, fmt.Sprintf("Sessions: %d", sessionCount))
 		}
 	} else if !analysis.EndTime.IsZero() {
 		// Show last active time for single sessions
-		fields = append(fields, "Last active: "+analysis.EndTime.Local().Format("2006-01-02 15:04"))
+		fields = append(fields, "Last active: "+render.DateTime(analysis.EndTime, now()))
 	}
 	sb.WriteString(footerStats(fields, sectionWidth, noColor))
 	sb.WriteString("\n")
@@ -126,7 +123,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool) string {
 	// Single-line help separator
 	sb.WriteString(renderFooterSingleRule(sectionWidth, noColor))
 
-	return sb.String()
+	return trimLineEnds(sb.String())
 }
 
 // renderContextSection renders the context window section: the gauge line,

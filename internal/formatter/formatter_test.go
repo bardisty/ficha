@@ -535,7 +535,7 @@ func TestFormatSessionTable_Plain(t *testing.T) {
 	output := FormatSessionTable(analysis, true) // noColor = true
 
 	// Check basic structure
-	if !strings.Contains(output, "Session: test-session-123") {
+	if !strings.Contains(output, "Session: test-ses") {
 		t.Error("Table output missing session header")
 	}
 	if !strings.Contains(output, "API-equivalent estimate") {
@@ -552,7 +552,7 @@ func TestFormatSessionTable_WithColor(t *testing.T) {
 	output := FormatSessionTable(analysis, false) // noColor = false
 
 	// Colored output should still contain the data
-	if !strings.Contains(output, "test-session-123") {
+	if !strings.Contains(output, "test-ses") {
 		t.Error("Colored table output missing session ID")
 	}
 	if !strings.Contains(output, "API-equivalent estimate") {

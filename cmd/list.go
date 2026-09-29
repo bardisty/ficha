@@ -8,6 +8,7 @@ import (
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/parser"
 	"github.com/spf13/cobra"
 )
 
@@ -92,7 +93,7 @@ func runList(cfg *config) error {
 // row there. The table shows no message counts, so it skips the
 // discovery-time scan.
 func runListTable(cfg *config) error {
-	sessions, err := loadProjectSessions(cfg, false)
+	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, false)
 	if err != nil {
 		return err
 	}
@@ -123,7 +124,8 @@ func runListTable(cfg *config) error {
 	}
 
 	output := formatter.FormatSessionListTable(results, cfg.noColor, formatter.ListTableOptions{
-		Width: terminalWidth(cfg.stdout),
+		Project: parser.ProjectDisplayName(projectDir),
+		Width:   terminalWidth(cfg.stdout),
 	})
 	printReport(cfg, &warnings, output)
 	return nil

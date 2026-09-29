@@ -1,6 +1,7 @@
 package formatter
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,20 @@ func columnDots(line string) []int {
 		}
 	}
 	return dots
+}
+
+// endsInTwoDecimalCost matches a line whose last cell is a two-decimal cost,
+// which trimLineEnds leaves without the two-space pad that aligns it.
+var endsInTwoDecimalCost = regexp.MustCompile(`\$[0-9,]+\.[0-9]{2}(\x1b\[[0-9;]*m)*$`)
+
+// paddedWidth is a row's width with its end-of-line cost pad counted, so rows
+// compare with a header whose last column is the cost cell's full width.
+func paddedWidth(line string) int {
+	w := lipgloss.Width(line)
+	if endsInTwoDecimalCost.MatchString(line) {
+		w += 2
+	}
+	return w
 }
 
 // assertRowsAligned checks that every row is as wide as the header and puts
@@ -45,7 +60,7 @@ func assertRowsAligned(t *testing.T, out, header string, rowKeys []string) {
 	want := columnDots(rows[rowKeys[0]])
 	for _, k := range rowKeys {
 		row := rows[k]
-		if w := lipgloss.Width(row); w != headerWidth {
+		if w := paddedWidth(row); w != headerWidth {
 			t.Errorf("row %s is %d columns, header is %d:\n%q", k, w, headerWidth, row)
 		}
 		got := columnDots(row)
@@ -89,7 +104,7 @@ func TestSummaryTableLargeCostsStayAligned(t *testing.T) {
 	}
 	for _, expand := range []bool{false, true} {
 		out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", true, expand)
-		assertRowsAligned(t, out, "CUMULATIVE", []string{"aaaa1111", "bbbb2222", "cccc3333"})
+		assertRowsAligned(t, out, "MODIFIED", []string{"aaaa1111", "bbbb2222", "cccc3333"})
 		if !strings.Contains(out, "$13580.48") {
 			t.Errorf("expand=%v: sum missing:\n%s", expand, out)
 		}

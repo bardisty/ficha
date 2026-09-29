@@ -71,6 +71,22 @@ func DiscoverAllProjects() ([]models.ProjectInfo, error) {
 	return projects, nil
 }
 
+// ProjectDisplayName is the display name DiscoverAllProjects would give the
+// project in projectDir ("~/source/webapp"), without scanning every other
+// project. It skips the collision suffixes, which only matter side by side.
+func ProjectDisplayName(projectDir string) string {
+	originalPath := getOriginalPathFromIndex(projectDir)
+	if originalPath == "" {
+		originalPath = originalPathFromTranscripts(projectDir)
+	}
+	if originalPath != "" {
+		if name := formatDisplayNameFromPath(originalPath, homeDir()); name != "" {
+			return name
+		}
+	}
+	return formatDisplayNameFromEncoded(filepath.Base(projectDir))
+}
+
 // entryIsDir reports whether a projects-dir entry is a directory, following
 // symlinks. os.ReadDir's DirEntry.IsDir() uses lstat semantics and returns
 // false for a symlink pointing at a directory, so a symlinked project dir

@@ -29,7 +29,7 @@ type GlobalTableOptions struct {
 	// a width, PROJECT widens to fit long paths. Without one the layout is
 	// fixed, so piped output doesn't depend on the terminal it came from.
 	Width int
-	// Now anchors LAST ACTIVE's relative times. Zero means time.Now().
+	// Now anchors LAST ACTIVE's relative times. Zero means the current time.
 	Now time.Time
 }
 
@@ -40,7 +40,7 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 		opts.SortBy = "cost"
 	}
 	if opts.Now.IsZero() {
-		opts.Now = time.Now()
+		opts.Now = now()
 	}
 	layout := newProjectsLayout(analysis.Projects, opts)
 	sectionWidth := layout.width
@@ -100,14 +100,14 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 
 	sb.WriteString(footerStats([]string{
 		"Total: " + render.Cost(analysis.TotalCost.TotalCost),
-		"Messages: " + render.Number(int64(analysis.MessageCount)),
+		messagesField(analysis.MessageCount, analysis.MessageCount, 0),
 		fmt.Sprintf("Sessions: %d", analysis.SessionCount),
 		fmt.Sprintf("Projects: %d", analysis.ProjectCount),
 	}, sectionWidth, noColor))
 	sb.WriteString("\n")
 	sb.WriteString(renderFooterSingleRule(sectionWidth, noColor))
 
-	return sb.String()
+	return trimLineEnds(sb.String())
 }
 
 // projectsHeading titles the projects table with how many rows it holds out
@@ -209,76 +209,14 @@ func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOption
 	return l
 }
 
-// renderGlobalHeaderPanel renders the header panel for global stats
+// renderGlobalHeaderPanel renders global's boxed header: how many projects
+// and sessions, and the span from the first message to the last.
 func renderGlobalHeaderPanel(analysis *models.GlobalAnalysis, width int, noColor bool) string {
-	var sb strings.Builder
-
-	if width < 40 {
-		width = 76
-	}
-
-	innerWidth := width - 6
-
-	// Build content
-	titlePart := fmt.Sprintf("Global: %d projects", analysis.ProjectCount)
-	sessionPart := fmt.Sprintf("%d sessions", analysis.SessionCount)
-	durationPart := fmt.Sprintf("Duration: %s", render.DurationLong(analysis.Duration.Duration()))
-
-	sep := styles.BoxVerticalSep
-	content := fmt.Sprintf("%s  %s  %s  %s  %s", titlePart, sep, sessionPart, sep, durationPart)
-	contentLen := len(titlePart) + 2 + 1 + 2 + len(sessionPart) + 2 + 1 + 2 + len(durationPart)
-	padding := innerWidth - contentLen
-	if padding < 0 {
-		padding = 0
-	}
-
-	if noColor {
-		sb.WriteString(styles.BoxTopLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxTopRight)
-		sb.WriteString("\n")
-
-		sb.WriteString(styles.BoxVertical)
-		sb.WriteString("  ")
-		sb.WriteString(content)
-		sb.WriteString(strings.Repeat(" ", padding))
-		sb.WriteString("  ")
-		sb.WriteString(styles.BoxVertical)
-		sb.WriteString("\n")
-
-		sb.WriteString(styles.BoxBottomLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxBottomRight)
-	} else {
-		titleStyled := fmt.Sprintf("%s %d projects",
-			sectionHeaderStyle.Render("Global:"),
-			analysis.ProjectCount)
-		sepStyled := panelBorderStyle.Render(sep)
-
-		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
-		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
-		sb.WriteString(panelBorderStyle.Render(styles.BoxTopRight))
-		sb.WriteString("\n")
-
-		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
-		sb.WriteString("  ")
-		sb.WriteString(titleStyled)
-		sb.WriteString("  ")
-		sb.WriteString(sepStyled)
-		sb.WriteString(fmt.Sprintf("  %s  ", sessionPart))
-		sb.WriteString(sepStyled)
-		sb.WriteString(fmt.Sprintf("  %s", durationPart))
-		sb.WriteString(strings.Repeat(" ", padding))
-		sb.WriteString("  ")
-		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
-		sb.WriteString("\n")
-
-		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomLeft))
-		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
-		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomRight))
-	}
-
-	return sb.String()
+	return renderPanel("", []string{
+		fmt.Sprintf("%d %s", analysis.ProjectCount, projectsWord(analysis.ProjectCount)),
+		fmt.Sprintf("%d %s", analysis.SessionCount, sessionsWord(analysis.SessionCount)),
+		"Span: " + span(analysis.FirstActive, analysis.LastActive),
+	}, width, noColor)
 }
 
 // formatGlobalCostByModel renders cost by model for global stats

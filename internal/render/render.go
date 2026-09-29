@@ -86,6 +86,21 @@ func Number(n int64) string {
 	return fmt.Sprintf("%d", n)
 }
 
+// Count formats an exact count with thousands separators ("1,523"), for
+// counts a reader may compare, such as messages. Number abbreviates.
+func Count(n int) string {
+	s := fmt.Sprintf("%d", n)
+	neg := strings.HasPrefix(s, "-")
+	s = strings.TrimPrefix(s, "-")
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	if neg {
+		s = "-" + s
+	}
+	return s
+}
+
 // Duration formats a span with hours as the largest unit (no day rollup), for
 // single-session and per-message durations. Use DurationLong for aggregate
 // spans that can reach days.
@@ -139,6 +154,31 @@ func Ago(t, now time.Time) string {
 	default:
 		return fmt.Sprintf("%dy ago", int(d/(365*day)))
 	}
+}
+
+// DateTime formats t as a local date and time, "Sep 28 18:38", with the
+// year added ("Sep 28 2025 18:38") when it isn't now's year. It's the one
+// absolute format every report uses for a moment in time.
+func DateTime(t, now time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Local().Format(dateLayout(t, now) + " 15:04")
+}
+
+// Date is DateTime without the time: "Sep 28", or "Sep 28 2025".
+func Date(t, now time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Local().Format(dateLayout(t, now))
+}
+
+func dateLayout(t, now time.Time) string {
+	if t.Local().Year() != now.Local().Year() {
+		return "Jan 02 2006"
+	}
+	return "Jan 02"
 }
 
 // Clock formats t as a local wall-clock time ("15:04:05"). Transcript
