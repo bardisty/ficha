@@ -1,7 +1,7 @@
   ╔══════════════════════════════════════════════════════════════════════════╗                      
   ║  0a1b2c3d │ ● PINNED │ last msg 5s ago                                   ║                      
   ╚══════════════════════════════════════════════════════════════════════════╝                      
-  scope: parent + agents │ Peak: #5 $1.87 @ 10:42:13 (3.8x avg) │ Trend: ▲ increasing               
+  main conversation + agents │ Peak: #5 $1.87 @ 10:42:13 (3.8x avg) │ Trend: ▲ rising               
                                                                                                     
   #    TIME      AGENT          MODEL             COST      IN    OUT    C_WR    C_RD               
   ────────────────────────────────────────────────────────────────────────────                      
@@ -37,4 +37,4 @@
                                                                                                     
   ════════════════════════════════════════════════════════════════════════════                      
   Messages: 7 │ Total: $3.41 │ ⚠ 3 skipped line(s)                                                  
-  q: quit • g/G: top/bottom • ↑↓: scroll                                                            
+  q quit • j/k scroll • space/b page • g/G top/bottom • f follow • p peak                           

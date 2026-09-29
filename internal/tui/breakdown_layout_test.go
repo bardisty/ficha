@@ -147,7 +147,7 @@ func TestBreakdownInsights_PeakNamesAgentRow(t *testing.T) {
 	if !strings.Contains(out, "Peak: #2 $0.4400 @ 10:11:12 [Aa499eb9] (4.4x avg)") {
 		t.Errorf("Peak text should name row 2 with seconds and its agent marker:\n%s", out)
 	}
-	if !strings.HasPrefix(strings.TrimSpace(out), "scope:") {
+	if !strings.HasPrefix(strings.TrimSpace(out), "main conversation + agents") {
 		t.Errorf("scope should lead the line so a narrow terminal cuts the rest first:\n%s", out)
 	}
 
@@ -211,7 +211,7 @@ func TestBreakdownInsights_ScopeGivesWayToPeak(t *testing.T) {
 		}
 	}
 	m.width = 100
-	if out := m.renderCompactInsights(); !strings.Contains(out, "scope: parent + agents") {
+	if out := m.renderCompactInsights(); !strings.Contains(out, "main conversation + agents") {
 		t.Errorf("scope label should show when it fits: %q", out)
 	}
 }

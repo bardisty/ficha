@@ -10,21 +10,23 @@ const (
 	// must be to be flagged as notably high (e.g., 1.5 = 50% above average)
 	highCostMultiplier = 1.5
 
-	// trendChangeThreshold defines the minimum relative change (as a fraction)
-	// required to classify a trend as increasing or decreasing (0.2 = 20%)
+	// trendChangeThreshold is the minimum relative difference (as a fraction)
+	// between the recent and session averages for the trend to count as
+	// rising or falling (0.2 = 20%)
 	trendChangeThreshold = 0.2
 
-	// trendSampleSize is the number of messages at each end used to calculate
-	// early and late average costs for trend detection
-	trendSampleSize = 3
+	// trendWindow is how many of the latest messages the trend averages. A
+	// window this wide moves by a twentieth of a message's difference from the
+	// mean per message, so one large or small reply can't flip it, where a
+	// window of three would flip on almost every message.
+	trendWindow = 20
 
-	// minMessagesForTrend is the minimum number of messages required
-	// to calculate meaningful cost trends; 2*trendSampleSize keeps the
-	// early and late sample windows disjoint. It equals models.MinMessagesForTrend
-	// (the gate every renderer consults via MessageInsights.HasTrend); the two are
-	// bound by TestMinMessagesForTrendMatchesModel so the compute and render
-	// thresholds can never drift.
-	minMessagesForTrend = 2 * trendSampleSize
+	// minMessagesForTrend is the minimum number of messages for a trend. It
+	// equals models.MinMessagesForTrend (the gate every renderer consults via
+	// MessageInsights.HasTrend); the two are bound by
+	// TestMinMessagesForTrendMatchesModel so the compute and render thresholds
+	// can never drift.
+	minMessagesForTrend = 6
 )
 
 // CalculateInsights computes insights from a slice of message analyses
@@ -65,36 +67,29 @@ func CalculateInsights(messages []models.MessageAnalysis) *models.MessageInsight
 		insights.HighestCost = createSnapshot(messages[highestIdx], highestIdx+1) // 1-based index
 	}
 
-	// Calculate trend for sessions with enough messages
+	// The trend compares the latest messages with the whole session. Short
+	// sessions use their later half, so the window never is the whole session.
 	if len(messages) >= minMessagesForTrend {
-		// Average of first N messages
-		var earlySum float64
-		for i := 0; i < trendSampleSize; i++ {
-			earlySum += messages[i].Cost.TotalCost
+		window := min(trendWindow, len(messages)/2)
+		var recentSum float64
+		for _, msg := range messages[len(messages)-window:] {
+			recentSum += msg.Cost.TotalCost
 		}
-		insights.EarlyAvgCost = earlySum / float64(trendSampleSize)
+		insights.TrendWindow = window
+		insights.RecentAvgCost = recentSum / float64(window)
 
-		// Average of last N messages
-		var lateSum float64
-		for i := len(messages) - trendSampleSize; i < len(messages); i++ {
-			lateSum += messages[i].Cost.TotalCost
-		}
-		insights.LateAvgCost = lateSum / float64(trendSampleSize)
-
-		// Determine trend direction based on threshold
-		if insights.EarlyAvgCost > 0 {
-			change := (insights.LateAvgCost - insights.EarlyAvgCost) / insights.EarlyAvgCost
-			if change > trendChangeThreshold {
+		switch {
+		case insights.AverageCost > 0:
+			change := (insights.RecentAvgCost - insights.AverageCost) / insights.AverageCost
+			switch {
+			case change > trendChangeThreshold:
 				insights.CostTrend = models.TrendIncreasing
-			} else if change < -trendChangeThreshold {
+			case change < -trendChangeThreshold:
 				insights.CostTrend = models.TrendDecreasing
-			} else {
+			default:
 				insights.CostTrend = models.TrendStable
 			}
-		} else if insights.LateAvgCost > 0 {
-			// Early was zero, late is positive = increasing
-			insights.CostTrend = models.TrendIncreasing
-		} else {
+		default:
 			insights.CostTrend = models.TrendStable
 		}
 	}

@@ -41,11 +41,11 @@
                                                                                                     
   ----------------------------[ MESSAGE INSIGHTS ]----------------------------                      
                                                                                                     
-    scope: parent transcript                                                                        
-    First         $0.3500  (10:00:05)  cache_write: $0.3000                                         
-    Last          $0.5200  (11:29:55)  cache_read: $0.3100                                          
-    Peak          $1.87    (10:42:13)  ! 4.6x avg cost                                              
-    Trend      $0.2800/msg -> $0.5500/msg  ^ increasing                                             
+    main conversation only, agents excluded                                                         
+    Last          $0.5200  (11:29:55)  Cache read: $0.3100                                          
+    Peak          $1.87    (10:42:13)  4.6x avg cost                                                
+    Trend      last 12 $0.5500/msg vs $0.4100/msg avg  ^ rising                                     
+                                                                                                    
                                                                                                     
                                                                                                     
                                                                                                     

@@ -117,8 +117,9 @@ func TestWatchInsightTimesAreLocal(t *testing.T) {
 		m = updated.(Model)
 		updated, _ = m.Update(analysisMsg{analysis: goldenViewAnalysis()})
 		out := updated.(Model).View()
-		// Fixture First/Last/Peak are 10:00:05, 11:29:55 and 10:42:13 UTC
-		for _, want := range []string{"03:00:05", "04:29:55", "03:42:13"} {
+		// Fixture Last and Peak are 11:29:55 and 10:42:13 UTC (watch shows
+		// no First row)
+		for _, want := range []string{"04:29:55", "03:42:13"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("noColor=%v: missing local insight time %s\n%s", noColor, want, out)
 			}

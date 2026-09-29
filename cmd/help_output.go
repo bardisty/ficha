@@ -36,13 +36,14 @@ Messages and turns
   with the session's unless a line says "parent".
 
 Message insights
-  In show, insights cover the parent transcript only, without agents, and
-  say "scope: parent transcript" when agents ran. breakdown covers every
-  message, parent messages first, then each agent's. Peak is the most
-  expensive single message, shown when it's more than 1.5x the average.
-  Trend compares the average cost of the first 3 messages with the last 3,
-  in that order: it needs 6 messages, and a change of 20% or less counts
-  as stable.
+  In show and watch, insights cover the main conversation only, and say
+  "main conversation only, agents excluded" when agents ran. breakdown
+  covers every message, agents included. Peak is the most expensive single
+  message, shown when it's more than 1.5x the average; in breakdown, p
+  jumps to it and then to the next most expensive. Trend compares the
+  average cost of the last 20 messages (the later half of a shorter
+  session) with the session's average: it needs 6 messages, and a
+  difference of 20% or less reads as flat.
 
 Context
   How full the model's context window was on the latest parent message:

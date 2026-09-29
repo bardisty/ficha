@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
@@ -284,12 +285,19 @@ func CacheTokensByTTL(usage models.TokenUsage) (int64, int64) {
 // field after the MODEL column out of alignment — fmt's "%-Ns" pads but never
 // truncates.
 //
+// A raw ID that has to be cut loses its "claude-" prefix first: every
+// Anthropic ID shares it, so it spends the columns on the one part that
+// doesn't tell models apart ("nova-9-202…" rather than "claude-no…").
+//
 // Callers still pass the result through "%-Ns". fmt pads by rune count, and
 // a cut label is exactly width runes whichever ellipsis the glyph set uses
 // ("…" or "..."), so fmt leaves it alone.
 func ClampModel(label string, width int) string {
 	if width <= 0 {
 		return ""
+	}
+	if utf8.RuneCountInString(label) > width {
+		label = strings.TrimPrefix(label, "claude-")
 	}
 	return truncateRunes(label, width)
 }
@@ -360,20 +368,21 @@ func OrderModelsByCost(costByModel map[string]models.CostBreakdown) []string {
 	return ids
 }
 
-// CostComponentLabel maps an internal cost-component key to a human-readable
-// label (both cache-write TTLs collapse to "cache_write").
+// CostComponentLabel maps an internal cost-component key to the name the
+// cost tables give that row, with the cache-write TTL kept since a row's
+// cost depends on it.
 func CostComponentLabel(component string) string {
 	switch component {
 	case "input":
-		return "input"
+		return "Input"
 	case "output":
-		return "output"
+		return "Output"
 	case "cache_write_5m":
-		return "cache_write"
+		return "Cache write 5m"
 	case "cache_write_1h":
-		return "cache_write"
+		return "Cache write 1h"
 	case "cache_read":
-		return "cache_read"
+		return "Cache read"
 	default:
 		return component
 	}

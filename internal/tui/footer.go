@@ -278,7 +278,7 @@ func (m Model) warningRows(width int) []string {
 		notes = append(notes, note)
 	}
 	if hasUnknownModel(a.CostByModel) {
-		notes = append(notes, unknownModelFootnote())
+		notes = append(notes, unknownModelFootnote(unknownModelIDs(a.CostByModel)))
 	}
 	return packNotes(notes, " "+styles.BoxVerticalSep+" ", width, maxWarningRows)
 }

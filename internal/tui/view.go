@@ -422,43 +422,16 @@ func (m Model) renderInsightsContent() string {
 	var sb strings.Builder
 	insights := m.analysis.Insights
 
-	// When agents ran, these insights cover the parent transcript alone (agents
+	// When agents ran, these insights cover the main conversation alone (agents
 	// appear in AGENT SUB-SESSIONS above); label the scope so it can't be
 	// silently compared against the breakdown view's parent+agent insights. No
 	// label without agents: parent-only and all-messages are then identical.
 	if m.analysis.HasAgents {
-		const scope = "scope: parent transcript"
+		const scope = "main conversation only, agents excluded"
 		if m.noColor {
 			sb.WriteString("    " + scope + "\n")
 		} else {
 			sb.WriteString("    " + dimStyle.Render(scope) + "\n")
-		}
-	}
-
-	// First message
-	if insights.FirstMessage != nil {
-		first := insights.FirstMessage
-		componentLabel := render.CostComponentLabel(first.MainCostComponent)
-		highlighted := m.isHighlighted("insights_first")
-
-		if !m.noColor {
-			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "First"))
-			costStr := render.CostStyled(first.Cost, 10, highlighted, m.noColor)
-			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(first.Timestamp)))
-			componentCostStr := formatCostStyledDim(first.MainCostValue)
-			componentStr := dimStyle.Render(componentLabel+":") + " " + componentCostStr
-			sb.WriteString(fmt.Sprintf("    %s %s  %s  %s\n",
-				labelStr,
-				costStr,
-				timestampStr,
-				componentStr))
-		} else {
-			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  %s: %s\n",
-				"First",
-				render.CostCell(first.Cost, 10),
-				render.Clock(first.Timestamp),
-				componentLabel,
-				render.Cost(first.MainCostValue)))
 		}
 	}
 
@@ -492,27 +465,26 @@ func (m Model) renderInsightsContent() string {
 	// Highest cost (only if notably above average)
 	if insights.HighestCost != nil {
 		highest := insights.HighestCost
-		multiplier := insights.CostMultiplier()
-		warningStr := fmt.Sprintf("%.1fx avg cost", multiplier)
+		// The multiplier is information, not a warning: nearly every session
+		// has a message well above its average.
+		multiplierStr := fmt.Sprintf("%.1fx avg cost", insights.CostMultiplier())
 		highlighted := m.isHighlighted("insights_highest")
 
 		if !m.noColor {
 			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "Peak"))
 			costStr := render.CostStyled(highest.Cost, 10, highlighted, m.noColor)
 			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(highest.Timestamp)))
-			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render(styles.Warning + " " + warningStr)
 			sb.WriteString(fmt.Sprintf("    %s %s  %s  %s\n",
 				labelStr,
 				costStr,
 				timestampStr,
-				warningStyled))
+				dimStyle.Render(multiplierStr)))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  %s %s\n",
+			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  %s\n",
 				"Peak",
 				render.CostCell(highest.Cost, 10),
 				render.Clock(highest.Timestamp),
-				styles.Warning,
-				warningStr))
+				multiplierStr))
 		}
 	}
 
@@ -522,8 +494,9 @@ func (m Model) renderInsightsContent() string {
 		trendSymbol := render.TrendSymbol(insights.CostTrend)
 		highlighted := m.isHighlighted("insights_trend")
 
-		earlyStr := render.Cost(insights.EarlyAvgCost) + "/msg"
-		lateStr := render.Cost(insights.LateAvgCost) + "/msg"
+		recentStr := render.Cost(insights.RecentAvgCost) + "/msg"
+		avgStr := render.Cost(insights.AverageCost) + "/msg"
+		window := fmt.Sprintf("last %d", insights.TrendWindow)
 
 		if !m.noColor {
 			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "Trend"))
@@ -540,24 +513,21 @@ func (m Model) renderInsightsContent() string {
 				symbolStyled = dimStyle.Render(trendSymbol)
 				descStyled = dimStyle.Render(trendDesc)
 			}
-			var trendLine string
 			if highlighted {
-				// Highlight only the cost values, not the arrow
-				trendLine = highlightStyle.Render(earlyStr) + " " + styles.Arrow + " " + highlightStyle.Render(lateStr)
-			} else {
-				trendLine = earlyStr + " " + styles.Arrow + " " + lateStr
+				recentStr = highlightStyle.Render(recentStr)
 			}
+			trendLine := window + " " + recentStr + " vs " + avgStr + " avg"
 			sb.WriteString(fmt.Sprintf("    %s %s  %s %s\n",
 				labelStr,
 				trendLine,
 				symbolStyled,
 				descStyled))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %-10s %s %s %s  %s %s\n",
+			sb.WriteString(fmt.Sprintf("    %-10s %s %s vs %s avg  %s %s\n",
 				"Trend",
-				earlyStr,
-				styles.Arrow,
-				lateStr,
+				window,
+				recentStr,
+				avgStr,
 				trendSymbol,
 				trendDesc))
 		}

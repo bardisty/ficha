@@ -19,10 +19,10 @@ func TestFormatInsights_TrendGate(t *testing.T) {
 	}
 
 	at := &models.MessageInsights{
-		MessageCount: models.MinMessagesForTrend,
-		CostTrend:    models.TrendIncreasing,
-		EarlyAvgCost: 0.10,
-		LateAvgCost:  0.25,
+		MessageCount:  models.MinMessagesForTrend,
+		CostTrend:     models.TrendIncreasing,
+		RecentAvgCost: 0.25,
+		TrendWindow:   3,
 	}
 	if out := formatInsightsSectionContent(at, false, true); !strings.Contains(out, "Trend") {
 		t.Errorf("trend row missing at %d messages (threshold):\n%s", at.MessageCount, out)
@@ -38,10 +38,10 @@ func TestFormatInsights_ScopeLabel(t *testing.T) {
 		MessageCount: models.MinMessagesForTrend,
 		FirstMessage: &models.MessageSnapshot{Index: 1},
 	}
-	if out := formatInsightsSectionContent(insights, true, true); !strings.Contains(out, "scope: parent transcript") {
+	if out := formatInsightsSectionContent(insights, true, true); !strings.Contains(out, "main conversation only, agents excluded") {
 		t.Errorf("expected scope label when agents present:\n%s", out)
 	}
-	if out := formatInsightsSectionContent(insights, false, true); strings.Contains(out, "scope:") {
+	if out := formatInsightsSectionContent(insights, false, true); strings.Contains(out, "main conversation") {
 		t.Errorf("did not expect scope label when no agents:\n%s", out)
 	}
 }

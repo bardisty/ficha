@@ -9,13 +9,15 @@ import (
 	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/paths"
 	"github.com/bardisty/ficha/internal/tui"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-// waitForFirstSession opens watch in a waiting state when the project has no
-// session yet, so the panes can be laid out before Claude Code starts.
-// waited is false when there is nothing to wait for, and the caller reports
-// its own error instead.
-func waitForFirstSession(cfg *config) (waited bool, err error) {
+// waitForFirstSession opens a live view in a waiting state when the project
+// has no session yet, so the panes can be laid out before Claude Code
+// starts. open builds the waiting model from the project directory to wait
+// on and the path Claude Code will run in. waited is false when there is
+// nothing to wait for, and the caller reports its own error instead.
+func waitForFirstSession(cfg *config, open func(dir, projectPath string) tea.Model) (waited bool, err error) {
 	// A script is better served by the error than by a wait.
 	if !isTerminal(cfg.stdout) {
 		return false, nil
@@ -25,7 +27,21 @@ func waitForFirstSession(cfg *config) (waited bool, err error) {
 		return false, nil
 	}
 	cfg.tracef("no session yet; waiting in %s", filepath.Base(dir))
-	return true, runTUI(cfg.stdout, tui.NewWaitingModel(dir, tildePath(projectPath), cfg.verbose, cfg.noColor, !cfg.noFollow))
+	return true, runTUI(cfg.stdout, open(dir, tildePath(projectPath)))
+}
+
+// waitingWatch opens watch waiting for a first session.
+func waitingWatch(cfg *config) func(dir, projectPath string) tea.Model {
+	return func(dir, projectPath string) tea.Model {
+		return tui.NewWaitingModel(dir, projectPath, cfg.verbose, cfg.noColor, !cfg.noFollow)
+	}
+}
+
+// waitingBreakdown opens breakdown waiting for a first session.
+func waitingBreakdown(cfg *config) func(dir, projectPath string) tea.Model {
+	return func(dir, projectPath string) tea.Model {
+		return tui.NewWaitingBreakdownModel(dir, projectPath, cfg.noColor, !cfg.noFollow)
+	}
 }
 
 // waitingProject returns the project directory to wait on: the exact one for

@@ -186,11 +186,11 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 				Index: 9, Timestamp: goldenTime(10, 42, 13),
 				Cost: 1.87, MainCostComponent: "output", MainCostValue: 1.02,
 			},
-			CostTrend:    models.TrendIncreasing,
-			EarlyAvgCost: 0.28,
-			LateAvgCost:  0.55,
-			AverageCost:  0.41,
-			MessageCount: 24,
+			CostTrend:     models.TrendIncreasing,
+			RecentAvgCost: 0.55,
+			TrendWindow:   12,
+			AverageCost:   0.41,
+			MessageCount:  24,
 		},
 	}
 }
@@ -316,15 +316,15 @@ func goldenBreakdownViewSized(t *testing.T, noColor bool, width, height int) str
 				Index: 5, Timestamp: goldenTime(10, 42, 13),
 				Cost: 1.87, MainCostComponent: "output", MainCostValue: 1.02,
 			},
-			CostTrend:    models.TrendIncreasing,
-			EarlyAvgCost: 0.30,
-			LateAvgCost:  0.81,
-			AverageCost:  0.49,
-			MessageCount: 7,
+			CostTrend:     models.TrendIncreasing,
+			RecentAvgCost: 0.81,
+			TrendWindow:   3,
+			AverageCost:   0.49,
+			MessageCount:  7,
 		},
 		skippedLines: 3,
 		// The fixture rows include agent messages (indices 3-4 and 6), so the breakdown
-		// merges parent+agent — exercises the "scope: parent + agents" label that
+		// merges parent+agent — exercises the "main conversation + agents" label that
 		// distinguishes this surface from show/watch's parent-only insights.
 		hasAgents: true,
 	})

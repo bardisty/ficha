@@ -279,13 +279,13 @@ func workflowCost(agents []models.AgentAnalysis, runID string) float64 {
 func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bool, noColor bool) string {
 	var sb strings.Builder
 
-	// When agents ran, these insights cover the parent transcript alone (the
+	// When agents ran, these insights cover the main conversation alone (the
 	// agent rows live in AGENT SUB-SESSIONS above and are excluded here). Label
 	// the scope so it can't be silently mistaken for the breakdown view, which
 	// computes Peak/trend over the merged parent+agent messages. No label when
 	// there are no agents: parent-only and all-messages are then identical.
 	if hasAgents {
-		const scope = "scope: parent transcript"
+		const scope = "main conversation only, agents excluded"
 		if noColor {
 			sb.WriteString("  " + scope + "\n")
 		} else {
@@ -342,23 +342,23 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 	// Highest cost (only if notably above average)
 	if insights.HighestCost != nil {
 		highest := insights.HighestCost
-		multiplier := insights.CostMultiplier()
-		warningStr := fmt.Sprintf("%.1fx avg cost", multiplier)
+		// The multiplier is information, not a warning: nearly every session
+		// has a message well above its average.
+		multiplierStr := fmt.Sprintf("%.1fx avg cost", insights.CostMultiplier())
 
 		if noColor {
-			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  "+styles.Warning+" %s\n",
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  %s\n",
 				"Peak",
 				formatCostStyled(highest.Cost, 10, noColor),
 				render.Clock(highest.Timestamp),
-				warningStr))
+				multiplierStr))
 		} else {
 			timestamp := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(highest.Timestamp)))
-			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render(styles.Warning + " " + warningStr)
 			sb.WriteString(fmt.Sprintf("  %-10s %s  %s  %s\n",
 				"Peak",
 				formatCostStyled(highest.Cost, 10, noColor),
 				timestamp,
-				warningStyled))
+				dimStyle.Render(multiplierStr)))
 		}
 	}
 
@@ -367,15 +367,13 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 		trendDesc := insights.TrendDescription()
 		trendSymbol := render.TrendSymbol(insights.CostTrend)
 
-		earlyStr := render.Cost(insights.EarlyAvgCost) + "/msg"
-		lateStr := render.Cost(insights.LateAvgCost) + "/msg"
+		comparison := fmt.Sprintf("last %d %s/msg vs %s/msg avg",
+			insights.TrendWindow, render.Cost(insights.RecentAvgCost), render.Cost(insights.AverageCost))
 
 		if noColor {
-			sb.WriteString(fmt.Sprintf("  %-10s %s %s %s  %s %s\n",
+			sb.WriteString(fmt.Sprintf("  %-10s %s  %s %s\n",
 				"Trend",
-				earlyStr,
-				styles.Arrow,
-				lateStr,
+				comparison,
 				trendSymbol,
 				trendDesc))
 		} else {
@@ -389,11 +387,9 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 			default:
 				symbolStyled = dimStyle.Render(trendSymbol)
 			}
-			sb.WriteString(fmt.Sprintf("  %-10s %s %s %s  %s %s\n",
+			sb.WriteString(fmt.Sprintf("  %-10s %s  %s %s\n",
 				"Trend",
-				earlyStr,
-				styles.Arrow,
-				lateStr,
+				comparison,
 				symbolStyled,
 				trendDesc))
 		}

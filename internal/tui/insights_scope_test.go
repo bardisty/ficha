@@ -21,10 +21,10 @@ func TestWatchInsights_TrendGate(t *testing.T) {
 
 	at := &models.SessionAnalysis{
 		Insights: &models.MessageInsights{
-			MessageCount: models.MinMessagesForTrend,
-			CostTrend:    models.TrendIncreasing,
-			EarlyAvgCost: 0.10,
-			LateAvgCost:  0.25,
+			MessageCount:  models.MinMessagesForTrend,
+			CostTrend:     models.TrendIncreasing,
+			RecentAvgCost: 0.25,
+			TrendWindow:   3,
 		},
 	}
 	m = Model{analysis: at, noColor: true}
@@ -40,11 +40,11 @@ func TestWatchInsights_ScopeLabel(t *testing.T) {
 		FirstMessage: &models.MessageSnapshot{Index: 1},
 	}
 	withAgents := Model{analysis: &models.SessionAnalysis{Insights: insights, HasAgents: true}, noColor: true}
-	if out := withAgents.renderInsightsContent(); !strings.Contains(out, "scope: parent transcript") {
+	if out := withAgents.renderInsightsContent(); !strings.Contains(out, "main conversation only, agents excluded") {
 		t.Errorf("watch: expected scope label when agents present:\n%s", out)
 	}
 	noAgents := Model{analysis: &models.SessionAnalysis{Insights: insights, HasAgents: false}, noColor: true}
-	if out := noAgents.renderInsightsContent(); strings.Contains(out, "scope:") {
+	if out := noAgents.renderInsightsContent(); strings.Contains(out, "main conversation") {
 		t.Errorf("watch: did not expect scope label when no agents:\n%s", out)
 	}
 }
@@ -91,12 +91,12 @@ func TestBreakdownInsights_ScopeLabel(t *testing.T) {
 	}
 	withAgents := base
 	withAgents.hasAgents = true
-	if out := withAgents.renderCompactInsights(); !strings.Contains(out, "scope: parent + agents") {
+	if out := withAgents.renderCompactInsights(); !strings.Contains(out, "main conversation + agents") {
 		t.Errorf("breakdown: expected scope label when agents present:\n%s", out)
 	}
 	noAgents := base
 	noAgents.hasAgents = false
-	if out := noAgents.renderCompactInsights(); strings.Contains(out, "scope:") {
+	if out := noAgents.renderCompactInsights(); strings.Contains(out, "main conversation") {
 		t.Errorf("breakdown: did not expect scope label when no agents:\n%s", out)
 	}
 }
