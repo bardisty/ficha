@@ -338,11 +338,20 @@ func (m Model) renderAgentBreakdownContent() string {
 		if agent.WorkflowID != prevWorkflow {
 			prevWorkflow = agent.WorkflowID
 			if agent.WorkflowID != "" {
-				label := render.WorkflowLabel(a.WorkflowByID(agent.WorkflowID))
+				// The run's subtotal sits in the cost column, like show's, so a
+				// workflow compares with the parent session at a glance. It's
+				// dim like its heading: it repeats the rows below and isn't
+				// part of the column's sum.
+				heading := styles.GroupRule + " " + render.WorkflowLabel(a.WorkflowByID(agent.WorkflowID))
+				if lipgloss.Width(heading) > 40 {
+					heading = withEllipsis(heading, 40)
+				}
+				pad := strings.Repeat(" ", 40-lipgloss.Width(heading)+3)
+				cost := workflowCost(a.Agents, agent.WorkflowID)
 				if m.noColor {
-					sb.WriteString("    " + styles.GroupRule + " " + label + "\n")
+					sb.WriteString("    " + heading + pad + render.CostCell(cost, 11) + "\n")
 				} else {
-					sb.WriteString("    " + dimStyle.Render(styles.GroupRule+" "+label) + "\n")
+					sb.WriteString("    " + dimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, 11) + "\n")
 				}
 			}
 		}
@@ -395,6 +404,17 @@ func (m Model) renderAgentBreakdownContent() string {
 	}
 
 	return sb.String()
+}
+
+// workflowCost sums the cost of a workflow run's agents.
+func workflowCost(agents []models.AgentAnalysis, runID string) float64 {
+	var total float64
+	for _, agent := range agents {
+		if agent.WorkflowID == runID {
+			total += agent.TotalCost.TotalCost
+		}
+	}
+	return total
 }
 
 // renderInsightsContent renders just the insights content (no header)
@@ -567,7 +587,6 @@ func (m Model) headerParams(width int) liveHeaderParams {
 		sessionID:    m.sessionID,
 		loading:      m.showLoading(),
 		err:          m.err,
-		lastUpdated:  m.lastUpdated,
 		spinnerView:  m.spinner.View(),
 		noColor:      m.noColor,
 		width:        width,
@@ -575,6 +594,7 @@ func (m Model) headerParams(width int) liveHeaderParams {
 		mode:         mode,
 		lastActivity: m.lastActivity,
 		noMessages:   m.activityFromFile,
+		waiting:      m.waiting(),
 		now:          m.clock(),
 	}
 }
@@ -701,18 +721,21 @@ func (m Model) renderEmptyState() string {
 	var sb strings.Builder
 	sectionWidth := panelWidthFor(m.width)
 
-	// Hero cost (even $0.00 to establish visual anchor)
+	// Hero cost (even $0.00 to establish visual anchor), indented like the
+	// full view's
 	sb.WriteString("\n")
-	sb.WriteString(m.renderHeroCost(0, false, sectionWidth))
+	sb.WriteString("  " + m.renderHeroCost(0, false, sectionWidth))
 	sb.WriteString("\n\n")
 
-	// Simple awaiting message centered
+	// Awaiting message, centered under the rule
 	msg := "Awaiting first message..."
-	padding := (sectionWidth - len(msg)) / 2
-	if padding < 0 {
-		padding = 0
+	if m.waiting() {
+		msg = "Waiting for a Claude Code session in " + m.waitingIn + styles.Ellipsis
+		if lipgloss.Width(msg) > sectionWidth {
+			msg = "Waiting for a Claude Code session" + styles.Ellipsis
+		}
 	}
-	pad := strings.Repeat(" ", padding)
+	pad := strings.Repeat(" ", 2+max((sectionWidth-lipgloss.Width(msg))/2, 0))
 
 	if m.noColor {
 		sb.WriteString(pad + msg + "\n")

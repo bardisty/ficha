@@ -74,10 +74,24 @@ func (sw *SessionWatcher) Start() error {
 	}
 	sw.watcher = watcher
 
-	err = watcher.Add(sw.projectDir)
+	// A project Claude Code hasn't run in yet has no directory: watch the
+	// projects directory for it instead, and switch over when it appears
+	// (see adoptProjectDir).
+	target := sw.projectDir
+	if _, statErr := os.Stat(target); os.IsNotExist(statErr) {
+		target = filepath.Dir(target)
+	}
+	err = watcher.Add(target)
 	if err != nil {
 		watcher.Close()
 		return err
+	}
+	// The directory may have appeared between the Stat and the Add, whose
+	// Create event would then be missed: watch it now if it exists.
+	if target != sw.projectDir {
+		if _, statErr := os.Stat(sw.projectDir); statErr == nil {
+			_ = watcher.Add(sw.projectDir)
+		}
 	}
 
 	// Snapshot after Add so no session slips between the two unseen. One
@@ -111,6 +125,30 @@ func (sw *SessionWatcher) Stop() {
 
 // sessionRestartedPath is a sentinel path telling the waiter to restart
 const sessionRestartedPath = "\x00RESTART\x00"
+
+// NewestSession returns the most recently modified session file already in
+// the project directory, or empty strings when there is none.
+func (sw *SessionWatcher) NewestSession() (string, string) {
+	entries, err := os.ReadDir(sw.projectDir)
+	if err != nil {
+		return "", ""
+	}
+	var path, id string
+	var newest int64
+	for _, e := range entries {
+		if !uuidPattern.MatchString(e.Name()) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if mod := info.ModTime().UnixNano(); path == "" || mod > newest {
+			path, id, newest = filepath.Join(sw.projectDir, e.Name()), strings.TrimSuffix(e.Name(), ".jsonl"), mod
+		}
+	}
+	return path, id
+}
 
 // sessionEvent is another session in the project changing. created marks a
 // brand-new session file; otherwise an existing session was written to.
@@ -164,6 +202,12 @@ func (sw *SessionWatcher) WaitForSessionEvent() sessionEvent {
 			if !ok {
 				return sessionEvent{}
 			}
+			if event.Op&fsnotify.Create != 0 && filepath.Clean(event.Name) == sw.projectDir {
+				if ev := sw.adoptProjectDir(); ev.path != "" {
+					return ev
+				}
+				continue
+			}
 			if event.Op&(fsnotify.Create|fsnotify.Write) != 0 {
 				if ev := sw.handleSessionFile(event.Name, event.Op); ev.path != "" {
 					return ev
@@ -176,6 +220,25 @@ func (sw *SessionWatcher) WaitForSessionEvent() sessionEvent {
 			// Ignore errors, continue watching
 		}
 	}
+}
+
+// adoptProjectDir starts watching the project directory once it exists. A
+// session file can land in it before the watch does, so any already there
+// count as created now.
+func (sw *SessionWatcher) adoptProjectDir() sessionEvent {
+	if err := sw.watcher.Add(sw.projectDir); err != nil {
+		return sessionEvent{}
+	}
+	entries, err := os.ReadDir(sw.projectDir)
+	if err != nil {
+		return sessionEvent{}
+	}
+	for _, e := range entries {
+		if ev := sw.handleSessionFile(filepath.Join(sw.projectDir, e.Name()), fsnotify.Create); ev.path != "" {
+			return ev
+		}
+	}
+	return sessionEvent{}
 }
 
 // handleSessionFile classifies a file event: another session's file at the

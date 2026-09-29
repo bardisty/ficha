@@ -92,6 +92,10 @@ type Model struct {
 	hint            *sessionHint    // Another session's activity, not followed
 	windowTitle     string          // Last title sent, to send only changes
 
+	// waitingIn is the directory a waiting model (no session yet) waits for
+	// Claude Code to start in; see NewWaitingModel.
+	waitingIn string
+
 	// ticking is set while the 100ms highlight tick is scheduled; it runs
 	// only while a highlight is fading, so an idle view doesn't redraw ten
 	// times a second.
@@ -172,7 +176,7 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 
 	closing := &atomic.Bool{}
 	closeOnce := &sync.Once{}
-	return Model{
+	m := Model{
 		sessionPath: sessionPath,
 		sessionID:   sessionID,
 		verbose:     verbose,
@@ -190,10 +194,28 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 		costChart:   chart,
 		costHistory: make([]float64, 0),
 		agentCache:  analyzer.NewAgentParseCache(),
-		subagentSig: subagentTreeSignature(filepath.Dir(sessionPath), sessionID),
 		project:     projectName(projectDir),
 	}
+	if sessionPath != "" {
+		m.subagentSig = subagentTreeSignature(filepath.Dir(sessionPath), sessionID)
+	}
+	return m
 }
+
+// NewWaitingModel opens watch before its project has any session. It waits
+// on projectDir, which may not exist yet, and follows the first session
+// created there. projectPath is the directory Claude Code will run in, for
+// the header and the waiting message.
+func NewWaitingModel(projectDir, projectPath string, verbose, noColor, followMode bool) Model {
+	m := NewModel("", "", verbose, noColor, projectDir, followMode)
+	m.loading = false
+	m.waitingIn = projectPath
+	m.project = paths.BasenameCrossOS(projectPath)
+	return m
+}
+
+// waiting reports whether watch has no session yet.
+func (m Model) waiting() bool { return m.sessionPath == "" }
 
 // projectName is the last element of the project's real directory, or ""
 // when the storage directory doesn't record it.
@@ -212,6 +234,19 @@ func projectName(projectDir string) string {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Repeats that arrive in one input chunk (a held key over a slow
+		// link) come as one message, "jjjj"; take them one at a time.
+		if runes := msg.Runes; msg.Type == tea.KeyRunes && !msg.Paste && len(runes) > 1 && strings.Count(string(runes), string(runes[0])) == len(runes) {
+			var cmds []tea.Cmd
+			var model tea.Model = m
+			for range runes {
+				var cmd tea.Cmd
+				model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: runes[:1]})
+				cmds = append(cmds, cmd)
+			}
+			return model, tea.Batch(cmds...)
+		}
+
 		// The switch notice explains a total that changed under the reader;
 		// any key acknowledges it.
 		m.switched = nil
@@ -220,8 +255,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			shutdownWatchers(m.closeOnce, m.closing, m.done, m.watcher, m.sessionWatcher, m.wg)
 			return m, tea.Quit
 		case "r":
+			// The view is already live; r is the retry the notify row offers
+			// after an error, and a harmless re-read otherwise.
+			if m.waiting() {
+				// The session watcher is all a waiting view has; if it
+				// failed to start, r is the retry the notify row offers.
+				if m.sessionWatcher == nil && m.projectDir != "" {
+					m.err = nil
+					return m, m.startSessionWatcher()
+				}
+				return m, nil
+			}
 			m.loading = true
 			return m, tea.Batch(m.loadAnalysis, m.spinnerCmd())
+
+		case "ctrl+z":
+			if canSuspend() {
+				return m, tea.Suspend
+			}
+			return m, nil
 
 		case "p":
 			// Going back is a deliberate choice of session, so it pins.
@@ -238,24 +290,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f":
 			m.followMode = !m.followMode
 
-		case "up", "k":
-			m.viewport.ScrollUp(1)
-
-		case "down", "j":
-			m.viewport.ScrollDown(1)
-
-		case "pgup":
-			m.viewport.HalfPageUp()
-
-		case "pgdown":
-			m.viewport.HalfPageDown()
-
 		case "g", "home":
 			m.viewport.GotoTop()
 
 		case "G", "end":
 			m.viewport.GotoBottom()
+
+		default:
+			// Everything else goes to the viewport's pager keymap: j/k and
+			// arrows, space/f/pgdown and b/pgup by page, d/u and ctrl+d/u by
+			// half page. f is taken above for follow.
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			return m, cmd
 		}
+
+	case tea.ResumeMsg:
+		// Back from ctrl+z: the watchers kept their events, but reload in
+		// case the session moved on while the process was stopped.
+		if m.waiting() {
+			return m, nil
+		}
+		m.loading = true
+		return m, tea.Batch(m.loadAnalysis, m.spinnerCmd())
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -275,7 +332,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rebuildCostChart()
 
 		// Re-render content with new dimensions
-		if m.analysis != nil {
+		if m.analysis != nil || m.waiting() {
 			m.refreshContent()
 		}
 
@@ -393,6 +450,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionWatcherStartedMsg:
 		// Store the session watcher and start waiting for new sessions
 		m.sessionWatcher = msg.watcher
+		// A session created between the decision to wait and the watcher's
+		// start is already on disk; take it rather than wait for its next
+		// write.
+		if m.waiting() {
+			if path, id := msg.watcher.NewestSession(); path != "" {
+				return m.switchTo(path, id, true)
+			}
+		}
 		return m, m.waitForNewSession()
 
 	case sessionWatcherRestartMsg:
@@ -419,6 +484,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.id == m.sessionID {
 			return m, m.waitForNewSession()
 		}
+		// Anything beats waiting, and there is nothing to be pinned to.
+		if m.waiting() {
+			return m.switchTo(msg.path, msg.id, true)
+		}
 		if msg.created && m.followMode {
 			return m.switchTo(msg.path, msg.id, true)
 		}
@@ -442,6 +511,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tickCmd()
 
 	case subagentPollMsg:
+		if m.waiting() {
+			return m, subagentPollCmd()
+		}
 		sig := subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
 		if sig != m.subagentSig {
 			m.subagentSig = sig

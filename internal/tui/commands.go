@@ -11,12 +11,9 @@ import (
 
 // Init initializes the TUI
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{
-		m.spinner.Tick,
-		m.loadAnalysis,
-		func() tea.Msg { return m.watchFile() },
-		clockCmd(time.Second, 0),
-		subagentPollCmd(),
+	cmds := []tea.Cmd{clockCmd(time.Second, 0), subagentPollCmd()}
+	if !m.waiting() {
+		cmds = append(cmds, m.spinner.Tick, m.loadAnalysis, func() tea.Msg { return m.watchFile() })
 	}
 
 	// The session watcher runs in pinned mode too, to hint at newer sessions

@@ -131,7 +131,9 @@ func (m Model) renderFooterLines(panelWidth int) []string {
 	if m.compact() {
 		return lines
 	}
-	helpText := helpLine("q: quit", "r: refresh", "f: follow", "g/G: top/bottom", styles.ScrollKeys+": scroll")
+	// r isn't listed: the view is already live, and the notify row offers
+	// it as a retry when something fails.
+	helpText := helpLine("q quit", "j/k scroll", "space/b page", "g/G top/bottom", "f follow")
 	if !m.noColor {
 		helpText = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(helpText)
 	}
@@ -380,7 +382,9 @@ func (m Model) renderNotifyRow(width int) string {
 			text += fmt.Sprintf(" (previous %s: %s)",
 				render.TruncateID(m.prevSessionID, sessionIDDisplayLen), render.Cost(m.switched.prevTotal))
 		}
-		text += " " + styles.Bullet + " p to go back"
+		if m.prevSessionPath != "" {
+			text += " " + styles.Bullet + " p to go back"
+		}
 	case m.hintVisible():
 		id := render.TruncateID(m.hint.id, sessionIDDisplayLen)
 		if m.hint.created {
