@@ -129,3 +129,27 @@ func TestShellQuote(t *testing.T) {
 		}
 	}
 }
+
+func TestCompletionValue(t *testing.T) {
+	sessions := []models.SessionEntry{
+		{SessionID: "aaaaaaaa-1111"},
+		{SessionID: "bbbbbbbb-1111"},
+		{SessionID: "bbbbbbbb-2222"},
+		{SessionID: "agent-a1"},
+	}
+	tests := []struct {
+		id    string
+		typed int
+		want  string
+	}{
+		{"aaaaaaaa-1111", 0, "aaaaaaaa"},
+		{"aaaaaaaa-1111", 9, "aaaaaaaa-1111"}, // typed past the short form
+		{"bbbbbbbb-1111", 0, "bbbbbbbb-1111"}, // shares its 8-char prefix
+		{"agent-a1", 0, "agent-a1"},           // already short
+	}
+	for _, tt := range tests {
+		if got := completionValue(tt.id, sessions, tt.typed); got != tt.want {
+			t.Errorf("completionValue(%q, typed=%d) = %q, want %q", tt.id, tt.typed, got, tt.want)
+		}
+	}
+}

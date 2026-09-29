@@ -139,6 +139,20 @@ ficha show -f csv --messages  # per-message rows as CSV
 ficha list -p /path/to/dir    # list sessions for different project
 ```
 
+## Shell completion
+
+`ficha completion <shell>` prints a completion script for bash, zsh, fish or PowerShell. It completes commands, flag values (`-f`, `--sort-by`, directories for `-p`) and session IDs. In shells that show descriptions, each session ID shows how long ago it was modified and, when the matching transcripts are small enough to read quickly, its message count.
+
+Claude project directory names start with `-`, so complete them with `--project-dir=<Tab>`. Without the `=`, the shell reads what you've typed as a flag.
+
+```sh
+source <(ficha completion bash)                                   # bash, current shell
+ficha completion zsh > "${fpath[1]}/_ficha"                       # zsh, then restart the shell
+ficha completion fish > ~/.config/fish/completions/ficha.fish     # fish
+```
+
+`ficha completion <shell> --help` has the persistent setup for each shell.
+
 ## Machine output (json / csv)
 
 `-f` only picks the encoding. json and csv always export the complete dataset, as a single object or a uniform-column table, safe for `jq` and pandas.
