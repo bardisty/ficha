@@ -38,10 +38,11 @@ Messages and turns
 Message insights
   In show, insights cover the parent transcript only, without agents, and
   say "scope: parent transcript" when agents ran. breakdown covers every
-  message. Peak is the most expensive single message, shown when it's at
-  least 1.5x the average. Trend compares the average cost of the first 3
-  messages with the last 3: it needs 6 messages, and a change under 20%
-  counts as stable.
+  message, parent messages first, then each agent's. Peak is the most
+  expensive single message, shown when it's more than 1.5x the average.
+  Trend compares the average cost of the first 3 messages with the last 3,
+  in that order: it needs 6 messages, and a change of 20% or less counts
+  as stable.
 
 Context
   How full the model's context window was on the latest parent message:

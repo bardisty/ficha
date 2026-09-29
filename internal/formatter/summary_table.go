@@ -208,7 +208,10 @@ func renderSessionBreakdown(results []models.SessionResult, noColor bool, expand
 				continue
 			}
 			for _, agent := range a.Agents {
-				costWidth = max(costWidth, render.CostCellWidth(0, agent.TotalCost.TotalCost, workflowCost(a.Agents, agent.WorkflowID)))
+				costWidth = max(costWidth, render.CostCellWidth(0, agent.TotalCost.TotalCost))
+				if agent.WorkflowID != "" {
+					costWidth = max(costWidth, render.CostCellWidth(0, workflowCost(a.Agents, agent.WorkflowID)))
+				}
 			}
 			modelWidth = max(modelWidth, agentTreeWidth(a)+2-expandedCostColumn+10)
 		}

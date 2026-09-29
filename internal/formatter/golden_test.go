@@ -587,7 +587,8 @@ func TestGoldenSessionTableShowWorkflowsColor(t *testing.T) {
 const goldenWfSessionID = "dddd4444-5555-6666-7777-888899990000"
 
 // summaryWorkflowFixture builds a project with one session that has a regular
-// agent plus a workflow run (two agents + metadata), for the expand-agents tree.
+// agent plus two workflow runs (two agents, then one, with metadata), for the
+// expand-agents tree.
 func summaryWorkflowFixture(t *testing.T) []models.SessionEntry {
 	t.Helper()
 	dir := t.TempDir()
@@ -626,6 +627,14 @@ func summaryWorkflowFixture(t *testing.T) []models.SessionEntry {
 	writeFixture(filepath.Join(goldenWfSessionID, "workflows", "wf_golden-run.json"),
 		`{"runId":"wf_golden-run","workflowName":"audit-codebase","status":"completed","script":"export const meta = {}"}`)
 
+	// A second run, so the first run's node has a sibling below it and its
+	// agents hang off a rail.
+	wfRun2 := filepath.Join(goldenWfSessionID, "subagents", "workflows", "wf_golden-run2")
+	writeFixture(filepath.Join(wfRun2, "agent-wf3.jsonl"),
+		msg("2026-01-20T09:20:00Z", "w3", "claude-haiku-4-5", 1500, 700)+"\n")
+	writeFixture(filepath.Join(goldenWfSessionID, "workflows", "wf_golden-run2.json"),
+		`{"runId":"wf_golden-run2","workflowName":"second-pass","status":"running"}`)
+
 	return []models.SessionEntry{
 		{
 			SessionID: goldenWfSessionID,
@@ -641,6 +650,21 @@ func TestGoldenSummaryDetailsExpandWorkflows(t *testing.T) {
 	entries := summaryWorkflowFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
 	checkGolden(t, "summary_details_expand_workflows", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true))
+}
+
+func TestGoldenSummaryDetailsExpandWorkflowsASCII(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	useASCII(t)
+	entries := summaryWorkflowFixture(t)
+	analysis, results := summaryDetailsAnalysis(t, entries)
+	checkGolden(t, "summary_details_expand_workflows_ascii", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true))
+}
+
+func TestGoldenSummaryDetailsExpandWorkflowsColor(t *testing.T) {
+	forceProfile(t, termenv.ANSI256)
+	entries := summaryWorkflowFixture(t)
+	analysis, results := summaryDetailsAnalysis(t, entries)
+	checkGolden(t, "summary_details_expand_workflows_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, true))
 }
 
 // --- golden tests: glyph sets and mixed cost widths ---
