@@ -29,19 +29,19 @@ func foldAgent(id, run string, start, end time.Time, msgs int, cost float64) mod
 	}
 }
 
-// foldAnalysis has ten agents, over the cap, listed in discovery (ID) order:
+// foldAnalysis has ten agents, over the cap, in the analyzer's order:
 // three finished plain agents and one running, a completed run, a run still
 // in progress whose agents have all gone quiet, and a run with an unreadable
 // status and one running agent.
 func foldAnalysis() *models.SessionAnalysis {
 	ago := func(d time.Duration) time.Time { return foldNow.Add(-d) }
 	agents := []models.AgentAnalysis{
-		foldAgent("a1000000000", "", ago(3*time.Hour), ago(2*time.Hour), 25, 1.04),
-		foldAgent("a2000000000", "", ago(50*time.Minute), ago(40*time.Second), 22, 0.91),
 		foldAgent("a3000000000", "", ago(4*time.Hour), ago(3*time.Hour), 32, 0.68),
+		foldAgent("a1000000000", "", ago(3*time.Hour), ago(2*time.Hour), 25, 1.04),
 		foldAgent("a4000000000", "", ago(2*time.Hour), ago(time.Hour), 14, 0.44),
-		foldAgent("b1000000000", "wf_done", ago(90*time.Minute), ago(80*time.Minute), 21, 4.10),
+		foldAgent("a2000000000", "", ago(50*time.Minute), ago(40*time.Second), 22, 0.91),
 		foldAgent("b2000000000", "wf_done", ago(95*time.Minute), ago(85*time.Minute), 17, 1.20),
+		foldAgent("b1000000000", "wf_done", ago(90*time.Minute), ago(80*time.Minute), 21, 4.10),
 		foldAgent("c1000000000", "wf_busy", ago(30*time.Minute), ago(10*time.Minute), 21, 1.82),
 		foldAgent("c2000000000", "wf_busy", ago(25*time.Minute), ago(9*time.Minute), 9, 0.30),
 		foldAgent("d1000000000", "wf_mixed", ago(20*time.Minute), ago(15*time.Minute), 8, 0.25),
@@ -172,18 +172,19 @@ func TestAgentRowsKeepALoneFinishedAgent(t *testing.T) {
 	}
 }
 
-// Runs order by their first agent's start; an agent with no timestamped
-// message yet sorts last, so it lands at the bottom and stays there.
-func TestAgentRowsOrder(t *testing.T) {
+// The analyzer orders agents; the list keeps that order rather than sorting
+// again, so it agrees row for row with show and summary. Given agents out of
+// start order, it lists them as given, plain agents first.
+func TestAgentRowsKeepAnalyzerOrder(t *testing.T) {
 	a := &models.SessionAnalysis{Agents: []models.AgentAnalysis{
-		foldAgent("new", "", time.Time{}, time.Time{}, 0, 0),
 		foldAgent("late", "", goldenTime(11, 0, 0), goldenTime(11, 5, 0), 1, 0),
-		foldAgent("early", "", goldenTime(10, 0, 0), goldenTime(10, 5, 0), 1, 0),
-		foldAgent("r2a", "wf_b", goldenTime(10, 30, 0), goldenTime(10, 35, 0), 1, 0),
 		foldAgent("r1a", "wf_a", goldenTime(10, 40, 0), goldenTime(10, 45, 0), 1, 0),
+		foldAgent("r1b", "wf_a", goldenTime(10, 20, 0), goldenTime(10, 25, 0), 1, 0),
+		foldAgent("r2a", "wf_b", goldenTime(10, 30, 0), goldenTime(10, 35, 0), 1, 0),
+		foldAgent("early", "", goldenTime(10, 0, 0), goldenTime(10, 5, 0), 1, 0),
 	}}
 	got := rowSummary(agentRows(a, foldNow))
-	want := []string{"early", "late", "new", "run:wf_b", "r2a", "run:wf_a", "r1a"}
+	want := []string{"late", "early", "run:wf_a", "r1a", "r1b", "run:wf_b", "r2a"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("rows:\n got %v\nwant %v", got, want)
 	}

@@ -130,6 +130,8 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 	if len(agentPaths) > 0 {
 		analysis.HasAgents = true
 
+		// Each agent's messages, parallel to analysis.Agents until the sort.
+		var agentBlocks [][]models.MessageAnalysis
 		for _, agentPath := range agentPaths {
 			agentAnalysis, agentMessages, err := analyzeAgentWithCache(agentPath, cache, window)
 			if err != nil {
@@ -144,21 +146,7 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 			agentAnalysis.WorkflowID = parser.ExtractWorkflowRunID(agentPath)
 
 			analysis.Agents = append(analysis.Agents, *agentAnalysis)
-
-			// Agent rows follow the parent block, each agent in discovery order
-			// (regular agents, then workflow runs alphabetically). Tag copies:
-			// agentMessages may be the parse cache's own slice, and the struct
-			// copy is shallow — Usage.CacheCreation is a pointer into it.
-			if scope == AllMessages {
-				for _, msg := range agentMessages {
-					msg.AgentID = agentAnalysis.AgentID
-					if msg.Usage.CacheCreation != nil {
-						cc := *msg.Usage.CacheCreation
-						msg.Usage.CacheCreation = &cc
-					}
-					analysis.Messages = append(analysis.Messages, msg)
-				}
-			}
+			agentBlocks = append(agentBlocks, agentMessages)
 
 			// Roll up agent costs and messages
 			analysis.AgentsCost.Add(agentAnalysis.TotalCost)
@@ -188,7 +176,33 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 		// agents discovery found but could not read are in SkippedAgents.
 		analysis.AgentCount = len(analysis.Agents)
 
-		// Collect workflow run metadata in first-seen agent order
+		// Every view lists agents in this order, and the workflow runs and
+		// message blocks below follow it.
+		order := agentOrder(analysis.Agents)
+		sorted := make([]models.AgentAnalysis, len(order))
+		for i, pos := range order {
+			sorted[i] = analysis.Agents[pos]
+		}
+		analysis.Agents = sorted
+
+		// Agent rows follow the parent block, one block per agent in the
+		// order above. Tag copies: a block may be the parse cache's own
+		// slice, and the struct copy is shallow — Usage.CacheCreation is a
+		// pointer into it.
+		if scope == AllMessages {
+			for i, pos := range order {
+				for _, msg := range agentBlocks[pos] {
+					msg.AgentID = analysis.Agents[i].AgentID
+					if msg.Usage.CacheCreation != nil {
+						cc := *msg.Usage.CacheCreation
+						msg.Usage.CacheCreation = &cc
+					}
+					analysis.Messages = append(analysis.Messages, msg)
+				}
+			}
+		}
+
+		// Collect workflow run metadata in agent order, so runs go by start
 		seenRuns := make(map[string]bool)
 		for _, agent := range analysis.Agents {
 			if agent.WorkflowID == "" || seenRuns[agent.WorkflowID] {

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"sort"
 	"strings"
 	"time"
 
@@ -77,27 +76,11 @@ func runningAgentsKey(a *models.SessionAnalysis, now time.Time) string {
 	return strings.Join(ids, ",")
 }
 
-// sortByStart orders agents by their first message, so rows keep their
-// place across reloads and a new agent lands at the bottom of its group. An
-// agent with no timestamped message yet sorts last; ties keep discovery
-// order.
-func sortByStart(agents []models.AgentAnalysis) {
-	sort.SliceStable(agents, func(i, j int) bool { return startsBefore(agents[i], agents[j]) })
-}
-
-// startsBefore is sortByStart's order for two agents.
-func startsBefore(x, y models.AgentAnalysis) bool {
-	if x.StartTime.IsZero() || y.StartTime.IsZero() {
-		return !x.StartTime.IsZero() && y.StartTime.IsZero()
-	}
-	return x.StartTime.Before(y.StartTime)
-}
-
 // agentRows lays out the agent list: plain agents, then each workflow run
-// under its heading, all in first-message order. Above agentListCap agents,
-// two or more finished plain agents fold into one line ahead of the rest,
-// and a run that has ended folds to its heading, which carries the run's
-// subtotal. A run whose status can't be read has ended once all its agents
+// under its heading, in the order the analyzer lists them, which is by first
+// message. Above agentListCap agents, two or more finished plain agents fold
+// into one line ahead of the rest, and a run that has ended folds to its
+// heading, which carries the run's subtotal. A run whose status can't be read has ended once all its agents
 // have finished. Running and just-started agents never fold.
 func agentRows(a *models.SessionAnalysis, now time.Time) []agentRow {
 	var plain []models.AgentAnalysis
@@ -113,14 +96,6 @@ func agentRows(a *models.SessionAnalysis, now time.Time) []agentRow {
 		}
 		runs[agent.WorkflowID] = append(runs[agent.WorkflowID], agent)
 	}
-	sortByStart(plain)
-	for _, id := range runOrder {
-		sortByStart(runs[id])
-	}
-	// A run's first agent stands for it: a run sorts by when it started.
-	sort.SliceStable(runOrder, func(i, j int) bool {
-		return startsBefore(runs[runOrder[i]][0], runs[runOrder[j]][0])
-	})
 
 	fold := len(a.Agents) > agentListCap
 	var rows []agentRow

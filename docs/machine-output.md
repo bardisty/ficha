@@ -40,6 +40,10 @@ Sessions that fail to parse are omitted from detail output and reported on stder
 
 Two fields name where a record came from. `project_path` is the Claude project directory (`~/.claude/projects/<encoded>`) — identical on `show`, the `summary` aggregate, and every per-session record, so machine outputs join on it. `session_file` is the transcript `.jsonl` path; it is empty on the `summary` aggregate, which spans many files. In csv, session rows carry both columns and agent rows leave them empty (join back through `session_id`). (`list` names the same transcript path `full_path`, and its `project_path` is the original working directory, not this encoded project dir. `global` names each project by `encoded_path`, `full_path`, `original_path` and `display_name`.)
 
+## Agent order
+
+`agents` lists plain agents first, then each workflow run's agents together. Each group goes by first message, and runs go by their first agent's start. An agent with no timestamped message yet comes last in its group. `workflows` lists runs in the same order. The tables and `ficha watch` list agents this way too. The order is for reading and isn't part of the json contract. A script that needs a fixed order should sort by `start_time` or `agent_id` itself.
+
 ## Workflow runs
 
 Each entry in `workflows` (on `show` json and each per-session record in `summary -d` json) names a workflow run whose agents appear in `agents`, with `cost`: the sum of those agents' `total_cost.total_cost`. It's derived from the agent records, which remain the unit every total is summed from, so don't add it to `agents_cost` or `total_cost` again.
@@ -104,7 +108,7 @@ g1        2026-02-02T09:05:00Z  claude-sonnet-5    0.012000   ─┤
 w1        2026-02-02T09:07:00Z  claude-sonnet-5    0.009000   ─┘ agents
 ```
 
-Parent rows come first, then one block per agent in discovery order (regular subagents, then workflow runs). Sort by timestamp for a chronological view — or use `ficha breakdown`, which does it for you.
+Parent rows come first, then one block per agent, in the order of `agents`. Sort by timestamp for a chronological view — or use `ficha breakdown`, which does it for you.
 
 One `agent_id` key space throughout: the same ID joins these rows, the json `agents[]` array, and `summary --details --expand-agents` rows.
 
