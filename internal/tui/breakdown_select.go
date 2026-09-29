@@ -35,9 +35,9 @@ func repeatedRune(msg tea.KeyMsg) int {
 	return len(msg.Runes)
 }
 
-// topByCost returns the positions in m.messages of the most expensive rows,
-// most expensive first; ties go to the earlier row.
-func (m BreakdownModel) topByCost() []int {
+// byCost returns the positions in m.messages, most expensive first; ties go
+// to the earlier row.
+func (m BreakdownModel) byCost() []int {
 	pos := make([]int, len(m.messages))
 	for i := range pos {
 		pos[i] = i
@@ -45,7 +45,89 @@ func (m BreakdownModel) topByCost() []int {
 	sort.SliceStable(pos, func(a, b int) bool {
 		return m.messages[pos[a]].Cost.TotalCost > m.messages[pos[b]].Cost.TotalCost
 	})
+	return pos
+}
+
+// topByCost returns the positions in m.messages of the most expensive rows,
+// most expensive first.
+func (m BreakdownModel) topByCost() []int {
+	pos := m.byCost()
 	return pos[:min(topCount, len(pos))]
+}
+
+// rowOrder returns the positions in m.messages in the order the table draws
+// them: by time, or by cost while sorted.
+func (m BreakdownModel) rowOrder() []int {
+	if m.sortByCost {
+		return m.byCost()
+	}
+	pos := make([]int, len(m.messages))
+	for i := range pos {
+		pos[i] = i
+	}
+	return pos
+}
+
+// sortAnchor returns the identity of the row at the top of a sorted view
+// scrolled off the top, for keepSortAnchor, or "" when there's nothing to
+// hold: in time order new rows land below, and at the top of a sorted view
+// a new most expensive row should show where the reader is looking.
+func (m BreakdownModel) sortAnchor() string {
+	if !m.sortByCost || !m.ready || m.viewport.YOffset == 0 || m.viewport.YOffset >= len(m.lineRows) {
+		return ""
+	}
+	index := m.lineRows[m.viewport.YOffset]
+	if index < 1 || index > len(m.messages) {
+		return ""
+	}
+	return breakdownMsgKey(m.messages[index-1])
+}
+
+// keepSortAnchor scrolls the anchor row back to the top after a reload. A
+// row that sorts in above it would otherwise push every row on screen down
+// one line under the reader's eye.
+func (m *BreakdownModel) keepSortAnchor(anchor string) {
+	if anchor == "" {
+		return
+	}
+	for line, index := range m.lineRows {
+		if index > 0 && breakdownMsgKey(m.messages[index-1]) == anchor {
+			m.viewport.SetYOffset(line)
+			return
+		}
+	}
+}
+
+// toggleSort switches the table between time order and cost order. Sorted,
+// the view opens on the most expensive row and stops following: new rows
+// still load and count, but land where their cost puts them rather than
+// moving the view. Back in time order, the view returns to where it was, or
+// to following if it was following.
+func (m *BreakdownModel) toggleSort() {
+	if !m.ready {
+		return
+	}
+	if !m.sortByCost {
+		// Nothing to sort. Leaving the mode needs no rows, though: a reload
+		// can empty the table while it's sorted.
+		if len(m.messages) == 0 {
+			return
+		}
+		m.timeYOffset, m.timeFollow = m.viewport.YOffset, m.autoScroll
+		m.setFollow(false)
+		m.sortByCost = true
+		m.refreshViewport()
+		m.viewport.GotoTop()
+		return
+	}
+	m.sortByCost = false
+	m.refreshViewport()
+	if m.timeFollow {
+		m.viewport.GotoBottom()
+		m.setFollow(true)
+		return
+	}
+	m.viewport.SetYOffset(m.timeYOffset)
 }
 
 // selectedRank returns the selected row's position in top and its rank, or

@@ -43,10 +43,10 @@ Message insights
   "main conversation only, agents excluded" when agents ran. breakdown
   covers every message, agents included. Peak is the most expensive single
   message, shown when it's more than 1.5x the average; in breakdown, p
-  jumps to it and then to the next most expensive. Trend compares the
-  average cost of the last 20 messages (the later half of a shorter
-  session) with the session's average: it needs 6 messages, and a
-  difference of 20% or less reads as flat.
+  jumps to it and then to the next most expensive, and s sorts the table
+  by cost. Trend compares the average cost of the last 20 messages (the
+  later half of a shorter session) with the session's average: it needs 6
+  messages, and a difference of 20% or less reads as flat.
 
 Context
   How full the model's context window was on the latest parent message:

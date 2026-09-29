@@ -23,6 +23,8 @@ Features:
     rc for a review-changes run; the footer names those on screen when
     it has room
   - p jumps to the most expensive rows
+  - s sorts the table by cost, most expensive first; the view stays put
+    as rows arrive. s again returns to time order where you left it
   - Minus (-) goes back to the previous session after a switch
   - With no session in the project yet, waits for the first one
 

@@ -100,8 +100,12 @@ func breakdownLastActivity(msgs []models.BreakdownMessage, modTime time.Time) (t
 // setFollow turns auto-scroll on or off. Turning it off records the message
 // count, so the footer can count the rows that arrive while scrolled up.
 // Before the first load lands there's no count to record, so the load that
-// lands records it (see pausePending).
+// lands records it (see pausePending). Sorted by cost, the newest row isn't
+// at the bottom, so nothing turns following on.
 func (m *BreakdownModel) setFollow(on bool) {
+	if on && m.sortByCost {
+		return
+	}
 	if m.autoScroll && !on {
 		m.pausedAt = len(m.messages)
 		m.pausePending = m.loading && len(m.messages) == 0
@@ -182,6 +186,9 @@ func (m BreakdownModel) visibleRows() (first, last int) {
 //
 // A table that fits the viewport has no position to report.
 func (m BreakdownModel) positionText() string {
+	if m.sortByCost {
+		return m.sortedPositionText()
+	}
 	if !m.ready || m.viewport.TotalLineCount() <= m.viewport.Height {
 		return ""
 	}
@@ -196,12 +203,37 @@ func (m BreakdownModel) positionText() string {
 	return text
 }
 
+// sortedPositionText is positionText while sorted by cost. It leads with the
+// mode and the key that leaves it, then counts ranks in cost order rather
+// than row numbers, which no longer run in sequence:
+//
+//	sorted by cost (s) • rank 1-14 of 460
+//
+// It has no count of new rows: they land anywhere, and no key takes the
+// reader to them.
+func (m BreakdownModel) sortedPositionText() string {
+	text := sortedLabel
+	if m.ready && m.viewport.TotalLineCount() > m.viewport.Height {
+		first := m.viewport.YOffset + 1
+		last := min(m.viewport.YOffset+m.viewport.Height, m.viewport.TotalLineCount())
+		text += fmt.Sprintf(" %s rank %d-%d of %d", styles.Bullet, first, last, len(m.messages))
+	}
+	return text
+}
+
+// sortedLabel names the cost-order mode on the footer rule, with the key
+// that leaves it: on a narrow terminal the help line has no room for s.
+const sortedLabel = "sorted by cost (s)"
+
 // renderFooterRule draws the heavy rule above the footer, carrying the
 // scroll position in brackets like watch's rule does. A position that
-// doesn't fit leaves the plain rule.
+// doesn't fit leaves the plain rule, or while sorted, the mode alone.
 func (m BreakdownModel) renderFooterRule(panelWidth int) string {
 	mark := m.positionText()
 	const lead = 2 // rule cells kept left of the marker
+	if m.sortByCost && lead+lipgloss.Width("[ "+mark+" ]") > panelWidth {
+		mark = sortedLabel
+	}
 	bracketed := "[ " + mark + " ]"
 	if mark == "" || lead+lipgloss.Width(bracketed) > panelWidth {
 		rule := strings.Repeat(styles.BoxHorizontal, panelWidth)
