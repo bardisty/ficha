@@ -102,8 +102,10 @@ vet:
 check: fmt lint test
 
 # Regenerate the README screenshots from a synthetic fixture. Needs vhs
-# (charmbracelet/vhs), which brings ttyd and ffmpeg, and python3.
+# (charmbracelet/vhs) with its ttyd and ffmpeg dependencies, python3, and the
+# DejaVu Sans Mono font the tapes are sized for.
 screenshots: build
+	@fc-list | grep -q "DejaVu Sans Mono" || { echo "screenshots: DejaVu Sans Mono is not installed (fc-list)"; exit 1; }
 	rm -rf $(BIN_DIR)/screenshots
 	python3 docs/screenshots/mkfixture.py $(BIN_DIR)/screenshots/fixture
 	vhs docs/screenshots/watch.tape

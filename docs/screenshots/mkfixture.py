@@ -52,7 +52,7 @@ def user(dt, sid, cwd):
             "message": {"role": "user", "content": "synthetic prompt"}}
 
 
-def convo(end, n, models, sid, cwd):
+def convo(end, n, models, sid, cwd, ctx_cap=190_000, growth=6000):
     """n assistant messages (plus the user turns between them), the last at end."""
     gaps = [rng.randint(5, 90) for _ in range(n)]
     dt, ctx, lines = end - timedelta(seconds=sum(gaps)), 8000, []
@@ -61,7 +61,7 @@ def convo(end, n, models, sid, cwd):
         if i % 4 == 0:
             lines.append(user(dt - timedelta(seconds=2), sid, cwd))
         model = models[i % len(models)]
-        ctx = min(ctx + rng.randint(500, 6000), 190_000)
+        ctx = min(ctx + rng.randint(500, growth), ctx_cap)
         c5 = rng.choice([0, 0, 0, rng.randint(500, 9000)])
         c1h = rng.choice([0, 0, 0, 0, rng.randint(1000, 20000)])
         read = max(0, ctx - c5 - c1h - 50)
@@ -92,14 +92,19 @@ def ago(**kw):
 
 
 # The main conversation, ending moments before the capture so it reads as live.
+# Its context grows to about 70% of Opus's 1M window, just short of the
+# compaction mark, so the gauge shows both the fill and the mark ahead of it.
+# The growth rate gets there without hitting the cap, which would flatline
+# the cache-read column.
 write_jsonl(os.path.join(wp, big + ".jsonl"),
-            convo(ago(seconds=12), 240, ["claude-opus-5-5", "claude-opus-5-5", "claude-haiku-4-5-20251001"], big, wd))
+            convo(ago(seconds=12), 240, ["claude-opus-5-5"], big, wd, ctx_cap=1_000_000, growth=5000))
 
 # Plain subagents: three from earlier in the session, and one still working, so
 # the bottom of breakdown interleaves agent rows with the main conversation.
-for end, n in [(ago(hours=2, minutes=20), 25), (ago(hours=1, minutes=45), 32), (ago(hours=1, minutes=5), 14), (ago(seconds=40), 22)]:
+for end, n, model in [(ago(hours=2, minutes=20), 25, "claude-sonnet-5-5"), (ago(hours=1, minutes=45), 32, "claude-haiku-4-5-20251001"),
+                      (ago(hours=1, minutes=5), 14, "claude-sonnet-5-5"), (ago(seconds=40), 22, "claude-sonnet-5-5")]:
     write_jsonl(os.path.join(wp, big, "subagents", "agent-a%016x.jsonl" % rng.getrandbits(64)),
-                convo(end, n, ["claude-sonnet-5-5"], big, wd))
+                convo(end, n, [model], big, wd))
 
 # One finished workflow run and one still running.
 runs = [("wf_7f3a9c", "review-changes", "completed", [ago(hours=1, minutes=30), ago(hours=1, minutes=25), ago(hours=1, minutes=18)]),
