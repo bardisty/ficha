@@ -1,5 +1,5 @@
 ╔══════════════════════════════════════════════════════════════════════════╗
-║  Session: 0a1b2c3d-4e5f-6789-abcd-ef0123456789  │  Duration: 1h 30m      ║
+║  ~/src/app  │  Session: 0a1b2c3d  │  Duration: 1h 30m                    ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
 ─────────────────────[ $11.55 API-equivalent estimate ]─────────────────────
@@ -16,19 +16,19 @@
 
 ─────────────────────────────[ COST BY MODEL ]──────────────────────────────
 
-    Opus 4.8          $9.00  
-    Sonnet 5          $2.13  
+    Opus 4.8          $9.00
+    Sonnet 5          $2.13
     Haiku 4.5         $0.4200
 
 ───────────────────────────[ AGENT SUB-SESSIONS ]───────────────────────────
 
-  Parent session                                 $7.90  
+  Parent session                                 $7.90
   [A1b2c3d4] Haiku 4.5    12 msgs                $0.4200
-  [Af6e5d4c] Sonnet 5       1 msg                $1.58  
-  ── workflow: audit-codebase (completed)        $1.65  
-  [Aw1a2b3c] Opus 4.8     21 msgs                $1.10  
+  [Af6e5d4c] Sonnet 5       1 msg                $1.58
+  ── workflow: audit-codebase (completed)        $1.65
+  [Aw1a2b3c] Opus 4.8     21 msgs                $1.10
   [Aw6e5d4c] Sonnet 5       1 msg                $0.5500
-  Agents subtotal                                $3.65  
+  Agents subtotal                                $3.65
 
 ────────────────────────────[ MESSAGE INSIGHTS ]────────────────────────────
 
@@ -40,5 +40,5 @@
 
 ════════════════════════════════════════════════════════════════════════════
 Total: $11.55  │  Messages: 59 (24 parent, 35 agents)
-Last active: 2026-01-15 11:30
+Last active: Jan 15 11:30
 ────────────────────────────────────────────────────────────────────────────

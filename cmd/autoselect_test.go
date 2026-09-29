@@ -39,7 +39,7 @@ func TestShowSkipsNewerSessionWithoutReplies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout, "Session: "+e2eBetaID) {
+	if !strings.Contains(stdout, "Session: "+e2eBetaID[:8]) {
 		t.Errorf("want the newest session with replies (beta):\n%s", stdout)
 	}
 	if want := "(skipped 1 newer session with no replies yet: " + emptyID[:8] + ")"; !strings.Contains(stderr, want) {

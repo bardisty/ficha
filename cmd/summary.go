@@ -6,6 +6,7 @@ import (
 
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
+	"github.com/bardisty/ficha/internal/parser"
 	"github.com/spf13/cobra"
 )
 
@@ -73,6 +74,7 @@ func runSummary(cfg *config) error {
 	// skip-adjusted count — AnalyzeMultipleSessions sets it where the totals
 	// are summed.
 	analysis.IsSummary = true
+	analysis.Project = parser.ProjectDisplayName(projectDir)
 
 	// Output in requested format. --details/--expand-agents add per-session and
 	// per-agent records to json/csv (not just the table); without --details the
@@ -99,7 +101,13 @@ func runSummary(cfg *config) error {
 		}
 	default:
 		if cfg.showDetails {
-			output = formatter.FormatSummaryTableWithDetails(analysis, results, projectDir, cfg.noColor, cfg.expandAgents)
+			// The header names the project; the storage directory is only
+			// for debugging.
+			storageDir := ""
+			if cfg.verbose {
+				storageDir = projectDir
+			}
+			output = formatter.FormatSummaryTableWithDetails(analysis, results, storageDir, cfg.noColor, cfg.expandAgents)
 		} else {
 			output = formatter.FormatSessionTable(analysis, cfg.noColor)
 		}

@@ -681,3 +681,25 @@ func TestAgo(t *testing.T) {
 		t.Errorf("Ago(zero) = %q, want %q", got, "-")
 	}
 }
+
+func TestDateTimeAddsYearOnlyWhenNeeded(t *testing.T) {
+	orig := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = orig })
+
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	ts := time.Date(2026, 9, 8, 18, 38, 0, 0, time.UTC)
+	if got := DateTime(ts, now); got != "Sep 08 18:38" {
+		t.Errorf("DateTime = %q", got)
+	}
+	if got := Date(ts, now); got != "Sep 08" {
+		t.Errorf("Date = %q", got)
+	}
+	last := ts.AddDate(-1, 0, 0)
+	if got := DateTime(last, now); got != "Sep 08 2025 18:38" {
+		t.Errorf("DateTime last year = %q", got)
+	}
+	if got := Date(time.Time{}, now); got != "-" {
+		t.Errorf("Date(zero) = %q", got)
+	}
+}

@@ -19,8 +19,10 @@ type ListTableOptions struct {
 	// a width, TITLE widens to fit long titles. Without one the layout is
 	// fixed, so piped output doesn't depend on the terminal it came from.
 	Width int
-	// Now anchors WHEN's relative times. Zero means time.Now().
+	// Now anchors WHEN's relative times. Zero means the current time.
 	Now time.Time
+	// Project is the project's display name for the header.
+	Project string
 }
 
 // Column widths of the list table that don't depend on the data.
@@ -43,7 +45,7 @@ const (
 // transcript that couldn't be read.
 func FormatSessionListTable(results []models.SessionResult, noColor bool, opts ListTableOptions) string {
 	if opts.Now.IsZero() {
-		opts.Now = time.Now()
+		opts.Now = now()
 	}
 
 	ids := shortSessionIDs(results)
@@ -95,7 +97,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	}
 
 	var sb strings.Builder
-	sb.WriteString(renderListHeaderPanel(len(results), width, noColor))
+	sb.WriteString(renderPanel(opts.Project, []string{fmt.Sprintf("%d %s", len(results), sessionsWord(len(results)))}, width, noColor))
 	sb.WriteString("\n\n")
 
 	join := func(id, when, length, model, agents, cost, title string) string {
@@ -198,22 +200,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	} else {
 		sb.WriteString(dimStyle.Render(strings.Repeat(styles.LineHorizontal, width)))
 	}
-	return sb.String()
-}
-
-// renderListHeaderPanel draws list's boxed "N sessions" header.
-func renderListHeaderPanel(n int, width int, noColor bool) string {
-	text := fmt.Sprintf("%d %s", n, sessionsWord(n))
-	pad := strings.Repeat(" ", max(width-6-len(text), 0))
-	top := styles.BoxTopLeft + strings.Repeat(styles.BoxHorizontal, width-2) + styles.BoxTopRight
-	bottom := styles.BoxBottomLeft + strings.Repeat(styles.BoxHorizontal, width-2) + styles.BoxBottomRight
-	if noColor {
-		return top + "\n" + styles.BoxVertical + "  " + text + pad + "  " + styles.BoxVertical + "\n" + bottom
-	}
-	side := panelBorderStyle.Render(styles.BoxVertical)
-	return panelBorderStyle.Render(top) + "\n" +
-		side + "  " + sectionHeaderStyle.Render(fmt.Sprintf("%d", n)) + " " + sessionsWord(n) + pad + "  " + side + "\n" +
-		panelBorderStyle.Render(bottom)
+	return trimLineEnds(sb.String())
 }
 
 // parentPrimaryModel names the model that cost the most in the parent
@@ -248,17 +235,22 @@ func shortSessionIDs(results []models.SessionResult) []string {
 	return ids
 }
 
-// cleanTitle makes a transcript's title safe to print on one line. It comes
-// from the transcript, so a control character could otherwise move the
-// cursor or recolor the terminal.
+// cleanTitle makes a transcript's title safe to print on one line, with
+// runs of whitespace collapsed.
 func cleanTitle(s string) string {
-	s = strings.Map(func(r rune) rune {
+	return strings.Join(strings.Fields(stripControl(s)), " ")
+}
+
+// stripControl replaces control characters with spaces. Titles and project
+// paths come from transcripts, so one could otherwise move the cursor or
+// recolor the terminal, and throw off the width of the line it's in.
+func stripControl(s string) string {
+	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
 		}
 		return r
 	}, s)
-	return strings.Join(strings.Fields(s), " ")
 }
 
 // truncateRight fits s into width display columns, ending in an ellipsis

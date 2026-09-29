@@ -123,7 +123,7 @@ func TestE2ECommands(t *testing.T) {
 			name: "show table",
 			args: []string{"show", projFlag, e2eAlphaID},
 			check: func(t *testing.T, out string) {
-				mustContainAll(t, out, e2eAlphaID, "$", "API-equivalent estimate")
+				mustContainAll(t, out, "Session: "+e2eAlphaID[:8], "$", "API-equivalent estimate")
 			},
 		},
 		{
@@ -374,7 +374,7 @@ func TestE2ECommands(t *testing.T) {
 			name: "summary table",
 			args: []string{"summary", projFlag},
 			check: func(t *testing.T, out string) {
-				mustContainAll(t, out, "Summary:", "$", "API-equivalent estimate")
+				mustContainAll(t, out, "2 sessions", "Span:", "$", "API-equivalent estimate")
 			},
 		},
 		{
@@ -1111,10 +1111,10 @@ func TestE2ESummarySessionCountExcludesUnparseable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("summary: %v\nstderr: %s", err, stderr)
 	}
-	if !strings.Contains(stdout, "Summary: 1 session") {
+	if !strings.Contains(stdout, "  1 session  ") {
 		t.Errorf("summary count should exclude the unparseable session; got:\n%s", stdout)
 	}
-	if strings.Contains(stdout, "Summary: 2 session") {
+	if strings.Contains(stdout, "2 sessions") {
 		t.Errorf("summary counted the unparseable session:\n%s", stdout)
 	}
 	if !strings.Contains(stderr, "could not be parsed") {

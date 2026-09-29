@@ -18,11 +18,12 @@ import (
 
 var update = flag.Bool("update", false, "rewrite .golden files with current rendered output")
 
-// TestMain pins the process timezone: FormatSessionTable renders
-// EndTime.Local() in its footer, so goldens would otherwise depend on the
-// machine's TZ.
+// TestMain pins the process timezone and the reports' clock: dates render
+// in local time, and carry their year only when it isn't the current one, so
+// goldens would otherwise depend on the machine's TZ and on the date.
 func TestMain(m *testing.M) {
 	time.Local = time.UTC
+	now = func() time.Time { return time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC) }
 	os.Exit(m.Run())
 }
 
@@ -91,6 +92,7 @@ func goldenTime(hour, min, sec int) time.Time {
 func goldenShowAnalysis() *models.SessionAnalysis {
 	return &models.SessionAnalysis{
 		SessionID:    "0a1b2c3d-4e5f-6789-abcd-ef0123456789",
+		Project:      "~/src/app",
 		ProjectPath:  "/home/user/.claude/projects/-home-user-src-app/0a1b2c3d.jsonl",
 		StartTime:    goldenTime(10, 0, 0),
 		EndTime:      goldenTime(11, 30, 0),
@@ -189,7 +191,8 @@ func goldenShowAnalysis() *models.SessionAnalysis {
 func goldenSummaryAnalysis() *models.SessionAnalysis {
 	return &models.SessionAnalysis{
 		SessionID:    "aggregate",
-		StartTime:    time.Date(2026, 1, 10, 9, 0, 0, 0, time.UTC),
+		Project:      "~/src/app",
+		StartTime:    time.Date(2025, 12, 28, 9, 0, 0, 0, time.UTC),
 		EndTime:      time.Date(2026, 1, 14, 17, 45, 0, 0, time.UTC),
 		Duration:     models.Duration(104*time.Hour + 45*time.Minute),
 		MessageCount: 61,
@@ -376,7 +379,7 @@ func goldenListResults() []models.SessionResult {
 	return results
 }
 
-var goldenListOptions = ListTableOptions{Now: time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)}
+var goldenListOptions = ListTableOptions{Now: time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC), Project: "~/src/app"}
 
 func TestGoldenSessionList(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
@@ -498,6 +501,7 @@ func summaryDetailsAnalysis(t *testing.T, entries []models.SessionEntry) (*model
 		t.Fatalf("AnalyzeMultipleSessions: %v", err)
 	}
 	analysis.IsSummary = true
+	analysis.Project = "~/src/app"
 	analysis.SessionCount = len(entries)
 	return analysis, results
 }

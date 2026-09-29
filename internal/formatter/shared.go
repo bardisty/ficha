@@ -2,7 +2,9 @@ package formatter
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
@@ -31,114 +33,104 @@ func sessionsWord(n int) string {
 	return "sessions"
 }
 
-// renderHeaderPanel renders the mainframe-style header panel
-// Format:
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  Session: xxx  │  Duration: Xh Ym                                        ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
-func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool) string {
-	var sb strings.Builder
+// trailingPad matches spaces at the end of a line, before any SGR codes
+// that close it. A two-decimal cost pads two spaces after itself to keep
+// decimal points aligned, which leaves them trailing when it ends a line.
+var trailingPad = regexp.MustCompile(`(?:\x1b\[[0-9;]*m| )+$`)
 
+var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// trimLineEnds drops the padding at the end of each line of a report, keeping
+// any escape codes among it, which may close a style opened earlier.
+func trimLineEnds(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = trailingPad.ReplaceAllStringFunc(l, func(tail string) string {
+			return strings.Join(sgr.FindAllString(tail, -1), "")
+		})
+	}
+	return strings.Join(lines, "\n")
+}
+
+// now is the clock reports read for relative times and for whether a date
+// needs its year. Tests pin it.
+var now = time.Now
+
+// renderHeaderPanel renders the boxed header of show and summary:
+//
+//	╔══════════════════════════════════════════════════════════════════════════╗
+//	║  ~/source/webapp  │  Session: 68994c84  │  Duration: 3h 12m              ║
+//	╚══════════════════════════════════════════════════════════════════════════╝
+//
+// A summary spans many sessions, so it gives their count and the span from
+// the first message to the last as dates, rather than a duration that reads
+// like time spent.
+func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool) string {
+	if analysis.IsSummary {
+		return renderPanel(analysis.Project, []string{
+			fmt.Sprintf("%d %s", analysis.SessionCount, sessionsWord(analysis.SessionCount)),
+			"Span: " + span(analysis.StartTime, analysis.EndTime),
+		}, width, noColor)
+	}
+	return renderPanel(analysis.Project, []string{
+		"Session: " + render.TruncateID(analysis.SessionID, 8),
+		"Duration: " + render.Duration(analysis.Duration.Duration()),
+	}, width, noColor)
+}
+
+// span renders a first-to-last range as dates, "Sep 08 → Sep 28", or one
+// date when both fall on the same day.
+func span(first, last time.Time) string {
+	from, to := render.Date(first, now()), render.Date(last, now())
+	if from == to {
+		return from
+	}
+	return from + " " + styles.Arrow + " " + to
+}
+
+// renderPanel draws the boxed header every static report opens with: the
+// lead (the project, highlighted) and the other fields, separated by rules.
+// The lead gives way first when the fields don't fit, losing its head like
+// a project path in the global table, then trailing fields go. An empty lead
+// is left out.
+func renderPanel(lead string, fields []string, width int, noColor bool) string {
 	if width < 40 {
 		width = 76
 	}
-
-	innerWidth := width - 6 // 2 for borders, 2 for left padding, 2 for right padding
-
-	// Detect summary vs show mode
-	isSummary := analysis.IsSummary
-
-	// Build content parts - use consistent format for both plain and styled
-	var titlePart string
-	var sessionCount int
-	var sessionWord string
-	if isSummary {
-		sessionCount = analysis.SessionCount
-		sessionWord = sessionsWord(sessionCount)
-		titlePart = fmt.Sprintf("Summary: %d %s", sessionCount, sessionWord)
-	} else {
-		titlePart = fmt.Sprintf("Session: %s", render.TruncateID(analysis.SessionID, 40))
+	inner := width - 6 // 2 for borders, 2 for padding on each side
+	sep := "  " + styles.BoxVerticalSep + "  "
+	// On a narrow terminal the last fields give way before the box breaks.
+	for len(fields) > 1 && lipgloss.Width(strings.Join(fields, sep)) > inner {
+		fields = fields[:len(fields)-1]
 	}
-
-	// Summaries aggregate many sessions and can span days, so they use the
-	// day-aware format; a single session stays in hours.
-	durationValue := render.Duration(analysis.Duration.Duration())
-	if isSummary {
-		durationValue = render.DurationLong(analysis.Duration.Duration())
-	}
-	durationPart := fmt.Sprintf("Duration: %s", durationValue)
-
-	// Calculate content length
-	sep := styles.BoxVerticalSep
-	content := fmt.Sprintf("%s  %s  %s", titlePart, sep, durationPart)
-	contentLen := len(titlePart) + 2 + 1 + 2 + len(durationPart)
-	padding := innerWidth - contentLen
-	if padding < 0 {
-		padding = 0
-	}
-
-	if noColor {
-		// Top border
-		sb.WriteString(styles.BoxTopLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxTopRight)
-		sb.WriteString("\n")
-
-		// Content line
-		sb.WriteString(styles.BoxVertical)
-		sb.WriteString("  ")
-		sb.WriteString(content)
-		sb.WriteString(strings.Repeat(" ", padding))
-		sb.WriteString("  ")
-		sb.WriteString(styles.BoxVertical)
-		sb.WriteString("\n")
-
-		// Bottom border
-		sb.WriteString(styles.BoxBottomLeft)
-		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
-		sb.WriteString(styles.BoxBottomRight)
-	} else {
-		// Build styled content - matches plain text format
-		var titleStyled string
-		if isSummary {
-			titleStyled = fmt.Sprintf("%s %d %s",
-				sectionHeaderStyle.Render("Summary:"),
-				sessionCount, sessionWord)
+	rest := strings.Join(fields, sep)
+	if lead != "" {
+		lead = stripControl(lead)
+		room := inner - lipgloss.Width(rest) - lipgloss.Width(sep)
+		if room < minProjectWidth {
+			lead = ""
 		} else {
-			titleStyled = fmt.Sprintf("%s %s",
-				sectionHeaderStyle.Render("Session:"),
-				render.TruncateID(analysis.SessionID, 40))
+			lead = truncateLeft(lead, room)
 		}
-
-		durationStyled := fmt.Sprintf("Duration: %s", durationValue)
-		sepStyled := panelBorderStyle.Render(sep)
-
-		// Top border
-		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
-		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
-		sb.WriteString(panelBorderStyle.Render(styles.BoxTopRight))
-		sb.WriteString("\n")
-
-		// Content line
-		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
-		sb.WriteString("  ")
-		sb.WriteString(titleStyled)
-		sb.WriteString("  ")
-		sb.WriteString(sepStyled)
-		sb.WriteString("  ")
-		sb.WriteString(durationStyled)
-		sb.WriteString(strings.Repeat(" ", padding))
-		sb.WriteString("  ")
-		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
-		sb.WriteString("\n")
-
-		// Bottom border
-		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomLeft))
-		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
-		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomRight))
 	}
+	content := rest
+	styled := rest
+	if lead != "" {
+		content = lead + sep + rest
+		styled = sectionHeaderStyle.Render(lead) + panelBorderStyle.Render(sep) + rest
+		if noColor {
+			styled = content
+		}
+	}
+	pad := strings.Repeat(" ", max(inner-lipgloss.Width(content), 0))
 
-	return sb.String()
+	top := styles.BoxTopLeft + strings.Repeat(styles.BoxHorizontal, width-2) + styles.BoxTopRight
+	bottom := styles.BoxBottomLeft + strings.Repeat(styles.BoxHorizontal, width-2) + styles.BoxBottomRight
+	if noColor {
+		return top + "\n" + styles.BoxVertical + "  " + content + pad + "  " + styles.BoxVertical + "\n" + bottom
+	}
+	side := panelBorderStyle.Render(styles.BoxVertical)
+	return panelBorderStyle.Render(top) + "\n" + side + "  " + styled + pad + "  " + side + "\n" + panelBorderStyle.Render(bottom)
 }
 
 // renderHeroCost renders the total cost integrated into a section header.
@@ -212,6 +204,15 @@ func renderSavingsRow(savings float64, noColor bool) string {
 		savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
 		formatCostStyledGreen(savings, 11, noColor),
 		dimStyle.Render("(from cache reads)"))
+}
+
+// messagesField is the footer's message count, split into parent and agent
+// messages when agents ran.
+func messagesField(total, parent, agents int) string {
+	if agents == 0 {
+		return "Messages: " + render.Count(total)
+	}
+	return fmt.Sprintf("Messages: %s (%s parent, %s agents)", render.Count(total), render.Count(parent), render.Count(agents))
 }
 
 // footerSep is the field separator used inside footer stat lines.

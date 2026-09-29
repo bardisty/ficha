@@ -168,15 +168,19 @@ type WorkflowMeta struct {
 type SessionAnalysis struct {
 	SessionID string `json:"session_id"`
 	// ProjectPath names the Claude project directory the session(s) belong to
-	// (~/.claude/projects/<encoded>) — the same value the summary table's
-	// "Project:" header shows. It is uniform across show, the summary aggregate,
-	// and every per-session record (all derived from a transcript in that dir),
-	// so machine outputs join on it. Set by the analyzer; emitted only in
-	// json/csv, never in the human table.
+	// (~/.claude/projects/<encoded>), the value `summary -d -v` prints as
+	// "Storage:". It is uniform across show, the summary aggregate, and every
+	// per-session record (all derived from a transcript in that dir), so
+	// machine outputs join on it. Set by the analyzer; the human table names
+	// the project by Project instead.
 	ProjectPath string `json:"project_path"`
 	// SessionFile is the session's transcript .jsonl path. Empty on the summary
 	// aggregate, which spans many files; use project_path to name the project.
 	SessionFile string `json:"session_file,omitempty"`
+	// Project is the project's display name ("~/source/webapp") for the
+	// report header. Set by the command, which resolved the project; machine
+	// output names it by project_path instead.
+	Project string `json:"-"`
 	// Title is the session's latest "ai-title" record, raw from the
 	// transcript. Empty when it has none, and on the summary aggregate.
 	Title        string        `json:"title,omitempty"`
