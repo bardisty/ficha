@@ -44,6 +44,17 @@ Two fields name where a record came from. `project_path` is the Claude project d
 
 `agents` lists plain agents first, then each workflow run's agents together. Each group goes by first message, and runs go by their first agent's start. An agent with no timestamped message yet comes last in its group. `workflows` lists runs in the same order. The tables and `ficha watch` list agents this way too. The order is for reading and isn't part of the json contract. A script that needs a fixed order should sort by `start_time` or `agent_id` itself.
 
+## Per-session rows (`summary -d` csv)
+
+`summary -d -f csv` writes one row per session. `row_type` says which kind of row it is: `session`, or `agent` for the rows `--expand-agents` adds after each session.
+
+A session row's `total_cost` already includes its agents, so summing the whole column counts agent spend twice. Filter on `row_type` first:
+
+- Sum `session` rows for the project's totals. They match `summary -f json`'s `total_cost.total_cost`.
+- Sum `agent` rows for agent spend.
+
+Each session row also carries `parent_cost` and `agents_cost`, which add up to its `total_cost`, so the file reconciles against itself. Agent rows leave both empty, as they leave `cumulative_cost`, `project_path` and `session_file`. Join an agent row to its session through `session_id`.
+
 ## Workflow runs
 
 Each entry in `workflows` (on `show` json and each per-session record in `summary -d` json) names a workflow run whose agents appear in `agents`, with `cost`: the sum of those agents' `total_cost.total_cost`. It's derived from the agent records, which remain the unit every total is summed from, so don't add it to `agents_cost` or `total_cost` again.
