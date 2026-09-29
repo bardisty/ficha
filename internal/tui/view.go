@@ -81,37 +81,8 @@ func (m Model) View() string {
 	}
 	sb.WriteString("\n")
 
-	// FIXED FOOTER (4 lines) - with 2-space padding
-	footerSep := strings.Repeat(styles.BoxHorizontal, panelWidth)
-	if !m.noColor {
-		footerSep = panelBorderStyle.Render(footerSep)
-	}
-	sb.WriteString("  " + footerSep + "\n")
-
-	// Footer stats - shown for any non-empty session, and for an empty one that
-	// still has accounting to disclose (skipped input / estimated / fallback):
-	// the footer is watch's only channel for those warnings, so suppressing it
-	// on a zero-message session would hide exactly the sessions where every line
-	// was dropped, while `show` warns.
-	if m.analysis != nil && (!m.isEmptySession() || m.hasAccountingWarnings()) {
-		sb.WriteString("  " + m.renderFooter() + "\n")
-	} else {
-		sb.WriteString("\n")
-	}
-
-	// Single-line help separator
-	helpSep := strings.Repeat(styles.LineHorizontal, panelWidth)
-	if !m.noColor {
-		helpSep = dimStyle.Render(helpSep)
-	}
-	sb.WriteString("  " + helpSep + "\n")
-
-	// Help text - expanded keybinds to match breakdown
-	helpText := helpLine("q: quit", "r: refresh", "g/G: top/bottom", styles.ScrollKeys+": scroll")
-	if !m.noColor {
-		helpText = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(helpText)
-	}
-	sb.WriteString("  " + helpText)
+	// FIXED FOOTER: rule, pinned stats, warning rows, help
+	sb.WriteString(strings.Join(m.renderFooterLines(panelWidth), "\n"))
 
 	return clipToWidth(sb.String(), m.width)
 }
@@ -282,62 +253,6 @@ func (m Model) renderContextSection() string {
 	return sb.String()
 }
 
-// renderFooter renders the message count and duration footer
-func (m Model) renderFooter() string {
-	a := m.analysis
-	changed := m.recentlyChanged("messages")
-	highlighted := m.isHighlighted("messages")
-	sep := styles.BoxVerticalSep
-	footer := func(s string) string {
-		if m.noColor {
-			return s
-		}
-		return footerStyle.Render(s)
-	}
-
-	var footerLine string
-	if changed {
-		var valStr string
-		if m.deltaCount > 0 {
-			valStr = fmt.Sprintf("%d (+%d)", a.MessageCount, m.deltaCount)
-		} else if m.deltaCount < 0 {
-			valStr = fmt.Sprintf("%d (%d)", a.MessageCount, m.deltaCount)
-		} else {
-			valStr = fmt.Sprintf("%d", a.MessageCount)
-		}
-		if highlighted {
-			footerLine = footer("Messages: ") + highlightStyle.Render(valStr) +
-				footer(fmt.Sprintf("  %s  Duration: %s", sep, render.Duration(a.Duration.Duration())))
-		} else {
-			footerLine = fmt.Sprintf("Messages: %s  %s  Duration: %s", valStr, sep, render.Duration(a.Duration.Duration()))
-		}
-	} else {
-		footerLine = footer(fmt.Sprintf("Messages: %d  %s  Duration: %s",
-			a.MessageCount, sep, render.Duration(a.Duration.Duration())))
-	}
-
-	// Surface parse warnings so undercounted totals don't look authoritative
-	if note := accountingFootnote(a.SkippedAgents, a.SkippedLines, a.EstimatedCostMessages); note != "" {
-		if m.noColor {
-			footerLine += fmt.Sprintf("  %s  %s", sep, note)
-		} else {
-			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
-			footerLine += footerStyle.Render("  "+sep+"  ") + warnStyle.Render(note)
-		}
-	}
-
-	// Explain the COST BY MODEL asterisk: those rows are fallback-priced
-	if hasUnknownModel(a.CostByModel) {
-		if m.noColor {
-			footerLine += fmt.Sprintf("  %s  %s", sep, unknownModelFootnote())
-		} else {
-			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
-			footerLine += footerStyle.Render("  "+sep+"  ") + warnStyle.Render(unknownModelFootnote())
-		}
-	}
-	return footerLine
-}
-
 // cacheWriteTokenKeys returns the highlight/delta map keys for the 5m and 1h
 // cache-write rows. With the detailed bucket breakdown present each row gets its
 // own per-TTL key so its delta describes only its own column; a detail-less
@@ -348,20 +263,6 @@ func cacheWriteTokenKeys(usage models.TokenUsage) (string, string) {
 		return "cache_write_5m_tokens", "cache_write_1h_tokens"
 	}
 	return "cache_write_tokens", "cache_write_tokens"
-}
-
-// hasAccountingWarnings reports whether the analysis carries any disclosure the
-// footer must surface even when the session is otherwise empty: skipped input,
-// estimated-cost messages, or fallback-priced models. Without it, a session
-// that parses to zero messages but dropped every line would render a clean
-// empty state while `show` on the same session warns.
-func (m Model) hasAccountingWarnings() bool {
-	a := m.analysis
-	if a == nil {
-		return false
-	}
-	return a.SkippedLines > 0 || a.SkippedAgents > 0 ||
-		a.EstimatedCostMessages > 0 || hasUnknownModel(a.CostByModel)
 }
 
 // hasUnknownModel reports whether any model in a cost-by-model map was priced
