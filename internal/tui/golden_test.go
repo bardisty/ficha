@@ -139,6 +139,16 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 		LastMessageModel: "claude-opus-4-8",
 		Agents: []models.AgentAnalysis{
 			{
+				AgentID:      "f6e5d4c3b2a1",
+				MessageCount: 1,
+				// Listed in the analyzer's order, by start; wrote 22s before
+				// the clock, so it carries the live dot.
+				StartTime:   goldenTime(10, 5, 0),
+				EndTime:     goldenTime(11, 29, 50),
+				TotalCost:   models.CostBreakdown{TotalCost: 1.58},
+				CostByModel: map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 1.58}},
+			},
+			{
 				AgentID:      "a1b2c3d4e5f6",
 				MessageCount: 12,
 				StartTime:    goldenTime(10, 20, 0),
@@ -146,26 +156,7 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 				TotalCost:    models.CostBreakdown{TotalCost: 0.42},
 				CostByModel:  map[string]models.CostBreakdown{"claude-haiku-4-5": {TotalCost: 0.42}},
 			},
-			{
-				AgentID:      "f6e5d4c3b2a1",
-				MessageCount: 1,
-				// Started first, so it lists first; wrote 22s before the
-				// clock, so it carries the live dot.
-				StartTime:   goldenTime(10, 5, 0),
-				EndTime:     goldenTime(11, 29, 50),
-				TotalCost:   models.CostBreakdown{TotalCost: 1.58},
-				CostByModel: map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 1.58}},
-			},
 			// Workflow agents: exercise the dim group-header line
-			{
-				AgentID:      "w1a2b3c4d5e6",
-				WorkflowID:   "wf_2e7850b6-b19",
-				MessageCount: 21,
-				StartTime:    goldenTime(10, 50, 0),
-				EndTime:      goldenTime(11, 10, 0),
-				TotalCost:    models.CostBreakdown{TotalCost: 1.10},
-				CostByModel:  map[string]models.CostBreakdown{"claude-opus-4-8": {TotalCost: 1.10}},
-			},
 			{
 				AgentID:      "w6e5d4c3b2a1",
 				WorkflowID:   "wf_2e7850b6-b19",
@@ -174,6 +165,15 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 				EndTime:      goldenTime(11, 0, 0),
 				TotalCost:    models.CostBreakdown{TotalCost: 0.55},
 				CostByModel:  map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 0.55}},
+			},
+			{
+				AgentID:      "w1a2b3c4d5e6",
+				WorkflowID:   "wf_2e7850b6-b19",
+				MessageCount: 21,
+				StartTime:    goldenTime(10, 50, 0),
+				EndTime:      goldenTime(11, 10, 0),
+				TotalCost:    models.CostBreakdown{TotalCost: 1.10},
+				CostByModel:  map[string]models.CostBreakdown{"claude-opus-4-8": {TotalCost: 1.10}},
 			},
 		},
 		ParentCost:         models.CostBreakdown{TotalCost: 7.90},
