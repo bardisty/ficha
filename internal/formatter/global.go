@@ -87,13 +87,10 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 	sb.WriteString("\n\n")
 	sb.WriteString(formatGlobalCostByModel(analysis.CostByModel, noColor))
 
-	// Projects section. With no rows to show (--top 0) there's no table to
-	// title, just the line accounting for the projects left out.
+	// Projects section
 	sb.WriteString("\n")
-	if layout.rows > 0 {
-		sb.WriteString(render.SectionHeader(projectsHeading(layout.rows, len(analysis.Projects), opts.SortBy), sectionWidth, noColor))
-		sb.WriteString("\n\n")
-	}
+	sb.WriteString(render.SectionHeader(projectsHeading(layout.rows, len(analysis.Projects), opts.SortBy), sectionWidth, noColor))
+	sb.WriteString("\n\n")
 	sb.WriteString(renderProjectsTable(analysis, noColor, layout, opts))
 
 	// Footer
@@ -116,10 +113,12 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 // projectsHeading titles the projects table with how many rows it holds out
 // of how many, and the order they're in, since only the cost order is
 // visible from the columns alone: "PROJECTS (5 of 20, by activity)".
+// The count is there even when no rows are, so the line accounting for the
+// rest sits under a heading that says why the table is empty.
 func projectsHeading(shown, total int, sortBy string) string {
 	count := fmt.Sprintf("%d of %d", shown, total)
 	if shown == total {
-		count = fmt.Sprintf("%d", total)
+		count = fmt.Sprintf("all %d", total)
 	}
 	return fmt.Sprintf("PROJECTS (%s, by %s)", count, sortBy)
 }
@@ -132,9 +131,6 @@ const (
 	// minProjectWidth keeps enough of a left-truncated path to tell rows
 	// apart ("…/work/api-server") on a narrow terminal.
 	minProjectWidth = 16
-	// maxProjectWidth stops one deep path from spreading every other row
-	// across a wide terminal. Longer paths lose their head, as on a narrow one.
-	maxProjectWidth = 64
 	rankWidth       = 3
 	sessionsWidth   = len("SESSIONS")
 	pctWidth        = len("% TOTAL")
@@ -151,12 +147,13 @@ type projectsLayout struct {
 	project    int
 	cost       int
 	cumulative int  // 0 when the column is hidden
+	pct        bool // whether % TOTAL is shown
 	active     bool // whether LAST ACTIVE is shown
 	width      int  // the whole report's width, rules included
 }
 
 func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOptions) projectsLayout {
-	l := projectsLayout{rows: max(opts.TopN, 0), active: true}
+	l := projectsLayout{rows: max(opts.TopN, 0), pct: true, active: true}
 	if opts.Details || l.rows > len(projects) {
 		l.rows = len(projects)
 	}
@@ -172,7 +169,6 @@ func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOption
 		running = append(running, sum)
 		nameWidth = max(nameWidth, runewidth.StringWidth(p.DisplayName))
 	}
-	nameWidth = min(nameWidth, maxProjectWidth)
 	l.cost = render.CostCellWidth(costMinWidth, costs...)
 	if opts.Details && opts.SortBy == "cost" {
 		l.cumulative = render.CostCellWidth(cumMinWidth, running...)
@@ -183,9 +179,15 @@ func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOption
 	if l.cumulative > 0 {
 		fixed += columnGap + l.cumulative
 	}
-	// A terminal too narrow for every column loses LAST ACTIVE before the
-	// rows wrap, unless the rows are sorted by it.
-	if opts.Width > 0 && fixed+minProjectWidth > opts.Width && opts.SortBy != "activity" {
+	// A terminal too narrow for every column gives up % TOTAL first, since
+	// COST against the total says the same, then LAST ACTIVE unless the rows
+	// are sorted by it. Only then do the rows wrap.
+	tooNarrow := func() bool { return opts.Width > 0 && fixed+minProjectWidth > opts.Width }
+	if tooNarrow() {
+		l.pct = false
+		fixed -= columnGap + pctWidth
+	}
+	if tooNarrow() && opts.SortBy != "activity" {
 		l.active = false
 		fixed -= columnGap + activeWidth
 	}
@@ -353,7 +355,9 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 		fmt.Sprintf("%-*s", layout.project, "PROJECT"),
 		fmt.Sprintf("%*s", sessionsWidth, "SESSIONS"),
 		fmt.Sprintf("%*s", layout.cost, "COST"),
-		fmt.Sprintf("%*s", pctWidth, "% TOTAL"),
+	}
+	if layout.pct {
+		header = append(header, fmt.Sprintf("%*s", pctWidth, "% TOTAL"))
 	}
 	if layout.cumulative > 0 {
 		header = append(header, fmt.Sprintf("%*s", layout.cumulative, "CUMULATIVE"))
@@ -404,7 +408,10 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 
 		var cells []string
 		if noColor {
-			cells = []string{rank, name, sessions, render.CostCell(p.TotalCost.TotalCost, layout.cost), pct}
+			cells = []string{rank, name, sessions, render.CostCell(p.TotalCost.TotalCost, layout.cost)}
+			if layout.pct {
+				cells = append(cells, pct)
+			}
 			if layout.cumulative > 0 {
 				cells = append(cells, render.CostCell(cumulative, layout.cumulative))
 			}
@@ -418,7 +425,9 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 				name,
 				keyStyle("sessions").Render(sessions),
 				render.CostColored(p.TotalCost.TotalCost, costColor, layout.cost),
-				dimStyle.Render(pct),
+			}
+			if layout.pct {
+				cells = append(cells, dimStyle.Render(pct))
 			}
 			if layout.cumulative > 0 {
 				cells = append(cells, render.CostColored(cumulative, styles.SuccessColor, layout.cumulative))
@@ -435,10 +444,12 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 
 // truncateLeft fits a project name into maxWidth display columns by cutting
 // from the left, so the distinctive tail survives ("…/source/webapp"): every
-// name shares its leading home or root prefix. The cut doesn't snap to a
-// separator: the partial directory it leaves ("…ing-service/worktrees/x") is
-// often exactly what tells two rows apart. Operates on runes and display
-// width, so wide (CJK) characters are never split.
+// name shares its leading home or root prefix. A cut a few columns short of a
+// separator moves to it, so "…/work/api-server" doesn't read "…rk/api-server".
+// A cut further into a long directory name stays put: the partial name it
+// leaves ("…ing-service/worktrees/x") is often what tells two rows apart.
+// Operates on runes and display width, so wide (CJK) characters are never
+// split.
 func truncateLeft(s string, maxWidth int) string {
 	if runewidth.StringWidth(s) <= maxWidth {
 		return s
@@ -458,6 +469,15 @@ func truncateLeft(s string, maxWidth int) string {
 		}
 		w += rw
 		start = i
+	}
+	const snapWindow = 3
+	if start > 0 && runes[start-1] != '/' {
+		for j := start; j < min(start+snapWindow, len(runes)-1); j++ {
+			if runes[j] == '/' {
+				start = j
+				break
+			}
+		}
 	}
 	return ell + string(runes[start:])
 }

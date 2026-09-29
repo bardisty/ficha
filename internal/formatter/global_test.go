@@ -64,7 +64,7 @@ func TestRenderProjectsTable_NegativeTopN(t *testing.T) {
 
 	// The full-table entry point clamps too, not just renderProjectsTable.
 	full := FormatGlobalTable(analysis, true, GlobalTableOptions{TopN: -1})
-	if strings.Contains(full, "PROJECTS (") || !strings.Contains(full, "(2 projects totaling $3.00)") {
+	if !strings.Contains(full, "PROJECTS (0 of 2, by cost)") || !strings.Contains(full, "(2 projects totaling $3.00)") || strings.Contains(full, "SESSIONS") {
 		t.Errorf("negative topN should render like --top 0, got:\n%s", full)
 	}
 }
@@ -213,6 +213,18 @@ func TestTruncateLeft(t *testing.T) {
 		}
 	})
 
+	t.Run("snaps to a nearby separator", func(t *testing.T) {
+		// Cutting "~/fx/work/ml-pipeline" to 19 columns leaves "x/work/…";
+		// the separator one column on reads better.
+		if got := truncateLeft("~/fx/work/ml-pipeline", 19); got != "…/work/ml-pipeline" {
+			t.Errorf("got %q, want %q", got, "…/work/ml-pipeline")
+		}
+		// A separator far from the cut would throw away too much.
+		if got := truncateLeft("~/src/billing-service-worktrees/x", 20); got != "…service-worktrees/x" {
+			t.Errorf("got %q", got)
+		}
+	})
+
 	t.Run("byte length exceeds width but display width fits", func(t *testing.T) {
 		in := strings.Repeat("é", 20)
 		if got := truncateLeft(in, 25); got != in {
@@ -273,35 +285,34 @@ func TestGlobalTableSizesProjectToTerminal(t *testing.T) {
 	}
 }
 
-// However wide the terminal, one deep path doesn't spread every row: past
-// 64 columns it loses its head.
-func TestGlobalTableCapsProjectWidth(t *testing.T) {
+// A terminal too narrow for every column gives up % TOTAL, then LAST ACTIVE
+// unless the rows are sorted by it, rather than wrapping each row.
+func TestGlobalTableNarrowTerminalDropsColumns(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	analysis := goldenGlobalAnalysis()
-	analysis.Projects[0].DisplayName = "~/" + strings.Repeat("deep/", 30) + "project"
-	opts := goldenGlobalOptions(false)
-	opts.Width = 300
-	out := FormatGlobalTable(analysis, true, opts)
-	if w := maxLineWidth(out); w != 50+64 {
-		t.Errorf("widest line is %d columns, want %d:\n%s", w, 50+64, out)
-	}
-	if !strings.Contains(out, "…/deep/deep/deep/deep/deep/deep/deep/deep/deep/deep/deep/project ") {
-		t.Errorf("want the path's tail kept:\n%s", out)
-	}
-}
-
-// A terminal too narrow for every column drops LAST ACTIVE rather than
-// wrapping each row, unless the rows are sorted by it.
-func TestGlobalTableNarrowTerminalDropsLastActive(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
-	opts := goldenGlobalOptions(false)
-	opts.Width = 60
-	if out := FormatGlobalTable(goldenGlobalAnalysis(), true, opts); strings.Contains(out, "LAST ACTIVE") {
-		t.Errorf("LAST ACTIVE should give way at 60 columns:\n%s", out)
-	}
-	opts.SortBy = "activity"
-	if out := FormatGlobalTable(goldenGlobalAnalysis(), true, opts); !strings.Contains(out, "LAST ACTIVE") {
-		t.Errorf("LAST ACTIVE is the sort key and should stay:\n%s", out)
+	for _, tc := range []struct {
+		width       int
+		sortBy      string
+		pct, active bool
+	}{
+		{80, "cost", true, true},
+		{60, "cost", false, true},
+		{60, "activity", false, true},
+		{50, "cost", false, false},
+		{50, "activity", false, true},
+	} {
+		opts := goldenGlobalOptions(false)
+		opts.Width = tc.width
+		opts.SortBy = tc.sortBy
+		out := FormatGlobalTable(goldenGlobalAnalysis(), true, opts)
+		if got := strings.Contains(out, "% TOTAL"); got != tc.pct {
+			t.Errorf("width %d by %s: %% TOTAL shown = %v, want %v:\n%s", tc.width, tc.sortBy, got, tc.pct, out)
+		}
+		if got := strings.Contains(out, "LAST ACTIVE"); got != tc.active {
+			t.Errorf("width %d by %s: LAST ACTIVE shown = %v, want %v:\n%s", tc.width, tc.sortBy, got, tc.active, out)
+		}
+		if w := maxLineWidth(out); tc.width >= 60 && w > tc.width {
+			t.Errorf("width %d by %s: widest line is %d columns", tc.width, tc.sortBy, w)
+		}
 	}
 }
 
@@ -316,9 +327,9 @@ func TestGlobalTableNamesItsSort(t *testing.T) {
 		cumulative bool
 	}{
 		{"cost", false, "PROJECTS (3 of 5, by cost)", false},
-		{"cost", true, "PROJECTS (5, by cost)", true},
-		{"name", true, "PROJECTS (5, by name)", false},
-		{"sessions", true, "PROJECTS (5, by sessions)", false},
+		{"cost", true, "PROJECTS (all 5, by cost)", true},
+		{"name", true, "PROJECTS (all 5, by name)", false},
+		{"sessions", true, "PROJECTS (all 5, by sessions)", false},
 		{"activity", false, "PROJECTS (3 of 5, by activity)", false},
 	} {
 		opts := goldenGlobalOptions(tc.details)
