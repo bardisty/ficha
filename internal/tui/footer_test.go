@@ -103,6 +103,8 @@ func TestPackNotes(t *testing.T) {
 }
 
 // tallAnalysis has enough agents that the body overflows a 24-row terminal.
+// They belong to a run still in progress, so the list never folds them: 29
+// agent rows under the run's heading.
 func tallAnalysis(cost float64) *models.SessionAnalysis {
 	a := &models.SessionAnalysis{
 		SessionID:    "sess",
@@ -111,10 +113,12 @@ func tallAnalysis(cost float64) *models.SessionAnalysis {
 		TotalUsage:   models.TokenUsage{InputTokens: 1000},
 		CostByModel:  map[string]models.CostBreakdown{"claude-opus-4-8": {TotalCost: cost}},
 		HasAgents:    true,
+		Workflows:    []models.WorkflowMeta{{RunID: "wf_tall", Status: runningStatus}},
 	}
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 29; i++ {
 		a.Agents = append(a.Agents, models.AgentAnalysis{
 			AgentID:      strings.Repeat(string(rune('a'+i%26)), 12),
+			WorkflowID:   "wf_tall",
 			MessageCount: 1,
 			TotalCost:    models.CostBreakdown{TotalCost: 0.1},
 		})
