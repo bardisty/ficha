@@ -99,9 +99,15 @@ run:
 lint:
 	GOTOOLCHAIN=$(LINT_GOTOOLCHAIN) $(GOCMD) run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
 
+# Lists every Go file, skipping hidden files and directories at any depth.
+# gofmt, unlike go test and golangci-lint, descends into hidden directories,
+# and other worktrees nested under the checkout would get their work in
+# progress rewritten or failed.
+FIND_GO = find . -path '*/.*' -prune -o -name '*.go' -print
+
 # Format all Go files
 fmt:
-	gofmt -w .
+	$(FIND_GO) | xargs gofmt -w
 
 # Run go vet standalone. The gate (check) enforces the same analyzers through
 # golangci-lint's govet, so running this separately is only for convenience.
@@ -111,11 +117,9 @@ vet:
 # Run all checks
 check: fmt lint test
 
-# Fail on unformatted files and name them, without rewriting anything. Hidden
-# directories are skipped: gofmt would otherwise descend into other worktrees
-# nested under the checkout and fail on their work in progress.
+# Fail on unformatted files and name them, without rewriting anything.
 fmt-check:
-	@files=$$(find . -path './.*' -prune -o -name '*.go' -print | xargs gofmt -l) || exit 1; \
+	@files=$$($(FIND_GO) | xargs gofmt -l) || exit 1; \
 	if [ -n "$$files" ]; then echo "gofmt would reformat:"; echo "$$files"; exit 1; fi
 
 # Run the tests with the race detector. -race needs cgo and a C compiler, so
