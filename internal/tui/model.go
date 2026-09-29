@@ -820,7 +820,14 @@ func (m Model) visibleCostHistory() []float64 {
 // what is drawn keeps the scale honest to the visible bars.
 func (m *Model) rebuildCostChart() {
 	m.costChart = newCostChart(m.getChartWidth(), m.noColor)
-	m.costChart.PushAll(m.visibleCostHistory())
+	visible := m.visibleCostHistory()
+	m.costChart.PushAll(visible)
+	// The sparkline's max starts at 1 and only grows, so sub-dollar messages
+	// (nearly all of them) would draw in the bottom rows. Scale to the
+	// window's own peak so its shape uses the full height.
+	if peak := maxOf(visible); peak > 0 {
+		m.costChart.SetMax(peak)
+	}
 
 	// Braille has four times the vertical resolution but no ASCII stand-in;
 	// the ASCII glyph set draws columns, which renderCostChart maps to ASCII.
@@ -829,6 +836,15 @@ func (m *Model) rebuildCostChart() {
 	} else {
 		m.costChart.DrawBraille()
 	}
+}
+
+// maxOf returns the largest value, or 0 for none.
+func maxOf(vals []float64) float64 {
+	var top float64
+	for _, v := range vals {
+		top = max(top, v)
+	}
+	return top
 }
 
 // newCostChart builds the cost-trend sparkline, green unless color is off.

@@ -315,3 +315,25 @@ func TestLoadAnalysisIncludesAgentMessages(t *testing.T) {
 		t.Errorf("costHistory[1]: got %f, want the agent's ~$3.00 spend interleaved mid-chart", m.costHistory[1])
 	}
 }
+
+// The sparkline scales to the visible window's peak, not its built-in $1
+// floor, so a session of sub-dollar messages still uses the full height.
+func TestCostChartScalesToVisiblePeak(t *testing.T) {
+	m := NewModel("/test/path", "s", false, true, "", false)
+	m.costHistory = []float64{0.02, 0.22, 0.05}
+	m.rebuildCostChart()
+	if got := m.costChart.MaxValue(); got != 0.22 {
+		t.Errorf("chart max = %v, want the visible peak 0.22", got)
+	}
+	lines := strings.Split(strings.TrimRight(m.costChart.View(), "\n"), "\n")
+	if strings.TrimSpace(lines[0]) == "" {
+		t.Errorf("peak doesn't reach the top row:\n%s", m.costChart.View())
+	}
+
+	// An all-zero window keeps the default scale rather than dividing by 0.
+	m.costHistory = []float64{0, 0}
+	m.rebuildCostChart()
+	if got := m.costChart.MaxValue(); got <= 0 {
+		t.Errorf("zero window: chart max = %v, want > 0", got)
+	}
+}

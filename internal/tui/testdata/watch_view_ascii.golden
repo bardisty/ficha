@@ -10,8 +10,8 @@
     Cache read         $2.25           1.50M tokens                                                 
     Savings           $20.25    (from cache reads)                                                  
                                                                                                     
-    Context  [##############------------------------]  380.0K (38% of 1.00M)                        
-             Free: 620.0K (62.0%)                                                                   
+    Context  38% [################-----------------|----------] 380.0K / 1.00M                      
+             370.0K to ~compaction (main session, last request)                                     
                                                                                                     
   -------------------------------[ COST TREND ]-------------------------------                      
                                                                                                     
