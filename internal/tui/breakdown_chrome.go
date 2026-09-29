@@ -59,14 +59,19 @@ func (m BreakdownModel) headerRows() int {
 	return breakdownHeaderRows
 }
 
-// panelWidth is the width of breakdown's rules and panel. Unlike
-// panelWidthFor it has no 40-column floor: the compact frame has no box, so
-// its rules can shrink to the terminal.
-func (m BreakdownModel) panelWidth() int {
+// panelWidth is the width of breakdown's rules and panel: watch's width, or
+// the table's when the table is wider, so the frame never falls short of the
+// rows it frames. Unlike panelWidthFor it has no 40-column floor: the compact
+// frame has no box, so its rules can shrink to the terminal.
+func (m BreakdownModel) panelWidth() int { return m.frameWidth(m.layout()) }
+
+// frameWidth is panelWidth for a layout already worked out.
+func (m BreakdownModel) frameWidth(layout breakdownLayout) int {
+	want := max(defaultPanelWidth, layout.width()-bdIndent)
 	if m.width <= 0 {
-		return defaultPanelWidth
+		return want
 	}
-	return max(min(m.width-2, defaultPanelWidth), 1)
+	return max(min(m.width-2, want), 1)
 }
 
 // clock returns the model's notion of now; tests pin it.

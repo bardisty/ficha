@@ -215,3 +215,98 @@ func TestBreakdownInsights_ScopeGivesWayToPeak(t *testing.T) {
 		t.Errorf("scope label should show when it fits: %q", out)
 	}
 }
+
+// The header box, the rule under the column headings and the footer rule
+// are as wide as the table once the table outgrows watch's panel, whether
+// IN or a widened MODEL column is what grew it, and never wider than the
+// terminal.
+func TestBreakdownFrameTracksTableWidth(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	unknown := append(goldenBreakdownMessages(), models.BreakdownMessage{
+		Index: 8, Timestamp: goldenTime(11, 30, 0), Model: "claude-experimental-model-with-a-long-id",
+		Cost: models.CostBreakdown{TotalCost: 0.2},
+	})
+	for _, tc := range []struct {
+		name string
+		msgs []models.BreakdownMessage
+	}{{"agents", goldenBreakdownMessages()}, {"unknown model", unknown}} {
+		for _, width := range []int{60, 80, 86, 100, 120, 160} {
+			m := loadedBreakdown(t, width, 40, tc.msgs)
+			lines := strings.Split(m.View(), "\n")
+			table := m.layout().width()
+			frame := max(table, defaultPanelWidth+bdIndent)
+			frame = min(frame, width)
+			// Box top, box bottom, the column rule, and the footer rule.
+			for _, i := range []int{0, 2, 6, len(lines) - 3} {
+				if got := lipgloss.Width(strings.TrimRight(lines[i], " ")); got != frame {
+					t.Errorf("%s, %d cols: line %d is %d wide, want %d (table %d): %q",
+						tc.name, width, i, got, frame, table, lines[i])
+				}
+			}
+		}
+	}
+}
+
+// At 80 columns the insights line keeps a scope marker beside the Trend:
+// without one, breakdown's Trend reads as contradicting watch's. The long
+// label and the Peak's multiplier give way first.
+func TestBreakdownInsights_ScopeStaysWithTrend(t *testing.T) {
+	ts := goldenTime(10, 42, 13)
+	m := BreakdownModel{
+		noColor:   true,
+		hasAgents: true,
+		messages: []models.BreakdownMessage{
+			{Index: 1, Timestamp: ts.Add(-time.Minute), Cost: models.CostBreakdown{TotalCost: 0.1}},
+			{Index: 231, AgentID: "aa499eb92f589de14", Timestamp: ts, Cost: models.CostBreakdown{TotalCost: 0.4419}},
+		},
+		insights: &models.MessageInsights{
+			HighestCost:   &models.MessageSnapshot{Index: 2, Timestamp: ts, Cost: 0.4419},
+			AverageCost:   0.075,
+			MessageCount:  models.MinMessagesForTrend,
+			CostTrend:     models.TrendDecreasing,
+			RecentAvgCost: 0.05,
+			TrendWindow:   3,
+		},
+	}
+	tests := []struct {
+		width int
+		want  string
+	}{
+		{120, "main conversation + agents │ Peak: #2 $0.4419 @ 10:42:13 [Aa499eb9] (5.9x avg) │ Trend: ▼ falling"},
+		{90, "incl. agents │ Peak: #2 $0.4419 @ 10:42:13 [Aa499eb9] (5.9x avg) │ Trend: ▼ falling"},
+		{80, "incl. agents │ Peak: #2 $0.4419 @ 10:42:13 [Aa499eb9] │ Trend: ▼ falling"},
+		{60, "incl. agents │ Peak: #2 $0.4419 │ Trend: ▼ falling"},
+		{45, "incl. agents │ Peak: #2 $0.4419"},
+	}
+	for _, tt := range tests {
+		m.width = tt.width
+		if got := strings.TrimSpace(m.renderCompactInsights()); got != tt.want {
+			t.Errorf("width %d:\n got %q\nwant %q", tt.width, got, tt.want)
+		}
+	}
+	for width := 40; width <= 160; width++ {
+		m.width = width
+		out := m.renderCompactInsights()
+		if strings.Contains(out, "Trend") && !strings.Contains(out, "agents") {
+			t.Errorf("width %d: Trend without its scope: %q", width, out)
+		}
+		if lipgloss.Width(out) > width {
+			t.Errorf("width %d: line is %d wide: %q", width, lipgloss.Width(out), out)
+		}
+	}
+}
+
+// With agents but neither a Peak (no row stands out) nor a Trend (too few
+// rows), the line is empty rather than a scope label qualifying nothing.
+func TestBreakdownInsights_NoFiguresNoScope(t *testing.T) {
+	m := BreakdownModel{
+		noColor:   true,
+		hasAgents: true,
+		width:     100,
+		messages:  []models.BreakdownMessage{{Index: 1}, {Index: 2, AgentID: "a1111111111111111"}},
+		insights:  &models.MessageInsights{MessageCount: 2, AverageCost: 0.11},
+	}
+	if out := m.renderCompactInsights(); out != "" {
+		t.Errorf("insights line = %q, want empty", out)
+	}
+}
