@@ -406,24 +406,6 @@ func TestTrendDirection_String(t *testing.T) {
 	}
 }
 
-func TestTrendDirection_Symbol(t *testing.T) {
-	tests := []struct {
-		trend    models.TrendDirection
-		expected string
-	}{
-		{models.TrendStable, "═"},
-		{models.TrendIncreasing, "▲"},
-		{models.TrendDecreasing, "▼"},
-	}
-
-	for _, tt := range tests {
-		result := tt.trend.Symbol()
-		if result != tt.expected {
-			t.Errorf("TrendDirection.Symbol(): got %q, want %q", result, tt.expected)
-		}
-	}
-}
-
 func TestMessageInsights_TrendDescription(t *testing.T) {
 	// Below the trend threshold - no description, because CalculateInsights never
 	// computed a trend (the fields would be zero values). This guards against the

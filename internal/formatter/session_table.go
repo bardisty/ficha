@@ -200,7 +200,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 	// Format: 2(indent) + 40(label) + 3(spaces) + cost = 45 chars before cost
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	if noColor {
-		sb.WriteString(fmt.Sprintf("  %-40s   %s\n", "Parent session", render.Cost(analysis.ParentCost.TotalCost)))
+		sb.WriteString(fmt.Sprintf("  %-40s   %s\n", "Parent session", render.CostCell(analysis.ParentCost.TotalCost, 11)))
 	} else {
 		paddedLabel := fmt.Sprintf("%-40s", "Parent session")
 		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedLabel, formatCostStyled(analysis.ParentCost.TotalCost, 11, noColor)))
@@ -223,9 +223,9 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 			if agent.WorkflowID != "" {
 				label := render.WorkflowLabel(analysis.WorkflowByID(agent.WorkflowID))
 				if noColor {
-					sb.WriteString(fmt.Sprintf("  -- %s\n", label))
+					sb.WriteString("  " + styles.GroupRule + " " + label + "\n")
 				} else {
-					sb.WriteString("  " + dimStyle.Render("── "+label) + "\n")
+					sb.WriteString("  " + dimStyle.Render(styles.GroupRule+" "+label) + "\n")
 				}
 			}
 		}
@@ -241,7 +241,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 
 		if noColor {
 			sb.WriteString(fmt.Sprintf("  %-10s %-11s %*s%s%s\n",
-				marker, modelLabel, msgsWidth, msgStr, msgsGap, render.Cost(agent.TotalCost.TotalCost)))
+				marker, modelLabel, msgsWidth, msgStr, msgsGap, render.CostCell(agent.TotalCost.TotalCost, 11)))
 		} else {
 			// Color the marker by hashing the full agent ID (matches breakdown)
 			agentColor := styles.GetAgentColor(agent.AgentID)
@@ -264,7 +264,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, noColor bool)
 	// Agents subtotal in bold green (matches TotalValueStyle for visual hierarchy)
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	if noColor {
-		sb.WriteString(fmt.Sprintf("  %-40s   %s\n", "Agents subtotal", render.Cost(analysis.AgentsCost.TotalCost)))
+		sb.WriteString(fmt.Sprintf("  %-40s   %s\n", "Agents subtotal", render.CostCell(analysis.AgentsCost.TotalCost, 11)))
 	} else {
 		paddedSubtotal := fmt.Sprintf("%-40s", "Agents subtotal")
 		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedSubtotal, formatCostStyledBoldGreen(analysis.AgentsCost.TotalCost, 11, noColor)))
@@ -344,14 +344,14 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 		warningStr := fmt.Sprintf("%.1fx avg cost", multiplier)
 
 		if noColor {
-			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  ! %s\n",
+			sb.WriteString(fmt.Sprintf("  %-10s %s  (%s)  "+styles.Warning+" %s\n",
 				"Peak",
 				formatCostStyled(highest.Cost, 10, noColor),
 				render.Clock(highest.Timestamp),
 				warningStr))
 		} else {
 			timestamp := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(highest.Timestamp)))
-			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render("⚠ " + warningStr)
+			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render(styles.Warning + " " + warningStr)
 			sb.WriteString(fmt.Sprintf("  %-10s %s  %s  %s\n",
 				"Peak",
 				formatCostStyled(highest.Cost, 10, noColor),
@@ -363,15 +363,16 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 	// Trend (only once the analyzer actually computed one — see HasTrend)
 	if insights.HasTrend() {
 		trendDesc := insights.TrendDescription()
-		trendSymbol := insights.CostTrend.Symbol()
+		trendSymbol := render.TrendSymbol(insights.CostTrend)
 
 		earlyStr := render.Cost(insights.EarlyAvgCost) + "/msg"
 		lateStr := render.Cost(insights.LateAvgCost) + "/msg"
 
 		if noColor {
-			sb.WriteString(fmt.Sprintf("  %-10s %s -> %s  %s %s\n",
+			sb.WriteString(fmt.Sprintf("  %-10s %s %s %s  %s %s\n",
 				"Trend",
 				earlyStr,
+				styles.Arrow,
 				lateStr,
 				trendSymbol,
 				trendDesc))
@@ -386,9 +387,10 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 			default:
 				symbolStyled = dimStyle.Render(trendSymbol)
 			}
-			sb.WriteString(fmt.Sprintf("  %-10s %s → %s  %s %s\n",
+			sb.WriteString(fmt.Sprintf("  %-10s %s %s %s  %s %s\n",
 				"Trend",
 				earlyStr,
+				styles.Arrow,
 				lateStr,
 				symbolStyled,
 				trendDesc))

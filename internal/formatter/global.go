@@ -111,9 +111,6 @@ func renderGlobalHeaderPanel(analysis *models.GlobalAnalysis, width int, noColor
 	durationPart := fmt.Sprintf("Duration: %s", render.DurationLong(analysis.Duration.Duration()))
 
 	sep := styles.BoxVerticalSep
-	if noColor {
-		sep = styles.AsciiVertical
-	}
 	content := fmt.Sprintf("%s  %s  %s  %s  %s", titlePart, sep, sessionPart, sep, durationPart)
 	contentLen := len(titlePart) + 2 + 1 + 2 + len(sessionPart) + 2 + 1 + 2 + len(durationPart)
 	padding := innerWidth - contentLen
@@ -122,22 +119,22 @@ func renderGlobalHeaderPanel(analysis *models.GlobalAnalysis, width int, noColor
 	}
 
 	if noColor {
-		sb.WriteString(styles.AsciiCorner)
-		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
-		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(styles.BoxTopLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxTopRight)
 		sb.WriteString("\n")
 
-		sb.WriteString(styles.AsciiVertical)
+		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("  ")
 		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
 		sb.WriteString("  ")
-		sb.WriteString(styles.AsciiVertical)
+		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("\n")
 
-		sb.WriteString(styles.AsciiCorner)
-		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
-		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(styles.BoxBottomLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxBottomRight)
 	} else {
 		titleStyled := fmt.Sprintf("%s %d projects",
 			sectionHeaderStyle.Render("Global:"),
@@ -180,7 +177,7 @@ func formatGlobalCostByModel(costByModel map[string]models.CostBreakdown, noColo
 		modelName := pricing.GetModelDisplayName(modelID)
 		modelLabel := render.ClampModel(modelName, 12)
 		if noColor {
-			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelLabel, render.Cost(cost.TotalCost)))
+			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelLabel, render.CostCell(cost.TotalCost, 12)))
 		} else {
 			modelColor := styles.GetModelColor(modelName)
 			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-12s", modelLabel))
@@ -247,7 +244,7 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 
 	if noColor {
 		sb.WriteString(headerRow + "\n")
-		sb.WriteString("  " + strings.Repeat("-", contentWidth) + "\n")
+		sb.WriteString("  " + strings.Repeat(styles.LineHorizontal, contentWidth) + "\n")
 	} else {
 		sb.WriteString(headerStyle.Render(headerRow) + "\n")
 		sb.WriteString("  " + dimStyle.Render(strings.Repeat(styles.LineHorizontal, contentWidth)) + "\n")
@@ -303,7 +300,7 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, topN int
 
 	// Footer separator and summary of remaining projects
 	if noColor {
-		sb.WriteString("  " + strings.Repeat("-", contentWidth) + "\n")
+		sb.WriteString("  " + strings.Repeat(styles.LineHorizontal, contentWidth) + "\n")
 	} else {
 		sb.WriteString("  " + dimStyle.Render(strings.Repeat(styles.LineHorizontal, contentWidth)) + "\n")
 	}

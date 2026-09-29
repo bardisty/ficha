@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/bardisty/ficha/internal/styles"
 	"github.com/spf13/cobra"
 )
 
@@ -48,6 +49,17 @@ Examples:
 				cfg.commandPath += " --live"
 			}
 
+			// NO_COLOR (no-color.org) means the same as --no-color: any
+			// non-empty value turns color off. lipgloss already drops escapes
+			// for it, but ficha's own no-color text fallbacks key off noColor.
+			// An explicit --no-color=false still wins, as no-color.org asks.
+			if os.Getenv("NO_COLOR") != "" && !cmd.Flags().Changed("no-color") {
+				cfg.noColor = true
+			}
+			// Glyphs are process-wide; set them every run (true or false) so
+			// an in-process caller's earlier --ascii can't leak into this one.
+			styles.SetASCII(cfg.ascii)
+
 			// version prints plain text and ignores --format entirely
 			if cmd.Name() == "version" {
 				return nil
@@ -90,7 +102,8 @@ Examples:
 	// commands that use it, so help lists nothing a command would ignore.
 	rootCmd.PersistentFlags().StringVarP(&cfg.format, "format", "f", "table", "Output format: table, json, csv")
 	rootCmd.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "Show debug information")
-	rootCmd.PersistentFlags().BoolVar(&cfg.noColor, "no-color", false, "Disable colored output")
+	rootCmd.PersistentFlags().BoolVar(&cfg.noColor, "no-color", false, "Disable colored output (same as setting NO_COLOR)")
+	rootCmd.PersistentFlags().BoolVar(&cfg.ascii, "ascii", false, "Draw frames and symbols in plain ASCII instead of Unicode")
 	_ = rootCmd.RegisterFlagCompletionFunc("format", fixedValues(formatValues))
 
 	// Bare `ficha` is `ficha show`. --live stays for compatibility, hidden so

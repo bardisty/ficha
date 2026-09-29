@@ -80,9 +80,9 @@ func TestWatchMarksUnknownModel(t *testing.T) {
 				}
 			}
 
-			// The footer explains it, mode-aware on the warning glyph.
-			if !strings.Contains(out, unknownModelFootnote(tc.noColor)) {
-				t.Errorf("footer missing %q:\n%s", unknownModelFootnote(tc.noColor), out)
+			// The footer explains it.
+			if !strings.Contains(out, unknownModelFootnote()) {
+				t.Errorf("footer missing %q:\n%s", unknownModelFootnote(), out)
 			}
 		})
 	}
@@ -92,7 +92,7 @@ func TestWatchMarksUnknownModel(t *testing.T) {
 func TestWatchOmitsUnknownModelFootnoteWhenAllKnown(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	out := stripANSI(goldenWatchView(t, true))
-	if strings.Contains(out, unknownModelFootnote(true)) {
+	if strings.Contains(out, unknownModelFootnote()) {
 		t.Errorf("footnote must not render when every model is priced from the catalog:\n%s", out)
 	}
 	for _, row := range costByModelRows(out) {
@@ -141,8 +141,8 @@ func TestBreakdownMarksUnknownModel(t *testing.T) {
 			if strings.Contains(plainRow, unknownModelMarker) {
 				t.Errorf("catalog-model row must not be marked:\n%q", plainRow)
 			}
-			if !strings.Contains(out, unknownModelFootnote(tc.noColor)) {
-				t.Errorf("footer missing %q:\n%s", unknownModelFootnote(tc.noColor), out)
+			if !strings.Contains(out, unknownModelFootnote()) {
+				t.Errorf("footer missing %q:\n%s", unknownModelFootnote(), out)
 			}
 		})
 	}

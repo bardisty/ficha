@@ -110,10 +110,6 @@ type (
 
 // NewBreakdownModel creates a new breakdown TUI model
 func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir string, followMode bool) BreakdownModel {
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = spinnerStyle
-
 	closing := &atomic.Bool{}
 	closeOnce := &sync.Once{}
 
@@ -123,7 +119,7 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 		noColor:     noColor,
 		loading:     true,
 		autoScroll:  true,
-		spinner:     s,
+		spinner:     newSpinner(noColor),
 		done:        make(chan struct{}),
 		closing:     closing,
 		closeOnce:   closeOnce,
@@ -511,11 +507,7 @@ func (m BreakdownModel) View() string {
 	sb.WriteString("\n")
 
 	// Double-line footer separator
-	footerRule := styles.BoxHorizontal
-	if m.noColor {
-		footerRule = styles.AsciiHorizontal
-	}
-	footerSep := strings.Repeat(footerRule, panelWidth)
+	footerSep := strings.Repeat(styles.BoxHorizontal, panelWidth)
 	if !m.noColor {
 		footerSep = panelBorderStyle.Render(footerSep)
 	}
@@ -534,56 +526,53 @@ func (m BreakdownModel) View() string {
 		// Use lighter gray (250) for text
 		lightGray := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 		sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+		sep := " " + styles.BoxVerticalSep + " "
 
 		sb.WriteString("  ")
 		sb.WriteString(lightGray.Render(msgPart))
-		sb.WriteString(sepStyle.Render(" │ "))
+		sb.WriteString(sepStyle.Render(sep))
 		sb.WriteString(lightGray.Render("Total: "))
 		sb.WriteString(costStyled)
-		sb.WriteString(sepStyle.Render(" │ "))
+		sb.WriteString(sepStyle.Render(sep))
 		sb.WriteString(lightGray.Render(scrollPart))
 		// Surface parse warnings so an incomplete breakdown doesn't look complete
-		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts, false); note != "" {
+		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts); note != "" {
 			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
-			sb.WriteString(sepStyle.Render(" │ "))
+			sb.WriteString(sepStyle.Render(sep))
 			sb.WriteString(warnStyle.Render(note))
 		}
 		// Explain the MODEL-column asterisk: those rows are fallback-priced
 		if m.hasUnknown {
 			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
-			sb.WriteString(sepStyle.Render(" │ "))
-			sb.WriteString(warnStyle.Render(unknownModelFootnote(false)))
+			sb.WriteString(sepStyle.Render(sep))
+			sb.WriteString(warnStyle.Render(unknownModelFootnote()))
 		}
 	} else {
-		sb.WriteString(fmt.Sprintf("  Messages: %d | Total: %s | Scroll: %s",
-			len(m.messages), render.Cost(m.totalCost), scrollMode))
-		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts, true); note != "" {
-			sb.WriteString(" | " + note)
+		sep := " " + styles.BoxVerticalSep + " "
+		sb.WriteString(fmt.Sprintf("  Messages: %d%sTotal: %s%sScroll: %s",
+			len(m.messages), sep, render.Cost(m.totalCost), sep, scrollMode))
+		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts); note != "" {
+			sb.WriteString(sep + note)
 		}
 		if m.hasUnknown {
-			sb.WriteString(" | " + unknownModelFootnote(true))
+			sb.WriteString(sep + unknownModelFootnote())
 		}
 	}
 	sb.WriteString("\n")
 
 	// Single-line separator before help
-	helpRule := styles.LineHorizontal
-	if m.noColor {
-		helpRule = styles.AsciiRule
-	}
-	helpSep := strings.Repeat(helpRule, panelWidth)
+	helpSep := strings.Repeat(styles.LineHorizontal, panelWidth)
 	if !m.noColor {
 		helpSep = dimStyle.Render(helpSep)
 	}
 	sb.WriteString("  " + helpSep + "\n")
 
 	// Help - use lighter gray
+	helpText := helpLine("q: quit", "g/G: top/bottom", styles.ScrollKeys+": scroll")
 	if !m.noColor {
-		helpText := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("q: quit • g/G: top/bottom • ↑↓: scroll")
-		sb.WriteString("  " + helpText)
-	} else {
-		sb.WriteString("  q: quit • g/G: top/bottom • ↑↓: scroll")
+		helpText = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(helpText)
 	}
+	sb.WriteString("  " + helpText)
 
 	return clipToWidth(sb.String(), m.width)
 }
@@ -628,7 +617,7 @@ func (m BreakdownModel) renderCompactInsights() string {
 	// Trend (only once the analyzer actually computed one — see HasTrend)
 	if m.insights.HasTrend() {
 		trendDesc := m.insights.TrendDescription()
-		trendSymbol := m.insights.CostTrend.Symbol()
+		trendSymbol := render.TrendSymbol(m.insights.CostTrend)
 		trendStr := fmt.Sprintf("Trend: %s %s", trendSymbol, trendDesc)
 		if !m.noColor {
 			var color lipgloss.Color
@@ -659,11 +648,7 @@ func (m BreakdownModel) renderCompactInsights() string {
 		}
 	}
 
-	sep := " │ "
-	if m.noColor {
-		sep = " | "
-	}
-	return "  " + strings.Join(parts, sep)
+	return "  " + strings.Join(parts, " "+styles.BoxVerticalSep+" ")
 }
 
 // renderTableHeader renders the table header row
@@ -678,14 +663,10 @@ func (m BreakdownModel) renderTableHeader() string {
 	return header
 }
 
-// renderTableSeparator renders the table separator rule: box-drawing when
-// colored, an ASCII fallback in no-color.
+// renderTableSeparator renders the table separator rule, dimmed unless color
+// is off.
 func (m BreakdownModel) renderTableSeparator() string {
-	rule := styles.LineHorizontal
-	if m.noColor {
-		rule = styles.AsciiRule
-	}
-	sep := "  " + strings.Repeat(rule, panelWidthFor(m.width))
+	sep := "  " + strings.Repeat(styles.LineHorizontal, panelWidthFor(m.width))
 	if !m.noColor {
 		return tableBorderStyle.Render(sep)
 	}
@@ -722,10 +703,11 @@ const breakdownCostWidth = 10
 // renderDayMarker renders the divider row placed above the first message of a
 // new local day.
 func (m BreakdownModel) renderDayMarker(t time.Time) string {
+	marker := styles.GroupRule + " " + render.DayMarker(t) + " " + styles.GroupRule
 	if m.noColor {
-		return "  -- " + render.DayMarker(t) + " --"
+		return "  " + marker
 	}
-	return "  " + dimStyle.Render("── "+render.DayMarker(t)+" ──")
+	return "  " + dimStyle.Render(marker)
 }
 
 // renderRow renders a single message row
@@ -903,28 +885,21 @@ func (m *BreakdownModel) armFileWaiter() tea.Cmd {
 	return waitForFileChangeCmd(m.wg, m.closing, m.watcher, m.done, m.sessionPath)
 }
 
-// Per-message change symbols (distinct from session trend ▲/▼/═)
-const (
-	changeUp     = "↑"
-	changeDown   = "↓"
-	changeStable = "·"
-)
-
 // getRowTrendIndicator returns the change indicator for a message based on cost change
 // from previous message. Uses 5% threshold for significance.
 func getRowTrendIndicator(currentCost, previousCost float64, isFirst bool) (symbol string, direction models.TrendDirection) {
 	if isFirst || previousCost == 0 {
-		return changeStable, models.TrendStable
+		return styles.RowFlat, models.TrendStable
 	}
 
 	change := (currentCost - previousCost) / previousCost
 
 	if change > 0.05 {
-		return changeUp, models.TrendIncreasing
+		return styles.RowUp, models.TrendIncreasing
 	} else if change < -0.05 {
-		return changeDown, models.TrendDecreasing
+		return styles.RowDown, models.TrendDecreasing
 	}
-	return changeStable, models.TrendStable
+	return styles.RowFlat, models.TrendStable
 }
 
 func (m BreakdownModel) startSessionWatcher() tea.Cmd {

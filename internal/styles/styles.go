@@ -8,30 +8,91 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Box-drawing characters for mainframe aesthetic
-const (
-	BoxTopLeft     = "╔"
-	BoxTopRight    = "╗"
-	BoxBottomLeft  = "╚"
-	BoxBottomRight = "╝"
-	BoxHorizontal  = "═"
-	BoxVertical    = "║"
-	BoxVerticalSep = "│"
-	LineHorizontal = "─"
+// Glyphs. ficha draws with Unicode box-drawing characters and symbols by
+// default; SetASCII swaps in plain-ASCII stand-ins for terminals without
+// UTF-8 (--ascii). Glyphs are independent of color: --no-color keeps them.
+//
+// The choice is process-wide, like lipgloss's color profile, and is made once
+// at startup before anything renders. Every stand-in except Arrow, ScrollKeys
+// and Ellipsis is as wide as its Unicode glyph, so fixed-width columns hold
+// in both sets; those three only appear inline, where width doesn't matter,
+// or in helpers that measure the ellipsis they append.
+var (
+	BoxTopLeft     string // ╔
+	BoxTopRight    string // ╗
+	BoxBottomLeft  string // ╚
+	BoxBottomRight string // ╝
+	BoxHorizontal  string // ═ heavy rule and panel border
+	BoxVertical    string // ║ panel side
+	BoxVerticalSep string // │ field separator
+	LineHorizontal string // ─ light rule
+	BarUsed        string // █ filled progress-bar cell
+	BarFree        string // ░ empty progress-bar cell
+	Bullet         string // • help-line separator
+	LiveDot        string // ● live indicator
+	Warning        string // ⚠ warning prefix
+	Arrow          string // → "from -> to"
+	RowUp          string // ↑ per-message cost rose
+	RowDown        string // ↓ per-message cost fell
+	RowFlat        string // · per-message cost held
+	TrendUp        string // ▲ session trend increasing
+	TrendDown      string // ▼ session trend decreasing
+	TrendFlat      string // ═ session trend stable
+	TreeBranch     string // ├─ tree connector
+	TreeLast       string // └─ last tree connector
+	GroupRule      string // ── lead-in of a group or day divider
+	ScrollKeys     string // ↑↓ scroll keys in help lines
+	Ellipsis       string // … truncation marker
 )
 
-// ASCII fallbacks selected in no-color mode. All are one display cell wide,
-// matching their box-drawing counterparts, so swapping them in a no-color
-// path leaves column alignment untouched. Non-UTF-8 terminals get
-// clean chrome instead of mojibake for panels, separators, and progress bars.
-const (
-	AsciiCorner     = "+" // box corners ╔╗╚╝
-	AsciiHorizontal = "=" // heavy horizontal ═
-	AsciiVertical   = "|" // vertical ║ and field separator │
-	AsciiRule       = "-" // light rule ─
-	AsciiBarUsed    = "#" // filled bar cell █
-	AsciiBarFree    = "-" // empty bar cell ░
-)
+var asciiGlyphs bool
+
+func init() { SetASCII(false) }
+
+// SetASCII selects the ASCII glyph set (true) or the Unicode one (false).
+func SetASCII(ascii bool) {
+	asciiGlyphs = ascii
+	if ascii {
+		BoxTopLeft, BoxTopRight, BoxBottomLeft, BoxBottomRight = "+", "+", "+", "+"
+		BoxHorizontal, BoxVertical, BoxVerticalSep, LineHorizontal = "=", "|", "|", "-"
+		BarUsed, BarFree = "#", "-"
+		Bullet, LiveDot, Warning, Arrow = "|", "*", "!", "->"
+		RowUp, RowDown, RowFlat = "^", "v", "."
+		TrendUp, TrendDown, TrendFlat = "^", "v", "="
+		TreeBranch, TreeLast, GroupRule = "+-", "`-", "--"
+		ScrollKeys, Ellipsis = "j/k", "..."
+		return
+	}
+	BoxTopLeft, BoxTopRight, BoxBottomLeft, BoxBottomRight = "╔", "╗", "╚", "╝"
+	BoxHorizontal, BoxVertical, BoxVerticalSep, LineHorizontal = "═", "║", "│", "─"
+	BarUsed, BarFree = "█", "░"
+	Bullet, LiveDot, Warning, Arrow = "•", "●", "⚠", "→"
+	RowUp, RowDown, RowFlat = "↑", "↓", "·"
+	TrendUp, TrendDown, TrendFlat = "▲", "▼", "═"
+	TreeBranch, TreeLast, GroupRule = "├─", "└─", "──"
+	ScrollKeys, Ellipsis = "↑↓", "…"
+}
+
+// ASCII reports whether the ASCII glyph set is active.
+func ASCII() bool { return asciiGlyphs }
+
+// ASCIIChart maps a sparkline's block characters (U+2581..U+2588, as drawn
+// by ntcharts' column mode) to ASCII by height: low blocks to ".", middle
+// ones to ":", the full block to "#". Everything else, escape codes
+// included, passes through.
+func ASCIIChart(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= '▁' && r <= '▃':
+			return '.'
+		case r >= '▄' && r <= '▇':
+			return ':'
+		case r == '█':
+			return '#'
+		}
+		return r
+	}, s)
+}
 
 // Shared color palette
 var (

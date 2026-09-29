@@ -11,6 +11,7 @@ import (
 
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -595,4 +596,56 @@ func TestGoldenSummaryDetailsExpandWorkflows(t *testing.T) {
 	entries := summaryWorkflowFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
 	checkGolden(t, "summary_details_expand_workflows", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true))
+}
+
+// --- golden tests: glyph sets and mixed cost widths ---
+
+// useASCII switches to the ASCII glyph set (--ascii) for one test.
+func useASCII(t *testing.T) {
+	t.Helper()
+	styles.SetASCII(true)
+	t.Cleanup(func() { styles.SetASCII(false) })
+}
+
+// --ascii --no-color: plain ASCII frames and symbols, no escapes.
+func TestGoldenSessionTableShowASCII(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	useASCII(t)
+	checkGolden(t, "session_table_show_ascii", FormatSessionTable(goldenShowAnalysis(), true))
+}
+
+// --ascii alone keeps color; the colored branches must draw ASCII glyphs too.
+func TestGoldenSessionTableShowASCIIColor(t *testing.T) {
+	forceProfile(t, termenv.ANSI256)
+	useASCII(t)
+	checkGolden(t, "session_table_show_ascii_color", FormatSessionTable(goldenShowAnalysis(), false))
+}
+
+func TestGoldenSummaryDetailsExpandASCII(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	useASCII(t)
+	analysis, results := summaryDetailsAnalysis(t, summaryDetailsFixture(t))
+	checkGolden(t, "summary_details_expand_ascii", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true))
+}
+
+// goldenMixedWidthAnalysis gives every cost column values with different
+// digit counts ($17.91, $5.22, $0.4231), so a no-color branch that skips the
+// decimal padding shows up as ragged costs.
+func goldenMixedWidthAnalysis() *models.SessionAnalysis {
+	a := goldenShowAnalysis()
+	a.CostByModel = map[string]models.CostBreakdown{
+		"claude-opus-4-8":  {TotalCost: 17.908392},
+		"claude-sonnet-5":  {TotalCost: 5.223775},
+		"claude-haiku-4-5": {TotalCost: 0.423100},
+	}
+	a.ParentCost = models.CostBreakdown{TotalCost: 17.908392}
+	a.Agents[0].TotalCost = models.CostBreakdown{TotalCost: 0.423100}
+	a.Agents[1].TotalCost = models.CostBreakdown{TotalCost: 12.345678}
+	a.AgentsCost = models.CostBreakdown{TotalCost: 12.768778}
+	return a
+}
+
+func TestGoldenSessionTableShowMixedWidths(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	checkGolden(t, "session_table_show_mixed_widths", FormatSessionTable(goldenMixedWidthAnalysis(), true))
 }

@@ -22,22 +22,22 @@ func FormatSessionListTable(entries []models.SessionEntry, noColor bool) string 
 
 	if noColor {
 		// Plain header panel
-		sb.WriteString(styles.AsciiCorner)
-		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
-		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(styles.BoxTopLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxTopRight)
 		sb.WriteString("\n")
 
-		sb.WriteString(styles.AsciiVertical)
+		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("  ")
 		sb.WriteString(headerText)
 		sb.WriteString(strings.Repeat(" ", width-6-len(headerText)))
 		sb.WriteString("  ")
-		sb.WriteString(styles.AsciiVertical)
+		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("\n")
 
-		sb.WriteString(styles.AsciiCorner)
-		sb.WriteString(strings.Repeat(styles.AsciiHorizontal, width-2))
-		sb.WriteString(styles.AsciiCorner)
+		sb.WriteString(styles.BoxBottomLeft)
+		sb.WriteString(strings.Repeat(styles.BoxHorizontal, width-2))
+		sb.WriteString(styles.BoxBottomRight)
 		sb.WriteString("\n\n")
 	} else {
 		// Styled header panel
@@ -65,7 +65,7 @@ func FormatSessionListTable(entries []models.SessionEntry, noColor bool) string 
 	colHeader := fmt.Sprintf("%-36s  %8s  %7s  %s", "Session ID", "Messages", "Agents", "Modified")
 	if noColor {
 		sb.WriteString(colHeader + "\n")
-		sb.WriteString(strings.Repeat("-", width) + "\n")
+		sb.WriteString(strings.Repeat(styles.LineHorizontal, width) + "\n")
 	} else {
 		sb.WriteString(dimStyle.Render(colHeader) + "\n")
 		sb.WriteString(dimStyle.Render(strings.Repeat(styles.LineHorizontal, width)) + "\n")
@@ -110,7 +110,7 @@ func FormatSessionListTable(entries []models.SessionEntry, noColor bool) string 
 	// Footer separator
 	sb.WriteString("\n")
 	if noColor {
-		sb.WriteString(strings.Repeat("-", width))
+		sb.WriteString(strings.Repeat(styles.LineHorizontal, width))
 	} else {
 		sb.WriteString(dimStyle.Render(strings.Repeat(styles.LineHorizontal, width)))
 	}

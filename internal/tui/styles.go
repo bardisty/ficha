@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
+
 	"github.com/bardisty/ficha/internal/styles"
 )
 
@@ -13,14 +15,28 @@ import (
 // One ASCII cell in both modes, so the fixed-width MODEL columns stay aligned.
 const unknownModelMarker = "*"
 
-// unknownModelFootnote explains unknownModelMarker in a footer, mode-aware on
-// the warning glyph like the skipped-lines warning beside it.
-func unknownModelFootnote(noColor bool) string {
-	glyph := "⚠"
-	if noColor {
-		glyph = "!"
+// unknownModelFootnote explains unknownModelMarker in a footer.
+func unknownModelFootnote() string {
+	return styles.Warning + " " + unknownModelMarker + " = fallback pricing"
+}
+
+// newSpinner returns the loading spinner: braille dots, or a spinning line
+// under the ASCII glyph set, colored unless color is off.
+func newSpinner(noColor bool) spinner.Model {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	if styles.ASCII() {
+		s.Spinner = spinner.Line
 	}
-	return glyph + " " + unknownModelMarker + " = fallback pricing"
+	if !noColor {
+		s.Style = spinnerStyle
+	}
+	return s
+}
+
+// helpLine joins key hints with the glyph set's bullet.
+func helpLine(hints ...string) string {
+	return strings.Join(hints, " "+styles.Bullet+" ")
 }
 
 // accountingFootnote reports what a TUI's totals could not account for
@@ -29,13 +45,9 @@ func unknownModelFootnote(noColor bool) string {
 // when there is nothing to report. All counts share one footer segment
 // rather than claiming a separator each: the footer is a single line, and it
 // already carries the fallback-pricing footnote.
-func accountingFootnote(skippedAgents, skippedLines, estimatedCosts int, noColor bool) string {
+func accountingFootnote(skippedAgents, skippedLines, estimatedCosts int) string {
 	if skippedAgents == 0 && skippedLines == 0 && estimatedCosts == 0 {
 		return ""
-	}
-	glyph := "⚠"
-	if noColor {
-		glyph = "!"
 	}
 	var parts []string
 	if skippedAgents > 0 {
@@ -47,7 +59,7 @@ func accountingFootnote(skippedAgents, skippedLines, estimatedCosts int, noColor
 	if estimatedCosts > 0 {
 		parts = append(parts, fmt.Sprintf("%d estimated cost(s)", estimatedCosts))
 	}
-	return glyph + " " + strings.Join(parts, ", ")
+	return styles.Warning + " " + strings.Join(parts, ", ")
 }
 
 // Local aliases for frequently used styles

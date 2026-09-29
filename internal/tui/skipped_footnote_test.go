@@ -18,12 +18,12 @@ func TestAccountingFootnote(t *testing.T) {
 	tests := []struct {
 		name                     string
 		agents, lines, estimated int
-		noColor                  bool
+		ascii                    bool
 		want                     string
 	}{
-		{"nothing to report", 0, 0, 0, true, ""},
-		{"lines only keeps the original wording", 0, 3, 0, true, "! 3 skipped line(s)"},
-		{"lines only, color glyph", 0, 3, 0, false, "⚠ 3 skipped line(s)"},
+		{"nothing to report", 0, 0, 0, false, ""},
+		{"lines only keeps the original wording", 0, 3, 0, false, "⚠ 3 skipped line(s)"},
+		{"lines only, ASCII glyph", 0, 3, 0, true, "! 3 skipped line(s)"},
 		{"agents only", 2, 0, 0, true, "! 2 skipped agent(s)"},
 		{"both share one segment", 2, 3, 0, false, "⚠ 2 skipped agent(s), 3 skipped line(s)"},
 		{"estimated only", 0, 0, 4, true, "! 4 estimated cost(s)"},
@@ -31,9 +31,12 @@ func TestAccountingFootnote(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := accountingFootnote(tt.agents, tt.lines, tt.estimated, tt.noColor); got != tt.want {
-				t.Errorf("accountingFootnote(%d, %d, %d, %v) = %q, want %q",
-					tt.agents, tt.lines, tt.estimated, tt.noColor, got, tt.want)
+			if tt.ascii {
+				useASCII(t)
+			}
+			if got := accountingFootnote(tt.agents, tt.lines, tt.estimated); got != tt.want {
+				t.Errorf("accountingFootnote(%d, %d, %d) ascii=%v = %q, want %q",
+					tt.agents, tt.lines, tt.estimated, tt.ascii, got, tt.want)
 			}
 		})
 	}
@@ -57,7 +60,7 @@ func TestBreakdownFooterShowsSkippedAgents(t *testing.T) {
 	m = updated.(BreakdownModel)
 
 	view := m.View()
-	if !strings.Contains(view, "! 2 skipped agent(s), 3 skipped line(s), 4 estimated cost(s)") {
+	if !strings.Contains(view, "⚠ 2 skipped agent(s), 3 skipped line(s), 4 estimated cost(s)") {
 		t.Errorf("breakdown footer missing the combined accounting segment:\n%s", view)
 	}
 }
@@ -79,7 +82,7 @@ func TestWatchFooterShowsSkippedAgents(t *testing.T) {
 	m = updated.(Model)
 
 	view := m.View()
-	if !strings.Contains(view, "! 1 skipped agent(s), 2 skipped line(s), 3 estimated cost(s)") {
+	if !strings.Contains(view, "⚠ 1 skipped agent(s), 2 skipped line(s), 3 estimated cost(s)") {
 		t.Errorf("watch footer missing the combined accounting segment:\n%s", view)
 	}
 }

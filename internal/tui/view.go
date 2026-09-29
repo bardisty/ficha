@@ -82,11 +82,7 @@ func (m Model) View() string {
 	sb.WriteString("\n")
 
 	// FIXED FOOTER (4 lines) - with 2-space padding
-	footerRule := styles.BoxHorizontal
-	if m.noColor {
-		footerRule = styles.AsciiHorizontal
-	}
-	footerSep := strings.Repeat(footerRule, panelWidth)
+	footerSep := strings.Repeat(styles.BoxHorizontal, panelWidth)
 	if !m.noColor {
 		footerSep = panelBorderStyle.Render(footerSep)
 	}
@@ -104,23 +100,18 @@ func (m Model) View() string {
 	}
 
 	// Single-line help separator
-	helpRule := styles.LineHorizontal
-	if m.noColor {
-		helpRule = styles.AsciiRule
-	}
-	helpSep := strings.Repeat(helpRule, panelWidth)
+	helpSep := strings.Repeat(styles.LineHorizontal, panelWidth)
 	if !m.noColor {
 		helpSep = dimStyle.Render(helpSep)
 	}
 	sb.WriteString("  " + helpSep + "\n")
 
 	// Help text - expanded keybinds to match breakdown
+	helpText := helpLine("q: quit", "r: refresh", "g/G: top/bottom", styles.ScrollKeys+": scroll")
 	if !m.noColor {
-		helpText := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("q: quit • r: refresh • g/G: top/bottom • ↑↓: scroll")
-		sb.WriteString("  " + helpText)
-	} else {
-		sb.WriteString("  q: quit • r: refresh • g/G: top/bottom • ↑↓: scroll")
+		helpText = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(helpText)
 	}
+	sb.WriteString("  " + helpText)
 
 	return clipToWidth(sb.String(), m.width)
 }
@@ -183,11 +174,11 @@ func (m Model) renderAnalysis() string {
 	}
 
 	// Savings row (no separator - the rows above sum to hero TOTAL, not savings).
-	// The plain form is intentionally simpler (no highlight, unpadded value).
+	// The plain form never highlights, but pads the value like the colored one.
 	if a.TotalCost.CacheSavings > 0 {
 		if m.noColor {
 			sb.WriteString(fmt.Sprintf("    %-14s %s  (from cache reads)\n",
-				"Savings", render.Cost(a.TotalCost.CacheSavings)))
+				"Savings", render.CostCell(a.TotalCost.CacheSavings, 11)))
 		} else {
 			savingsHighlighted := m.isHighlighted("savings")
 			savingsStr := render.CostStyledGreen(a.TotalCost.CacheSavings, 11, savingsHighlighted, m.noColor)
@@ -297,8 +288,11 @@ func (m Model) renderFooter() string {
 	changed := m.recentlyChanged("messages")
 	highlighted := m.isHighlighted("messages")
 	sep := styles.BoxVerticalSep
-	if m.noColor {
-		sep = styles.AsciiVertical
+	footer := func(s string) string {
+		if m.noColor {
+			return s
+		}
+		return footerStyle.Render(s)
 	}
 
 	var footerLine string
@@ -312,18 +306,18 @@ func (m Model) renderFooter() string {
 			valStr = fmt.Sprintf("%d", a.MessageCount)
 		}
 		if highlighted {
-			footerLine = footerStyle.Render("Messages: ") + highlightStyle.Render(valStr) +
-				footerStyle.Render(fmt.Sprintf("  %s  Duration: %s", sep, render.Duration(a.Duration.Duration())))
+			footerLine = footer("Messages: ") + highlightStyle.Render(valStr) +
+				footer(fmt.Sprintf("  %s  Duration: %s", sep, render.Duration(a.Duration.Duration())))
 		} else {
 			footerLine = fmt.Sprintf("Messages: %s  %s  Duration: %s", valStr, sep, render.Duration(a.Duration.Duration()))
 		}
 	} else {
-		footerLine = footerStyle.Render(fmt.Sprintf("Messages: %d  %s  Duration: %s",
+		footerLine = footer(fmt.Sprintf("Messages: %d  %s  Duration: %s",
 			a.MessageCount, sep, render.Duration(a.Duration.Duration())))
 	}
 
 	// Surface parse warnings so undercounted totals don't look authoritative
-	if note := accountingFootnote(a.SkippedAgents, a.SkippedLines, a.EstimatedCostMessages, m.noColor); note != "" {
+	if note := accountingFootnote(a.SkippedAgents, a.SkippedLines, a.EstimatedCostMessages); note != "" {
 		if m.noColor {
 			footerLine += fmt.Sprintf("  %s  %s", sep, note)
 		} else {
@@ -335,10 +329,10 @@ func (m Model) renderFooter() string {
 	// Explain the COST BY MODEL asterisk: those rows are fallback-priced
 	if hasUnknownModel(a.CostByModel) {
 		if m.noColor {
-			footerLine += fmt.Sprintf("  %s  %s", sep, unknownModelFootnote(true))
+			footerLine += fmt.Sprintf("  %s  %s", sep, unknownModelFootnote())
 		} else {
 			warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
-			footerLine += footerStyle.Render("  "+sep+"  ") + warnStyle.Render(unknownModelFootnote(false))
+			footerLine += footerStyle.Render("  "+sep+"  ") + warnStyle.Render(unknownModelFootnote())
 		}
 	}
 	return footerLine
@@ -456,9 +450,9 @@ func (m Model) renderAgentBreakdownContent() string {
 			if agent.WorkflowID != "" {
 				label := render.WorkflowLabel(a.WorkflowByID(agent.WorkflowID))
 				if m.noColor {
-					sb.WriteString(fmt.Sprintf("    -- %s\n", label))
+					sb.WriteString("    " + styles.GroupRule + " " + label + "\n")
 				} else {
-					sb.WriteString("    " + dimStyle.Render("── "+label) + "\n")
+					sb.WriteString("    " + dimStyle.Render(styles.GroupRule+" "+label) + "\n")
 				}
 			}
 		}
@@ -551,7 +545,7 @@ func (m Model) renderInsightsContent() string {
 		} else {
 			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  %s: %s\n",
 				"First",
-				render.Cost(first.Cost),
+				render.CostCell(first.Cost, 10),
 				render.Clock(first.Timestamp),
 				componentLabel,
 				render.Cost(first.MainCostValue)))
@@ -578,7 +572,7 @@ func (m Model) renderInsightsContent() string {
 		} else {
 			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  %s: %s\n",
 				"Last",
-				render.Cost(last.Cost),
+				render.CostCell(last.Cost, 10),
 				render.Clock(last.Timestamp),
 				componentLabel,
 				render.Cost(last.MainCostValue)))
@@ -596,17 +590,18 @@ func (m Model) renderInsightsContent() string {
 			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "Peak"))
 			costStr := render.CostStyled(highest.Cost, 10, highlighted, m.noColor)
 			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(highest.Timestamp)))
-			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render("⚠ " + warningStr)
+			warningStyled := lipgloss.NewStyle().Foreground(styles.WarningColor).Render(styles.Warning + " " + warningStr)
 			sb.WriteString(fmt.Sprintf("    %s %s  %s  %s\n",
 				labelStr,
 				costStr,
 				timestampStr,
 				warningStyled))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  ! %s\n",
+			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  %s %s\n",
 				"Peak",
-				render.Cost(highest.Cost),
+				render.CostCell(highest.Cost, 10),
 				render.Clock(highest.Timestamp),
+				styles.Warning,
 				warningStr))
 		}
 	}
@@ -614,7 +609,7 @@ func (m Model) renderInsightsContent() string {
 	// Trend (only once the analyzer actually computed one — see HasTrend)
 	if insights.HasTrend() {
 		trendDesc := insights.TrendDescription()
-		trendSymbol := insights.CostTrend.Symbol()
+		trendSymbol := render.TrendSymbol(insights.CostTrend)
 		highlighted := m.isHighlighted("insights_trend")
 
 		earlyStr := render.Cost(insights.EarlyAvgCost) + "/msg"
@@ -638,9 +633,9 @@ func (m Model) renderInsightsContent() string {
 			var trendLine string
 			if highlighted {
 				// Highlight only the cost values, not the arrow
-				trendLine = fmt.Sprintf("%s → %s", highlightStyle.Render(earlyStr), highlightStyle.Render(lateStr))
+				trendLine = highlightStyle.Render(earlyStr) + " " + styles.Arrow + " " + highlightStyle.Render(lateStr)
 			} else {
-				trendLine = fmt.Sprintf("%s → %s", earlyStr, lateStr)
+				trendLine = earlyStr + " " + styles.Arrow + " " + lateStr
 			}
 			sb.WriteString(fmt.Sprintf("    %s %s  %s %s\n",
 				labelStr,
@@ -648,9 +643,10 @@ func (m Model) renderInsightsContent() string {
 				symbolStyled,
 				descStyled))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %-10s %s -> %s  %s %s\n",
+			sb.WriteString(fmt.Sprintf("    %-10s %s %s %s  %s %s\n",
 				"Trend",
 				earlyStr,
+				styles.Arrow,
 				lateStr,
 				trendSymbol,
 				trendDesc))
@@ -723,9 +719,6 @@ func (m Model) renderHeroCost(cost float64, highlighted bool, width int) string 
 	}
 
 	rule := styles.LineHorizontal
-	if m.noColor {
-		rule = styles.AsciiRule
-	}
 	leftLine := strings.Repeat(rule, sideLen)
 	rightLine := strings.Repeat(rule, rightLen)
 
@@ -846,7 +839,11 @@ func (m Model) renderCostChart() string {
 	}
 
 	// Render the chart with proper indentation
-	chartLines := strings.Split(m.costChart.View(), "\n")
+	chartView := m.costChart.View()
+	if styles.ASCII() {
+		chartView = styles.ASCIIChart(chartView)
+	}
+	chartLines := strings.Split(chartView, "\n")
 	for _, line := range chartLines {
 		if line != "" {
 			sb.WriteString("    " + line + "\n")

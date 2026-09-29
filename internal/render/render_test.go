@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -419,20 +420,30 @@ func TestContextBar(t *testing.T) {
 	if n := len([]rune(bar)); n != 40 {
 		t.Errorf("bar rune length = %d, want 40 (38 bar + 2 brackets)", n)
 	}
-	// no-color uses the ASCII bar fallback: '#' used, '-' free.
-	if !strings.ContainsRune(bar, '#') || !strings.ContainsRune(bar, '-') {
-		t.Errorf("bar should contain both used (#) and free (-) segments: %q", bar)
-	}
-	if strings.ContainsRune(bar, '█') || strings.ContainsRune(bar, '░') {
-		t.Errorf("no-color bar should not contain Unicode block glyphs: %q", bar)
+	// no-color keeps the Unicode blocks; only the escapes go.
+	if !strings.ContainsRune(bar, '█') || !strings.ContainsRune(bar, '░') {
+		t.Errorf("bar should contain both used (█) and free (░) segments: %q", bar)
 	}
 	if strings.Contains(bar, "\x1b[") {
 		t.Errorf("noColor bar should not contain ANSI codes: %q", bar)
 	}
 
 	// maxContext == 0 returns 38 free cells with no brackets.
-	if got, want := ContextBar(0, 0, 0, true), strings.Repeat("-", 38); got != want {
+	if got, want := ContextBar(0, 0, 0, true), strings.Repeat("░", 38); got != want {
 		t.Errorf("ContextBar(maxContext=0) = %q, want %q", got, want)
+	}
+
+	// The ASCII glyph set: '#' used, '-' free, with or without color.
+	styles.SetASCII(true)
+	t.Cleanup(func() { styles.SetASCII(false) })
+	for _, noColor := range []bool{true, false} {
+		bar := ContextBar(50000, 50000, 100000, noColor)
+		if !strings.ContainsRune(bar, '#') || !strings.ContainsRune(bar, '-') {
+			t.Errorf("noColor=%v: ASCII bar should contain # and - segments: %q", noColor, bar)
+		}
+		if strings.ContainsRune(bar, '█') || strings.ContainsRune(bar, '░') {
+			t.Errorf("noColor=%v: ASCII bar should not contain Unicode blocks: %q", noColor, bar)
+		}
 	}
 }
 
@@ -532,5 +543,37 @@ func TestSameLocalDay(t *testing.T) {
 	d := time.Date(2026, 9, 29, 1, 0, 0, 0, time.UTC)
 	if !SameLocalDay(c, d) {
 		t.Error("23:00 and 01:00 UTC are the same day in UTC+9")
+	}
+}
+
+func TestTrendSymbol(t *testing.T) {
+	for _, tc := range []struct {
+		ascii bool
+		trend models.TrendDirection
+		want  string
+	}{
+		{false, models.TrendStable, "═"},
+		{false, models.TrendIncreasing, "▲"},
+		{false, models.TrendDecreasing, "▼"},
+		{true, models.TrendStable, "="},
+		{true, models.TrendIncreasing, "^"},
+		{true, models.TrendDecreasing, "v"},
+	} {
+		styles.SetASCII(tc.ascii)
+		if got := TrendSymbol(tc.trend); got != tc.want {
+			t.Errorf("TrendSymbol(%v) ascii=%v = %q, want %q", tc.trend, tc.ascii, got, tc.want)
+		}
+	}
+	styles.SetASCII(false)
+}
+
+func TestClampModelASCIIEllipsis(t *testing.T) {
+	styles.SetASCII(true)
+	t.Cleanup(func() { styles.SetASCII(false) })
+	if got := ClampModel("claude-opus-4-9-20260101", 10); got != "claude-..." {
+		t.Errorf("ClampModel ASCII = %q, want claude-...", got)
+	}
+	if got := ClampModel("claude-opus-4-9", 2); got != ".." {
+		t.Errorf("ClampModel ASCII width 2 = %q, want ..", got)
 	}
 }
