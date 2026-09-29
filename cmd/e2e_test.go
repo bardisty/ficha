@@ -1604,7 +1604,8 @@ func TestE2EWarningsNameTheirSessions(t *testing.T) {
 		linesList    = "Warning: 2 unparseable line(s) skipped; costs may be undercounted\n"
 		linesListCSV = "Warning: 2 unparseable line(s) skipped; message counts and costs may be undercounted\n"
 		hint         = "  Run with -v to list the affected sessions.\n"
-		unknown      = "Warning: unknown model \"claude-nova-9\" priced at fallback $3/$15 per MTok\n"
+		unknown      = "Warning: unknown model \"claude-nova-9\" priced at fallback $3/$15 per MTok\n" +
+			"  This development build of ficha has no price for it. Add it to modelCatalog in internal/pricing/pricing.go.\n"
 	)
 	tests := []struct {
 		name string
