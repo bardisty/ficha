@@ -252,6 +252,15 @@ func TestGlobalTableFitsEightyColumnsWhenPiped(t *testing.T) {
 		if w := maxLineWidth(out); w > 80 {
 			t.Errorf("details=%v: widest line is %d columns, want <= 80:\n%s", details, w, out)
 		}
+		// Nor do large costs, which widen COST and CUMULATIVE.
+		rich := goldenGlobalAnalysis()
+		for i := range rich.Projects {
+			rich.Projects[i].TotalCost.TotalCost *= 1000
+		}
+		rich.TotalCost.TotalCost *= 1000
+		if w := maxLineWidth(FormatGlobalTable(rich, true, opts)); w > 80 {
+			t.Errorf("details=%v: with $191k of costs the widest line is %d columns, want <= 80", details, w)
+		}
 		// Long paths don't widen the piped layout.
 		long := goldenGlobalAnalysis()
 		long.Projects[0].DisplayName = "~/" + strings.Repeat("deep/", 30) + "project"

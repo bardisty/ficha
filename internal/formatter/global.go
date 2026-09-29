@@ -128,6 +128,9 @@ const (
 	// globalStaticWidth is the report width when stdout isn't a terminal,
 	// the same 76 columns as show, list and summary, so it fits in 80.
 	globalStaticWidth = 76
+	// globalPipedMaxWidth is as far as the piped layout stretches for the
+	// cumulative column or wide costs before it drops columns instead.
+	globalPipedMaxWidth = 80
 	// minProjectWidth keeps enough of a left-truncated path to tell rows
 	// apart ("…/work/api-server") on a narrow terminal.
 	minProjectWidth = 16
@@ -181,8 +184,13 @@ func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOption
 	}
 	// A terminal too narrow for every column gives up % TOTAL first, since
 	// COST against the total says the same, then LAST ACTIVE unless the rows
-	// are sorted by it. Only then do the rows wrap.
-	tooNarrow := func() bool { return opts.Width > 0 && fixed+minProjectWidth > opts.Width }
+	// are sorted by it. Only then do the rows wrap. Piped output holds to 80
+	// columns the same way, which large costs would otherwise push past.
+	budget := opts.Width
+	if budget <= 0 {
+		budget = globalPipedMaxWidth
+	}
+	tooNarrow := func() bool { return fixed+minProjectWidth > budget }
 	if tooNarrow() {
 		l.pct = false
 		fixed -= columnGap + pctWidth
