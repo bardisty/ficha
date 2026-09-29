@@ -749,7 +749,7 @@ func (m BreakdownModel) renderStatsLine(layout breakdownLayout) string {
 	}
 	sep := " " + styles.BoxVerticalSep + " "
 	if !m.noColor {
-		sep = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(sep)
+		sep = lipgloss.NewStyle().Foreground(styles.SeparatorColor).Render(sep)
 	}
 	return line + m.fitRunTagKey(line, sep)
 }
@@ -831,8 +831,8 @@ func (m BreakdownModel) renderStatsTotals() string {
 		return line
 	}
 
-	lightGray := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
-	sepStyled := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(sep)
+	lightGray := lipgloss.NewStyle().Foreground(styles.SoftTextColor)
+	sepStyled := lipgloss.NewStyle().Foreground(styles.SeparatorColor).Render(sep)
 	warnStyle := lipgloss.NewStyle().Foreground(styles.WarningColor)
 
 	var sb strings.Builder
@@ -863,7 +863,7 @@ func (m BreakdownModel) renderHelpLine() string {
 	helpText := joinSegments([]string{"q quit", "j/k scroll", "space/b page", "g/G top/bottom", "p/s peak/sort", "f follow"},
 		" "+styles.Bullet+" ", m.width-2)
 	if !m.noColor {
-		helpText = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(helpText)
+		helpText = lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(helpText)
 	}
 	return "  " + helpText
 }
@@ -920,7 +920,7 @@ func (m BreakdownModel) renderCompactInsights() string {
 	if m.insights == nil || (m.insights.HighestCost == nil && !m.insights.HasTrend()) {
 		return ""
 	}
-	style := func(text string, color lipgloss.Color) string {
+	style := func(text string, color lipgloss.TerminalColor) string {
 		if m.noColor || text == "" {
 			return text
 		}

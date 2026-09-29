@@ -125,7 +125,7 @@ func (m Model) renderAnalysis() string {
 	// Input tokens
 	sb.WriteString(m.renderUnifiedCostRow(
 		"Input", a.TotalCost.InputCost, a.TotalUsage.InputTokens,
-		"input_cost", "input_tokens", lipgloss.Color(""), ""))
+		"input_cost", "input_tokens", nil, ""))
 
 	// Output tokens
 	sb.WriteString(m.renderUnifiedCostRow(
@@ -240,7 +240,7 @@ func (m Model) renderContextSection() string {
 	width := avail - 2 - 8
 	line, note := render.ContextGauge(contextSize, maxContext, width, m.noColor, m.isHighlighted("context_window"))
 	if !m.noColor {
-		note = lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Render(note)
+		note = lipgloss.NewStyle().Foreground(styles.NoteColor).Render(note)
 	}
 	return "    Context " + line + "\n             " + note + "\n"
 }
@@ -663,7 +663,7 @@ const deltaColumnEnd = 4 + 14 + 1 + 11 + 2 + 12 + 7 + ttlColumnWidth + 2
 
 // renderUnifiedCostRow renders a single row with cost and token info combined
 // Format: "  Label          $0.371042     53.9K tokens"
-func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, costField, tokenField string, labelColor lipgloss.Color, extra string) string {
+func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, costField, tokenField string, labelColor lipgloss.TerminalColor, extra string) string {
 	costHighlighted := m.isHighlighted(costField)
 	tokenChanged := m.recentlyChanged(tokenField)
 	tokenHighlighted := m.isHighlighted(tokenField)
@@ -671,7 +671,7 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 
 	// Format label with optional color
 	var labelStr string
-	if !m.noColor && labelColor != "" {
+	if !m.noColor && labelColor != nil {
 		labelStyle := lipgloss.NewStyle().Foreground(labelColor)
 		labelStr = labelStyle.Render(fmt.Sprintf("%-14s", label))
 	} else {

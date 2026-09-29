@@ -20,8 +20,12 @@ var update = flag.Bool("update", false, "rewrite .golden files with current rend
 
 // TestMain pins the process timezone: per-message times and the header clock
 // render in local time, so goldens would otherwise depend on the machine's TZ.
+//
+// It also pins a dark background, which the goldens are drawn for. Left to
+// detect, lipgloss would ask whatever terminal the tests run in.
 func TestMain(m *testing.M) {
 	time.Local = time.UTC
+	lipgloss.SetHasDarkBackground(true)
 	os.Exit(m.Run())
 }
 

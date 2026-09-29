@@ -552,7 +552,7 @@ func CostStyledBoldGreen(cost float64, width int, highlighted, noColor bool) str
 // CostColored renders a CostCell in an arbitrary foreground color, for columns
 // that color each value by its own magnitude (the per-message breakdown, the
 // global and summary tables).
-func CostColored(cost float64, color lipgloss.Color, width int) string {
+func CostColored(cost float64, color lipgloss.TerminalColor, width int) string {
 	return costStyledCell(cost, width, false, false, lipgloss.NewStyle().Foreground(color))
 }
 

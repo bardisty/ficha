@@ -135,7 +135,7 @@ func (m Model) renderFooterLines(panelWidth int) []string {
 	// it as a retry when something fails.
 	helpText := helpLine("q quit", "j/k scroll", "space/b page", "g/G top/bottom", "f follow")
 	if !m.noColor {
-		helpText = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(helpText)
+		helpText = lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(helpText)
 	}
 	return append(lines, "  "+helpText)
 }
@@ -356,7 +356,7 @@ func clipRows(rows []string, width int) []string {
 // watcher, then a hint about another session. The switch notice outranks the
 // watcher because it lasts only until the next key, and answers one.
 func (m Model) renderNotifyRow(width int) string {
-	style := func(c lipgloss.Color, s string) string {
+	style := func(c lipgloss.TerminalColor, s string) string {
 		if m.noColor {
 			return s
 		}

@@ -420,7 +420,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 		return styles.TreeRail + strings.Repeat(" ", treeStep-runewidth.StringWidth(styles.TreeRail))
 	}
 	// line pads left out to costCol and appends the cost cell.
-	line := func(left string, cost float64, costColor lipgloss.Color) string {
+	line := func(left string, cost float64, costColor lipgloss.TerminalColor) string {
 		pad := strings.Repeat(" ", max(costCol-lipgloss.Width(left), 1))
 		if noColor {
 			return left + pad + render.CostCell(cost, costWidth) + "\n"

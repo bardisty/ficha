@@ -65,11 +65,11 @@ func TestTokenDeltaColumn(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/s.jsonl", "s", false, true, "", false)
 	m = sized(t, m, 100, 40)
-	before := m.renderUnifiedCostRow("Cache write", 1.5, 50000, "c", "tok", "", "5m TTL")
+	before := m.renderUnifiedCostRow("Cache write", 1.5, 50000, "c", "tok", nil, "5m TTL")
 	m.deltaTokens["tok"] = 2700
 	m.changedAt["tok"] = time.Now()
-	after := m.renderUnifiedCostRow("Cache write", 1.5, 52700, "c", "tok", "", "5m TTL")
-	plainAfter := m.renderUnifiedCostRow("Input", 1.5, 52700, "c", "tok", "", "")
+	after := m.renderUnifiedCostRow("Cache write", 1.5, 52700, "c", "tok", nil, "5m TTL")
+	plainAfter := m.renderUnifiedCostRow("Input", 1.5, 52700, "c", "tok", nil, "")
 
 	if !strings.HasPrefix(after, strings.TrimRight(strings.Replace(before, "50.0K", "52.7K", 1), "\n")) {
 		t.Errorf("delta shifted the row:\nbefore %q\nafter  %q", before, after)
@@ -132,7 +132,7 @@ func TestTokenDeltaNarrowFallsBackInline(t *testing.T) {
 	m = sized(t, m, 60, 20)
 	m.deltaTokens["tok"] = 2700
 	m.changedAt["tok"] = time.Now()
-	row := strings.TrimRight(m.renderUnifiedCostRow("Cache write", 1.5, 52700, "c", "tok", "", "5m TTL"), "\n")
+	row := strings.TrimRight(m.renderUnifiedCostRow("Cache write", 1.5, 52700, "c", "tok", nil, "5m TTL"), "\n")
 	if !strings.Contains(row, "52.7K (+2.7K) tokens") {
 		t.Errorf("narrow row = %q, want the delta inline", row)
 	}
