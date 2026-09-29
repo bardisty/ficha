@@ -115,3 +115,5 @@ claude-sonnet-4-5@20251119   ├─▶  claude-sonnet-4-5
 ```
 
 A model ficha cannot price keeps its raw ID as the key, and is named on stderr, so nothing unpriced is silently folded into a priced row. Per-message rows (`show --messages`) keep the raw ID either way.
+
+`<synthetic>` is the model Claude Code writes on lines it records itself, such as API errors. Those lines cost nothing, so they have no `cost_by_model` or `parent_cost_by_model` key and no stderr warning. They still count in `message_count`, the same in `list` and `show`, and per-message rows keep them with `model: "<synthetic>"` and zero cost.

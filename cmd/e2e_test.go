@@ -708,6 +708,110 @@ func TestE2EWarningsGoToStderr(t *testing.T) {
 	}
 }
 
+// TestE2ESyntheticModelIsNotUnknown: Claude Code writes "<synthetic>" on the
+// zero-token lines it records for API errors. They count as messages, the same
+// in list and show, but no report names them as an unknown model or gives them
+// a $0 row under COST BY MODEL.
+func TestE2ESyntheticModelIsNotUnknown(t *testing.T) {
+	root := t.TempDir()
+	const proj = "-home-test-apierr"
+	sessionID := "eeeeeeee-0000-1111-2222-333333333333"
+	path := filepath.Join(root, "projects", proj, sessionID+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := e2eMsg("2026-02-04T10:00:00Z", "r1", "claude-opus-4-8", 1000, 500, 0, 0, 0) + "\n" +
+		syntheticLine("2026-02-04T10:01:00Z", "s1") + "\n" +
+		e2eMsg("2026-02-04T10:02:00Z", "r2", "claude-opus-4-8", 400, 900, 0, 0, 0) + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	projArg := "--project-dir=" + proj
+
+	for _, args := range [][]string{
+		{"show", projArg, sessionID, "--no-color"},
+		{"summary", projArg, "--no-color"},
+		{"list", projArg, "--no-color"},
+		{"global", "--no-color"},
+	} {
+		stdout, stderr, err := executeCLISplit(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v\nstderr: %s", args, err, stderr)
+		}
+		if strings.Contains(stderr, "unknown model") {
+			t.Errorf("%v warns about <synthetic>: %q", args, stderr)
+		}
+		if strings.Contains(stdout, "synthetic") {
+			t.Errorf("%v names the synthetic model:\n%s", args, stdout)
+		}
+	}
+
+	showOut, _, err := executeCLISplit(t, "show", projArg, sessionID, "-f", "json")
+	if err != nil {
+		t.Fatalf("show json: %v", err)
+	}
+	var a models.SessionAnalysis
+	mustJSON(t, showOut, &a)
+	if _, ok := a.CostByModel["<synthetic>"]; ok || len(a.CostByModel) != 1 {
+		t.Errorf("cost_by_model = %v, want only claude-opus-4-8", a.CostByModel)
+	}
+	if a.MessageCount != 3 {
+		t.Errorf("show message_count = %d, want 3 (synthetic lines count)", a.MessageCount)
+	}
+
+	listOut, _, err := executeCLISplit(t, "list", projArg, "-f", "json")
+	if err != nil {
+		t.Fatalf("list json: %v", err)
+	}
+	var entries []listJSONEntry
+	mustJSON(t, listOut, &entries)
+	if len(entries) != 1 || entries[0].MessageCount != a.MessageCount {
+		t.Errorf("list entries = %+v, want one with message_count %d", entries, a.MessageCount)
+	}
+}
+
+// syntheticLine is an API-error line as Claude Code writes it: model
+// "<synthetic>", all-zero usage, and no requestId.
+func syntheticLine(ts, id string) string {
+	return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"isApiErrorMessage":true,"message":{"id":%q,"model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}`, ts, id)
+}
+
+// A session that only ever hit API errors has messages but no model with a
+// cost, so reports leave COST BY MODEL out rather than draw a heading over
+// nothing.
+func TestE2EAllSyntheticSessionHasNoCostByModel(t *testing.T) {
+	root := t.TempDir()
+	const proj = "-home-test-apierr"
+	sessionID := "ffffffff-0000-1111-2222-333333333333"
+	path := filepath.Join(root, "projects", proj, sessionID+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(syntheticLine("2026-02-04T10:01:00Z", "s1")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	projArg := "--project-dir=" + proj
+
+	for _, args := range [][]string{
+		{"show", projArg, sessionID, "--no-color"},
+		{"summary", projArg, "--no-color"},
+		{"global", "--no-color"},
+	} {
+		stdout, stderr, err := executeCLISplit(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v\nstderr: %s", args, err, stderr)
+		}
+		if strings.Contains(stdout, "COST BY MODEL") {
+			t.Errorf("%v draws COST BY MODEL with no model under it:\n%s", args, stdout)
+		}
+		if !strings.Contains(stdout, "Messages: 1") {
+			t.Errorf("%v should still count the synthetic line:\n%s", args, stdout)
+		}
+	}
+}
+
 // TestE2EReentrant: flag state must not leak between invocations. A
 // package-level flag one command mutates (watch setting live=true) would
 // persist into the next; here we confirm a prior -f json run doesn't taint a

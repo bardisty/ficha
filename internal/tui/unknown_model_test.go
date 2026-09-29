@@ -29,9 +29,9 @@ func watchViewWithUnknownModel(t *testing.T, noColor bool) string {
 	a.CostByModel = map[string]models.CostBreakdown{
 		"claude-opus-4-8": {TotalCost: 7.90},
 		unknownModelID:    {TotalCost: 2.00},
-		// 11 chars: the real unknown model in Claude Code transcripts, and the
-		// tightest fit against the 12-column label + 1-column marker.
-		"<synthetic>": {TotalCost: 0.0001},
+		// 11 chars: the tightest fit against the 12-column label + 1-column
+		// marker.
+		"local-llm-7": {TotalCost: 0.0001},
 	}
 	a.SkippedLines = 0
 
@@ -81,7 +81,7 @@ func TestWatchMarksUnknownModel(t *testing.T) {
 			}
 
 			// The footer explains it.
-			if want := unknownModelFootnote([]string{"<synthetic>", unknownModelID}); !strings.Contains(out, want) {
+			if want := unknownModelFootnote([]string{unknownModelID, "local-llm-7"}); !strings.Contains(out, want) {
 				t.Errorf("footer missing %q:\n%s", want, out)
 			}
 		})

@@ -809,3 +809,34 @@ func TestUnlistedFamilyVersionsNeverResolve(t *testing.T) {
 		})
 	}
 }
+
+// Claude Code writes "<synthetic>" on lines it records itself, such as API
+// errors. It is known and costs nothing, so it never gets the unknown-model
+// warning, while near spellings stay unknown.
+func TestSyntheticModel(t *testing.T) {
+	if !IsKnownModel(SyntheticModel) {
+		t.Errorf("IsKnownModel(%q) = false, want true", SyntheticModel)
+	}
+	p := GetModelPricing(SyntheticModel)
+	if p.InputRate != 0 || p.OutputRate != 0 || GetCacheReadRate(p) != 0 ||
+		GetCacheWrite5mRate(p) != 0 || GetCacheWrite1hRate(p) != 0 {
+		t.Errorf("GetModelPricing(%q) = %+v, want zero rates", SyntheticModel, p)
+	}
+	if p.MaxContextTokens != defaultPricing.MaxContextTokens {
+		t.Errorf("MaxContextTokens = %d, want the fallback window %d", p.MaxContextTokens, defaultPricing.MaxContextTokens)
+	}
+	if got := GetModelDisplayName(SyntheticModel); got != "synthetic" {
+		t.Errorf("GetModelDisplayName(%q) = %q, want %q", SyntheticModel, got, "synthetic")
+	}
+	if got := NormalizeModelID(SyntheticModel); got != SyntheticModel {
+		t.Errorf("NormalizeModelID(%q) = %q, want it unchanged", SyntheticModel, got)
+	}
+	for _, id := range []string{"synthetic", "<synthetic>[1m]", "<synthetic>-2", "<SYNTHETIC>"} {
+		if IsKnownModel(id) {
+			t.Errorf("IsKnownModel(%q) = true, want false", id)
+		}
+		if GetModelPricing(id).InputRate == 0 {
+			t.Errorf("GetModelPricing(%q) is zero-priced, want the fallback rates", id)
+		}
+	}
+}

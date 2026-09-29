@@ -84,11 +84,13 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 		sb.WriteString(renderSavingsRow(analysis.TotalCost.CacheSavings, noColor))
 	}
 
-	// Cost by model section
-	sb.WriteString("\n")
-	sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, noColor))
-	sb.WriteString("\n\n")
-	sb.WriteString(formatGlobalCostByModel(analysis.CostByModel, noColor))
+	// Cost by model section, left out for the same reason as in show
+	if len(analysis.CostByModel) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(render.SectionHeader("COST BY MODEL", sectionWidth, noColor))
+		sb.WriteString("\n\n")
+		sb.WriteString(formatGlobalCostByModel(analysis.CostByModel, noColor))
+	}
 
 	// Projects section
 	sb.WriteString("\n")

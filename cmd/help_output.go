@@ -33,7 +33,10 @@ Messages and turns
   A message is one response from the API, and the counts are messages. A
   turn, one prompt from you, usually produces several: each tool call Claude
   makes ends one response and starts another. Agents' messages are counted
-  with the session's unless a line says "parent".
+  with the session's unless a line says "parent". Lines Claude Code writes
+  itself, such as an API error, count too, the same in every report. They
+  cost $0, breakdown names their model "synthetic", and COST BY MODEL
+  leaves them out.
 
 Message insights
   In show and watch, insights cover the main conversation only, and say

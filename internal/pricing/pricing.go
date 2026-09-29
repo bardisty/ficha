@@ -108,6 +108,21 @@ var defaultPricing = ModelPricing{
 	MaxContextTokens: 200000,
 }
 
+// SyntheticModel is the model name Claude Code writes on lines it records
+// itself rather than receiving from the API, such as an API error. No request
+// stands behind them and they carry no tokens, so the name is known and priced
+// at zero instead of being treated as an unknown model at the fallback rates.
+const SyntheticModel = "<synthetic>"
+
+// syntheticDisplayName drops the brackets so the name fits a 10-column MODEL
+// cell without being cut.
+const syntheticDisplayName = "synthetic"
+
+// syntheticPricing keeps the fallback context window rather than a zero one,
+// so a synthetic line that ever did carry tokens can't divide by zero or
+// read as a full window.
+var syntheticPricing = ModelPricing{MaxContextTokens: defaultPricing.MaxContextTokens}
+
 // longContextMarker is the suffix Claude Code appends to a model ID when the
 // 1M-context beta is active, e.g. "claude-opus-4-8[1m]".
 const longContextMarker = "[1m]"
@@ -128,6 +143,9 @@ var (
 // GetModelPricing returns the pricing for a model ID, resolving versioned,
 // provider-decorated, and 1M-context-beta IDs onto their catalog row.
 func GetModelPricing(modelID string) ModelPricing {
+	if modelID == SyntheticModel {
+		return syntheticPricing
+	}
 	id, longContext, known := canonicalModelID(modelID)
 
 	pricing := defaultPricing
@@ -292,6 +310,9 @@ func isDigit(b byte) bool { return b >= '0' && b <= '9' }
 
 // GetModelDisplayName returns a human-readable name for a model ID
 func GetModelDisplayName(modelID string) string {
+	if modelID == SyntheticModel {
+		return syntheticDisplayName
+	}
 	if id, _, known := canonicalModelID(modelID); known {
 		return displayNames[id]
 	}
@@ -338,6 +359,9 @@ func GetContextPercentage(pricing ModelPricing, currentUsage int64) float64 {
 // IsKnownModel returns true if the model ID is recognized
 // (i.e., has explicit pricing rather than falling back to defaults)
 func IsKnownModel(modelID string) bool {
+	if modelID == SyntheticModel {
+		return true
+	}
 	_, _, known := canonicalModelID(modelID)
 	return known
 }

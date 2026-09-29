@@ -207,6 +207,36 @@ func TestLastMessageSkipsTrailingSyntheticLines(t *testing.T) {
 	}
 }
 
+// Synthetic lines cost nothing by definition, so they count as messages (as
+// list counts them) but never open a COST BY MODEL row, in the parent or in an
+// agent merged into it.
+func TestCostByModelOmitsSyntheticLines(t *testing.T) {
+	analysis := AnalyzeSessionFromMessages("s", "/p", []models.JSONLMessage{
+		assistantMsg("claude-opus-4-5", 1_000_000),
+		assistantMsg("<synthetic>", 0),
+		assistantMsg("<synthetic>", 0),
+	}, false)
+
+	if _, ok := analysis.CostByModel["<synthetic>"]; ok {
+		t.Errorf("CostByModel carries a <synthetic> row: %v", analysis.CostByModel)
+	}
+	if len(analysis.CostByModel) != 1 {
+		t.Errorf("CostByModel = %v, want only claude-opus-4-5", analysis.CostByModel)
+	}
+	if !almostEqual(analysis.TotalCost.TotalCost, 5.00, 0.0001) {
+		t.Errorf("TotalCost = %f, want 5.00", analysis.TotalCost.TotalCost)
+	}
+	if analysis.MessageCount != 3 {
+		t.Errorf("MessageCount = %d, want 3", analysis.MessageCount)
+	}
+
+	merged := map[string]models.CostBreakdown{}
+	mergeCostByModel(merged, map[string]models.CostBreakdown{"<synthetic>": {}})
+	if len(merged) != 0 {
+		t.Errorf("mergeCostByModel copied a <synthetic> row: %v", merged)
+	}
+}
+
 // An all-synthetic session carries no context anywhere, so the last-message
 // capture degrades to zero exactly as before the walk-back was added.
 func TestLastMessageAllSyntheticDegradesToZero(t *testing.T) {

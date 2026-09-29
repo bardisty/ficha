@@ -189,11 +189,14 @@ func (m Model) renderAnalysis() string {
 		sb.WriteString(m.renderCostChart())
 	}
 
-	// Section: COST BY MODEL
-	sb.WriteString("\n")
-	sb.WriteString("  " + render.SectionHeader("COST BY MODEL", sectionWidth, m.noColor))
-	sb.WriteString("\n\n")
-	sb.WriteString(m.renderCostByModelContent())
+	// Section: COST BY MODEL. A session of only synthetic lines has no model
+	// with a cost, and a heading over nothing reads as a rendering fault.
+	if len(a.CostByModel) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString("  " + render.SectionHeader("COST BY MODEL", sectionWidth, m.noColor))
+		sb.WriteString("\n\n")
+		sb.WriteString(m.renderCostByModelContent())
+	}
 
 	// Agent breakdown (shown when agents exist)
 	if a.HasAgents {
