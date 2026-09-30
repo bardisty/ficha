@@ -764,3 +764,22 @@ func TestWrapHanging(t *testing.T) {
 		t.Errorf("empty input = %q", got)
 	}
 }
+
+// A note hangs past its label the way a warning does, and a path too long
+// for the room after the label keeps a line of its own, uncut.
+func TestWrapHangingNote(t *testing.T) {
+	in := "Note: session cccccccc is in ~/work/webapp.\n"
+	want := "Note: session cccccccc is in\n" +
+		"      ~/work/webapp.\n"
+	if got := WrapHanging(in, 30); got != want {
+		t.Errorf("WrapHanging at 30:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+
+	path := "/very/long/path/to/a/copied/transcript/folder/"
+	in = "Note: " + path + " isn't there.\n"
+	want = "Note: " + path + "\n" +
+		"      isn't there.\n"
+	if got := WrapHanging(in, 30); got != want {
+		t.Errorf("overlong first word at 30:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}

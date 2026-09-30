@@ -175,7 +175,7 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 	}
 
 	if match.MatchInfo != "" {
-		fmt.Fprintf(cfg.stderr, "Note: %s\n", match.MatchInfo)
+		writeNote(cfg, "%s", match.MatchInfo)
 	}
 	label := match.EncodedPath
 	for _, p := range allProjects {
