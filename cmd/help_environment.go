@@ -16,13 +16,22 @@ CLAUDE_CONFIG_DIR
   transcripts in its projects folder, the same place Claude Code writes them.
 
 NO_COLOR
-  Any non-empty value turns color off, like --no-color.
+  Any non-empty value turns color off, like --no-color. On a terminal,
+  --no-color=false turns it back on for that run.
+
+CLICOLOR
+  Set to 0 to turn color off, like NO_COLOR. CLICOLOR_FORCE=1 outranks it.
 
 CLICOLOR_FORCE
   Set to 1 to keep color when output isn't a terminal, as in
   CLICOLOR_FORCE=1 ficha summary | less -R. Piped color is the dark palette
   in the 16 basic colors, coarser than on screen. NO_COLOR and --no-color
   still turn color off.
+
+CI
+  Any non-empty value turns color off, even on a terminal, and CI=false
+  counts. CI services set it, and CLICOLOR_FORCE=1 keeps color in their
+  logs. If your shell exports it, --no-color=false brings color back.
 
 COLORFGBG
   The terminal's colors as foreground;background, such as '0;15' for dark
