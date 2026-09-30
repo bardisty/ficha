@@ -9,8 +9,8 @@ import "golang.org/x/sys/unix"
 // shell with job control runs each job in its own group; without one (a
 // tmux pane or split started with a command), the group is the session's
 // own, the kernel discards the stop, and the program would wait forever on
-// a blank screen.
-func canSuspend() bool {
+// a blank screen. It's a variable so tests can pin what the ? list shows.
+var canSuspend = func() bool {
 	sid, err := unix.Getsid(0)
 	return err == nil && unix.Getpgrp() != sid
 }

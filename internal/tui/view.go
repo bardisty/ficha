@@ -57,6 +57,10 @@ func (m Model) View() string {
 	if m.tooSmall() {
 		return renderTooSmall(m.width, m.height, minTermWidth, minTermHeight)
 	}
+	if m.keysOpen {
+		lines := append(keyList("watch", WatchKeys(), m.width, m.height-1, m.noColor), helpLine(WatchKeys(), m.width, true, m.noColor))
+		return clipToWidth(strings.Join(lines, "\n"), m.width)
+	}
 
 	var sb strings.Builder
 	panelWidth := panelWidthFor(m.width)

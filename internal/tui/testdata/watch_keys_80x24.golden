@@ -1,0 +1,24 @@
+  Keys                                                                    
+  q, ctrl+c           quit                                                
+  ?                   key list on/off; esc closes                         
+  j/k, up/down        scroll a line                                       
+  space/b, pgdn/pgup  scroll a page                                       
+  d/u, ctrl+d/u       scroll half a page                                  
+  g/G, home/end       go to the top or bottom                             
+  f                   follow new sessions on/off                          
+  n                   switch to the newer session                         
+  -                   back to the previous session                        
+  r                   reload or retry                                     
+  ctrl+z              suspend                                             
+                                                                          
+                                                                          
+                                                                          
+                                                                          
+                                                                          
+                                                                          
+                                                                          
+                                                                          
+                                                                          
+                                                                          
+                                                                          
+  q quit • j/k scroll • space/b page • g/G top/bottom • f follow • ? close
