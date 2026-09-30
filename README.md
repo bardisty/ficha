@@ -19,7 +19,7 @@ ficha only reads the transcripts Claude Code keeps on your machine. It makes no 
 
 ## Quick start
 
-1. Install ficha where Claude Code runs, on the same machine, container or WSL install. [Install](#install) has a download block for each platform that checks the file before installing it. With Go 1.25.6 or newer, this works too:
+1. Install ficha on the machine where Claude Code runs, or inside WSL if Claude Code runs there. [Install](#install) has a download block for each platform that checks the file before installing it. With Go 1.25.6 or newer, this works too:
 
    ```sh
    go install github.com/bardisty/ficha@latest
@@ -48,7 +48,7 @@ If ficha says Claude Code has no sessions there, run it from the directory you s
 
 ## Install
 
-Install ficha where Claude Code runs, since it reads the transcripts Claude Code keeps in that machine's home directory. Over SSH or in a dev container, that means the remote machine or the container. If Claude Code runs in WSL, use the Linux binary inside WSL, not the Windows one.
+Install ficha where Claude Code runs, since it reads the transcripts Claude Code keeps in that machine's home directory.
 
 ficha runs on Linux, macOS and Windows, and CI tests all three. It has been checked against the transcripts of Claude Code 2.1. If a newer Claude Code makes it start skipping lines, see [Troubleshooting](#troubleshooting).
 
