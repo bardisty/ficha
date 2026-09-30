@@ -133,21 +133,6 @@ type Model struct {
 	height int
 }
 
-// switchNotice describes the last session switch for the notify row.
-type switchNotice struct {
-	auto      bool    // followed a new session, rather than a key press
-	prevTotal float64 // the previous session's total when it was left
-	hadTotal  bool    // prevTotal is known (the previous session had loaded)
-}
-
-// sessionHint is activity in another session the view didn't switch to.
-type sessionHint struct {
-	path    string
-	id      string
-	created bool
-	at      time.Time
-}
-
 // Messages
 type (
 	// analysisMsg carries a completed reload plus the session it was loaded for.
@@ -172,11 +157,7 @@ type (
 	fileChangedMsg struct {
 		watcher *fsnotify.Watcher
 	}
-	tickMsg            time.Time
-	sessionSwitchedMsg struct {
-		newSessionPath string
-		newSessionID   string
-	}
+	tickMsg time.Time
 )
 
 // NewModel creates a new TUI model
@@ -303,6 +284,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "f":
 			m.followMode = !m.followMode
+			if h := followTarget(m.hint, m.clock()); m.followMode && h != nil {
+				return m.switchTo(h.path, h.id, false)
+			}
 
 		case "g", "home":
 			m.viewport.GotoTop()
@@ -520,24 +504,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		load := m.startLoad()
 		return m, tea.Batch(load, m.spinnerCmd())
 
-	case sessionSwitchedMsg:
-		return m.switchTo(msg.newSessionPath, msg.newSessionID, true)
-
 	case sessionActivityMsg:
-		// Reported before a key switch landed on this session: stale.
-		if msg.id == m.sessionID {
-			return m, m.waitForNewSession()
-		}
-		// Anything beats waiting, and there is nothing to be pinned to.
-		if m.waiting() {
+		outcome, hint := onSessionActivity(msg, m.sessionID, m.waiting(), m.followMode, m.hint, m.clock())
+		if outcome == activitySwitch {
 			return m.switchTo(msg.path, msg.id, true)
 		}
-		if msg.created && m.followMode {
-			return m.switchTo(msg.path, msg.id, true)
-		}
-		// A new session's first writes follow its Create; keep calling it new.
-		created := msg.created || (m.hint != nil && m.hint.id == msg.id && m.hint.created)
-		m.hint = &sessionHint{path: msg.path, id: msg.id, created: created, at: m.clock()}
+		m.hint = hint
 		return m, m.waitForNewSession()
 
 	case tickMsg:
@@ -651,9 +623,7 @@ func (m *Model) startLoad() tea.Cmd {
 
 // hintVisible reports whether the hint is still on screen: it fades once
 // the other session has been quiet for idleAfter, and n stops acting on it.
-func (m Model) hintVisible() bool {
-	return m.hint != nil && m.clock().Sub(m.hint.at) < idleAfter
-}
+func (m Model) hintVisible() bool { return hintShowing(m.hint, m.clock()) }
 
 // spinnerCmd restarts the spinner when a reload will show "Loading...". A
 // second chain is harmless: the spinner drops ticks with a stale tag.

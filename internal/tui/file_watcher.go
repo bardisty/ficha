@@ -289,33 +289,6 @@ func startSessionWatcherCmd(projectDir, sessionID string, onErr func(error) tea.
 	}
 }
 
-// waitForNewSessionCmd blocks until the session watcher reports a new session
-// (switch), a same-session restart, or shutdown. Returns a nil command when
-// there is no watcher. wg.Add is before the return for the same reason as
-// waitForFileChangeCmd.
-func waitForNewSessionCmd(wg *sync.WaitGroup, sw *SessionWatcher) tea.Cmd {
-	if sw == nil {
-		return nil
-	}
-	wg.Add(1)
-	return func() tea.Msg {
-		defer wg.Done()
-
-		path, id := sw.WaitForNewSession()
-		if path == "" {
-			return nil // Shutdown or error
-		}
-		if path == sessionRestartedPath {
-			// Session was updated externally, just restart waiting
-			return sessionWatcherRestartMsg{}
-		}
-		return sessionSwitchedMsg{
-			newSessionPath: path,
-			newSessionID:   id,
-		}
-	}
-}
-
 // sessionActivityMsg reports another session in the project changing: a
 // newly created session file, or a write to an existing one.
 type sessionActivityMsg struct {
@@ -324,8 +297,10 @@ type sessionActivityMsg struct {
 	created bool
 }
 
-// waitForSessionEventCmd is waitForNewSessionCmd for a model that also wants
-// activity in other existing sessions, reported as sessionActivityMsg.
+// waitForSessionEventCmd blocks until the session watcher reports activity
+// in another session (sessionActivityMsg), a same-session restart, or
+// shutdown. Returns a nil command when there is no watcher. wg.Add is before
+// the return for the same reason as waitForFileChangeCmd.
 func waitForSessionEventCmd(wg *sync.WaitGroup, sw *SessionWatcher) tea.Cmd {
 	if sw == nil {
 		return nil

@@ -184,7 +184,7 @@ func TestBreakdownSessionSwitch_ResetsScroll(t *testing.T) {
 		t.Fatalf("setup: want scrolled to top, manual")
 	}
 	m.followMode = true
-	updated, _ = m.Update(sessionSwitchedMsg{newSessionPath: "/fixture/new.jsonl", newSessionID: "new"})
+	updated, _ = m.Update(sessionActivityMsg{path: "/fixture/new.jsonl", id: "new", created: true})
 	m = updated.(BreakdownModel)
 	if !m.autoScroll {
 		t.Error("a switch should turn auto-scroll back on")
@@ -262,7 +262,7 @@ func TestBreakdownDownKeyAtBottomResumesFollowing(t *testing.T) {
 // Pinned, a new session leaves the view where it is; f follows, as in watch.
 func TestBreakdownFollowToggle(t *testing.T) {
 	m := loadedBreakdown(t, 100, 24, chromeRows(goldenTime(10, 0, 0), 5))
-	updated, _ := m.Update(sessionSwitchedMsg{newSessionPath: "/fixture/new.jsonl", newSessionID: "new"})
+	updated, _ := m.Update(sessionActivityMsg{path: "/fixture/new.jsonl", id: "new", created: true})
 	if m = updated.(BreakdownModel); m.sessionPath != "/fixture/sess.jsonl" {
 		t.Fatalf("pinned breakdown switched to %s", m.sessionPath)
 	}
@@ -270,7 +270,7 @@ func TestBreakdownFollowToggle(t *testing.T) {
 	if m = updated.(BreakdownModel); !m.followMode || !strings.Contains(m.View(), "FOLLOWING") {
 		t.Fatalf("f should turn following on and show it:\n%s", m.View())
 	}
-	updated, _ = m.Update(sessionSwitchedMsg{newSessionPath: "/fixture/new.jsonl", newSessionID: "new"})
+	updated, _ = m.Update(sessionActivityMsg{path: "/fixture/new.jsonl", id: "new", created: true})
 	if m = updated.(BreakdownModel); m.sessionPath != "/fixture/new.jsonl" {
 		t.Errorf("following breakdown stayed on %s", m.sessionPath)
 	}
@@ -296,7 +296,7 @@ func TestBreakdownWaitingForFirstSession(t *testing.T) {
 		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
 		m = updated.(BreakdownModel)
 	}
-	updated, _ = m.Update(sessionSwitchedMsg{newSessionPath: "/projects/-work-webapp/first.jsonl", newSessionID: "first"})
+	updated, _ = m.Update(sessionActivityMsg{path: "/projects/-work-webapp/first.jsonl", id: "first", created: true})
 	if m = updated.(BreakdownModel); m.sessionPath != "/projects/-work-webapp/first.jsonl" || !m.loading {
 		t.Errorf("a waiting breakdown should open the first session, pinned or not (path %q)", m.sessionPath)
 	}
@@ -336,9 +336,9 @@ func TestBreakdownGoBack(t *testing.T) {
 	}
 
 	m.followMode = true
-	updated, _ := m.Update(sessionSwitchedMsg{newSessionPath: "/fixture/new.jsonl", newSessionID: "new"})
+	updated, _ := m.Update(sessionActivityMsg{path: "/fixture/new.jsonl", id: "new", created: true})
 	m = updated.(BreakdownModel)
-	if got := m.renderNotifyRow(); !strings.Contains(got, "[Switched to new session] • - to go back") {
+	if got := m.renderNotifyRow(); !strings.Contains(got, "→ new session new (previous 0a1b2c3d: $0.2500) • - to go back") {
 		t.Errorf("switch notice = %q, want it to offer going back", got)
 	}
 	if m = press(m, "p"); m.sessionPath != "/fixture/new.jsonl" {
@@ -349,7 +349,7 @@ func TestBreakdownGoBack(t *testing.T) {
 	if m.sessionPath != "/fixture/sess.jsonl" || m.followMode {
 		t.Fatalf("after -: session %s follow=%v, want /fixture/sess.jsonl pinned", m.sessionPath, m.followMode)
 	}
-	if got := m.renderNotifyRow(); !strings.Contains(got, "[Switched back to 0a1b2c3d] • - to go back") {
+	if got := m.renderNotifyRow(); !strings.Contains(got, "→ switched to 0a1b2c3d • - to go back") {
 		t.Errorf("go-back notice = %q", got)
 	}
 	if !strings.Contains(m.View(), "PINNED") {

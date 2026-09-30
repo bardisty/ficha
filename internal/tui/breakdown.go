@@ -120,9 +120,10 @@ type BreakdownModel struct {
 	followMode      bool            // Whether to auto-follow new sessions
 	prevSessionID   string          // Session open before the last switch
 	prevSessionPath string          // Its file, for the go-back key (-)
-	switchedBack    bool            // The last switch was the go-back key
 	sessionWatcher  *SessionWatcher // Watches for new session files
 	switchNotifyAt  time.Time       // When session switch notification started
+	switched        *switchNotice   // The last switch, for the notify row
+	hint            *sessionHint    // Another session's activity; n switches to it
 
 	// Last subagent-tree fingerprint; the poll reloads when it changes
 	// (fsnotify never sees subagent/workflow writes — see subagentPollCmd)
@@ -284,12 +285,20 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Back to the previous session, as in watch; it pins there too.
 			if m.prevSessionPath != "" {
 				m.followMode = false
-				return m.switchTo(m.prevSessionPath, m.prevSessionID, true)
+				return m.switchTo(m.prevSessionPath, m.prevSessionID, false)
+			}
+
+		case "n":
+			if m.hintVisible() {
+				return m.switchTo(m.hint.path, m.hint.id, false)
 			}
 
 		case "f":
 			// Following new sessions, as in watch; the header shows the mode
 			m.followMode = !m.followMode
+			if h := followTarget(m.hint, m.clock()); m.followMode && h != nil {
+				return m.switchTo(h.path, h.id, false)
+			}
 
 		case "g", "home":
 			m.setFollow(false)
@@ -484,7 +493,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// start is already on disk; take it rather than wait for its next write.
 		if m.waiting() {
 			if path, id := msg.watcher.NewestSession(); path != "" {
-				return m.switchTo(path, id, false)
+				return m.switchTo(path, id, true)
 			}
 		}
 		return m, m.waitForNewSession()
@@ -505,13 +514,13 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		load := m.startLoad()
 		return m, tea.Batch(load, m.spinnerCmd())
 
-	case sessionSwitchedMsg:
-		// Pinned (f toggles it): stay put and keep watching. Waiting, any
-		// session beats none.
-		if !m.followMode && !m.waiting() {
-			return m, m.waitForNewSession()
+	case sessionActivityMsg:
+		outcome, hint := onSessionActivity(msg, m.sessionID, m.waiting(), m.followMode, m.hint, m.clock())
+		if outcome == activitySwitch {
+			return m.switchTo(msg.path, msg.id, true)
 		}
-		return m.switchTo(msg.newSessionPath, msg.newSessionID, false)
+		m.hint = hint
+		return m, m.waitForNewSession()
 
 	case fadeMsg:
 		// A highlight is on or off, so the table is redrawn once per expiry,
@@ -555,13 +564,22 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // switchTo opens another session, dropping everything the old one showed.
-// back marks the go-back key, as opposed to following a new session.
-func (m BreakdownModel) switchTo(path, id string, back bool) (tea.Model, tea.Cmd) {
+// auto marks following a new session, as opposed to a key press; see
+// Model.switchTo.
+func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
+	// The rows are the whole session, so their sum is its total.
+	var prevTotal float64
+	for _, msg := range m.messages {
+		prevTotal += msg.Cost.TotalCost
+	}
+	m.switched = &switchNotice{auto: auto, prevTotal: prevTotal, hadTotal: len(m.messages) > 0}
 	m.prevSessionID, m.prevSessionPath = m.sessionID, m.sessionPath
-	m.switchedBack = back
 	m.sessionID = id
 	m.sessionPath = path
 	m.switchNotifyAt = time.Now()
+	if m.hint != nil && m.hint.id == id {
+		m.hint = nil
+	}
 
 	// Reset state for clean switch. hasUnknown and err must reset too, or the
 	// old session's "* = fallback pricing" footnote (and a stale header
@@ -618,16 +636,16 @@ func (m BreakdownModel) switchTo(path, id string, back bool) (tea.Model, tea.Cmd
 		m.sessionWatcher.SetCurrentSession(m.sessionID)
 	}
 
-	// Reload data, restart file watcher, and restart session watcher
-	// We must explicitly restart waitForNewSession because the goroutine that
-	// detected this switch has already exited after returning sessionSwitchedMsg
 	// After every reset above: the load copies the model as it is now.
 	load := m.startLoad()
 	cmds := []tea.Cmd{
 		load, func() tea.Msg { return m.watchFile() }, m.spinnerCmd(),
 		tea.Tick(switchNotifyDuration, func(time.Time) tea.Msg { return notifyExpiredMsg{} }),
 	}
-	if m.sessionWatcher != nil {
+	// An automatic switch was reported by the session waiter, which has
+	// exited, so start another. A key press leaves that waiter blocked;
+	// SetCurrentSession above wakes it and sessionWatcherRestartMsg re-arms it.
+	if auto && m.sessionWatcher != nil {
 		cmds = append(cmds, m.waitForNewSession())
 	}
 	return m, tea.Batch(cmds...)
@@ -748,8 +766,9 @@ func (m BreakdownModel) View() string {
 	case !compact:
 		lines = append(lines, insights, notify)
 	case notify != "":
-		// The compact frame has no notify row; an error or switch notice
-		// outranks the insights for the moment it shows.
+		// The compact frame has no notify row; anything it would say
+		// outranks the insights while it shows, a hint about a new session
+		// included.
 		lines = append(lines, notify)
 	default:
 		lines = append(lines, insights)
@@ -769,10 +788,11 @@ func (m BreakdownModel) View() string {
 }
 
 // renderNotifyRow is a load error in words, then p's selection, the switch
-// notice for a few seconds after following a new session or going back, or
-// a missing file watcher, and blank otherwise. The watcher notice comes last
-// because the others are brief and answer something the reader just did or
-// saw.
+// notice for a few seconds after a switch, a missing file watcher, or a hint
+// about another session, and blank otherwise. The switch notice and the
+// selection come first because they're brief and answer something the reader
+// just did; the hint comes last, as in watch, because it can stay up for
+// minutes.
 func (m BreakdownModel) renderNotifyRow() string {
 	if m.err != nil {
 		text := errNotice(m.err, m.panelWidth())
@@ -787,19 +807,12 @@ func (m BreakdownModel) renderNotifyRow() string {
 		}
 		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Render(text)
 	}
-	if !m.switchNotifyAt.IsZero() && time.Since(m.switchNotifyAt) < switchNotifyDuration {
-		lead := "Switched to new session"
-		if m.switchedBack {
-			lead = "Switched back to " + render.TruncateID(m.sessionID, sessionIDDisplayLen)
-		}
-		tail := ""
-		if m.prevSessionPath != "" {
-			tail = " " + styles.Bullet + " - to go back"
-		}
+	if m.switched != nil && time.Since(m.switchNotifyAt) < switchNotifyDuration {
+		text := withinWidth(switchNoticeText(*m.switched, m.sessionID, m.prevSessionID, m.prevSessionPath != ""), m.panelWidth())
 		if m.noColor {
-			return "  [" + lead + "]" + tail
+			return "  " + text
 		}
-		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render(lead) + lipgloss.NewStyle().Foreground(styles.HighlightColor).Render(tail)
+		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render(text)
 	}
 	if m.fallback.active() {
 		text := m.fallback.notice(m.panelWidth())
@@ -807,6 +820,13 @@ func (m BreakdownModel) renderNotifyRow() string {
 			return "  " + text
 		}
 		return "  " + lipgloss.NewStyle().Foreground(styles.WarningColor).Render(text)
+	}
+	if m.hintVisible() {
+		text := withinWidth(hintText(*m.hint), m.panelWidth())
+		if m.noColor {
+			return "  " + text
+		}
+		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render(text)
 	}
 	return ""
 }
@@ -1379,5 +1399,8 @@ func (m BreakdownModel) startSessionWatcher() tea.Cmd {
 }
 
 func (m BreakdownModel) waitForNewSession() tea.Cmd {
-	return waitForNewSessionCmd(m.wg, m.sessionWatcher)
+	return waitForSessionEventCmd(m.wg, m.sessionWatcher)
 }
+
+// hintVisible reports whether the hint is on screen; see Model.hintVisible.
+func (m BreakdownModel) hintVisible() bool { return hintShowing(m.hint, m.clock()) }
