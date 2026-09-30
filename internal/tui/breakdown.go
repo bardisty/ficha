@@ -127,6 +127,7 @@ type BreakdownModel struct {
 	switchNotifyAt  time.Time       // When session switch notification started
 	switched        *switchNotice   // The last switch, for the notify row
 	hint            *sessionHint    // Another session's activity; n switches to it
+	keysOpen        bool            // The ? key list covers the frame
 
 	// Last subagent-tree fingerprint; the poll reloads when it changes
 	// (fsnotify never sees subagent/workflow writes — see subagentPollCmd)
@@ -248,6 +249,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 			return model, tea.Batch(cmds...)
+		}
+		var done bool
+		if m.keysOpen, done = toggleKeyList(m.keysOpen, msg); done {
+			return m, nil
 		}
 		if msg.String() != "p" {
 			m.clearSelection()
@@ -750,6 +755,10 @@ func (m BreakdownModel) View() string {
 	if m.tooSmall() {
 		return renderTooSmall(m.width, m.height, m.minWidth(), tooSmallHeight)
 	}
+	if m.keysOpen {
+		lines := append(keyList("breakdown", BreakdownKeys(), m.width, m.height-1, m.noColor), m.renderHelpLine())
+		return clipToWidth(strings.Join(lines, "\n"), m.width)
+	}
 	layout := m.table
 	panelWidth := m.frameWidth(layout)
 	compact := m.compact()
@@ -962,18 +971,11 @@ func (m BreakdownModel) fitUnknownNote(line, sep string) string {
 	return note
 }
 
-// renderHelpLine is the key-hint row.
+// renderHelpLine is the key-hint row: watch's, plus p and s, which only
+// breakdown has. r isn't listed: the view is already live, and the notify
+// row offers it as a retry.
 func (m BreakdownModel) renderHelpLine() string {
-	// watch's line, plus p and s, which only breakdown has. r isn't listed:
-	// the view is already live, and the notify row offers it as a retry. A
-	// hint that doesn't fit goes whole, not cut mid-word, and f goes first:
-	// the header already shows the follow mode.
-	helpText := joinSegments([]string{"q quit", "j/k scroll", "space/b page", "g/G top/bottom", "p/s peak/sort", "f follow"},
-		" "+styles.Bullet+" ", m.width-2)
-	if !m.noColor {
-		helpText = lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(helpText)
-	}
-	return "  " + helpText
+	return helpLine(BreakdownKeys(), m.width, m.keysOpen, m.noColor)
 }
 
 // renderHeaderPanel renders the boxed live header, in the same form as watch's.

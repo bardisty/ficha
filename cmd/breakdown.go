@@ -16,23 +16,23 @@ cost visibility during Claude Code sessions.
 
 Features:
   - Live updates as new messages arrive, highlighted briefly
-  - Follows new sessions as they start (f toggles; a session ID or
-    transcript path pins)
+  - Follows new sessions as they start; a session ID or transcript path
+    pins it to one
   - Stays on the newest rows until you scroll up
   - Agent rows marked in an AGENT column, with the IDs watch shows
   - A workflow agent's AGENT cell ends in its run's initials, such as
     rc for a review-changes run; the footer names those on screen when
     it has room
-  - p jumps to the most expensive rows
-  - s sorts the table by cost, most expensive first; the view stays put
-    as rows arrive. s again returns to time order where you left it
-  - Minus (-) goes back to the previous session after a switch
+  - Can sort by cost, most expensive first. While sorted, the view stays
+    put as rows arrive, and time order comes back where you left it
   - With no session in the project yet, waits for the first one
 
 Examples:
   ficha breakdown              Show breakdown and auto-follow latest session
   ficha breakdown --no-follow  Show breakdown for latest, don't auto-follow
-  ficha breakdown abc123       Show breakdown for specific session (pinned)`,
+  ficha breakdown abc123       Show breakdown for specific session (pinned)
+
+` + keysHelp(tui.BreakdownKeys()),
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeSessionIDs(cfg),
 		RunE: func(cmd *cobra.Command, args []string) error {

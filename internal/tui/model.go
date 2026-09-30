@@ -95,6 +95,7 @@ type Model struct {
 	prevSessionPath string          // Its file, for the go-back key (-)
 	sessionWatcher  *SessionWatcher // Watches for other sessions' files
 	switched        *switchNotice   // Shown until the next keypress
+	keysOpen        bool            // The ? key list covers the frame
 	hint            *sessionHint    // Another session's activity, not followed
 	windowTitle     string          // Last title sent, to send only changes
 
@@ -238,6 +239,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 			return model, tea.Batch(cmds...)
+		}
+
+		var done bool
+		if m.keysOpen, done = toggleKeyList(m.keysOpen, msg); done {
+			return m, nil
 		}
 
 		// The switch notice explains a total that changed under the reader;

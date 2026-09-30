@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+
+	"github.com/bardisty/ficha/internal/tui"
 )
 
 func newWatchCmd(cfg *config) *cobra.Command {
@@ -18,7 +20,9 @@ session.
 Examples:
   ficha watch                   Follow the latest session
   ficha watch --no-follow       Stay on the latest session
-  ficha watch abc123            Watch one session`,
+  ficha watch abc123            Watch one session
+
+` + keysHelp(tui.WatchKeys()),
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeSessionIDs(cfg),
 		RunE: func(cmd *cobra.Command, args []string) error {

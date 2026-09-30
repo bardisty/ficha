@@ -145,6 +145,26 @@ To analyze a different project without cd'ing, pass its directory with `-p` / `-
 
 ficha can only report sessions whose transcripts still exist, and Claude Code deletes them after 30 days by default. [Troubleshooting](#troubleshooting) says how to keep more.
 
+### Keys
+
+`watch` and `breakdown` share these keys, and `breakdown` adds `p` and `s`. Press `?` in either view for this list. `?` or `esc` closes it. Any other key closes it too, and does what it always does. `ficha watch --help` and `ficha breakdown --help` list the keys as well.
+
+| Key | Does |
+| --- | --- |
+| `q`, `ctrl+c` | quit |
+| `?` | key list on/off; esc closes |
+| `j/k`, `up/down` | scroll a line |
+| `space/b`, `pgdn/pgup` | scroll a page |
+| `d/u`, `ctrl+d/u` | scroll half a page |
+| `g/G`, `home/end` | go to the top or bottom |
+| `p` | breakdown: go to the next costliest row |
+| `s` | breakdown: sort by cost on/off |
+| `f` | follow new sessions on/off |
+| `n` | switch to the newer session |
+| `-` | back to the previous session |
+| `r` | reload or retry |
+| `ctrl+z` | suspend; needs a shell with job control, so not on Windows |
+
 ### Scrolling in tmux
 
 ficha doesn't capture the mouse, so click-and-drag selection keeps working. Most terminals turn the wheel into arrow keys for full-screen programs, and those scroll `watch` and `breakdown`. tmux with `set -g mouse on` doesn't. In tmux 3.5 and older, wheel-up puts the pane in copy mode: the clock and totals stop, `[0/0]` shows in the corner, and ficha looks hung until you press `q` or scroll back down. From 3.6 the wheel does nothing. These two lines in `~/.tmux.conf` make the wheel send arrow keys to full-screen programs that don't use the mouse, and leave the rest of tmux's wheel handling as it was:

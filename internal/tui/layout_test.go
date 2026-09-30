@@ -87,15 +87,17 @@ func TestTooSmallIgnoresUnknownSize(t *testing.T) {
 }
 
 // A help hint that doesn't fit is dropped whole, f first, never cut mid-word.
+// ? keys stays at the end: it's the way to the hints dropped.
 func TestWatchHelpLineDropsWholeHints(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	for _, tc := range []struct {
 		w    int
 		want string
 	}{
-		{80, "q quit • j/k scroll • space/b page • g/G top/bottom • f follow"},
-		{60, "q quit • j/k scroll • space/b page • g/G top/bottom"},
-		{50, "q quit • j/k scroll • space/b page"},
+		{80, "q quit • j/k scroll • space/b page • g/G top/bottom • f follow • ? keys"},
+		{60, "q quit • j/k scroll • space/b page • ? keys"},
+		{50, "q quit • j/k scroll • space/b page • ? keys"},
+		{40, "q quit • j/k scroll • ? keys"},
 	} {
 		m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
 		m = load(t, sized(t, m, tc.w, 30), tallAnalysis(1))

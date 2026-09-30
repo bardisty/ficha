@@ -124,14 +124,9 @@ func (m Model) renderFooterLines(panelWidth int) []string {
 	}
 
 	// r isn't listed: the view is already live, and the notify row offers
-	// it as a retry when something fails. A hint that doesn't fit goes whole,
-	// as in breakdown, and f goes first: the header shows the follow mode.
-	helpText := joinSegments([]string{"q quit", "j/k scroll", "space/b page", "g/G top/bottom", "f follow"},
-		" "+styles.Bullet+" ", m.width-2)
-	if !m.noColor {
-		helpText = lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(helpText)
-	}
-	return append(lines, "  "+helpText)
+	// it as a retry when something fails. f goes first on a narrow terminal:
+	// the header shows the follow mode.
+	return append(lines, helpLine(WatchKeys(), m.width, m.keysOpen, m.noColor))
 }
 
 // renderFooterRule draws the heavy rule above the footer. When the body
