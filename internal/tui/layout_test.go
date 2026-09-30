@@ -17,7 +17,7 @@ import (
 // notice in the notify row, so a notice never shifts the body.
 func TestWatchFrameHeightIsStable(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	for _, size := range [][2]int{{80, 24}, {120, 40}, {80, 15}, {60, 10}, {40, 8}} {
+	for _, size := range [][2]int{{80, 24}, {120, 40}, {80, 15}, {60, 10}, {41, 8}, {40, 8}} {
 		w, h := size[0], size[1]
 		m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
 		m = sized(t, m, w, h)
@@ -37,6 +37,42 @@ func TestWatchFrameHeightIsStable(t *testing.T) {
 		}
 		if lineOf(plain, "TOTAL ]") != lineOf(hinted, "TOTAL ]") {
 			t.Errorf("%dx%d: the hint moved the body", w, h)
+		}
+	}
+}
+
+// Down to watch's 40-column minimum the whole frame is drawn inside the
+// terminal: the box keeps its right border and every rule its end. View
+// clips the finished frame to the width, so the pieces are measured before
+// that clip hides what fell off.
+func TestWatchFrameFitsNarrowTerminals(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	a := tallAnalysis(1)
+	a.SkippedLines = 2
+	a.EstimatedCostMessages = 3
+	a.CostByModel["claude-nova-6-unlisted-model"] = models.CostBreakdown{TotalCost: 0.5}
+	for _, w := range []int{40, 41, 42, 50} {
+		m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
+		m = load(t, sized(t, m, w, 40), a)
+		m.hint = &sessionHint{id: sessB, at: m.clock()}
+		panel := panelWidthFor(w)
+		header := m.renderHeaderPanel(panel)
+		for _, piece := range []string{
+			header,
+			"  " + m.renderNotifyRow(panel),
+			m.renderAnalysis(),
+			strings.Join(m.renderFooterLines(panel), "\n"),
+		} {
+			for _, line := range strings.Split(piece, "\n") {
+				if lipgloss.Width(line) > w {
+					t.Errorf("width %d: line of %d columns: %q", w, lipgloss.Width(line), line)
+				}
+			}
+		}
+		for _, edge := range []string{"╗", "║", "╝"} {
+			if !strings.Contains(m.View(), edge+"\n") {
+				t.Errorf("width %d: the box lost its right edge %s:\n%s", w, edge, m.View())
+			}
 		}
 	}
 }

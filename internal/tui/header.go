@@ -50,21 +50,29 @@ type liveHeaderParams struct {
 func renderLiveHeaderPanel(p liveHeaderParams) string {
 	var sb strings.Builder
 
-	// Fallback for an absurdly small width; callers clamp to >= 40 via
-	// panelWidthFor, so this rarely fires.
+	// Fallback for an absurdly small width; callers clamp to >=
+	// minPanelWidth via panelWidthFor, so this rarely fires.
 	width := p.width
-	if width < 40 {
-		width = 76
+	if width < minPanelWidth {
+		width = defaultPanelWidth
 	}
 
-	// Inner width (accounting for box borders and padding)
-	innerWidth := width - 6 // 2 for borders, 2 for left padding, 2 for right padding
+	// Inner width: the box's borders and a 2-column margin inside each.
+	margin := "  "
+	innerWidth := width - 2 - 2*len(margin)
 
 	// Fit the content to innerWidth *before* computing padding: full content
 	// wider than innerWidth would clamp padding to 0 and push the right border
 	// out of column on narrow terminals. fitStatusHeader elides in order of
 	// least value; MaxWidth hard-clips as a final guarantee.
 	content := fitStatusHeader(p, innerWidth)
+	if lipgloss.Width(content) > innerWidth {
+		// A narrow box gives up a column of each margin before it cuts the
+		// status: "idle 12m" losing its "m" would misread.
+		margin = " "
+		innerWidth = width - 2 - 2*len(margin)
+		content = fitStatusHeader(p, innerWidth)
+	}
 	if lipgloss.Width(content) > innerWidth {
 		content = lipgloss.NewStyle().MaxWidth(innerWidth).Render(content)
 	}
@@ -83,10 +91,10 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 		// Content line
 		sb.WriteString("  ")
 		sb.WriteString(styles.BoxVertical)
-		sb.WriteString("  ")
+		sb.WriteString(margin)
 		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
-		sb.WriteString("  ")
+		sb.WriteString(margin)
 		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("\n")
 
@@ -106,10 +114,10 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 		// Content line
 		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
-		sb.WriteString("  ")
+		sb.WriteString(margin)
 		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
-		sb.WriteString("  ")
+		sb.WriteString(margin)
 		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
 		sb.WriteString("\n")
 
