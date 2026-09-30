@@ -93,7 +93,7 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 			skippedAgents++
 			continue // Skip agents that fail to parse
 		}
-		skippedLines += agentSkipped
+		skippedLines += agentSkipped.Count
 
 		// Same key space as AgentAnalysis.AgentID, so a marker in the TUI can
 		// be cross-referenced against the machine outputs

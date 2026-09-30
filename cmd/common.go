@@ -97,6 +97,7 @@ func selectSession(cfg *config, args []string) (*models.SessionEntry, string, bo
 	if err != nil {
 		return nil, "", false, &sessionLookupError{err}
 	}
+	cfg.tracef("session file %s", session.FullPath)
 	return session, projectDir, explicit, nil
 }
 

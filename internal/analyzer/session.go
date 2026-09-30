@@ -109,6 +109,9 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 	// Build the session analysis (parent session only)
 	analysis := buildSessionAnalysis(sessionID, sessionPath, messageAnalyses, scope != NoMessages)
 	analysis.SkippedLines = result.SkippedLines
+	if result.SkippedLines > 0 {
+		analysis.SkippedFiles = append(analysis.SkippedFiles, fileSkips(sessionPath, "", result))
+	}
 	analysis.Title = result.Title
 
 	// Store parent cost and message count before adding agent data
@@ -138,6 +141,14 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 			if err != nil {
 				analysis.SkippedAgents++
 				continue // Skip agents that can't be parsed
+			}
+			if agentAnalysis.SkippedLines > 0 {
+				analysis.SkippedFiles = append(analysis.SkippedFiles, models.FileSkips{
+					Path:    agentPath,
+					AgentID: agentAnalysis.AgentID,
+					Count:   agentAnalysis.SkippedLines,
+					Lines:   agentAnalysis.SkippedAt,
+				})
 			}
 			if !window.IsZero() && agentAnalysis.MessageCount == 0 {
 				// Its unreadable lines could have held messages in the window.
@@ -247,7 +258,7 @@ func AnalyzeAgent(agentPath string) (*models.AgentAnalysis, error) {
 // messages back the caller's per-message list; they may alias the cache's
 // slice, so copy before mutating an element.
 func analyzeAgentWithCache(agentPath string, cache *AgentParseCache, window models.TimeWindow) (*models.AgentAnalysis, []models.MessageAnalysis, error) {
-	messageAnalyses, skippedLines, err := loadAgentMessages(agentPath, cache)
+	messageAnalyses, skips, err := loadAgentMessages(agentPath, cache)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -269,7 +280,8 @@ func analyzeAgentWithCache(agentPath string, cache *AgentParseCache, window mode
 		FullPath:     agentPath,
 		MessageCount: len(messageAnalyses),
 		CostByModel:  make(map[string]models.CostBreakdown),
-		SkippedLines: skippedLines,
+		SkippedLines: skips.Count,
+		SkippedAt:    skips.Lines,
 	}
 
 	if len(messageAnalyses) == 0 {
@@ -703,6 +715,7 @@ func SkipDetails(results []models.SessionResult) []models.SkipDetail {
 				SessionID: r.Entry.SessionID,
 				Lines:     r.Analysis.SkippedLines,
 				Agents:    r.Analysis.SkippedAgents,
+				Files:     r.Analysis.SkippedFiles,
 			})
 		}
 	}

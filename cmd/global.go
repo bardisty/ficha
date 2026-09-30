@@ -72,10 +72,14 @@ func runGlobal(cfg *config) error {
 	}
 
 	// Discover all projects
+	if projectsDir, err := paths.GetProjectsDir(); err == nil {
+		cfg.tracef("projects dir %s (%s)", projectsDir, projectsDirOrigin())
+	}
 	projects, err := parser.DiscoverAllProjects()
 	if err != nil {
 		return fmt.Errorf("discovering projects: %w", err)
 	}
+	cfg.tracef("%s", plural(len(projects), "project"))
 
 	if len(projects) == 0 {
 		projectsDir, err := paths.GetProjectsDir()

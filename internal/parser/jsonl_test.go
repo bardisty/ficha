@@ -3,6 +3,7 @@ package parser
 import (
 	"bufio"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -150,8 +151,8 @@ func TestParseJSONLWithResult_OversizedLineMiddle(t *testing.T) {
 	if result.SkippedLines != 1 {
 		t.Errorf("expected 1 skipped line, got %d", result.SkippedLines)
 	}
-	if len(result.SkippedAt) != 1 || result.SkippedAt[0] != 2 {
-		t.Errorf("expected SkippedAt=[2], got %v", result.SkippedAt)
+	if want := (models.SkippedLine{Line: 2, Reason: models.SkipOversized}); len(result.SkippedAt) != 1 || result.SkippedAt[0] != want {
+		t.Errorf("expected SkippedAt=[%v], got %v", want, result.SkippedAt)
 	}
 }
 
@@ -616,5 +617,27 @@ func TestParseJSONLTitle(t *testing.T) {
 	}
 	if len(result.Messages) != 1 {
 		t.Errorf("got %d messages, want 1", len(result.Messages))
+	}
+}
+
+// Each skipped line records why, so -v can tell a bad line from a huge one.
+func TestParseJSONLWithResult_SkipReasons(t *testing.T) {
+	good := `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"id":"msg_1","model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":50}}}`
+	var input strings.Builder
+	input.WriteString("{not json\n")
+	input.WriteString(good + "\n")
+	input.WriteString(strings.Repeat("x", maxLineBytes+1) + "\n")
+	input.WriteString("[1,\n")
+	result, err := ParseJSONLWithResult(strings.NewReader(input.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []models.SkippedLine{
+		{Line: 1, Reason: models.SkipMalformed},
+		{Line: 3, Reason: models.SkipOversized},
+		{Line: 4, Reason: models.SkipMalformed},
+	}
+	if !slices.Equal(result.SkippedAt, want) {
+		t.Errorf("SkippedAt = %v, want %v", result.SkippedAt, want)
 	}
 }

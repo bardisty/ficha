@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -44,7 +45,15 @@ type skipWarning struct {
 	// details names the affected sessions on reports that span several; nil
 	// on single-session reports, where the session is the one on screen.
 	details []namedSkip
+	// sessionID and files are a single-session report's session and the
+	// transcripts in it with skipped lines, listed under -v.
+	sessionID string
+	files     []models.FileSkips
 }
+
+// maxListedFiles caps the transcripts -v names in one warning, so a report
+// over many damaged sessions doesn't bury the terminal.
+const maxListedFiles = 10
 
 // namedSkip is a SkipDetail labeled for display: "09ccdf05", or
 // "webapp/09ccdf05" on reports that span projects.
@@ -66,13 +75,22 @@ func (s skipWarning) write(w io.Writer, verbose bool) {
 	if s.lines > 0 {
 		fmt.Fprintf(w, "Warning: %d unparseable line(s) skipped; %s may be undercounted\n", s.lines, s.counts)
 	}
-	if len(s.details) == 0 || s.sessions+s.agents+s.lines == 0 {
+	if s.sessions+s.agents+s.lines == 0 {
+		return
+	}
+	listed := 0
+	if len(s.details) == 0 {
+		if verbose {
+			listed = writeSkippedFiles(w, "  ", s.sessionID, s.files, listed)
+			writeUnlisted(w, "  ", listed, len(s.files))
+		}
 		return
 	}
 	if !verbose {
 		fmt.Fprintln(w, "  Run with -v to list the affected sessions.")
 		return
 	}
+	total := 0
 	for _, d := range s.details {
 		var parts []string
 		if d.Unreadable {
@@ -85,7 +103,63 @@ func (s skipWarning) write(w io.Writer, verbose bool) {
 			parts = append(parts, plural(d.Agents, "agent"))
 		}
 		fmt.Fprintf(w, "  %s: %s\n", d.label, strings.Join(parts, ", "))
+		listed = writeSkippedFiles(w, "    ", d.SessionID, d.Files, listed)
+		total += len(d.Files)
 	}
+	writeUnlisted(w, "  ", listed, total)
+}
+
+// writeSkippedFiles writes a line per transcript naming its skipped lines and
+// why, then its path, which a bug reporter needs to open those lines and
+// redact them. It stops at maxListedFiles, counting the ones already listed,
+// and returns the new count.
+func writeSkippedFiles(w io.Writer, indent, sessionID string, files []models.FileSkips, listed int) int {
+	for _, f := range files {
+		if listed == maxListedFiles {
+			break
+		}
+		label := "session " + shortSessionID(sessionID)
+		if f.AgentID != "" {
+			label = "agent " + f.AgentID
+		}
+		fmt.Fprintf(w, "%s%s: %s\n%s  %s\n", indent, label, describeSkippedLines(f), indent, f.Path)
+		listed++
+	}
+	return listed
+}
+
+func writeUnlisted(w io.Writer, indent string, listed, total int) {
+	if total > listed {
+		fmt.Fprintf(w, "%sand %s with skipped lines\n", indent, plural(total-listed, "more file"))
+	}
+}
+
+// describeSkippedLines reads "skipped lines 1203, 1207 (malformed), 1500
+// (oversized)": line numbers in file order, each run of one reason labeled
+// once. The parser records only the first lines, so a long tail is a count.
+func describeSkippedLines(f models.FileSkips) string {
+	var b strings.Builder
+	if f.Count == 1 {
+		b.WriteString("skipped line ")
+	} else {
+		b.WriteString("skipped lines ")
+	}
+	for i := 0; i < len(f.Lines); {
+		j := i
+		var nums []string
+		for ; j < len(f.Lines) && f.Lines[j].Reason == f.Lines[i].Reason; j++ {
+			nums = append(nums, strconv.Itoa(f.Lines[j].Line))
+		}
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%s (%s)", strings.Join(nums, ", "), f.Lines[i].Reason)
+		i = j
+	}
+	if more := f.Count - len(f.Lines); more > 0 {
+		fmt.Fprintf(&b, ", and %d more", more)
+	}
+	return b.String()
 }
 
 func plural(n int, noun string) string {

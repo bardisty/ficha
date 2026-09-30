@@ -1607,19 +1607,23 @@ func TestE2EWarningsNameTheirSessions(t *testing.T) {
 		unknown      = "Warning: unknown model \"claude-nova-9\" priced at fallback $3/$15 per MTok\n" +
 			"  This development build of ficha has no price for it. Add it to modelCatalog in internal/pricing/pricing.go.\n"
 	)
+	// -v names the lines and the file under each session.
+	badFile := filepath.Join(projDir, "22222222-aaaa-bbbb-cccc-000000000000.jsonl")
+	files := "    session 22222222: skipped lines 2, 3 (malformed)\n      " + badFile + "\n"
 	tests := []struct {
 		name string
 		args []string
 		want string
 	}{
 		{"summary", []string{"summary", proj}, linesSummary + hint + unknown},
-		{"summary -v", []string{"summary", proj, "-v"}, linesSummary + "  22222222: 2 lines\n" + unknown},
+		{"summary -v", []string{"summary", proj, "-v"}, linesSummary + "  22222222: 2 lines\n" + files + unknown},
 		{"list", []string{"list", proj}, linesList + hint + unknown},
-		{"list -v", []string{"list", proj, "-v"}, linesList + "  22222222: 2 lines\n" + unknown},
+		{"list -v", []string{"list", proj, "-v"}, linesList + "  22222222: 2 lines\n" + files + unknown},
 		{"list csv", []string{"list", proj, "-f", "csv"}, linesListCSV + hint + unknown},
-		{"global -v", []string{"global", "-v"}, linesSummary + "  -home-test-warn/22222222: 2 lines\n" + unknown},
-		// A single session is the one on screen: nothing to name.
-		{"show", []string{"show", proj, "22222222", "-v"}, linesSummary + unknown},
+		{"global -v", []string{"global", "-v"}, linesSummary + "  -home-test-warn/22222222: 2 lines\n" + files + unknown},
+		// A single session is the one on screen, so only its files are named.
+		{"show", []string{"show", proj, "22222222"}, linesSummary + unknown},
+		{"show -v", []string{"show", proj, "22222222", "-v"}, linesSummary + strings.TrimPrefix(strings.ReplaceAll(files, "\n    ", "\n  "), "  ") + unknown},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

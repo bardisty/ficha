@@ -265,7 +265,8 @@ func TestE2EVerboseTrace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Debug: projects dir " + filepath.Join(config, "projects") + " (from CLAUDE_CONFIG_DIR)\n" +
+	want := "Debug: " + versionLine() + "\n" +
+		"Debug: projects dir " + filepath.Join(config, "projects") + " (from CLAUDE_CONFIG_DIR)\n" +
 		"Debug: project path " + webapp + " (from -p)\n" +
 		"Debug: found project directory " + encoded + "\n" +
 		"Debug: using " + encoded + " (1 sessions)\n"
