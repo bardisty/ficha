@@ -26,6 +26,12 @@ body:
     validations:
       required: true
   - type: input
+    id: terminal
+    attributes:
+      label: Terminal
+      description: Optional. The terminal app, whether you ran ficha inside tmux or screen, and the window size. These decide colors and layout.
+      placeholder: iTerm2 in tmux, 120x40
+  - type: input
     id: command
     attributes:
       label: Command you ran
@@ -42,7 +48,7 @@ body:
     id: output
     attributes:
       label: Output with -v
-      description: Rerun the command with `-v` and paste everything it prints, warnings included. Transcripts contain your prompts and code, and ficha's output can include file paths, so redact anything you don't want public.
+      description: Rerun the command with `-v` and paste everything it prints, warnings included. For a bug in `watch` or `breakdown`, paste the screen as text instead (select it, or run `tmux capture-pane -p`), plus the output of `ficha show -v <session-id>` for the same session. Transcripts contain your prompts and code, and ficha's output can include file paths, so redact anything you don't want public.
       render: text
   - type: checkboxes
     id: redacted

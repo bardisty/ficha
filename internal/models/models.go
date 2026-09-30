@@ -250,6 +250,7 @@ type AgentAnalysis struct {
 	EndTime      time.Time                `json:"end_time"`
 	Duration     Duration                 `json:"duration"`
 	SkippedLines int                      `json:"skipped_lines,omitempty"` // JSONL lines skipped (malformed or oversized)
+	SkippedAt    []SkippedLine            `json:"-"`                       // the first of those lines, and why
 	// Messages whose cache-write cost is a 5m-rate estimate (see MessageAnalysis.EstimatedCost)
 	EstimatedCostMessages int `json:"estimated_cost_messages,omitempty"`
 	// CostByModel keys priced at a fallback rate (see SessionAnalysis)
@@ -327,6 +328,9 @@ type SessionAnalysis struct {
 	SkippedAgents      int                      `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read (parse failure, or an unreadable agent directory)
 	SkippedSessions    int                      `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)
 	SkippedLines       int                      `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized), incl. agents
+	// SkippedFiles names the transcripts behind SkippedLines, the session's
+	// own first, for -v.
+	SkippedFiles []FileSkips `json:"-"`
 	// Messages (incl. agents) whose cache-write cost is a 5m-rate estimate
 	// because the session data didn't attribute every write token to a TTL
 	// (see MessageAnalysis.EstimatedCost). Zero means no cache write was

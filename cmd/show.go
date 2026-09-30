@@ -100,9 +100,16 @@ func runShow(cfg *config, args []string, live bool) error {
 		if older != nil && skipped > 0 {
 			writeSkippedNote(&warnings, skipped, session.SessionID, cfg.noColor)
 			analysis = older
+			cfg.tracef("newest session has no replies; showing session file %s", older.SessionFile)
 		}
 	}
-	skipWarning{counts: "totals", agents: analysis.SkippedAgents, lines: analysis.SkippedLines}.write(&warnings, cfg.verbose)
+	skipWarning{
+		counts:    "totals",
+		agents:    analysis.SkippedAgents,
+		lines:     analysis.SkippedLines,
+		sessionID: analysis.SessionID,
+		files:     analysis.SkippedFiles,
+	}.write(&warnings, cfg.verbose)
 	warnEstimatedCosts(&warnings, analysis.EstimatedCostMessages)
 	markUnpriced(analysis)
 	analysis.Context = sessionContext(analysis)

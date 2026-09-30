@@ -3,6 +3,8 @@ package parser
 import (
 	"bytes"
 	"testing"
+
+	"github.com/bardisty/ficha/internal/models"
 )
 
 // FuzzParseJSONL feeds raw bytes to ParseJSONLWithResult, which parses
@@ -48,11 +50,14 @@ func FuzzParseJSONL(f *testing.F) {
 
 		// Skipped line numbers are 1-indexed and strictly increasing
 		prev := 0
-		for _, n := range result.SkippedAt {
-			if n <= prev {
+		for _, s := range result.SkippedAt {
+			if s.Line <= prev {
 				t.Fatalf("SkippedAt not strictly increasing: %v", result.SkippedAt)
 			}
-			prev = n
+			if s.Reason != models.SkipMalformed && s.Reason != models.SkipOversized {
+				t.Fatalf("SkippedAt has no reason: %v", result.SkippedAt)
+			}
+			prev = s.Line
 		}
 
 		// Line counts are bounded by the number of newline-separated lines

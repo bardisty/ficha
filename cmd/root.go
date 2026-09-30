@@ -71,6 +71,10 @@ Exit status:
 			if cmd.Annotations[noGlobalFlagsAnnotation] != "" {
 				return noGlobalFlags(cmd)
 			}
+			// A -v run pasted into a bug report says which build it came
+			// from. Completion requests never get here with -v set: cobra
+			// hands their flags to the command being completed, unparsed.
+			cfg.tracef("%s", versionLine())
 			// Validate format flag
 			if !validFormats[strings.ToLower(cfg.format)] {
 				return usageErrorf("invalid format %q: must be one of table, json, csv", cfg.format)

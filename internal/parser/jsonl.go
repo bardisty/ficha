@@ -30,8 +30,8 @@ const (
 // ParseResult contains the parsed messages and any parse warnings
 type ParseResult struct {
 	Messages     []models.JSONLMessage
-	SkippedLines int   // Number of lines skipped (malformed JSON or longer than maxLineBytes)
-	SkippedAt    []int // Line numbers of skipped lines (1-indexed, capped at maxSkippedLineNumbers)
+	SkippedLines int                  // Number of lines skipped (malformed JSON or longer than maxLineBytes)
+	SkippedAt    []models.SkippedLine // The skipped lines and why, capped at maxSkippedLineNumbers
 	// Title is the last "ai-title" record's title. Claude Code writes a new
 	// one as the session's topic shifts, so the last is the current one.
 	Title string
@@ -75,10 +75,7 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 
 		if oversized {
 			// Skip just this line and keep parsing the rest of the file
-			result.SkippedLines++
-			if len(result.SkippedAt) < maxSkippedLineNumbers {
-				result.SkippedAt = append(result.SkippedAt, lineNum)
-			}
+			result.skip(lineNum, models.SkipOversized)
 			continue
 		}
 		if len(line) == 0 {
@@ -88,10 +85,7 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 		var msg models.JSONLMessage
 		if err := json.Unmarshal(line, &msg); err != nil {
 			// Track skipped lines instead of silently ignoring
-			result.SkippedLines++
-			if len(result.SkippedAt) < maxSkippedLineNumbers {
-				result.SkippedAt = append(result.SkippedAt, lineNum)
-			}
+			result.skip(lineNum, models.SkipMalformed)
 			continue
 		}
 
@@ -106,6 +100,13 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 
 	result.Messages = DeduplicateMessages(result.Messages)
 	return result, nil
+}
+
+func (r *ParseResult) skip(lineNum int, reason string) {
+	r.SkippedLines++
+	if len(r.SkippedAt) < maxSkippedLineNumbers {
+		r.SkippedAt = append(r.SkippedAt, models.SkippedLine{Line: lineNum, Reason: reason})
+	}
 }
 
 // readLine reads the next line from r, without the trailing newline. A line
