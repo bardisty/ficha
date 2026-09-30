@@ -133,7 +133,7 @@ func TestBreakdownSort_PeakIsAtTheTop(t *testing.T) {
 // Another session opens in time order, following, whatever the last showed.
 func TestBreakdownSort_SessionSwitchResets(t *testing.T) {
 	m := pressKeys(t, loadedBreakdown(t, 100, 24, sortRows(40)), "f", "s")
-	updated, _ := m.Update(sessionSwitchedMsg{newSessionPath: "/fixture/new.jsonl", newSessionID: "new"})
+	updated, _ := m.Update(sessionActivityMsg{path: "/fixture/new.jsonl", id: "new", created: true})
 	m = updated.(BreakdownModel)
 	if m.sortByCost || !m.autoScroll {
 		t.Errorf("after a switch: sorted %v, following %v", m.sortByCost, m.autoScroll)

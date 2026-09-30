@@ -80,7 +80,7 @@ func TestBreakdownSpinnerStopsWhenLoaded(t *testing.T) {
 	for name, msg := range map[string]tea.Msg{
 		"r":      tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")},
 		"resume": tea.ResumeMsg{},
-		"switch": sessionSwitchedMsg{newSessionPath: "/nonexistent/t.jsonl", newSessionID: "t"},
+		"switch": sessionActivityMsg{path: "/nonexistent/t.jsonl", id: "t", created: true},
 	} {
 		m := m
 		m.followMode = true
@@ -144,7 +144,7 @@ func TestBreakdownLayoutCacheFollowsInputs(t *testing.T) {
 	// A session without agents, and with ten times the rows: no AGENT
 	// column, and a wider # column.
 	m.followMode = true
-	updated, _ = m.Update(sessionSwitchedMsg{newSessionPath: "/fixture/other.jsonl", newSessionID: "other"})
+	updated, _ = m.Update(sessionActivityMsg{path: "/fixture/other.jsonl", id: "other", created: true})
 	m = updated.(BreakdownModel)
 	check("switch", m)
 	updated, _ = m.Update(breakdownMsgsMsg{messages: chromeRows(goldenTime(10, 0, 0), 120), insights: &models.MessageInsights{}, sessionPath: "/fixture/other.jsonl"})

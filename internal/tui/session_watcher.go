@@ -160,19 +160,6 @@ type sessionEvent struct {
 	created bool
 }
 
-// WaitForNewSession blocks until a new session file is created, returning
-// its path and ID, or empty strings on shutdown, or sessionRestartedPath.
-// Writes to other existing sessions are skipped: with two sessions active in
-// one project, following writes would flip between them on every message.
-func (sw *SessionWatcher) WaitForNewSession() (string, string) {
-	for {
-		ev := sw.WaitForSessionEvent()
-		if ev.path == "" || ev.path == sessionRestartedPath || ev.created {
-			return ev.path, ev.id
-		}
-	}
-}
-
 // WaitForSessionEvent blocks until another session in the project is created
 // or written to, the current session is changed externally, or shutdown.
 func (sw *SessionWatcher) WaitForSessionEvent() sessionEvent {

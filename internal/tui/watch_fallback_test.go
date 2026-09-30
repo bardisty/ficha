@@ -227,7 +227,7 @@ func TestWatcherResultsForALeftSessionAreDropped(t *testing.T) {
 
 			newPath := filepath.Join(projectDir, "sess-2.jsonl")
 			writeSessionFile(t, newPath)
-			m, _ = m.Update(sessionSwitchedMsg{newSessionPath: newPath, newSessionID: "sess-2"})
+			m, _ = m.Update(sessionActivityMsg{path: newPath, id: "sess-2", created: true})
 			if h.fallback(m).active() {
 				t.Fatal("the old session's watcher failure survived the switch")
 			}

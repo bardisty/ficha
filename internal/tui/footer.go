@@ -364,36 +364,24 @@ func (m Model) renderNotifyRow(width int) string {
 		color = styles.ErrorColor
 		text = errNotice(m.err, width)
 	case m.switched != nil:
-		lead := "switched to " + render.TruncateID(m.sessionID, sessionIDDisplayLen)
-		if m.switched.auto {
-			lead = "new session " + render.TruncateID(m.sessionID, sessionIDDisplayLen)
-		}
-		text = styles.Arrow + " " + lead
-		if m.switched.hadTotal {
-			text += fmt.Sprintf(" (previous %s: %s)",
-				render.TruncateID(m.prevSessionID, sessionIDDisplayLen), render.Cost(m.switched.prevTotal))
-		}
-		if m.prevSessionPath != "" {
-			text += " " + styles.Bullet + " - to go back"
-		}
+		text = switchNoticeText(*m.switched, m.sessionID, m.prevSessionID, m.prevSessionPath != "")
 	case m.fallback.active():
 		color = styles.WarningColor
 		text = m.fallback.notice(width)
 	case m.hintVisible():
-		id := render.TruncateID(m.hint.id, sessionIDDisplayLen)
-		if m.hint.created {
-			text = "new session " + id + " started"
-		} else {
-			text = "newer activity in " + id
-		}
-		text += " " + styles.Bullet + " n to switch"
+		text = hintText(*m.hint)
 	default:
 		return ""
 	}
+	return style(color, withinWidth(text, width))
+}
+
+// withinWidth ends text in an ellipsis when it's wider than width.
+func withinWidth(text string, width int) string {
 	if lipgloss.Width(text) > width {
-		text = withEllipsis(text, width)
+		return withEllipsis(text, width)
 	}
-	return style(color, text)
+	return text
 }
 
 // errNotice is the notify-row text for a load or watch error, in both views,

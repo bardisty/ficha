@@ -23,7 +23,7 @@ func TestBreakdownStaleLoadDroppedAfterSwitch(t *testing.T) {
 	m := NewBreakdownModel(oldPath, "old", true, "", true)
 
 	// Switch to the new session (resets state, sessionPath = newPath).
-	updated, _ := m.Update(sessionSwitchedMsg{newSessionPath: newPath, newSessionID: "new"})
+	updated, _ := m.Update(sessionActivityMsg{path: newPath, id: "new", created: true})
 	m = updated.(BreakdownModel)
 	if m.sessionPath != newPath {
 		t.Fatalf("after switch sessionPath = %q, want %q", m.sessionPath, newPath)
@@ -87,7 +87,7 @@ func TestBreakdownSwitchClearsUnknownFootnote(t *testing.T) {
 
 	// Switch to a clean session. During the loading window (before the new
 	// load lands) neither the footnote nor the stale error may remain.
-	updated, _ = m.Update(sessionSwitchedMsg{newSessionPath: "/proj/new.jsonl", newSessionID: "new"})
+	updated, _ = m.Update(sessionActivityMsg{path: "/proj/new.jsonl", id: "new", created: true})
 	m = updated.(BreakdownModel)
 	if m.hasUnknown {
 		t.Error("hasUnknown leaked across the switch")
@@ -106,9 +106,9 @@ func TestBreakdownSwitchClearsUnknownFootnote(t *testing.T) {
 func TestWatchStaleLoadDroppedAfterSwitch(t *testing.T) {
 	oldPath := "/proj/old.jsonl"
 	newPath := "/proj/new.jsonl"
-	m := NewModel(oldPath, "old", true, "", false)
+	m := NewModel(oldPath, "old", true, "", true)
 
-	updated, _ := m.Update(sessionSwitchedMsg{newSessionPath: newPath, newSessionID: "new"})
+	updated, _ := m.Update(sessionActivityMsg{path: newPath, id: "new", created: true})
 	m = updated.(Model)
 	if m.sessionPath != newPath {
 		t.Fatalf("after switch sessionPath = %q, want %q", m.sessionPath, newPath)

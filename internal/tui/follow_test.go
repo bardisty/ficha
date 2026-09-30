@@ -384,3 +384,117 @@ func TestExpiredHintIgnoredByN(t *testing.T) {
 		t.Error("n switched to a hint no longer on screen")
 	}
 }
+
+// followView drives watch and breakdown through the same session-following
+// cases. Both open on sessA at 80x24 with a total of $30.05.
+type followView struct {
+	name   string
+	open   func(t *testing.T, follow bool) tea.Model
+	id     func(tea.Model) string
+	follow func(tea.Model) bool
+	notify func(tea.Model) string
+}
+
+var followViews = []followView{
+	{
+		name:   "watch",
+		open:   func(t *testing.T, follow bool) tea.Model { return followModel(t, follow) },
+		id:     func(m tea.Model) string { return m.(Model).sessionID },
+		follow: func(m tea.Model) bool { return m.(Model).followMode },
+		notify: func(m tea.Model) string { return m.(Model).renderNotifyRow(80) },
+	},
+	{
+		name: "breakdown",
+		open: func(t *testing.T, follow bool) tea.Model {
+			t.Helper()
+			forceProfile(t, termenv.Ascii)
+			m := NewBreakdownModel("/p/"+sessA+".jsonl", sessA, true, "", follow)
+			rows := chromeRows(goldenTime(10, 0, 0), 2)
+			rows[0].Cost.TotalCost, rows[1].Cost.TotalCost = 30, 0.05
+			var model tea.Model = m
+			model, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+			model, _ = model.Update(breakdownMsgsMsg{messages: rows, insights: &models.MessageInsights{}})
+			return model
+		},
+		id:     func(m tea.Model) string { return m.(BreakdownModel).sessionID },
+		follow: func(m tea.Model) bool { return m.(BreakdownModel).followMode },
+		notify: func(m tea.Model) string { return m.(BreakdownModel).renderNotifyRow() },
+	},
+}
+
+func press(m tea.Model, k string) tea.Model {
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
+	return m
+}
+
+var (
+	createdB  = sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB, created: true}
+	activityB = sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB}
+)
+
+// Pinned, both views hint at a new session, and n switches to it with the
+// same notice.
+func TestPinnedViewsHintAndSwitchWithN(t *testing.T) {
+	for _, v := range followViews {
+		t.Run(v.name, func(t *testing.T) {
+			m, _ := v.open(t, false).Update(createdB)
+			if v.id(m) != sessA {
+				t.Fatal("a pinned view switched to a new session")
+			}
+			if got, want := v.notify(m), "new session bbbbbbbb started • n to switch"; !strings.Contains(got, want) {
+				t.Fatalf("notify row = %q, want %q", got, want)
+			}
+			m = press(m, "n")
+			if v.id(m) != sessB || v.follow(m) {
+				t.Fatalf("after n: session %s following %v, want %s pinned", v.id(m), v.follow(m), sessB)
+			}
+			if got, want := v.notify(m), "→ switched to bbbbbbbb (previous aaaaaaaa: $30.05) • - to go back"; !strings.Contains(got, want) {
+				t.Errorf("notify row = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// Following, both views take a session that starts, with the same notice,
+// and never jump to an older session that's written to.
+func TestFollowingViewsTakeNewSessionsOnly(t *testing.T) {
+	for _, v := range followViews {
+		t.Run(v.name, func(t *testing.T) {
+			m, _ := v.open(t, true).Update(activityB)
+			if v.id(m) != sessA {
+				t.Fatal("a following view jumped to an older session that was written to")
+			}
+			if got, want := v.notify(m), "newer activity in bbbbbbbb • n to switch"; !strings.Contains(got, want) {
+				t.Errorf("notify row = %q, want %q", got, want)
+			}
+
+			m, _ = v.open(t, true).Update(createdB)
+			if v.id(m) != sessB {
+				t.Fatal("a following view didn't take a new session")
+			}
+			if got, want := v.notify(m), "→ new session bbbbbbbb (previous aaaaaaaa: $30.05) • - to go back"; !strings.Contains(got, want) {
+				t.Errorf("notify row = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// f turning following on takes a session that started while pinned, but not
+// one that was only written to: following never takes those.
+func TestFollowKeyOverHint(t *testing.T) {
+	for _, v := range followViews {
+		t.Run(v.name, func(t *testing.T) {
+			m, _ := v.open(t, false).Update(createdB)
+			m = press(m, "f")
+			if v.id(m) != sessB || !v.follow(m) {
+				t.Errorf("f over a new-session hint: session %s following %v, want %s following", v.id(m), v.follow(m), sessB)
+			}
+
+			m, _ = v.open(t, false).Update(activityB)
+			m = press(m, "f")
+			if v.id(m) != sessA || !v.follow(m) {
+				t.Errorf("f over an activity hint: session %s following %v, want %s following", v.id(m), v.follow(m), sessA)
+			}
+		})
+	}
+}

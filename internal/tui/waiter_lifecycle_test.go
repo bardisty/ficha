@@ -264,7 +264,7 @@ func TestBreakdownQuitCompletesAfterMixedReloads(t *testing.T) {
 
 func TestWatchSessionSwitchResetsWaiterAccounting(t *testing.T) {
 	sessionPath, projectDir, sessionID, agentPath := watchFixture(t)
-	m := NewModel(sessionPath, sessionID, true, projectDir, false)
+	m := NewModel(sessionPath, sessionID, true, projectDir, true)
 
 	mm, cmd := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
 	m = mm.(Model)
@@ -281,7 +281,7 @@ func TestWatchSessionSwitchResetsWaiterAccounting(t *testing.T) {
 	// the switch must reset the accounting for the new watcher's waiter
 	newPath := filepath.Join(projectDir, "sess-2.jsonl")
 	writeSessionFile(t, newPath)
-	mm, _ = m.Update(sessionSwitchedMsg{newSessionPath: newPath, newSessionID: "sess-2"})
+	mm, _ = m.Update(sessionActivityMsg{path: newPath, id: "sess-2", created: true})
 	m = mm.(Model)
 	if m.fileWaiterActive {
 		t.Fatal("session switch did not reset fileWaiterActive")
@@ -307,7 +307,7 @@ func TestBreakdownSessionSwitchResetsWaiterAccounting(t *testing.T) {
 
 	newPath := filepath.Join(projectDir, "sess-2.jsonl")
 	writeSessionFile(t, newPath)
-	mm, _ = m.Update(sessionSwitchedMsg{newSessionPath: newPath, newSessionID: "sess-2"})
+	mm, _ = m.Update(sessionActivityMsg{path: newPath, id: "sess-2", created: true})
 	m = mm.(BreakdownModel)
 	if m.fileWaiterActive {
 		t.Fatal("session switch did not reset fileWaiterActive")
