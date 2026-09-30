@@ -45,6 +45,7 @@ type BreakdownModel struct {
 	runNames       map[string]string // AGENT-column run tag -> workflow name
 	err            error
 	loading        bool
+	loaded         bool // a load has landed for this session; see showLoading
 	lastUpdated    time.Time
 
 	// agentCache memoizes agent sub-session parses so a reload triggered by a
@@ -354,7 +355,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinner.TickMsg:
 		// Let the spinner stop once nothing shows it; spinnerCmd restarts it.
-		if !m.loading {
+		if !m.showLoading() {
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -405,6 +406,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			clock = clockCmd(time.Second, m.clockGen)
 		}
 		m.loading = false
+		m.loaded = true
 		m.lastUpdated = time.Now()
 		m.err = nil
 		m.refreshViewport()
@@ -597,6 +599,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.skippedAgents = 0
 	m.estimatedCosts = 0
 	m.unknownModels = nil
+	m.loaded = false
 	m.err = nil
 	m.newMsgKeys = make(map[string]time.Time)
 	m.lastActivity = time.Time{}
@@ -973,7 +976,7 @@ func (m BreakdownModel) headerParams(width int) liveHeaderParams {
 	}
 	return liveHeaderParams{
 		sessionID:    m.sessionID,
-		loading:      m.loading,
+		loading:      m.showLoading(),
 		err:          m.err,
 		spinnerView:  m.spinner.View(),
 		noColor:      m.noColor,
