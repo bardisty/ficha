@@ -17,7 +17,7 @@ import (
 func TestWaitingModel(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	for _, follow := range []bool{true, false} {
-		m := NewWaitingModel("/cfg/projects/-w-webapp", "~/work/webapp", false, true, follow)
+		m := NewWaitingModel("/cfg/projects/-w-webapp", "~/work/webapp", true, follow)
 		m = sized(t, m, 80, 24)
 		view := m.View()
 		for _, want := range []string{"webapp │ ● ", "waiting for a session", "Waiting for a Claude Code session in ~/work/webapp…"} {
@@ -78,7 +78,7 @@ func TestSessionWatcherAdoptsNewProjectDir(t *testing.T) {
 // retries it, rather than offering a retry that does nothing.
 func TestWaitingWatcherFailureRetries(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	m := NewWaitingModel(t.TempDir()+"/-w-webapp", "~/work/webapp", false, true, true)
+	m := NewWaitingModel(t.TempDir()+"/-w-webapp", "~/work/webapp", true, true)
 	m = sized(t, m, 80, 24)
 	m = send(t, m, errorMsg{err: errors.New("too many open files")})
 	if !strings.Contains(m.View(), "too many open files") {
@@ -109,7 +109,7 @@ func TestWaitingTakesSessionCreatedBeforeWatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sw.Stop()
-	m := NewWaitingModel(dir, "~/w", false, true, true)
+	m := NewWaitingModel(dir, "~/w", true, true)
 	m = send(t, m, sessionWatcherStartedMsg{watcher: sw})
 	if m.sessionID != id {
 		t.Errorf("session on disk at start not taken: sessionID = %q", m.sessionID)

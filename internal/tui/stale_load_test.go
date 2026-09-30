@@ -106,7 +106,7 @@ func TestBreakdownSwitchClearsUnknownFootnote(t *testing.T) {
 func TestWatchStaleLoadDroppedAfterSwitch(t *testing.T) {
 	oldPath := "/proj/old.jsonl"
 	newPath := "/proj/new.jsonl"
-	m := NewModel(oldPath, "old", false, true, "", false)
+	m := NewModel(oldPath, "old", true, "", false)
 
 	updated, _ := m.Update(sessionSwitchedMsg{newSessionPath: newPath, newSessionID: "new"})
 	m = updated.(Model)

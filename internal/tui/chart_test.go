@@ -102,7 +102,7 @@ func TestMergedCostHistory_EmptyInput(t *testing.T) {
 // documented contract; the chart must sort a copy, never the analysis itself.
 func TestUpdateCostChart_DoesNotReorderAnalysisMessages(t *testing.T) {
 	base := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
-	m := NewModel("/test/path", "test-session", false, true, "", false)
+	m := NewModel("/test/path", "test-session", true, "", false)
 	m.analysis = &models.SessionAnalysis{
 		Messages: []models.MessageAnalysis{
 			chartMsg(base, "", 0.10),
@@ -141,7 +141,7 @@ func TestUpdateCostChart_ScalesToVisibleWindow(t *testing.T) {
 		msgs[i] = chartMsg(base.Add(time.Duration(i)*time.Second), "", cost)
 	}
 
-	m := NewModel("/test/path", "sess", false, true, "", false)
+	m := NewModel("/test/path", "sess", true, "", false)
 	m.width = 100 // getChartWidth -> 68
 	m.analysis = &models.SessionAnalysis{Messages: msgs}
 	m.updateCostChart()
@@ -180,7 +180,7 @@ func TestRenderCostChart_ResizeChangesWindow(t *testing.T) {
 		msgs[i] = chartMsg(base.Add(time.Duration(i)*time.Second), "", 0.01+float64(i%40)*0.001)
 	}
 
-	m := NewModel("/test/path", "sess", false, true, "", false)
+	m := NewModel("/test/path", "sess", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = updated.(Model)
 	updated, _ = m.Update(analysisMsg{analysis: &models.SessionAnalysis{Messages: msgs}})
@@ -286,7 +286,7 @@ func TestLoadAnalysisIncludesAgentMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewModel(sessionPath, sessionID, false, true, "", false)
+	m := NewModel(sessionPath, sessionID, true, "", false)
 	msg := m.loadAnalysis()
 	loaded, ok := msg.(analysisMsg)
 	if !ok {
@@ -319,7 +319,7 @@ func TestLoadAnalysisIncludesAgentMessages(t *testing.T) {
 // The sparkline scales to the visible window's peak, not its built-in $1
 // floor, so a session of sub-dollar messages still uses the full height.
 func TestCostChartScalesToVisiblePeak(t *testing.T) {
-	m := NewModel("/test/path", "s", false, true, "", false)
+	m := NewModel("/test/path", "s", true, "", false)
 	m.costHistory = []float64{0.02, 0.22, 0.05}
 	m.rebuildCostChart()
 	if got := m.costChart.MaxValue(); got != 0.22 {

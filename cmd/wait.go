@@ -33,7 +33,7 @@ func waitForFirstSession(cfg *config, open func(dir, projectPath string) tea.Mod
 // waitingWatch opens watch waiting for a first session.
 func waitingWatch(cfg *config) func(dir, projectPath string) tea.Model {
 	return func(dir, projectPath string) tea.Model {
-		return tui.NewWaitingModel(dir, projectPath, cfg.verbose, cfg.noColor, !cfg.noFollow)
+		return tui.NewWaitingModel(dir, projectPath, cfg.noColor, !cfg.noFollow)
 	}
 }
 

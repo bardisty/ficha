@@ -35,7 +35,7 @@ func TestWatchIgnoresSyntheticModel(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	path, id := syntheticSession(t)
 
-	m := NewModel(path, id, false, true, "", false)
+	m := NewModel(path, id, true, "", false)
 	msg, ok := m.loadAnalysis().(analysisMsg)
 	if !ok {
 		t.Fatalf("loadAnalysis returned %T, want analysisMsg", m.loadAnalysis())
@@ -69,7 +69,7 @@ func TestWatchAllSyntheticSessionHasNoCostByModel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewModel(path, id, false, true, "", false)
+	m := NewModel(path, id, true, "", false)
 	msg, ok := m.loadAnalysis().(analysisMsg)
 	if !ok {
 		t.Fatalf("loadAnalysis returned %T, want analysisMsg", m.loadAnalysis())

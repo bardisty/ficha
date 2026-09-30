@@ -131,7 +131,7 @@ func sessionContext(a *models.SessionAnalysis) *models.ContextUsage {
 }
 
 func runLiveMode(cfg *config, session *models.SessionEntry, projectDir string, followMode bool) error {
-	model := tui.NewModel(session.FullPath, session.SessionID, cfg.verbose, cfg.noColor, projectDir, followMode)
+	model := tui.NewModel(session.FullPath, session.SessionID, cfg.noColor, projectDir, followMode)
 	return runTUI(cfg.stdout, model)
 }
 

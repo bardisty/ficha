@@ -63,7 +63,7 @@ func newTestWatcher(t *testing.T, sessionPath string) *fsnotify.Watcher {
 
 func TestWatchPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 	sessionPath, projectDir, sessionID, agentPath := watchFixture(t)
-	m := NewModel(sessionPath, sessionID, false, true, projectDir, false)
+	m := NewModel(sessionPath, sessionID, true, projectDir, false)
 
 	// Watcher creation arms the one long-lived waiter
 	mm, cmd := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
@@ -194,7 +194,7 @@ func runArmedWaiter(cmd tea.Cmd) {
 
 func TestWatchQuitCompletesAfterMixedReloads(t *testing.T) {
 	sessionPath, projectDir, sessionID, agentPath := watchFixture(t)
-	m := NewModel(sessionPath, sessionID, false, true, projectDir, false)
+	m := NewModel(sessionPath, sessionID, true, projectDir, false)
 
 	mm, cmd := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
 	m = mm.(Model)
@@ -264,7 +264,7 @@ func TestBreakdownQuitCompletesAfterMixedReloads(t *testing.T) {
 
 func TestWatchSessionSwitchResetsWaiterAccounting(t *testing.T) {
 	sessionPath, projectDir, sessionID, agentPath := watchFixture(t)
-	m := NewModel(sessionPath, sessionID, false, true, projectDir, false)
+	m := NewModel(sessionPath, sessionID, true, projectDir, false)
 
 	mm, cmd := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
 	m = mm.(Model)
@@ -328,7 +328,7 @@ func TestWatchStaleWatcherMessagesIgnored(t *testing.T) {
 	// flag (that would let a reload completion arm a second waiter on the
 	// current watcher) nor stamp its error over the current session.
 	sessionPath, projectDir, sessionID, _ := watchFixture(t)
-	m := NewModel(sessionPath, sessionID, false, true, projectDir, false)
+	m := NewModel(sessionPath, sessionID, true, projectDir, false)
 
 	mm, cmd := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
 	m = mm.(Model)
@@ -396,7 +396,7 @@ func TestWatchReplacementWatcherClosesSuperseded(t *testing.T) {
 	// watcherStartedMsgs with no waiter exit between them: the second must
 	// close the first watcher (so its waiter drains) and arm on the new one.
 	sessionPath, projectDir, sessionID, _ := watchFixture(t)
-	m := NewModel(sessionPath, sessionID, false, true, projectDir, false)
+	m := NewModel(sessionPath, sessionID, true, projectDir, false)
 
 	w1 := newTestWatcher(t, sessionPath)
 	mm, cmd := m.Update(watcherStartedMsg{watcher: w1})
@@ -430,7 +430,7 @@ func TestWatchErrTriggersReload(t *testing.T) {
 	// A watcher error (e.g. event-queue overflow) means changes may have been
 	// dropped: the handler must reload, not just re-arm.
 	sessionPath, projectDir, sessionID, _ := watchFixture(t)
-	m := NewModel(sessionPath, sessionID, false, true, projectDir, false)
+	m := NewModel(sessionPath, sessionID, true, projectDir, false)
 
 	mm, _ := m.Update(watcherStartedMsg{watcher: newTestWatcher(t, sessionPath)})
 	m = mm.(Model)

@@ -16,7 +16,7 @@ func keyType(t *testing.T, m Model, k tea.KeyType) (Model, tea.Cmd) {
 // Pager keys reach the viewport's keymap, and j/k still move by one line.
 func TestWatchPagerKeys(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	m := NewModel("/p/s.jsonl", "s", false, true, "", false)
+	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = load(t, sized(t, m, 80, 24), tallAnalysis(1))
 	page := m.viewport.Height
 
@@ -49,7 +49,7 @@ func TestWatchPagerKeys(t *testing.T) {
 // Repeated keys that arrive as one chunk each count.
 func TestWatchRepeatedKeyChunk(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	m := NewModel("/p/s.jsonl", "s", false, true, "", false)
+	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = load(t, sized(t, m, 80, 24), tallAnalysis(1))
 	m = key(t, m, "jjjj")
 	if m.viewport.YOffset != 4 {
@@ -60,7 +60,7 @@ func TestWatchRepeatedKeyChunk(t *testing.T) {
 // ctrl+z suspends only where the shell can resume it; without job control
 // the stop would be discarded and the program would hang on a blank screen.
 func TestWatchCtrlZSuspends(t *testing.T) {
-	m := NewModel("/p/s.jsonl", "s", false, true, "", false)
+	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	_, cmd := keyType(t, m, tea.KeyCtrlZ)
 	if !canSuspend() {
 		if cmd != nil {
@@ -79,7 +79,7 @@ func TestWatchCtrlZSuspends(t *testing.T) {
 
 // A paste is text, not keystrokes: "qq" pasted must not quit.
 func TestWatchPasteIsNotRepeatedKeys(t *testing.T) {
-	m := NewModel("/p/s.jsonl", "s", false, true, "", false)
+	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("qq"), Paste: true})
 	if cmd != nil {
 		if _, quit := cmd().(tea.QuitMsg); quit {

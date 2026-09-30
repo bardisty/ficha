@@ -15,7 +15,7 @@ import (
 // SetContent + GotoBottom.
 
 func TestWatchZeroHeightTerminalDoesNotPanic(t *testing.T) {
-	m := NewModel("/test/path", "test-session", false, true, "", false)
+	m := NewModel("/test/path", "test-session", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 0})
 	m = updated.(Model)
 

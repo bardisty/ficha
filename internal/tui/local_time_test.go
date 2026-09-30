@@ -112,7 +112,7 @@ func TestWatchInsightTimesAreLocal(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 
 	for _, noColor := range []bool{true, false} {
-		m := NewModel("/fixture/sess.jsonl", "0a1b2c3d", false, noColor, "", false)
+		m := NewModel("/fixture/sess.jsonl", "0a1b2c3d", noColor, "", false)
 		updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 60})
 		m = updated.(Model)
 		updated, _ = m.Update(analysisMsg{analysis: goldenViewAnalysis()})

@@ -43,7 +43,6 @@ const (
 type Model struct {
 	sessionPath string
 	sessionID   string
-	verbose     bool
 	noColor     bool
 
 	analysis    *models.SessionAnalysis
@@ -177,7 +176,7 @@ type (
 )
 
 // NewModel creates a new TUI model
-func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir string, followMode bool) Model {
+func NewModel(sessionPath, sessionID string, noColor bool, projectDir string, followMode bool) Model {
 	// Initialize cost trend chart with default dimensions
 	// Will be resized when we receive the first WindowSizeMsg
 	chart := newCostChart(chartWidth, noColor)
@@ -187,7 +186,6 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 	m := Model{
 		sessionPath: sessionPath,
 		sessionID:   sessionID,
-		verbose:     verbose,
 		noColor:     noColor,
 		loading:     true,
 		spinner:     newSpinner(noColor),
@@ -214,8 +212,8 @@ func NewModel(sessionPath, sessionID string, verbose, noColor bool, projectDir s
 // on projectDir, which may not exist yet, and follows the first session
 // created there. projectPath is the directory Claude Code will run in, for
 // the header and the waiting message.
-func NewWaitingModel(projectDir, projectPath string, verbose, noColor, followMode bool) Model {
-	m := NewModel("", "", verbose, noColor, projectDir, followMode)
+func NewWaitingModel(projectDir, projectPath string, noColor, followMode bool) Model {
+	m := NewModel("", "", noColor, projectDir, followMode)
 	m.loading = false
 	m.waitingIn = projectPath
 	m.project = paths.BasenameCrossOS(projectPath)

@@ -215,7 +215,7 @@ func TestAgentRowsKeepTotals(t *testing.T) {
 func TestAgentDotAgesOutOnClockTick(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	clock := foldNow
-	m := NewModel("/p/s.jsonl", "s", false, true, "", false)
+	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m.now = func() time.Time { return clock }
 	m = load(t, sized(t, m, 80, 60), foldAnalysis())
 	if !strings.Contains(m.viewport.View(), styles.LiveDot+" [A2000000]") {
@@ -232,7 +232,7 @@ func TestAgentDotAgesOutOnClockTick(t *testing.T) {
 
 func goldenAgentList(t *testing.T, noColor bool) string {
 	t.Helper()
-	m := NewModel("/fixture/sess.jsonl", "sess", false, noColor, "", false)
+	m := NewModel("/fixture/sess.jsonl", "sess", noColor, "", false)
 	m.now = func() time.Time { return foldNow }
 	m.analysis = foldAnalysis()
 	return m.renderAgentBreakdownContent()

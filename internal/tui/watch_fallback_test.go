@@ -45,7 +45,7 @@ var fallbackHarnesses = []fallbackHarness{
 	{
 		name: "watch",
 		open: func(sessionPath, projectDir, sessionID string) tea.Model {
-			return NewModel(sessionPath, sessionID, false, true, projectDir, true)
+			return NewModel(sessionPath, sessionID, true, projectDir, true)
 		},
 		fallback: func(m tea.Model) watchFallback { return m.(Model).fallback },
 		watcher:  func(m tea.Model) *fsnotify.Watcher { return m.(Model).watcher },
