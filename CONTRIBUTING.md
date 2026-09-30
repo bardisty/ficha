@@ -73,6 +73,8 @@ In a fresh fixture that glob matches the one session. With no flags, `live.py` a
 
 `--interval` and `--count` change the pace.
 
+For a change that affects how fast ficha reads many sessions, the fixture is too small to time. `docs/screenshots/mkhistory.py <dir>` writes roughly 400 MB of history: some 300 sessions across six projects, spread over the last 60 days. Point `CLAUDE_CONFIG_DIR` at `<dir>/config` and time `ficha global -f json`, with and without `--since today`, before and after your change.
+
 ## Comments
 
 Comments explain why, and note caveats the code can't express on its own. They never describe history ("used to...", "was changed to...") and never carry ticket or issue IDs. Git has the history.
