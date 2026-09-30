@@ -159,7 +159,7 @@ func analyzeProject(project models.ProjectInfo, window models.TimeWindow) (*mode
 	// fork-copied transcripts happens inside AnalyzeMultipleSessions, scoped
 	// per project: forks never land in another project's directory, and a
 	// project-local seen set keeps the parallel project workers lock-free.
-	aggregate, results, err := AnalyzeMultipleSessionsInWindow(sessions, window)
+	aggregate, _, err := AnalyzeMultipleSessionsInWindow(sessions, window)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func analyzeProject(project models.ProjectInfo, window models.TimeWindow) (*mode
 		SkippedSessions:       aggregate.SkippedSessions,
 		SkippedAgents:         aggregate.SkippedAgents,
 		SkippedLines:          aggregate.SkippedLines,
-		SkipDetails:           SkipDetails(results),
+		SkipDetails:           aggregate.SkipDetails,
 		EstimatedCostMessages: aggregate.EstimatedCostMessages,
 	}
 

@@ -341,6 +341,10 @@ type SessionAnalysis struct {
 	// check as its stderr warning.
 	UnpricedModels []string `json:"unpriced_models,omitempty"`
 	IsSummary      bool     `json:"-"` // True for aggregate summaries
+	// SkipDetails names the sessions behind the aggregate's skip counters,
+	// for -v, including any a window left out of the report. Set only on the
+	// aggregate AnalyzeMultipleSessions returns.
+	SkipDetails []SkipDetail `json:"-"`
 	// Sessions this analysis covers: N (minus skipped) on the summary
 	// aggregate, always 1 on a per-session analysis. Exported so machine
 	// consumers can pair it with skipped_sessions to compute coverage, like

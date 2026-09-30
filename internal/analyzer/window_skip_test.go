@@ -292,3 +292,54 @@ func TestWindowSkipLeavesUnreadableSessionsFailing(t *testing.T) {
 		t.Errorf("unopenable old agent: SkippedAgents got %d, want 1", agg.SkippedAgents)
 	}
 }
+
+// A session with nothing inside the window still counts its unreadable
+// lines, so SkipDetails names it and its files, though results leave it out.
+// A session the shortcut skips unparsed is in neither.
+func TestWindowSkipDetailsNameSessionsOutsideTheWindow(t *testing.T) {
+	dir := t.TempDir()
+	projDir := filepath.Join(dir, "proj")
+	if err := os.Mkdir(projDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	newPath := filepath.Join(projDir, "new.jsonl")
+	writeJSONLFile(t, newPath, []string{windowMsg})
+	outPath := filepath.Join(projDir, "out.jsonl")
+	writeJSONLFile(t, outPath, []string{forkMsg1, corruptLine})
+	writeAgentSession(t, projDir, "out", "agent-a1.jsonl", []string{corruptLine, forkMsg2})
+	oldPath := filepath.Join(projDir, "old.jsonl")
+	writeJSONLFile(t, oldPath, []string{forkMsg3, corruptLine})
+	setMtime(t, oldPath, oldMtime)
+
+	agg, results, err := AnalyzeMultipleSessionsInWindow(diskEntries(t, newPath, outPath, oldPath), skipWindow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Entry.SessionID != "new" {
+		t.Fatalf("results: got %+v, want the new session alone", results)
+	}
+	if agg.SkippedLines != 2 {
+		t.Errorf("SkippedLines: got %d, want 2", agg.SkippedLines)
+	}
+	if len(agg.SkipDetails) != 1 {
+		t.Fatalf("SkipDetails: got %+v, want the out session alone", agg.SkipDetails)
+	}
+	d := agg.SkipDetails[0]
+	agentPath := filepath.Join(projDir, "out", "subagents", "agent-a1.jsonl")
+	if d.SessionID != "out" || d.Unreadable || d.Lines != 2 || len(d.Files) != 2 ||
+		d.Files[0].Path != outPath || d.Files[0].Lines[0].Line != 2 ||
+		d.Files[1].Path != agentPath || d.Files[1].AgentID != "a1" || d.Files[1].Lines[0].Line != 1 {
+		t.Errorf("SkipDetails[0]: got %+v, want out with line 2 of its transcript and line 1 of agent a1", d)
+	}
+
+	global, err := AnalyzeAllProjectsInWindow([]models.ProjectInfo{{
+		EncodedPath: "proj", FullPath: projDir, OriginalPath: "/home/test/proj", DisplayName: "proj",
+	}}, skipWindow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(global.Projects) != 1 || global.SkippedLines != 2 ||
+		len(global.Projects[0].SkipDetails) != 1 || global.Projects[0].SkipDetails[0].SessionID != "out" {
+		t.Errorf("global: got %d skipped lines, projects %+v; want 2, and out named", global.SkippedLines, global.Projects)
+	}
+}

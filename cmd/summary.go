@@ -77,7 +77,7 @@ func runSummary(cfg *config) error {
 		sessions: analysis.SkippedSessions,
 		agents:   analysis.SkippedAgents,
 		lines:    analysis.SkippedLines,
-		details:  labelSkips("", analyzer.SkipDetails(results)),
+		details:  labelSkips("", analysis.SkipDetails),
 	}.write(&warnings, cfg.verbose)
 	warnEstimatedCosts(&warnings, analysis.EstimatedCostMessages)
 	analysis.UnpricedModels = unpricedModels(analysis.CostByModel)
