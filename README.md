@@ -273,6 +273,34 @@ The full export contract is in [docs/machine-output.md](docs/machine-output.md).
 
 Before 1.0, a minor release can rename or remove keys. [Compatibility](docs/machine-output.md#compatibility) says how those changes are announced and how to pin a version.
 
+## Scripting
+
+`show`, `watch` and `breakdown` take a session ID or the path to a session's transcript. A path, or a full 36-character ID, works from any directory. Claude Code passes both to hooks and to the status line command, as `transcript_path` and `session_id` in the JSON on stdin.
+
+In Claude Code's own status line, that JSON already has the session's total as `cost.total_cost_usd`. What ficha adds there is the split between the main conversation and its agents. It needs `jq`. Save it as `~/.claude/statusline.sh` and make it executable:
+
+```sh
+#!/bin/sh
+ficha show "$(jq -r .transcript_path)" -f json 2>/dev/null |
+  jq -r '"\(.parent_cost.total_cost) \(.agents_cost.total_cost)"' | {
+  read -r main agents && LC_ALL=C printf 'main $%.2f, agents $%.2f\n' "$main" "$agents"
+}
+```
+
+Then add the `statusLine` key to `~/.claude/settings.json`:
+
+```json
+{ "statusLine": { "type": "command", "command": "~/.claude/statusline.sh" } }
+```
+
+Outside Claude Code, a tmux status bar can show today's spend for the project in the current pane:
+
+```tmux
+set -g status-right '#(cd "#{pane_current_path}" && ficha summary --since today -f json 2>/dev/null | jq ".total_cost.total_cost * 100 | round / 100")'
+```
+
+In a directory with no sessions, ficha exits 1 and prints nothing on stdout, so the segment stays empty. If it's empty in a project directory too, the tmux server can't find `ficha` or `jq`. Check `tmux show-environment -g PATH`.
+
 ## Privacy
 
 ficha only reads. It opens the transcripts Claude Code writes under `~/.claude/projects/`, or under `$CLAUDE_CONFIG_DIR/projects/` if you have set that variable. `CLAUDE_CONFIG_DIR` is Claude Code's own override, and ficha honors it so the two always agree on where sessions live. It makes no network requests, runs no subprocesses, and writes no files. Nothing in the non-test code imports `net/http` or `os/exec` or opens a file for writing, and I intend to keep it that way.

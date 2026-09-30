@@ -105,12 +105,18 @@ func findSession(cfg *config, args []string) (*models.SessionEntry, string, bool
 	// Analysis paths (show/watch/breakdown) recompute counts from their own
 	// parse, so skip the discovery-time message-count scan.
 	explicitSessionID := len(args) > 0
+	if explicitSessionID && isTranscriptPath(args[0]) {
+		session, projectDir, err := sessionFromPath(cfg, args[0])
+		return session, projectDir, true, err
+	}
 	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, false)
 	if err != nil {
 		// A session ID copied from elsewhere may belong to a project other
 		// than this directory's, and saying where beats a bare project error.
 		if explicitSessionID {
-			if elsewhere := locateSession(cfg, args[0], ""); elsewhere != nil {
+			if session, dir, elsewhere := locateSession(cfg, args[0], ""); session != nil {
+				return session, dir, true, nil
+			} else if elsewhere != nil {
 				return nil, "", false, elsewhere
 			}
 		}
@@ -121,7 +127,9 @@ func findSession(cfg *config, args []string) (*models.SessionEntry, string, bool
 		session, err := findSessionByPartialID(sessions, args[0])
 		if err != nil {
 			if errors.Is(err, ErrSessionNotFound) {
-				if elsewhere := locateSession(cfg, args[0], projectDir); elsewhere != nil {
+				if session, dir, elsewhere := locateSession(cfg, args[0], projectDir); session != nil {
+					return session, dir, true, nil
+				} else if elsewhere != nil {
 					return nil, "", false, elsewhere
 				}
 				return nil, "", false, &sessionNotFoundError{fmt.Sprintf("session not found: %s. Run 'ficha list%s' to see this project's sessions.", args[0], cfg.typedProjectArgs())}
@@ -200,17 +208,20 @@ func (e *sessionNotFoundError) Error() string        { return e.msg }
 func (e *sessionNotFoundError) Is(target error) bool { return target == ErrSessionNotFound }
 
 // locateSession looks for a session ID in every project except excludeDir.
-// It only lists directories, with no parsing, so a miss stays cheap. It
-// returns nil when no other project has a match.
-func locateSession(cfg *config, arg, excludeDir string) error {
+// It only lists directories, with no parsing, so a miss stays cheap. A full
+// session ID can't be ambiguous, so when exactly one other project has it,
+// locateSession returns that session and its project directory, and notes
+// the project on stderr, leaving stdout clean for json. Otherwise it returns
+// an error saying where the matches are, or nothing when there are none.
+func locateSession(cfg *config, arg, excludeDir string) (*models.SessionEntry, string, error) {
 	id := normalizeSessionID(arg)
 	projectsDir, err := paths.GetProjectsDir()
 	if id == "" || err != nil {
-		return nil
+		return nil, "", nil
 	}
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
-		return nil
+		return nil, "", nil
 	}
 	type hit struct{ projectDir, sessionID string }
 	var hits []hit
@@ -231,7 +242,7 @@ func locateSession(cfg *config, arg, excludeDir string) error {
 		}
 	}
 	if len(hits) == 0 {
-		return nil
+		return nil, "", nil
 	}
 	cfg.tracef("session %s found in %d other project(s)", arg, len(hits))
 
@@ -251,12 +262,20 @@ func locateSession(cfg *config, arg, excludeDir string) error {
 	}
 
 	if len(hits) == 1 {
-		p := project(hits[0].projectDir)
+		h := hits[0]
+		p := project(h.projectDir)
 		where := p.OriginalPath
 		if where == "" {
 			where = p.EncodedPath
 		}
-		return &sessionNotFoundError{fmt.Sprintf("session %s is in %s. Run: %s", shortSessionID(hits[0].sessionID), where, run(hits[0]))}
+		if isFullSessionID(id) && strings.EqualFold(h.sessionID, id) {
+			session, err := parser.SessionFromFile(filepath.Join(h.projectDir, h.sessionID+".jsonl"))
+			if err == nil {
+				fmt.Fprintf(cfg.stderr, "Note: session %s is in %s.\n", shortSessionID(h.sessionID), where)
+				return &session, h.projectDir, nil
+			}
+		}
+		return nil, "", &sessionNotFoundError{fmt.Sprintf("session %s is in %s. Run: %s", shortSessionID(h.sessionID), where, run(h))}
 	}
 	const maxHits = 5
 	var sb strings.Builder
@@ -267,5 +286,80 @@ func locateSession(cfg *config, arg, excludeDir string) error {
 	if len(hits) > maxHits {
 		fmt.Fprintf(&sb, "\n  ... and %d more", len(hits)-maxHits)
 	}
-	return &sessionNotFoundError{sb.String()}
+	return nil, "", &sessionNotFoundError{sb.String()}
+}
+
+// isFullSessionID reports whether id is a whole UUID, 8-4-4-4-12 hex digits.
+func isFullSessionID(id string) bool {
+	if len(id) != 36 || !looksLikeSessionID(id) {
+		return false
+	}
+	for i, r := range id {
+		if (i == 8 || i == 13 || i == 18 || i == 23) != (r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// isTranscriptPath reports whether arg names a .jsonl file rather than a
+// session ID: a file that exists, or anything with a directory in it. A bare
+// "<id>.jsonl" that doesn't exist here stays a pasted file name, which the ID
+// lookup accepts.
+func isTranscriptPath(arg string) bool {
+	if !strings.EqualFold(filepath.Ext(arg), ".jsonl") {
+		return false
+	}
+	if strings.ContainsAny(arg, `/\`) {
+		return true
+	}
+	info, err := os.Stat(arg)
+	return err == nil && !info.IsDir()
+}
+
+// sessionFromPath is the session a transcript path names. Its project is the
+// directory it's in, which is where the analyzer finds its agents, so no
+// project resolution runs, and -p and --project-dir don't apply.
+func sessionFromPath(cfg *config, arg string) (*models.SessionEntry, string, error) {
+	path, err := filepath.Abs(arg)
+	if err != nil {
+		return nil, "", err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("can't read transcript %s: %w", arg, unwrapPathError(err))
+	}
+	if !info.Mode().IsRegular() {
+		return nil, "", fmt.Errorf("%s isn't a transcript file", arg)
+	}
+	// Agents write to <project>/<session>/subagents/agent-*.jsonl, and
+	// workflow agents one level further down, in workflows/<run>/.
+	dir := filepath.Dir(path)
+	if filepath.Base(filepath.Dir(dir)) == "workflows" {
+		dir = filepath.Dir(filepath.Dir(dir))
+	}
+	if filepath.Base(dir) == "subagents" {
+		sessionDir := filepath.Dir(dir)
+		parent := sessionDir + filepath.Ext(path)
+		return nil, "", usageErrorf("%s is an agent's transcript, part of session %s. Run: %s %s",
+			filepath.Base(path), shortSessionID(filepath.Base(sessionDir)), cfg.command(), shellQuote(parent))
+	}
+	if cfg.projectPath != "" || cfg.projectDir != "" {
+		cfg.tracef("a transcript path names its own project; ignoring -p and --project-dir")
+	}
+	session, err := parser.SessionFromFile(path)
+	if err != nil {
+		return nil, "", err
+	}
+	return &session, filepath.Dir(path), nil
+}
+
+// unwrapPathError drops an *os.PathError's own copy of the path, for a
+// message that names the path already.
+func unwrapPathError(err error) error {
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
+	}
+	return err
 }

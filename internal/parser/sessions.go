@@ -72,6 +72,18 @@ func DiscoverSessionsFromDisk(projectDir string, countMessages bool) ([]models.S
 	return sessions, nil
 }
 
+// SessionFromFile builds the entry for one session transcript, the one
+// discovery would build for it in its project directory.
+func SessionFromFile(fullPath string) (models.SessionEntry, error) {
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return models.SessionEntry{}, err
+	}
+	base := filepath.Base(fullPath)
+	sessionID := strings.TrimSuffix(base, filepath.Ext(base))
+	return buildDiskEntry(filepath.Dir(fullPath), sessionID, fullPath, info.ModTime(), false), nil
+}
+
 // buildDiskEntry builds a SessionEntry for a session file on disk, discovering
 // its agent sub-sessions and (when countMessages is true) counting messages.
 //

@@ -26,7 +26,7 @@ func rootArgs(cmd *cobra.Command, args []string) error {
 	if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
 		return err
 	}
-	if len(args) == 0 || looksLikeSessionID(args[0]) {
+	if len(args) == 0 || looksLikeSessionID(args[0]) || isTranscriptPath(args[0]) {
 		return nil
 	}
 	if len(cmd.SuggestionsFor(args[0])) > 0 || isDir(args[0]) {
@@ -40,7 +40,7 @@ func rootArgs(cmd *cobra.Command, args []string) error {
 func rootRun(cfg *config, cmd *cobra.Command, args []string) error {
 	err := runShow(cfg, args, cfg.live)
 	var lookupErr *sessionLookupError
-	if len(args) == 1 && !looksLikeSessionID(args[0]) && errors.As(err, &lookupErr) {
+	if len(args) == 1 && !looksLikeSessionID(args[0]) && !isTranscriptPath(args[0]) && errors.As(err, &lookupErr) {
 		return unknownCommandError(cmd, args[0])
 	}
 	return err
