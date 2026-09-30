@@ -26,16 +26,16 @@ func (cfg *config) timeWindow(now time.Time) (models.TimeWindow, error) {
 	var err error
 	if cfg.since != "" {
 		if w.Since, err = parseWindowBound(cfg.since, now, false); err != nil {
-			return w, fmt.Errorf("invalid --since %q: %w", cfg.since, err)
+			return w, usageErrorf("invalid --since %q: %w", cfg.since, err)
 		}
 	}
 	if cfg.until != "" {
 		if w.Until, err = parseWindowBound(cfg.until, now, true); err != nil {
-			return w, fmt.Errorf("invalid --until %q: %w", cfg.until, err)
+			return w, usageErrorf("invalid --until %q: %w", cfg.until, err)
 		}
 	}
 	if !w.Since.IsZero() && !w.Until.IsZero() && !w.Since.Before(w.Until) {
-		return w, fmt.Errorf("--since %s is not before --until %s", cfg.since, cfg.until)
+		return w, usageErrorf("--since %s is not before --until %s", cfg.since, cfg.until)
 	}
 	return w, nil
 }

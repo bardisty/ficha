@@ -76,14 +76,14 @@ func normalizeSessionID(arg string) string {
 func unknownCommandError(cmd *cobra.Command, arg string) error {
 	msg := fmt.Sprintf("unknown command %q for %q.", arg, cmd.CommandPath())
 	if suggestions := cmd.SuggestionsFor(arg); len(suggestions) > 0 {
-		return fmt.Errorf("%s Did you mean %s?", msg, joinQuoted(suggestions, "or"))
+		return usageErrorf("%s Did you mean %s?", msg, joinQuoted(suggestions, "or"))
 	}
 	// A directory is the likeliest non-command word: people expect
 	// `ficha <dir>` to analyze that project.
 	if isDir(arg) {
-		return fmt.Errorf("%s To analyze that directory, run: ficha -p %s", msg, shellQuote(arg))
+		return usageErrorf("%s To analyze that directory, run: ficha -p %s", msg, shellQuote(arg))
 	}
-	return fmt.Errorf("%s Run 'ficha --help' to see the commands.", msg)
+	return usageErrorf("%s Run 'ficha --help' to see the commands.", msg)
 }
 
 func isDir(path string) bool {
@@ -131,10 +131,11 @@ func noArgs(cmd *cobra.Command, args []string) error {
 // flagError rewrites pflag's value-parse errors, which quote Go's strconv
 // internals, into the shape ficha's own flag validation uses. Other flag
 // errors (unknown flag, missing value) already read well and pass through.
+// cobra calls it for every flag parse error, so all of them exit 2.
 func flagError(_ *cobra.Command, err error) error {
 	var invalid *pflag.InvalidValueError
 	if !errors.As(err, &invalid) {
-		return err
+		return usageError(err)
 	}
 	f := invalid.GetFlag()
 	var want string
@@ -147,7 +148,7 @@ func flagError(_ *cobra.Command, err error) error {
 	case typ == "bool":
 		want = "must be true or false"
 	default:
-		return err
+		return usageError(err)
 	}
-	return fmt.Errorf("invalid --%s value %q: %s", f.Name, invalid.GetValue(), want)
+	return usageErrorf("invalid --%s value %q: %s", f.Name, invalid.GetValue(), want)
 }

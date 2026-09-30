@@ -36,7 +36,12 @@ Examples:
   ficha watch              Live dashboard that follows new sessions
   ficha breakdown          Live per-message cost table
   ficha summary            Totals across this project's sessions
-  ficha global             Totals across every project`,
+  ficha global             Totals across every project
+
+Exit status:
+  0  Success, including a report that skipped unreadable input
+  1  No report, for example no sessions or no matching session
+  2  Usage error: unknown command or flag, bad value, or flags that clash`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       versionLine(),
@@ -67,19 +72,19 @@ Examples:
 			}
 			// Validate format flag
 			if !validFormats[strings.ToLower(cfg.format)] {
-				return fmt.Errorf("invalid format %q: must be one of table, json, csv", cfg.format)
+				return usageErrorf("invalid format %q: must be one of table, json, csv", cfg.format)
 			}
 			cfg.format = strings.ToLower(cfg.format)
 			// TUI/live modes only support table format. watch and breakdown are
 			// always TUIs; cfg.live covers `show --live` and bare `ficha --live`.
 			isTUI := cfg.live || cmd.Name() == "breakdown" || cmd.Name() == "watch"
 			if isTUI && cfg.format != "table" {
-				return fmt.Errorf("--format %s is not supported in live/TUI mode", cfg.format)
+				return usageErrorf("--format %s is not supported in live/TUI mode", cfg.format)
 			}
 			// Runs ahead of cobra's own mutual-exclusion check, whose message
 			// doesn't say what either flag is for.
 			if cmd.Flags().Changed("project") && cmd.Flags().Changed("project-dir") {
-				return fmt.Errorf("use either -p or --project-dir, not both: -p is the directory Claude Code ran in, --project-dir a Claude project directory name")
+				return usageErrorf("use either -p or --project-dir, not both: -p is the directory Claude Code ran in, --project-dir a Claude project directory name")
 			}
 			// --no-follow is registered on show and the root, where it only
 			// means something with --live.
@@ -123,16 +128,38 @@ Examples:
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newOutputHelpTopic())
 	rootCmd.AddCommand(newEnvironmentHelpTopic())
+	usageArgs(rootCmd)
 
 	return rootCmd
 }
 
+// initCompletion adds cobra's completion command ahead of Execute, which
+// would otherwise add it lazily, out of usageArgs' reach. Its scripts go to
+// the stdout set at this point, so a caller redirecting output must do that
+// first. Without a RunE, `completion bogus` prints help and exits 0 instead
+// of failing on its NoArgs.
+func initCompletion(root *cobra.Command) {
+	root.InitDefaultCompletionCmd()
+	for _, c := range root.Commands() {
+		if c.Name() == "completion" {
+			c.RunE = func(c *cobra.Command, _ []string) error { return c.Help() }
+			usageArgs(c)
+		}
+	}
+}
+
 // Execute runs the root command
 func Execute() {
-	if err := newRootCmd().Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	root := newRootCmd()
+	initCompletion(root)
+	err := root.Execute()
+	if err == nil {
+		return
 	}
+	if msg := err.Error(); msg != "" {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+	}
+	os.Exit(exitCode(err))
 }
 
 // addProjectFlags registers -p and --project-dir on a command that analyzes one

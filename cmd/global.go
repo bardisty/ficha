@@ -58,13 +58,13 @@ func runGlobal(cfg *config) error {
 	// Validate --sort-by
 	validSortValues := map[string]bool{"cost": true, "sessions": true, "name": true, "activity": true}
 	if !validSortValues[strings.ToLower(cfg.globalSortBy)] {
-		return fmt.Errorf("invalid --sort-by value %q: must be one of cost, sessions, name, activity", cfg.globalSortBy)
+		return usageErrorf("invalid --sort-by value %q: must be one of cost, sessions, name, activity", cfg.globalSortBy)
 	}
 	cfg.globalSortBy = strings.ToLower(cfg.globalSortBy)
 
 	// Validate --top (0 = show no project rows, just the summary)
 	if cfg.globalTopN < 0 {
-		return fmt.Errorf("invalid --top value %d: must be >= 0", cfg.globalTopN)
+		return usageErrorf("invalid --top value %d: must be >= 0", cfg.globalTopN)
 	}
 	window, err := cfg.timeWindow(time.Now())
 	if err != nil {

@@ -50,7 +50,7 @@ as well as the table.`,
 
 func runSummary(cfg *config) error {
 	if cfg.expandAgents && !cfg.showDetails {
-		return fmt.Errorf("--expand-agents requires --details")
+		return usageErrorf("--expand-agents requires --details")
 	}
 	window, err := cfg.timeWindow(time.Now())
 	if err != nil {
