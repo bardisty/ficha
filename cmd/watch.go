@@ -12,7 +12,8 @@ func newWatchCmd(cfg *config) *cobra.Command {
 context window and agents, updated as messages arrive.
 
 When a new session starts, after /clear or a restart, watch switches to it.
-Give a session ID, or pass --no-follow, to stay on one session.
+Give a session ID or a transcript path, or pass --no-follow, to stay on one
+session.
 
 Examples:
   ficha watch                   Follow the latest session

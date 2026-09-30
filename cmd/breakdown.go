@@ -16,7 +16,8 @@ cost visibility during Claude Code sessions.
 
 Features:
   - Live updates as new messages arrive, highlighted briefly
-  - Follows new sessions as they start (f toggles; a session ID pins)
+  - Follows new sessions as they start (f toggles; a session ID or
+    transcript path pins)
   - Stays on the newest rows until you scroll up
   - Agent rows marked in an AGENT column, with the IDs watch shows
   - A workflow agent's AGENT cell ends in its run's initials, such as

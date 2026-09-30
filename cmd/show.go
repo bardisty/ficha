@@ -19,7 +19,9 @@ func newShowCmd(cfg *config) *cobra.Command {
 		Short: "Show session cost breakdown",
 		Long: `Show cost breakdown for a Claude Code session.
 
-If no session ID is provided, shows the most recent session.
+If no session ID is provided, shows the most recent session. The argument
+can also be the path to the session's .jsonl transcript. A path, or a full
+36-character ID, works from any directory.
 
 Examples:
   ficha show                    Show latest session
