@@ -111,6 +111,10 @@ type BreakdownModel struct {
 	// fallback polls the session file while its watcher can't be created
 	fallback watchFallback
 
+	// fileSig is the session file's sessionFileSig when the last load
+	// started; the poll reloads when the file no longer matches it
+	fileSig string
+
 	// Auto-follow mode for tracking new sessions
 	projectDir      string          // Project directory to watch for new sessions
 	followMode      bool            // Whether to auto-follow new sessions
@@ -186,6 +190,8 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 	}
 	if sessionPath != "" {
 		m.subagentSig = subagentTreeSignature(filepath.Dir(sessionPath), sessionID)
+		// Init's load starts after this and reads at least as much.
+		m.fileSig = sessionFileSig(sessionPath)
 	}
 	m.relayout()
 	return m
@@ -265,8 +271,8 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			m.loading = true
-			return m, tea.Batch(m.loadBreakdownCmd(), m.retryWatchNow(), m.spinnerCmd())
+			load := m.startLoad()
+			return m, tea.Batch(load, m.retryWatchNow(), m.spinnerCmd())
 
 		case "p":
 			m.selectNextTop()
@@ -314,8 +320,8 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.waiting() {
 			return m, nil
 		}
-		m.loading = true
-		return m, tea.Batch(m.loadBreakdownCmd(), m.spinnerCmd())
+		load := m.startLoad()
+		return m, tea.Batch(load, m.spinnerCmd())
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -426,9 +432,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// reload as well as arming a replacement waiter
 		m.err = msg.err
 		m.fileWaiterActive = false
-		m.loading = true
+		load := m.startLoad()
 		armCmd := m.armFileWaiter()
-		return m, tea.Batch(m.loadBreakdownCmd(), armCmd, m.spinnerCmd())
+		return m, tea.Batch(load, armCmd, m.spinnerCmd())
 
 	case watcherFailedMsg:
 		// Another session's attempt, or one that lost a race to a watcher
@@ -455,8 +461,8 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// since the last poll would otherwise wait for the next write.
 		var catchUp tea.Cmd
 		if m.fallback.active() {
-			m.loading = true
-			catchUp = tea.Batch(m.loadBreakdownCmd(), m.spinnerCmd())
+			load := m.startLoad()
+			catchUp = tea.Batch(load, m.spinnerCmd())
 		}
 		m.fallback.reset()
 		// A replacement watcher (rapid session switches can have two watchFile
@@ -496,8 +502,8 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The waiter that reported this change has exited; the reload's
 		// breakdownMsgsMsg/breakdownErrorMsg arms its replacement
 		m.fileWaiterActive = false
-		m.loading = true
-		return m, tea.Batch(m.loadBreakdownCmd(), m.spinnerCmd())
+		load := m.startLoad()
+		return m, tea.Batch(load, m.spinnerCmd())
 
 	case sessionSwitchedMsg:
 		// Pinned (f toggles it): stay put and keep watching. Waiting, any
@@ -538,10 +544,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sig := subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
 		treeChanged := sig != m.subagentSig
 		m.subagentSig = sig
-		fileChanged := m.fallback.pollChanged(m.sessionPath)
-		if treeChanged || fileChanged {
-			m.loading = true
-			return m, tea.Batch(m.loadBreakdownCmd(), subagentPollCmd(), m.spinnerCmd())
+		if treeChanged || sessionFileSig(m.sessionPath) != m.fileSig {
+			load := m.startLoad()
+			return m, tea.Batch(load, subagentPollCmd(), m.spinnerCmd())
 		}
 		return m, subagentPollCmd()
 	}
@@ -575,7 +580,6 @@ func (m BreakdownModel) switchTo(path, id string, back bool) (tea.Model, tea.Cmd
 	m.estimatedCosts = 0
 	m.hasUnknown = false
 	m.err = nil
-	m.loading = true
 	m.newMsgKeys = make(map[string]time.Time)
 	m.lastActivity = time.Time{}
 	m.activityFromFile = false
@@ -617,8 +621,10 @@ func (m BreakdownModel) switchTo(path, id string, back bool) (tea.Model, tea.Cmd
 	// Reload data, restart file watcher, and restart session watcher
 	// We must explicitly restart waitForNewSession because the goroutine that
 	// detected this switch has already exited after returning sessionSwitchedMsg
+	// After every reset above: the load copies the model as it is now.
+	load := m.startLoad()
 	cmds := []tea.Cmd{
-		m.loadBreakdownCmd(), func() tea.Msg { return m.watchFile() }, m.spinnerCmd(),
+		load, func() tea.Msg { return m.watchFile() }, m.spinnerCmd(),
 		tea.Tick(switchNotifyDuration, func(time.Time) tea.Msg { return notifyExpiredMsg{} }),
 	}
 	if m.sessionWatcher != nil {
@@ -1330,6 +1336,13 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 		modTime:        modTime,
 		sessionPath:    m.sessionPath,
 	}
+}
+
+// startLoad marks a reload as started and returns it; see Model.startLoad.
+func (m *BreakdownModel) startLoad() tea.Cmd {
+	m.loading = true
+	m.fileSig = sessionFileSig(m.sessionPath)
+	return m.loadBreakdownCmd()
 }
 
 func (m BreakdownModel) loadBreakdownCmd() tea.Cmd {
