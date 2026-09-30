@@ -122,6 +122,7 @@ Examples:
 	rootCmd.AddCommand(newBreakdownCmd(cfg))
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newOutputHelpTopic())
+	rootCmd.AddCommand(newEnvironmentHelpTopic())
 
 	return rootCmd
 }
