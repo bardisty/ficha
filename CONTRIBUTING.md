@@ -6,7 +6,7 @@ Thanks for looking. This is a small Go CLI with one job, so the rules below are 
 
 You need Go 1.25.6 or newer. Any later release works, 1.27 included. There's nothing else to install.
 
-`make lint` builds golangci-lint v1.64.8 with `go run` the first time you call it, and so does `make fmt`, which uses the linter to fix imports. The build uses the Go named on go.mod's `toolchain` line. So the first run may download that Go, 1.25.14 today, before it builds the linter. Later runs use the cached build.
+`make lint` builds golangci-lint v1.64.8 with `go run` the first time you call it, and so does `make fmt`, which uses the linter to fix imports. The build uses the Go named on go.mod's `toolchain` line. So the first run may download that Go, go1.25.14 today, before it builds the linter. Later runs use the cached build.
 
 Don't lint with a golangci-lint you installed yourself. With Go 1.27 or later, v1.64.8 can't read the standard library and reports dozens of bogus typecheck errors. v2 rejects this repo's config.
 
