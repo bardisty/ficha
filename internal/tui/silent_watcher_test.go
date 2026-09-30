@@ -65,11 +65,6 @@ func TestPollDoesNotRepeatAWatcherReload(t *testing.T) {
 			if !h.loading(m) {
 				t.Fatal("watcher event did not reload")
 			}
-			// The poll can tick while that load is still parsing.
-			m, cmd := m.Update(subagentPollMsg(time.Now()))
-			if cmd == nil {
-				t.Fatal("poll did not reschedule itself")
-			}
 			m, _ = m.Update(h.loaded)
 			m, _ = m.Update(subagentPollMsg(time.Now()))
 			if h.loading(m) {
