@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -101,7 +102,7 @@ func runGlobal(cfg *config) error {
 		fmt.Fprintf(&warnings, "Warning: %d project(s) could not be analyzed\n", analysis.SkippedProjects)
 	}
 	var details []namedSkip
-	for _, p := range analysis.Projects {
+	for _, p := range slices.Concat(analysis.Projects, analysis.OutOfWindow) {
 		details = append(details, labelSkips(projectLabel(p.ProjectInfo), p.SkipDetails)...)
 	}
 	skipWarning{

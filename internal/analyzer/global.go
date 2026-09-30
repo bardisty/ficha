@@ -23,7 +23,7 @@ func AnalyzeAllProjects(projects []models.ProjectInfo) (*models.GlobalAnalysis, 
 
 // AnalyzeAllProjectsInWindow is AnalyzeAllProjects counting only the
 // messages inside window. A project with nothing inside it is left out, like
-// one with no sessions.
+// one with no sessions, except in the skip counters (see OutOfWindow).
 func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.TimeWindow) (*models.GlobalAnalysis, error) {
 	if len(projects) == 0 {
 		return &models.GlobalAnalysis{
@@ -78,8 +78,16 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 		}
 
 		analysis := result.analysis
+		// A project a window emptied still counts its unreadable input: the
+		// skipped lines could hold messages from any date, so the warning
+		// holds for any window, as it does in summary.
+		global.SkippedSessions += analysis.SkippedSessions
+		global.SkippedAgents += analysis.SkippedAgents
+		global.SkippedLines += analysis.SkippedLines
 		if analysis.SessionCount == 0 {
-			// Skip projects with no sessions
+			if analysis.SkippedSessions+analysis.SkippedAgents+analysis.SkippedLines > 0 {
+				global.OutOfWindow = append(global.OutOfWindow, *analysis)
+			}
 			continue
 		}
 
@@ -87,9 +95,6 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 		global.ProjectCount++
 		global.SessionCount += analysis.SessionCount
 		global.MessageCount += analysis.MessageCount
-		global.SkippedSessions += analysis.SkippedSessions
-		global.SkippedAgents += analysis.SkippedAgents
-		global.SkippedLines += analysis.SkippedLines
 		global.EstimatedCostMessages += analysis.EstimatedCostMessages
 		global.TotalCost.Add(analysis.TotalCost)
 		global.TotalUsage.Add(analysis.TotalUsage)

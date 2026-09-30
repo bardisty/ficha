@@ -181,6 +181,8 @@ On the `summary` aggregate that split spans every session, alongside `agent_coun
 
 On `summary` and `global`, `--since` and `--until` limit every format to the messages timestamped inside the window, parent and agents alike, so a session that crosses a bound counts only its part inside. Sessions, agents and projects with nothing inside drop out of the records and the counts. A message with no timestamp can't be placed, so a window leaves it out. json names the window as `window: {since, until}` (timestamps as below, either one absent when open) on the `summary` aggregate and the `global` object; csv doesn't carry it.
 
+What a window drops still counts in the skip counters. `skipped_sessions`, `skipped_agents` and `skipped_lines` include the unreadable input of sessions, agents and projects with nothing inside, because ficha can't tell whether input it couldn't read belonged inside the window. So `global` json's top-level counters can exceed the sum over `projects[]`, as `summary -d` json's `.summary` can exceed the sum over `.sessions[]`. csv can come up short. `global` csv has only project rows and `summary -d` csv only session rows, so their skip columns can add up to less than the warning says. `summary` csv without `-d` has the full counts. For `global`, read json. The warning on stderr counts everything, and `-v` names each session behind it.
+
 With `--since`, ficha doesn't read a session whose transcript and agent files were all last written more than a day before that bound, because none of their messages can fall inside it. The skip counters then leave out any malformed lines in those files. A file ficha can't open, or a directory it can't list, still counts.
 
 ## Timestamps
