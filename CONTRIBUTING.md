@@ -6,7 +6,7 @@ Thanks for looking. This is a small Go CLI with one job, so the rules below are 
 
 You need Go 1.25.6 or newer. Any later release works, 1.27 included. There's nothing else to install.
 
-`make lint` builds golangci-lint v1.64.8 with `go run` the first time you call it, using the Go named on go.mod's `toolchain` line. So the first run may download that Go, 1.25.14 today, before it builds the linter. Later runs use the cached build.
+`make lint` builds golangci-lint v1.64.8 with `go run` the first time you call it, and so does `make fmt`, which uses the linter to fix imports. The build uses the Go named on go.mod's `toolchain` line. So the first run may download that Go, 1.25.14 today, before it builds the linter. Later runs use the cached build.
 
 Don't lint with a golangci-lint you installed yourself. With Go 1.27 or later, v1.64.8 can't read the standard library and reports dozens of bogus typecheck errors. v2 rejects this repo's config.
 
@@ -37,7 +37,7 @@ While you work, run:
 make check
 ```
 
-That runs `gofmt -w`, then the linter, then the tests. It's the quick loop.
+That runs `gofmt -w` and fixes imports the way lint wants them, then lints, then runs the tests. It's the quick loop.
 
 Before you push, run what CI runs:
 
@@ -59,6 +59,20 @@ git diff internal/formatter/testdata internal/tui/testdata cmd/testdata
 ```
 
 A golden diff is a rendering change you are asserting is correct. Don't commit one you haven't looked at.
+
+### Without make
+
+On Windows, or anywhere without make, run the gate's steps from the repo root yourself:
+
+```sh
+gofmt -l cmd internal main.go
+GOTOOLCHAIN=go1.25.14 go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...
+go test ./...
+```
+
+The lint line runs the linter under the Go named on go.mod's `toolchain` line, as `make lint` does. PowerShell and cmd don't take the `VAR=value` prefix. Set the variable for the session instead, with `$env:GOTOOLCHAIN = "go1.25.14"` in PowerShell or `set GOTOOLCHAIN=go1.25.14` in cmd, and drop the prefix.
+
+`gofmt -l` names the files it would change, and `go fmt ./...` rewrites them. Don't point gofmt at `.`: it descends into hidden directories, where other worktrees may be nested. Adding `--fix --enable-only goimports` to the lint line fixes imports, which is the rest of `make fmt`. `make update-golden` is `go test ./internal/formatter ./internal/tui ./cmd -run TestGolden -update`. On Windows, build with `go build -o bin/ficha.exe .`, since `make build` names the binary `bin/ficha` everywhere.
 
 ## Seeing your change
 
@@ -93,6 +107,8 @@ In a fresh fixture that glob matches the one session. With no flags, `live.py` a
 `--interval` and `--count` change the pace.
 
 For a change that affects how fast ficha reads many sessions, the fixture is too small to time. `docs/screenshots/mkhistory.py <dir>` writes roughly 400 MB of history: some 300 sessions across six projects, spread over the last 60 days. Point `CLAUDE_CONFIG_DIR` at `<dir>/config` and time `ficha global -f json`, with and without `--since today`, before and after your change.
+
+`make screenshots` regenerates the README's images from a fresh fixture, so every run changes the webp files even when nothing on screen did. Run it only when the layout changed.
 
 ## Comments
 
