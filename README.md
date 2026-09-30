@@ -2,7 +2,7 @@
 
 ficha shows what your Claude Code sessions would cost at API prices. It breaks the cost down by message and by agent, totals it per project, and tracks token usage and how full the context window is. `watch` and `breakdown` update live as Claude works.
 
-The figures are estimates at Anthropic's list prices. On a Claude subscription you aren't billed per token, so read a total as what the same work would cost through the API, not as your bill.
+The figures use Anthropic's list prices. If you pay per token, they should come close to your bill, apart from the few charges [ficha doesn't model](#how-ficha-prices-a-session). On a subscription, they show what the same work would cost through the API.
 
 ficha only reads the transcripts Claude Code keeps on your machine. It makes no network requests and writes no files. It's an independent project, not affiliated with or endorsed by Anthropic.
 
