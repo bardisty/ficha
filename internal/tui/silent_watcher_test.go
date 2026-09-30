@@ -74,8 +74,9 @@ func TestPollDoesNotRepeatAWatcherReload(t *testing.T) {
 	}
 }
 
-// A write that lands while a load parses may or may not be in it, so the
-// next poll reloads once for it, and only once.
+// A write that lands while a load parses may or may not be in it. When the
+// watcher never reports it, the next poll reloads for it, and the poll after
+// that doesn't.
 func TestPollReloadsOnceForAWriteDuringALoad(t *testing.T) {
 	for _, h := range fallbackHarnesses {
 		t.Run(h.name, func(t *testing.T) {

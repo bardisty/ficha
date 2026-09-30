@@ -7,6 +7,6 @@
 // for writes to the session file and for new sessions in the project, and a
 // 2-second poll of the session file and its agent transcripts. The poll runs
 // whether or not a watcher started, because some filesystems accept a watch
-// and never report a write. Strings the static reports print the same way come from
-// internal/render; the rest of each frame is drawn here.
+// and never report a write. Strings the static reports print the same way
+// come from internal/render; the rest of each frame is drawn here.
 package tui
