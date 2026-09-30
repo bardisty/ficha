@@ -78,6 +78,14 @@ func TestWatchCompactAndTooSmall(t *testing.T) {
 	}
 }
 
+// Before the first size message a dimension reads 0; the too-small screen
+// names only the one that's really short.
+func TestTooSmallIgnoresUnknownSize(t *testing.T) {
+	if got := renderTooSmall(20, 0, 39, 7); strings.Contains(got, "rows") {
+		t.Errorf("unknown height reported as short:\n%s", got)
+	}
+}
+
 // A help hint that doesn't fit is dropped whole, f first, never cut mid-word.
 func TestWatchHelpLineDropsWholeHints(t *testing.T) {
 	forceProfile(t, termenv.Ascii)

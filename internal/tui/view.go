@@ -93,10 +93,11 @@ func (m Model) View() string {
 // matters, so the message survives clipping at 20 columns.
 func renderTooSmall(width, height, minWidth, minHeight int) string {
 	lines := []string{"terminal too small"}
-	if width < minWidth {
+	// A zero size isn't known yet; it isn't the one that's short.
+	if width > 0 && width < minWidth {
 		lines = append(lines, fmt.Sprintf("need %d cols", minWidth))
 	}
-	if height < minHeight {
+	if height > 0 && height < minHeight {
 		lines = append(lines, fmt.Sprintf("need %d rows", minHeight))
 	}
 	lines = append(lines, "q to quit")
