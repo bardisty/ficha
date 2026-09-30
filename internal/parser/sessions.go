@@ -112,25 +112,33 @@ func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time, c
 	agentMsgCount := 0
 	skippedLines := 0
 	skippedSessions := 0
+	var skippedFiles []models.FileSkips
 	readableAgents := len(agentPaths)
 	if countMessages {
-		if c, skipped := countMessagesInFile(fullPath); c >= 0 {
+		if c, skips := countMessagesInFile(fullPath); c >= 0 {
 			parentMsgCount = c
-			skippedLines += skipped
+			skippedLines += skips.Count
+			if skips.Count > 0 {
+				skippedFiles = append(skippedFiles, skips)
+			}
 		} else {
 			// The session's own transcript is unreadable: its row would show a
 			// zero message count that looks like an empty session.
 			skippedSessions = 1
 		}
 		for _, agentPath := range agentPaths {
-			c, skipped := countMessagesInFile(agentPath)
+			c, skips := countMessagesInFile(agentPath)
 			if c < 0 {
 				skippedAgents++
 				readableAgents--
 				continue
 			}
 			agentMsgCount += c
-			skippedLines += skipped
+			skippedLines += skips.Count
+			if skips.Count > 0 {
+				skips.AgentID = ExtractAgentID(agentPath)
+				skippedFiles = append(skippedFiles, skips)
+			}
 		}
 	}
 
@@ -146,6 +154,7 @@ func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time, c
 		SkippedSessions:   skippedSessions,
 		SkippedAgents:     skippedAgents,
 		SkippedLines:      skippedLines,
+		SkippedFiles:      skippedFiles,
 	}
 }
 
@@ -186,6 +195,7 @@ func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.Sess
 			indexed.SkippedSessions = disk.SkippedSessions
 			indexed.SkippedAgents = disk.SkippedAgents
 			indexed.SkippedLines = disk.SkippedLines
+			indexed.SkippedFiles = disk.SkippedFiles
 			// Use disk message count which includes agent messages for consistency
 			indexed.MessageCount = disk.MessageCount
 			// Use disk's Modified time (actual file mtime) instead of index's
@@ -408,10 +418,10 @@ func ParseWorkflowMeta(projectDir, sessionID, runID string) (models.WorkflowMeta
 }
 
 // countMessagesInFile counts the assistant messages a JSONL file contributes to
-// an analysis, and how many of its lines the parse rejected. It runs the very
+// an analysis, and names the lines the parse rejected. It runs the very
 // parse the analysis paths run, so the two can never disagree: a line dropped
 // there (malformed JSON, unparseable timestamp, non-integer token count,
-// oversized) is dropped here and counted in skippedLines, and streaming lines
+// oversized) is dropped here and counted in skips, and streaming lines
 // repeating the same message.id + requestId collapse to one message.
 //
 // Deriving the count from a cheaper, laxer decode is what made `list` report
@@ -419,10 +429,10 @@ func ParseWorkflowMeta(projectDir, sessionID, runID string) (models.WorkflowMeta
 //
 // count is -1 on file access / I/O error, distinguishing failure from an empty
 // file (0).
-func countMessagesInFile(path string) (count, skippedLines int) {
+func countMessagesInFile(path string) (count int, skips models.FileSkips) {
 	result, err := ParseJSONLFileWithResult(path)
 	if err != nil {
-		return -1, 0
+		return -1, models.FileSkips{}
 	}
-	return len(result.Messages), result.SkippedLines
+	return len(result.Messages), models.FileSkips{Path: path, Count: result.SkippedLines, Lines: result.SkippedAt}
 }

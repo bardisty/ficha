@@ -3,6 +3,7 @@ package parser
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1350,7 +1351,8 @@ func TestCountMessagesInFile_MatchesAnalysisParse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	count, skipped := countMessagesInFile(testFile)
+	count, skips := countMessagesInFile(testFile)
+	skipped := skips.Count
 	if count != 1 {
 		t.Errorf("count: got %d, want 1 (only the well-formed line)", count)
 	}
@@ -1538,5 +1540,62 @@ func TestReadAgentDir_PlainFileCountsAsUnreadable(t *testing.T) {
 	}
 	if _, unreadable := readAgentDir(notADir); unreadable != 1 {
 		t.Errorf("plain file: unreadable=%d, want 1", unreadable)
+	}
+}
+
+// The scan names the transcripts behind SkippedLines, the parent first, with
+// the lines it skipped, so list -v can list them. They add up to the count.
+func TestDiscoverSessionsFromDisk_SkippedFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "sess"
+	good := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","requestId":"r1","message":{"id":"m1","usage":{"input_tokens":10}}}` + "\n"
+	parent := filepath.Join(tmpDir, sessionID+".jsonl")
+	if err := os.WriteFile(parent, []byte(good+"{broken\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	subagentsDir := filepath.Join(tmpDir, sessionID, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	agent := filepath.Join(subagentsDir, "agent-a1.jsonl")
+	if err := os.WriteFile(agent, []byte("{broken\n{broken\n"+good), 0644); err != nil {
+		t.Fatal(err)
+	}
+	clean := filepath.Join(subagentsDir, "agent-a2.jsonl")
+	if err := os.WriteFile(clean, []byte(good), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("DiscoverSessionsFromDisk: %d sessions, %v", len(sessions), err)
+	}
+	s := sessions[0]
+	want := []models.FileSkips{
+		{Path: parent, Count: 1, Lines: []models.SkippedLine{{Line: 2, Reason: models.SkipMalformed}}},
+		{Path: agent, AgentID: "a1", Count: 2, Lines: []models.SkippedLine{{Line: 1, Reason: models.SkipMalformed}, {Line: 2, Reason: models.SkipMalformed}}},
+	}
+	if !reflect.DeepEqual(s.SkippedFiles, want) {
+		t.Errorf("SkippedFiles:\n got %+v\nwant %+v", s.SkippedFiles, want)
+	}
+	sum := 0
+	for _, f := range s.SkippedFiles {
+		sum += f.Count
+	}
+	if sum != s.SkippedLines {
+		t.Errorf("files add up to %d skipped lines, SkippedLines is %d", sum, s.SkippedLines)
+	}
+
+	// Merged over an index entry, the session keeps them.
+	index := &models.SessionsIndex{Entries: []models.SessionEntry{{SessionID: sessionID, FullPath: parent}}}
+	merged, _ := MergeSessionSources(index, sessions, tmpDir, true)
+	if len(merged) != 1 || !reflect.DeepEqual(merged[0].SkippedFiles, want) {
+		t.Errorf("merged SkippedFiles: got %+v, want %+v", merged, want)
+	}
+
+	// Without the scan nothing is parsed, so nothing is named.
+	unscanned, err := DiscoverSessionsFromDisk(tmpDir, false)
+	if err != nil || len(unscanned) != 1 || unscanned[0].SkippedFiles != nil {
+		t.Errorf("without the scan: got %+v, %v; want no SkippedFiles", unscanned, err)
 	}
 }

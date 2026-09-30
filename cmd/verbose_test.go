@@ -90,16 +90,8 @@ func TestE2EVerboseNamesSkippedLines(t *testing.T) {
 	proj := filepath.Join(root, "projects", e2eProjDir)
 	parent := filepath.Join(proj, e2eBetaID+".jsonl")
 	agent := filepath.Join(proj, e2eBetaID, "subagents", "agent-g1.jsonl")
-	for _, path := range []string{parent, agent} {
-		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := f.WriteString("{broken\n"); err != nil {
-			t.Fatal(err)
-		}
-		f.Close()
-	}
+	appendBrokenLine(t, parent)
+	appendBrokenLine(t, agent)
 
 	_, stderr, err := executeCLISplit(t, "show", projFlag, e2eBetaID, "-v")
 	if err != nil {
