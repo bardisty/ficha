@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"io/fs"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 func TestRollingRate(t *testing.T) {
@@ -312,5 +315,20 @@ func TestWatchStatsLine(t *testing.T) {
 	}
 	if got, want := m.renderStatsLine(5), "$30.05"; got != want {
 		t.Errorf("too narrow keeps the total:\n got %q\nwant %q", got, want)
+	}
+}
+
+// The retry hint is what the reader acts on, so a narrow notify row cuts the
+// error's description, never the hint.
+func TestErrNoticeKeepsRetryHint(t *testing.T) {
+	err := fmt.Errorf("opening: %w", fs.ErrPermission)
+	if got, want := errNotice(err, 80), styles.Warning+" can't read session file (permission denied) "+styles.Bullet+" r to retry"; got != want {
+		t.Errorf("errNotice at 80 = %q, want %q", got, want)
+	}
+	for _, width := range []int{50, 40, 30} {
+		got := errNotice(err, width)
+		if !strings.HasSuffix(got, " r to retry") || lipgloss.Width(got) > width {
+			t.Errorf("errNotice at %d = %q (%d wide), want the whole retry hint within the width", width, got, lipgloss.Width(got))
+		}
 	}
 }

@@ -189,8 +189,8 @@ func TestWatchSessionFileRemoved(t *testing.T) {
 		t.Error("removed file didn't re-arm the waiter (a re-create must still be seen)")
 	}
 	view := m.View()
-	if !strings.Contains(view, "! session file removed, showing last data • r to retry") &&
-		!strings.Contains(view, "⚠ session file removed, showing last data • r to retry") {
+	if !strings.Contains(view, "! session file removed • r to retry") &&
+		!strings.Contains(view, "⚠ session file removed • r to retry") {
 		t.Errorf("notify row missing the removal:\n%s", view)
 	}
 	if !strings.Contains(view, "$30.05 TOTAL") {
@@ -208,7 +208,7 @@ func TestDescribeErr(t *testing.T) {
 	}{
 		{errSessionFileGone, "session file removed"},
 		{fmt.Errorf("opening: %w", fs.ErrNotExist), "session file removed"},
-		{fmt.Errorf("opening: %w", fs.ErrPermission), "session file unreadable (permission denied)"},
+		{fmt.Errorf("opening: %w", fs.ErrPermission), "can't read session file (permission denied)"},
 		{errors.New("event queue overflow"), "event queue overflow"},
 	}
 	for _, tt := range tests {

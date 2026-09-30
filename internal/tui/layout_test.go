@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/bardisty/ficha/internal/models"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -44,17 +46,90 @@ func TestWatchCompactAndTooSmall(t *testing.T) {
 	m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
 	m = load(t, sized(t, m, 80, 12), tallAnalysis(1))
 	view := m.View()
-	if strings.Contains(view, "╔") || strings.Contains(view, "q: quit") {
-		t.Errorf("compact view kept the box or the help row:\n%s", view)
+	if strings.Contains(view, "╔") {
+		t.Errorf("compact view kept the box:\n%s", view)
 	}
-	if !strings.Contains(view, "● FOLLOWING") || !strings.Contains(view, "API est.") {
-		t.Errorf("compact view lost the status or stats line:\n%s", view)
+	for _, want := range []string{"● FOLLOWING", "API est.", "q quit"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("compact view lost %q:\n%s", want, view)
+		}
 	}
 
-	for _, size := range [][2]int{{39, 20}, {80, 7}} {
-		m = sized(t, m, size[0], size[1])
-		if v := m.View(); !strings.HasPrefix(strings.TrimSpace(v), "terminal too small") {
-			t.Errorf("%dx%d: want the too-small message, got:\n%s", size[0], size[1], v)
+	for _, tc := range []struct {
+		w, h  int
+		needs []string
+	}{
+		{39, 20, []string{"need 40 cols"}},
+		{80, 7, []string{"need 8 rows"}},
+		{20, 8, []string{"need 40 cols"}},
+		{20, 4, []string{"need 40 cols", "need 8 rows"}},
+	} {
+		m = sized(t, m, tc.w, tc.h)
+		v := m.View()
+		var lines []string
+		for _, line := range strings.Split(v, "\n") {
+			lines = append(lines, strings.TrimSpace(line))
+		}
+		// Every line whole, not clipped, down to 20 columns.
+		want := append(append([]string{"terminal too small"}, tc.needs...), "q to quit")
+		if !slices.Equal(lines, want) {
+			t.Errorf("%dx%d: got lines %q, want %q", tc.w, tc.h, lines, want)
+		}
+	}
+}
+
+// Before the first size message a dimension reads 0; the too-small screen
+// names only the one that's really short.
+func TestTooSmallIgnoresUnknownSize(t *testing.T) {
+	if got := renderTooSmall(20, 0, 39, 7); strings.Contains(got, "rows") {
+		t.Errorf("unknown height reported as short:\n%s", got)
+	}
+}
+
+// A help hint that doesn't fit is dropped whole, f first, never cut mid-word.
+func TestWatchHelpLineDropsWholeHints(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	for _, tc := range []struct {
+		w    int
+		want string
+	}{
+		{80, "q quit • j/k scroll • space/b page • g/G top/bottom • f follow"},
+		{60, "q quit • j/k scroll • space/b page • g/G top/bottom"},
+		{50, "q quit • j/k scroll • space/b page"},
+	} {
+		m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
+		m = load(t, sized(t, m, tc.w, 30), tallAnalysis(1))
+		lines := strings.Split(m.View(), "\n")
+		if got := strings.TrimSpace(lines[len(lines)-1]); got != tc.want {
+			t.Errorf("width %d: help line = %q, want %q", tc.w, got, tc.want)
+		}
+	}
+}
+
+// Compact watch keeps its help row, so with two warning rows the footer takes
+// five rows; at the smallest size that still leaves the body one.
+func TestWatchCompactFrameFitsWithWarnings(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	a := tallAnalysis(1)
+	a.SkippedLines = 2
+	a.EstimatedCostMessages = 3
+	a.CostByModel["claude-nova-6-unlisted-model"] = models.CostBreakdown{TotalCost: 0.5}
+	for _, size := range [][2]int{{40, 8}, {60, 10}, {80, 15}} {
+		w, h := size[0], size[1]
+		m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
+		m = load(t, sized(t, m, w, h), a)
+		if rows := len(m.warningRows(panelWidthFor(w))); rows != maxWarningRows {
+			t.Fatalf("%dx%d: %d warning rows, want %d for this test", w, h, rows, maxWarningRows)
+		}
+		v := m.View()
+		if got := strings.Count(v, "\n") + 1; got != h {
+			t.Errorf("%dx%d: %d rows, want %d:\n%s", w, h, got, h, v)
+		}
+		if m.viewport.Height < 1 {
+			t.Errorf("%dx%d: viewport has %d rows", w, h, m.viewport.Height)
+		}
+		if !strings.Contains(v, "q quit") {
+			t.Errorf("%dx%d: no help row:\n%s", w, h, v)
 		}
 	}
 }

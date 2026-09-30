@@ -49,7 +49,12 @@ func (m BreakdownModel) tooSmall() bool {
 	if m.height > 0 && m.height < tooSmallHeight {
 		return true
 	}
-	return m.width > 0 && m.width < breakdownLayout{indexWidth: m.table.indexWidth}.width()
+	return m.width > 0 && m.width < m.minWidth()
+}
+
+// minWidth is the narrowest layout's width, for tooSmall.
+func (m BreakdownModel) minWidth() int {
+	return breakdownLayout{indexWidth: m.table.indexWidth}.width()
 }
 
 // headerRows is the number of rows View draws above the viewport.

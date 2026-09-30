@@ -725,7 +725,7 @@ func (m *BreakdownModel) isNewMessage(msg models.BreakdownMessage) bool {
 // breakdownFooterRows exactly, or the frame outgrows the terminal.
 func (m BreakdownModel) View() string {
 	if m.tooSmall() {
-		return clipToWidth("  terminal too small", m.width)
+		return renderTooSmall(m.width, m.height, m.minWidth(), tooSmallHeight)
 	}
 	layout := m.table
 	panelWidth := m.frameWidth(layout)
@@ -775,11 +775,7 @@ func (m BreakdownModel) View() string {
 // saw.
 func (m BreakdownModel) renderNotifyRow() string {
 	if m.err != nil {
-		text := styles.Warning + " " + describeErr(m.err)
-		if len(m.messages) > 0 {
-			text += ", showing last data"
-		}
-		text += " " + styles.Bullet + " r to retry"
+		text := errNotice(m.err, m.panelWidth())
 		if m.noColor {
 			return "  " + text
 		}

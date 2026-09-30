@@ -18,12 +18,11 @@ import (
 // Watch's fixed chrome. The header is the 3-line panel plus the notify row,
 // which is always reserved so a notice never shifts the body; the footer is
 // the rule, the pinned stats line, any warning rows, and help. Compact mode
-// trades the box for a one-line header and drops the help row.
+// trades the box for a one-line header.
 const (
 	watchHeaderHeight   = 4
 	compactHeaderHeight = 2
 	watchFooterBase     = 3
-	compactFooterBase   = 2
 	maxWarningRows      = 2
 )
 
@@ -101,11 +100,7 @@ func (m Model) clock() time.Time {
 
 // footerHeight is the footer's row count at the current width.
 func (m Model) footerHeight() int {
-	base := watchFooterBase
-	if m.compact() {
-		base = compactFooterBase
-	}
-	return base + len(m.warningRows(panelWidthFor(m.width)))
+	return watchFooterBase + len(m.warningRows(panelWidthFor(m.width)))
 }
 
 // renderFooterLines renders the fixed footer, one string per row.
@@ -128,12 +123,11 @@ func (m Model) renderFooterLines(panelWidth int) []string {
 		}
 	}
 
-	if m.compact() {
-		return lines
-	}
 	// r isn't listed: the view is already live, and the notify row offers
-	// it as a retry when something fails.
-	helpText := helpLine("q quit", "j/k scroll", "space/b page", "g/G top/bottom", "f follow")
+	// it as a retry when something fails. A hint that doesn't fit goes whole,
+	// as in breakdown, and f goes first: the header shows the follow mode.
+	helpText := joinSegments([]string{"q quit", "j/k scroll", "space/b page", "g/G top/bottom", "f follow"},
+		" "+styles.Bullet+" ", m.width-2)
 	if !m.noColor {
 		helpText = lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(helpText)
 	}
@@ -368,11 +362,7 @@ func (m Model) renderNotifyRow(width int) string {
 	switch {
 	case m.err != nil:
 		color = styles.ErrorColor
-		text = styles.Warning + " " + describeErr(m.err)
-		if m.analysis != nil {
-			text += ", showing last data"
-		}
-		text += " " + styles.Bullet + " r to retry"
+		text = errNotice(m.err, width)
 	case m.switched != nil:
 		lead := "switched to " + render.TruncateID(m.sessionID, sessionIDDisplayLen)
 		if m.switched.auto {
@@ -406,6 +396,20 @@ func (m Model) renderNotifyRow(width int) string {
 	return style(color, text)
 }
 
+// errNotice is the notify-row text for a load or watch error, in both views,
+// fitted to width. The retry hint is what the reader acts on, so a row too
+// narrow for all of it cuts the description instead. It doesn't say the
+// numbers on screen are the last ones read: they stay up, the header's age
+// keeps growing, and at 80 columns saying so would push the hint off the row.
+func errNotice(err error, width int) string {
+	tail := " " + styles.Bullet + " r to retry"
+	text := styles.Warning + " " + describeErr(err)
+	if lipgloss.Width(text+tail) > width {
+		text = withEllipsis(text, max(width-lipgloss.Width(tail), 1))
+	}
+	return text + tail
+}
+
 // describeErr turns a load or watch error into notify-row text. A missing
 // file gets words a user can act on instead of an "open …: no such file".
 func describeErr(err error) string {
@@ -416,7 +420,7 @@ func describeErr(err error) string {
 	case errors.Is(err, errSessionFileGone), errors.Is(err, fs.ErrNotExist):
 		return "session file removed"
 	case errors.Is(err, fs.ErrPermission):
-		return "session file unreadable (permission denied)"
+		return "can't read session file (permission denied)"
 	}
 	return err.Error()
 }

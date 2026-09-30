@@ -44,11 +44,6 @@ func newSpinner(noColor bool) spinner.Model {
 	return s
 }
 
-// helpLine joins key hints with the glyph set's bullet.
-func helpLine(hints ...string) string {
-	return strings.Join(hints, " "+styles.Bullet+" ")
-}
-
 // accountingFootnote reports what a TUI's totals could not account for
 // exactly — skipped inputs (missing from the totals) and estimated costs
 // (included, but priced on the 5m cache-write assumption) — returning ""
