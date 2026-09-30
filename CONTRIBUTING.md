@@ -128,7 +128,7 @@ Bump `VERSION` in the same commit as the change. Pre-1.0, a minor bump may inclu
 
 ## Pull requests
 
-Title a PR `area: what changed`, lower case after the colon, as in `watch: order agents by start` or `csv: end every csv output in one newline, not two`. The release notes list each PR by its title as it reads when the release is tagged, so write it for someone who uses ficha. PRs are squash-merged, and the squash takes the PR title as the commit subject only when the PR has more than one commit. A one-commit PR keeps that commit's subject, so give the commit the same line.
+Title a PR `area: what changed`, lower case after the colon, as in `watch: order agents by start` or `csv: end every csv output in one newline, not two`. The release notes list each PR by its title as it reads when the release is tagged, so write it for someone who uses ficha. PRs are squash-merged, and the squash uses the PR title as the commit subject on main. Get it right before the merge: retitling afterwards changes the release notes but not the log.
 
 The area is the command the change is about (`show`, `list`, `summary`, `global`, `watch`, `breakdown`), several joined with commas (`summary, global`), or one of `cli` for flags, help, errors, completion and project resolution, `json`, `csv`, `pricing`, `docs`, `tests`, `make`, `ci` and `deps`. A change no user can see, such as a refactor, takes its package as the area, as in `parser` or `tui`.
 
