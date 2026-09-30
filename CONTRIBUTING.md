@@ -10,6 +10,25 @@ You need Go 1.25.6 or newer. Any later release works, 1.27 included. There's not
 
 Don't lint with a golangci-lint you installed yourself. With Go 1.27 or later, v1.64.8 can't read the standard library and reports dozens of bogus typecheck errors. v2 rejects this repo's config.
 
+## Where things live
+
+`main.go` only calls `cmd`. Outside tests, each package imports only the ones listed below it:
+
+```
+cmd                 commands and flags, terminal detection, project resolution
+internal/tui        watch and breakdown, and the file watching behind them
+internal/formatter  whole reports for show, list, summary and global: tables, json, csv
+internal/render     the pieces formatter and tui both draw: costs, tokens, rules
+internal/analyzer   loads each session and its agents through parser, then prices and totals them
+internal/parser     reads the projects dir, sessions-index.json and JSONL transcripts
+internal/paths      finds the config dir, maps working dirs to project dirs
+internal/styles     palette, lipgloss styles, Unicode and ASCII glyphs
+internal/pricing    the model catalog
+internal/models     the types the rest pass around, and most of the json encoding
+```
+
+`go doc ./internal/tui` and the like print more on each. Two splits are easy to miss. `internal/styles` holds every color and lipgloss style, even the ones only the live views use. `internal/tui/styles.go` just gives them short local names and adds the live views' spinner and footnote helpers. And the static reports never look at the terminal. `cmd` checks it and passes `internal/formatter` a width and a `noColor` flag.
+
 ## The gate
 
 While you work, run:

@@ -1,10 +1,10 @@
-// Package render provides the presentation-layer string helpers shared by the
-// static formatters (internal/formatter) and the live TUI (internal/tui) so
-// both render costs, tokens, durations, and section chrome identically.
+// Package render is the pieces internal/formatter and internal/tui both draw:
+// cost and token strings, durations and clock times, section headers, the
+// context gauge, and model and ID labels cut to a column.
 //
-// Every helper is a pure function of its arguments plus the internal/styles
-// palette — no I/O, no hidden state — so a given call yields the same bytes in
-// a piped `show` and a live `watch`.
+// Each helper is a function of its arguments plus the palette and glyph set
+// in internal/styles, with no I/O, so a piped show and a live watch print the
+// same bytes.
 package render
 
 import (
