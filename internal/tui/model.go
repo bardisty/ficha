@@ -49,6 +49,11 @@ type Model struct {
 	err         error
 	loading     bool
 	lastUpdated time.Time
+	// staleSince is when, by clock, the data on screen fell behind the file:
+	// a load failed, or the file went away. Zero while it's current. The
+	// spend rate is worked out against it, since against the clock it would
+	// fall as if the session were slowing down.
+	staleSince time.Time
 
 	// agentCache memoizes agent sub-session parses so a reload triggered by a
 	// parent-file write doesn't re-parse every unchanged agent.
@@ -150,6 +155,9 @@ type (
 	errorMsg struct {
 		err         error
 		sessionPath string
+		// sessionWatcher marks a failure to start the session watcher,
+		// which leaves the data on screen current.
+		sessionWatcher bool
 	}
 	// fileChangedMsg reports a session-file change seen by a specific watcher.
 	// The watcher identifies the message's origin: handlers drop messages from
@@ -383,6 +391,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.analysis = msg.analysis
 		m.loading = false
 		m.lastUpdated = time.Now()
+		m.staleSince = time.Time{}
 		m.err = nil
 		slowClock := m.clockInterval() > time.Second
 		m.lastActivity, m.activityFromFile = lastActivity(msg.analysis, msg.modTime)
@@ -416,6 +425,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = msg.err
 		m.loading = false
+		if !msg.sessionWatcher {
+			m.markStale()
+		}
 		// Re-arm (if needed) even after an error to continue monitoring
 		// Call before return: the arm must mutate the m the caller receives
 		armCmd := m.armFileWaiter()
@@ -434,6 +446,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fileWaiterActive = false
 		armCmd := m.armFileWaiter()
 		if errors.Is(msg.err, errSessionFileGone) {
+			m.markStale()
 			// Nothing to reload: keep the last data up, marked stale, until
 			// the file is re-created (the waiter reports that) or r retries.
 			return m, armCmd
@@ -569,7 +582,7 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	// error from the old session doesn't persist under the new one during the
 	// load window (parity with breakdown's session-switch reset).
 	m.analysis = nil
-	m.err = nil
+	m.err, m.staleSince = nil, time.Time{}
 	m.lastActivity = time.Time{}
 	m.changedAt = make(map[string]time.Time)
 	m.deltaTokens = make(map[string]int64)
@@ -616,6 +629,14 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	}
 	cmds = append(cmds, m.spinnerCmd())
 	return m, tea.Batch(cmds...)
+}
+
+// markStale notes that the data on screen fell behind the file, keeping the
+// time it first did.
+func (m *Model) markStale() {
+	if m.staleSince.IsZero() {
+		m.staleSince = m.clock()
+	}
 }
 
 // startLoad marks a reload as started and returns it. The poll's baseline

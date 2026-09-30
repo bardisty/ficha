@@ -40,9 +40,9 @@ var (
 	stopKey   = Key{Keys: "ctrl+z", Does: "suspend", Note: "needs a shell with job control, so not on Windows", suspend: true}
 )
 
-// The help line lists the hinted rows in table order, so a narrow terminal
-// drops f follow first, then ends with keysHint, which it drops last: it's
-// the way to the rest. closeHint takes its place while the list is open,
+// The help line lists the hinted rows in table order, dropping from the
+// right on a narrow terminal (see helpLine), then ends with keysHint, which
+// it drops last: it's the way to the rest. closeHint takes its place while the list is open,
 // and both states leave room for the wider, so opening the list never
 // changes which hints show.
 const (
@@ -66,13 +66,28 @@ func BreakdownKeys() []Key {
 }
 
 // helpLine is a view's key-hint row, indented and fitted to the terminal.
-// A hint that doesn't fit goes whole, not cut mid-word.
-func helpLine(keys []Key, width int, listOpen, noColor bool) string {
-	var hints []string
+// A hint that doesn't fit goes whole, not cut mid-word, the last in the
+// table first. While pinned, f follow is the key that resumes following, so
+// it takes g/G top/bottom's place in that order and g/G drops first: the
+// page keys get to the ends too. The hints that stay keep their table order.
+func helpLine(keys []Key, width int, listOpen, pinned, noColor bool) string {
+	var hints, order []string
 	for _, k := range keys {
-		if k.hint != "" {
-			hints = append(hints, k.hint)
+		if k.hint == "" {
+			continue
 		}
+		hints = append(hints, k.hint)
+		switch {
+		case !pinned:
+			order = append(order, k.hint)
+		case k.hint == endsKey.hint:
+			order = append(order, followKey.hint)
+		case k.hint != followKey.hint:
+			order = append(order, k.hint)
+		}
+	}
+	if pinned {
+		order = append(order, endsKey.hint)
 	}
 	sep := " " + styles.Bullet + " "
 	tail := keysHint
@@ -83,9 +98,26 @@ func helpLine(keys []Key, width int, listOpen, noColor bool) string {
 	if width <= 0 {
 		room = 0
 	}
-	// joinSegments keeps the first hint even past room; q quit is short
-	// enough that it never pushes the tail off a frame wide enough to draw.
-	text := joinSegments(hints, sep, room) + sep + tail
+	// The first hint stays even past room; q quit is short enough that it
+	// never pushes the tail off a frame wide enough to draw.
+	kept := map[string]bool{}
+	shown := func() []string {
+		var out []string
+		for _, h := range hints {
+			if kept[h] {
+				out = append(out, h)
+			}
+		}
+		return out
+	}
+	for _, h := range order {
+		kept[h] = true
+		if room > 0 && len(kept) > 1 && lipgloss.Width(strings.Join(shown(), sep)) > room {
+			delete(kept, h)
+			break
+		}
+	}
+	text := strings.Join(shown(), sep) + sep + tail
 	if !noColor {
 		text = lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(text)
 	}

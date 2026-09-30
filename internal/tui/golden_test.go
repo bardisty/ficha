@@ -252,6 +252,13 @@ func TestGoldenWatchView80x24(t *testing.T) {
 	checkGolden(t, "watch_view_80x24", goldenWatchViewSized(t, true, 80, 24))
 }
 
+// A narrow terminal gets the whole body, fitted: each row sheds whole
+// pieces from the right, never half a word, and the costs stay on screen.
+func TestGoldenWatchView50(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	checkGolden(t, "watch_view_50x70", goldenWatchViewSized(t, true, 50, 70))
+}
+
 // A short terminal gets compact chrome: a plain header line, no help row,
 // and the body's blank spacers dropped.
 func TestGoldenWatchViewCompact(t *testing.T) {

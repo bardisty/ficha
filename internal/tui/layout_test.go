@@ -78,6 +78,23 @@ func TestWatchCompactAndTooSmall(t *testing.T) {
 	}
 }
 
+// A terminal shorter than the message keeps its top lines, in both views:
+// Bubble Tea keeps a tall frame's bottom lines, which would scroll
+// "terminal too small" away.
+func TestTooSmallKeepsItsTopLines(t *testing.T) {
+	for _, h := range []int{3, 2, 1} {
+		var watch tea.Model = NewModel("/p/s.jsonl", "s", true, "", false)
+		var breakdown tea.Model = NewBreakdownModel("/p/s.jsonl", "s", true, "", false)
+		for name, m := range map[string]tea.Model{"watch": watch, "breakdown": breakdown} {
+			m, _ = m.Update(tea.WindowSizeMsg{Width: 30, Height: h})
+			lines := strings.Split(m.View(), "\n")
+			if len(lines) > h || strings.TrimSpace(lines[0]) != "terminal too small" {
+				t.Errorf("%s 30x%d: got %q, want at most %d lines starting with terminal too small", name, h, lines, h)
+			}
+		}
+	}
+}
+
 // Before the first size message a dimension reads 0; the too-small screen
 // names only the one that's really short.
 func TestTooSmallIgnoresUnknownSize(t *testing.T) {
@@ -86,7 +103,8 @@ func TestTooSmallIgnoresUnknownSize(t *testing.T) {
 	}
 }
 
-// A help hint that doesn't fit is dropped whole, f first, never cut mid-word.
+// While following, a help hint that doesn't fit is dropped whole, f first,
+// never cut mid-word.
 // ? keys stays at the end: it's the way to the hints dropped.
 func TestWatchHelpLineDropsWholeHints(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
@@ -104,6 +122,31 @@ func TestWatchHelpLineDropsWholeHints(t *testing.T) {
 		lines := strings.Split(m.View(), "\n")
 		if got := strings.TrimSpace(lines[len(lines)-1]); got != tc.want {
 			t.Errorf("width %d: help line = %q, want %q", tc.w, got, tc.want)
+		}
+	}
+}
+
+// While pinned, f is the key that resumes following, so the help line keeps
+// f follow and drops g/G top/bottom first. The hints keep their table order.
+func TestHelpLineKeepsFollowWhilePinned(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	for _, tc := range []struct {
+		keys   []Key
+		w      int
+		pinned bool
+		want   string
+	}{
+		{WatchKeys(), 80, true, "q quit • j/k scroll • space/b page • g/G top/bottom • f follow • ? keys"},
+		{WatchKeys(), 60, true, "q quit • j/k scroll • space/b page • f follow • ? keys"},
+		{WatchKeys(), 60, false, "q quit • j/k scroll • space/b page • ? keys"},
+		{WatchKeys(), 50, true, "q quit • j/k scroll • space/b page • ? keys"},
+		{BreakdownKeys(), 80, true, "q quit • j/k scroll • space/b page • p/s peak/sort • f follow • ? keys"},
+		{BreakdownKeys(), 60, true, "q quit • j/k scroll • space/b page • f follow • ? keys"},
+		{BreakdownKeys(), 80, false, "q quit • j/k scroll • space/b page • g/G top/bottom • p/s peak/sort • ? keys"},
+		{BreakdownKeys(), 120, true, "q quit • j/k scroll • space/b page • g/G top/bottom • p/s peak/sort • f follow • ? keys"},
+	} {
+		if got := strings.TrimSpace(helpLine(tc.keys, tc.w, false, tc.pinned, true)); got != tc.want {
+			t.Errorf("width %d, pinned %v: help line = %q, want %q", tc.w, tc.pinned, got, tc.want)
 		}
 	}
 }
@@ -142,10 +185,10 @@ func TestTokenDeltaColumn(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = sized(t, m, 100, 40)
-	before := m.renderUnifiedCostRow("Cache write", 1.5, 50000, "c", "tok", nil, "5m TTL")
+	before := m.renderUnifiedCostRow("Cache write", 1.5, 50000, "c", "tok", nil, "5m")
 	m.deltaTokens["tok"] = 2700
 	m.changedAt["tok"] = time.Now()
-	after := m.renderUnifiedCostRow("Cache write", 1.5, 52700, "c", "tok", nil, "5m TTL")
+	after := m.renderUnifiedCostRow("Cache write", 1.5, 52700, "c", "tok", nil, "5m")
 	plainAfter := m.renderUnifiedCostRow("Input", 1.5, 52700, "c", "tok", nil, "")
 
 	if !strings.HasPrefix(after, strings.TrimRight(strings.Replace(before, "50.0K", "52.7K", 1), "\n")) {
@@ -209,14 +252,20 @@ func TestTokenDeltaNarrowFallsBackInline(t *testing.T) {
 	m = sized(t, m, 60, 20)
 	m.deltaTokens["tok"] = 2700
 	m.changedAt["tok"] = time.Now()
-	row := strings.TrimRight(m.renderUnifiedCostRow("Cache write", 1.5, 52700, "c", "tok", nil, "5m TTL"), "\n")
+	row := strings.TrimRight(m.renderUnifiedCostRow("Cache write", 1.5, 52700, "c", "tok", nil, "5m"), "\n")
 	if !strings.Contains(row, "52.7K (+2.7K) tokens") {
 		t.Errorf("narrow row = %q, want the delta inline", row)
 	}
-	// The delta must be on screen; the TTL label after it may clip, as the
-	// frame clips any overlong row.
+	// The delta must be on screen, and the TTL makes room for it by moving
+	// into the label, so the two cache-write rows stay apart.
+	if !strings.HasPrefix(strings.TrimSpace(row), "Cache write 5m") {
+		t.Errorf("narrow row = %q, want the TTL in the label", row)
+	}
 	if end := strings.Index(row, "(+2.7K)") + len("(+2.7K)"); end > 60 {
 		t.Errorf("delta ends at column %d, off a 60-column screen", end)
+	}
+	if len(row) > 60 {
+		t.Errorf("row is %d columns, wider than the screen: %q", len(row), row)
 	}
 }
 
