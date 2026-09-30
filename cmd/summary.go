@@ -14,7 +14,7 @@ import (
 func newSummaryCmd(cfg *config) *cobra.Command {
 	summaryCmd := &cobra.Command{
 		Use:   "summary",
-		Short: "Show aggregate stats across all sessions",
+		Short: "Show totals across this project's sessions",
 		Long: `Show aggregate statistics across all Claude Code sessions for the current project.
 
 This calculates the total cost and token usage across all sessions.

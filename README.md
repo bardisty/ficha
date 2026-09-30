@@ -164,13 +164,13 @@ Then, inside tmux, run `tmux source-file ~/.tmux.conf`. The bindings need tmux 2
 | `ficha watch` | Live monitoring with auto-follow |
 | `ficha breakdown` | Live per-message cost table (scrollable) |
 | `ficha list` | List sessions: when, length, model, agents, cost and title |
-| `ficha summary` | Total costs across all sessions |
+| `ficha summary` | Totals across this project's sessions |
 | `ficha global` | Aggregated stats across all projects |
 | `ficha version` | Print version information |
 
 ## Flags
 
-Global flags, accepted by every command:
+Global flags, accepted by every command except `version` and `completion`:
 
 | Flag | Description |
 | --- | --- |
@@ -179,7 +179,7 @@ Global flags, accepted by every command:
 | `--no-color` | Disable colored output (same as setting `NO_COLOR`) |
 | `--ascii` | Draw frames and symbols in plain ASCII instead of Unicode |
 
-`watch`, `breakdown` and `show --live` render a terminal UI, so they reject `-f json` and `-f csv`. `version` prints plain text and ignores `--format`.
+`watch` and `breakdown` render a terminal UI, so they reject `-f json` and `-f csv`.
 
 On macOS and Linux, colors adapt to a light or dark terminal background, which ficha asks the terminal for. Inside tmux or screen it can't ask and assumes dark, so on a light background set `COLORFGBG='0;15'`. Quote it: the shell reads an unquoted `;` as the end of the command. On Windows it always uses the dark palette.
 
@@ -191,8 +191,7 @@ Per-command flags:
 | --- | --- | --- |
 | `show`, `watch`, `breakdown`, `list`, `summary` | `-p, --project <dir>` | Project directory (default: current dir) |
 | `show`, `watch`, `breakdown`, `list`, `summary` | `--project-dir <name>` | Claude project dir name, instead of `-p` (bypass auto-detect) |
-| `show` | `-l, --live` | Watch the session live (same as `ficha watch`) |
-| `show`, `watch`, `breakdown` | `--no-follow` | Stay on the starting session instead of following new ones (live mode only) |
+| `watch`, `breakdown` | `--no-follow` | Stay on the starting session instead of following new ones (live mode only) |
 | `show` | `--messages` | Add per-message records: a `messages` array in json, one row per message in csv |
 | `summary` | `-d, --details` | Add a per-session breakdown |
 | `summary` | `--expand-agents` | Per-agent records (requires `--details`) |

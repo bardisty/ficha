@@ -77,7 +77,7 @@ func completeSessionIDs(cfg *config) cobra.CompletionFunc {
 
 		var candidates []models.SessionEntry
 		for _, s := range sessions {
-			if strings.HasPrefix(s.SessionID, toComplete) {
+			if strings.HasPrefix(s.SessionID, strings.ToLower(toComplete)) {
 				candidates = append(candidates, s)
 			}
 		}
@@ -85,7 +85,8 @@ func completeSessionIDs(cfg *config) cobra.CompletionFunc {
 		descs := describeSessions(candidates, time.Now())
 		out := make([]cobra.Completion, 0, len(candidates))
 		for i, s := range candidates {
-			out = append(out, cobra.CompletionWithDesc(completionValue(s.SessionID, sessions, len(toComplete)), descs[i]))
+			value := inTypedCase(completionValue(s.SessionID, sessions, len(toComplete)), toComplete)
+			out = append(out, cobra.CompletionWithDesc(value, descs[i]))
 		}
 		return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveKeepOrder
 	}
@@ -105,6 +106,21 @@ func completionValue(id string, sessions []models.SessionEntry, typed int) strin
 		}
 	}
 	return id[:short]
+}
+
+// inTypedCase returns a completion that starts with exactly what was typed.
+// The lookup ignores case, but bash and zsh drop any candidate that doesn't
+// match the typed prefix byte for byte, so "BDD" must complete to "BDD640FB",
+// not "bdd640fb". An all-uppercase prefix gets an uppercase remainder.
+func inTypedCase(value, typed string) string {
+	if len(typed) > len(value) {
+		return value
+	}
+	rest := value[len(typed):]
+	if typed == strings.ToUpper(typed) && typed != strings.ToLower(typed) {
+		rest = strings.ToUpper(rest)
+	}
+	return typed + rest
 }
 
 // completeProjectDirs completes --project-dir with the Claude project

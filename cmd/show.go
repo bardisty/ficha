@@ -24,7 +24,6 @@ If no session ID is provided, shows the most recent session.
 Examples:
   ficha show                    Show latest session
   ficha show abc123             Show specific session
-  ficha show --live             Watch latest session in real-time
   ficha show -f json            Output as JSON
   ficha show -f csv --messages  Per-message rows as CSV`,
 		Args:              cobra.MaximumNArgs(1),
@@ -35,7 +34,9 @@ Examples:
 	}
 
 	addProjectFlags(showCmd, cfg)
-	addLiveFlags(showCmd, cfg, false)
+	// --live predates watch and still works, hidden so help points at watch.
+	addLiveFlags(showCmd, cfg, true)
+	_ = showCmd.Flags().MarkHidden("no-follow")
 	showCmd.Flags().BoolVar(&cfg.messages, "messages", false, "Add per-message records, agents' too: json adds a messages array to the session, csv writes one row per message (json/csv only)")
 
 	return showCmd

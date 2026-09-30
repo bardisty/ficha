@@ -92,7 +92,7 @@ func commit(v string, info *debug.BuildInfo) string {
 }
 
 func newVersionCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:               "version",
 		Short:             "Print version information",
 		Args:              noArgs,
@@ -102,4 +102,6 @@ func newVersionCmd() *cobra.Command {
 			return nil
 		},
 	}
+	takeNoGlobalFlags(cmd)
+	return cmd
 }

@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -50,6 +51,15 @@ func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.Sessi
 	// Scan disk for session files
 	diskSessions, err := parser.DiscoverSessionsFromDisk(projDir, countMessages)
 	if err != nil {
+		// The *os.PathError already names the directory; wrapping it whole
+		// would print the path twice.
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) && pathErr.Path == projDir {
+			if errors.Is(err, fs.ErrPermission) {
+				return nil, "", fmt.Errorf("can't read %s: %w. Check its permissions.", projDir, fs.ErrPermission)
+			}
+			return nil, "", fmt.Errorf("can't read %s: %w", projDir, pathErr.Err)
+		}
 		return nil, "", fmt.Errorf("scanning sessions in %s: %w", projDir, err)
 	}
 
