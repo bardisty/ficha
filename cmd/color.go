@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -25,7 +26,7 @@ var restoreColorProfile = func() {}
 // stays plain.
 //
 // The default renderer is process-wide and Execute is re-entrant, so every
-// run first undoes the previous run's override.
+// run first undoes the previous run's override, background included.
 func applyColorOverride(cmd *cobra.Command, cfg *config) {
 	restoreColorProfile()
 	restoreColorProfile = func() {}
@@ -34,9 +35,21 @@ func applyColorOverride(cmd *cobra.Command, cfg *config) {
 	}
 	out := termenv.NewOutput(cfg.stdout, termenv.WithTTY(true), termenv.WithEnvironment(colorOnEnv{}))
 	r := lipgloss.DefaultRenderer()
-	prev := r.ColorProfile()
+	prev, prevDark := r.ColorProfile(), r.HasDarkBackground()
 	r.SetColorProfile(out.EnvColorProfile())
-	restoreColorProfile = func() { r.SetColorProfile(prev) }
+	// With CI set, termenv didn't ask the terminal for its background when
+	// Bubble Tea's init first wanted it, so the renderer kept the dark
+	// default. Ask now, as a run without CI already did at init. Without
+	// CI the renderer has the terminal's answer, and asking again would
+	// query the terminal twice. json and csv have no color to pick, so they
+	// skip the query and the wait it can cost on a pty nobody answers.
+	if os.Getenv("CI") != "" && strings.EqualFold(cfg.format, "table") {
+		r.SetHasDarkBackground(out.HasDarkBackground())
+	}
+	restoreColorProfile = func() {
+		r.SetColorProfile(prev)
+		r.SetHasDarkBackground(prevDark)
+	}
 }
 
 // colorOnEnv is the environment with the variables --no-color=false outranks
