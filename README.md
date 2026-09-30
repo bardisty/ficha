@@ -195,8 +195,6 @@ ficha summary -d -f csv       # one csv row per session
 ficha show -f csv --messages  # one csv row per message
 ```
 
-ficha looks for a transcript's agents only in the folder beside it, named like the file without `.jsonl`. If you copy a transcript elsewhere, copy that folder too and keep both names. Without it, ficha shows the main conversation alone and says so on stderr.
-
 ficha can only report sessions whose transcripts still exist, and Claude Code deletes them after 30 days by default. [Troubleshooting](#troubleshooting) says how to keep more.
 
 ### Live views
