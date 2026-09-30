@@ -169,7 +169,7 @@ To uninstall, delete the binary. If you set up shell completion, remove the comp
 
 ## Usage
 
-Run ficha from the directory you started Claude Code in, and it finds that project's sessions. For another project, pass its directory with `-p` / `--project` instead of changing directory.
+ficha shows the sessions of the project you're in, so run it from the directory you started Claude Code in. To check on another project without leaving this one, add `-p` and that project's directory.
 
 | Command | Shows |
 | --- | --- |
