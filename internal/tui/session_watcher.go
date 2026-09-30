@@ -275,8 +275,9 @@ func (sw *SessionWatcher) adoptProjectDir() sessionEvent {
 
 // poll lists the project directory for what the watch missed: a session
 // file not seen before is a new session, and a new size or mtime on another
-// is activity. New sessions are found by name alone; see fullScanEvery for
-// which sessions it stats.
+// is activity, the most recent reported when several moved. New sessions are
+// found by name alone, before any stat, so a busy session can't hide one; see
+// fullScanEvery for which sessions it stats.
 func (sw *SessionWatcher) poll() sessionEvent {
 	entries, err := os.ReadDir(sw.projectDir)
 	if err != nil {
@@ -285,13 +286,27 @@ func (sw *SessionWatcher) poll() sessionEvent {
 	if sw.dirPending {
 		return sw.adoptProjectDir()
 	}
+	var ids []string
+	for _, e := range entries {
+		if uuidPattern.MatchString(e.Name()) {
+			ids = append(ids, strings.TrimSuffix(e.Name(), ".jsonl"))
+		}
+	}
+	sw.sessionMu.RLock()
+	for _, id := range ids {
+		if !sw.known[id] {
+			sw.sessionMu.RUnlock()
+			return sw.handleSessionFile(filepath.Join(sw.projectDir, id+".jsonl"), fsnotify.Create)
+		}
+	}
+	sw.sessionMu.RUnlock()
+
 	full := sw.polls%fullScanEvery == 0
 	sw.polls++
 	now := time.Now()
-	for _, e := range entries {
-		if !uuidPattern.MatchString(e.Name()) {
-			continue
-		}
+	var ev sessionEvent
+	var newest time.Time
+	for _, id := range ids {
 		if full {
 			select {
 			case <-sw.done:
@@ -299,40 +314,36 @@ func (sw *SessionWatcher) poll() sessionEvent {
 			default:
 			}
 		}
-		path := filepath.Join(sw.projectDir, e.Name())
-		id := strings.TrimSuffix(e.Name(), ".jsonl")
 		sw.sessionMu.RLock()
-		current, known := id == sw.currentSession, sw.known[id]
+		current := id == sw.currentSession
 		prev, seen := sw.sigs[id]
 		sw.sessionMu.RUnlock()
-		switch {
-		case !known:
-			return sw.handleSessionFile(path, fsnotify.Create)
-		case current:
-			// Its writes are the view's own. Tracking them keeps a session
-			// the view just left from reading as active.
-			sw.observe(id, path)
-		case !full && (!seen || now.Sub(prev.mod) >= idleAfter):
-		case sw.observe(id, path):
-			return sessionEvent{path: path, id: id}
+		// The current session's writes are the view's own, but tracking them
+		// keeps most of them from reading as activity once the view leaves it.
+		if !current && !full && (!seen || now.Sub(prev.mod) >= idleAfter) {
+			continue
+		}
+		path := filepath.Join(sw.projectDir, id+".jsonl")
+		if sig, changed := sw.observe(id, path); changed && !current && sig.mod.After(newest) {
+			ev, newest = sessionEvent{path: path, id: id}, sig.mod
 		}
 	}
-	return sessionEvent{}
+	return ev
 }
 
 // observe records a session file's size and mtime, and reports whether
 // either moved since the last time. The first sighting doesn't count.
-func (sw *SessionWatcher) observe(id, path string) bool {
+func (sw *SessionWatcher) observe(id, path string) (sessionSig, bool) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return false
+		return sessionSig{}, false
 	}
 	sig := sessionSig{size: info.Size(), mod: info.ModTime()}
 	sw.sessionMu.Lock()
 	defer sw.sessionMu.Unlock()
 	prev, seen := sw.sigs[id]
 	sw.sigs[id] = sig
-	return seen && (prev.size != sig.size || !prev.mod.Equal(sig.mod))
+	return sig, seen && (prev.size != sig.size || !prev.mod.Equal(sig.mod))
 }
 
 // handleSessionFile classifies a file event: another session's file at the

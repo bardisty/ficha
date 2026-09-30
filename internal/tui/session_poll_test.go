@@ -104,8 +104,8 @@ func TestPollReportsEachWriteOnce(t *testing.T) {
 	}
 }
 
-// The current session's writes are the view's own, and the session it just
-// left doesn't read as active for writes made while it was open.
+// The current session's writes are the view's own, and those the poll saw
+// don't read as activity once the view leaves the session.
 func TestPollIgnoresTheCurrentSession(t *testing.T) {
 	dir, sw := pollProject(t)
 	growFile(t, pollPath(dir, pollCurrent))
@@ -220,5 +220,47 @@ func TestPollingWaiterExitsOnStopAndRestart(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("waiter didn't exit on Stop")
+	}
+}
+
+// A session writing on every poll doesn't keep the poll from finding a new
+// session, or from finding a write to an idle one on a full scan.
+func TestPollSeesPastABusySession(t *testing.T) {
+	dir, sw := pollProject(t)
+	idle := pollPath(dir, pollNewer)
+	writeSession(t, dir, pollNewer)
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(idle, old, old); err != nil {
+		t.Fatal(err)
+	}
+	growFile(t, pollPath(dir, pollOther))
+	if ev := sw.poll(); ev.id != pollNewer || !ev.created {
+		t.Fatalf("poll = %+v, want %s created", ev, pollNewer)
+	}
+
+	writeSession(t, dir, pollNew)
+	growFile(t, pollPath(dir, pollOther))
+	if ev := sw.poll(); ev.id != pollNew || !ev.created {
+		t.Fatalf("poll with a busy session = %+v, want %s created", ev, pollNew)
+	}
+
+	growFile(t, idle)
+	if err := os.Chtimes(idle, old, old); err != nil {
+		t.Fatal(err)
+	}
+	sw.polls = 0
+	growFile(t, pollPath(dir, pollOther))
+	later := time.Now().Add(time.Minute)
+	if err := os.Chtimes(pollPath(dir, pollOther), later, later); err != nil {
+		t.Fatal(err)
+	}
+	if ev := sw.poll(); ev.id != pollOther {
+		t.Fatalf("full scan = %+v, want the most recent write, in %s", ev, pollOther)
+	}
+	sw.sessionMu.RLock()
+	got := sw.sigs[pollNewer]
+	sw.sessionMu.RUnlock()
+	if info, err := os.Stat(idle); err != nil || got.size != info.Size() {
+		t.Fatalf("full scan stopped before the idle session: recorded size %d", got.size)
 	}
 }
