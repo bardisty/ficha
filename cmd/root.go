@@ -39,9 +39,10 @@ Examples:
   ficha global             Totals across every project
 
 Exit status:
-  0  Success, including a report that skipped unreadable input
-  1  No report, for example no sessions or no matching session
-  2  Usage error: unknown command or flag, bad value, or flags that clash`,
+    0  Success, including a report that skipped unreadable input
+    1  No report, for example no sessions or no matching session
+    2  Usage error: unknown command or flag, bad value, or flags that clash
+  130  A live view interrupted from outside, for example by kill -INT`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       versionLine(),
