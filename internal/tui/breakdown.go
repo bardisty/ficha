@@ -964,9 +964,9 @@ func (m BreakdownModel) renderStatsTotals() string {
 // line, without its pointer to ficha show when the terminal is too narrow for
 // it. The model IDs matter more.
 func (m BreakdownModel) fitUnknownNote(line, sep string) string {
-	note := unknownModelFootnote(m.unknownModels)
+	note := unknownModelFootnote(m.unknownModels, m.sessionID)
 	if m.width > 0 && lipgloss.Width(line+sep+note) > m.width {
-		note = strings.TrimSuffix(note, unknownModelPointer)
+		note = strings.TrimSuffix(note, unknownModelPointer(m.sessionID))
 	}
 	return note
 }
@@ -975,7 +975,7 @@ func (m BreakdownModel) fitUnknownNote(line, sep string) string {
 // breakdown has. r isn't listed: the view is already live, and the notify
 // row offers it as a retry.
 func (m BreakdownModel) renderHelpLine() string {
-	return helpLine(BreakdownKeys(), m.width, m.keysOpen, m.noColor)
+	return helpLine(BreakdownKeys(), m.width, m.keysOpen, !m.followMode, m.noColor)
 }
 
 // renderHeaderPanel renders the boxed live header, in the same form as watch's.

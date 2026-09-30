@@ -80,9 +80,15 @@ func TestWatchMarksUnknownModel(t *testing.T) {
 				}
 			}
 
-			// The footer explains it.
-			if want := unknownModelFootnote([]string{unknownModelID, "local-llm-7"}); !strings.Contains(out, want) {
+			// The footer explains it. Naming two long IDs leaves no room in
+			// the panel's 76 columns for the pointer to ficha show, which goes
+			// whole rather than split across rows.
+			full := unknownModelFootnote([]string{unknownModelID, "local-llm-7"}, "0a1b2c3d-4e5f-6789-abcd-ef0123456789")
+			if want := strings.TrimSuffix(full, unknownModelPointer("0a1b2c3d")); !strings.Contains(out, want) {
 				t.Errorf("footer missing %q:\n%s", want, out)
+			}
+			if strings.Contains(out, "see ficha") {
+				t.Errorf("the pointer doesn't fit and should be gone:\n%s", out)
 			}
 		})
 	}
@@ -141,8 +147,8 @@ func TestBreakdownMarksUnknownModel(t *testing.T) {
 			if strings.Contains(plainRow, unknownModelMarker) {
 				t.Errorf("catalog-model row must not be marked:\n%q", plainRow)
 			}
-			if !strings.Contains(out, unknownModelFootnote([]string{unknownModelID})) {
-				t.Errorf("footer missing %q:\n%s", unknownModelFootnote([]string{unknownModelID}), out)
+			if !strings.Contains(out, unknownModelFootnote([]string{unknownModelID}, "0a1b2c3d-4e5f-6789-abcd-ef0123456789")) {
+				t.Errorf("footer missing %q:\n%s", unknownModelFootnote([]string{unknownModelID}, "0a1b2c3d-4e5f-6789-abcd-ef0123456789"), out)
 			}
 		})
 	}
@@ -224,12 +230,14 @@ func TestUnknownModelFootnote(t *testing.T) {
 		want string
 	}{
 		{nil, "⚠ * = fallback pricing"},
-		{[]string{"claude-nova-9"}, "⚠ * claude-nova-9: fallback pricing, see ficha show"},
-		{[]string{"a", "b"}, "⚠ * a, b: fallback pricing, see ficha show"},
-		{[]string{"a", "b", "c", "d"}, "⚠ * a, b +2 more: fallback pricing, see ficha show"},
+		{[]string{"claude-nova-9"}, "⚠ * claude-nova-9: fallback pricing, see ficha show 0a1b2c3d"},
+		{[]string{"a", "b"}, "⚠ * a, b: fallback pricing, see ficha show 0a1b2c3d"},
+		{[]string{"a", "b", "c", "d"}, "⚠ * a, b +2 more: fallback pricing, see ficha show 0a1b2c3d"},
 	}
+	// The pointer names the view's session, which ficha show on its own
+	// might not open.
 	for _, tt := range tests {
-		if got := unknownModelFootnote(tt.ids); got != tt.want {
+		if got := unknownModelFootnote(tt.ids, "0a1b2c3d-4e5f-6789-abcd-ef0123456789"); got != tt.want {
 			t.Errorf("unknownModelFootnote(%v) = %q, want %q", tt.ids, got, tt.want)
 		}
 	}
@@ -249,7 +257,7 @@ func TestBreakdownUnknownNoteFitsWidth(t *testing.T) {
 		if !strings.Contains(line, "claude-nova-6: fallback pricing") {
 			t.Errorf("width %d: footnote lost the model: %q", tc.width, line)
 		}
-		if got := strings.Contains(line, unknownModelPointer); got != tc.pointer {
+		if got := strings.Contains(line, unknownModelPointer(m.sessionID)); got != tc.pointer {
 			t.Errorf("width %d: pointer shown = %v, want %v: %q", tc.width, got, tc.pointer, line)
 		}
 		if w := lipgloss.Width(line); tc.pointer && w > tc.width {

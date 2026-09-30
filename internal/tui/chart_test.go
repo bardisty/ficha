@@ -199,8 +199,9 @@ func TestRenderCostChart_ResizeChangesWindow(t *testing.T) {
 	if len(m.visibleCostHistory()) != 42 {
 		t.Fatalf("visible window after resize: got %d, want 42", len(m.visibleCostHistory()))
 	}
-	if !strings.Contains(m.renderCostChart(), "(last 42 of 210 msgs)") {
-		t.Errorf("width 50 label: %q\nwant substring %q", m.renderCostChart(), "(last 42 of 210 msgs)")
+	// 50 columns can't hold "(last 42 of 210 msgs)" after min and max.
+	if !strings.Contains(m.renderCostChart(), "(last 42 msgs)") {
+		t.Errorf("width 50 label: %q\nwant substring %q", m.renderCostChart(), "(last 42 msgs)")
 	}
 }
 

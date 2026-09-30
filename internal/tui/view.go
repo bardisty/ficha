@@ -58,7 +58,7 @@ func (m Model) View() string {
 		return renderTooSmall(m.width, m.height, minTermWidth, minTermHeight)
 	}
 	if m.keysOpen {
-		lines := append(keyList("watch", WatchKeys(), m.width, m.height-1, m.noColor), helpLine(WatchKeys(), m.width, true, m.noColor))
+		lines := append(keyList("watch", WatchKeys(), m.width, m.height-1, m.noColor), helpLine(WatchKeys(), m.width, true, !m.followMode, m.noColor))
 		return clipToWidth(strings.Join(lines, "\n"), m.width)
 	}
 
@@ -94,7 +94,9 @@ func (m Model) View() string {
 
 // renderTooSmall replaces a view's frame when no layout fits, naming the
 // minimum the terminal misses. The lines stay short, and each leads with what
-// matters, so the message survives clipping at 20 columns.
+// matters, so the message survives clipping at 20 columns. A terminal
+// shorter than the message keeps its top lines: Bubble Tea would keep the
+// bottom ones and scroll "terminal too small" away.
 func renderTooSmall(width, height, minWidth, minHeight int) string {
 	lines := []string{"terminal too small"}
 	// A zero size isn't known yet; it isn't the one that's short.
@@ -105,6 +107,9 @@ func renderTooSmall(width, height, minWidth, minHeight int) string {
 		lines = append(lines, fmt.Sprintf("need %d rows", minHeight))
 	}
 	lines = append(lines, "q to quit")
+	if height > 0 {
+		lines = lines[:min(len(lines), height)]
+	}
 	return clipToWidth("  "+strings.Join(lines, "\n  "), width)
 }
 
@@ -149,13 +154,13 @@ func (m Model) renderAnalysis() string {
 	if has5mCost {
 		sb.WriteString(m.renderUnifiedCostRow(
 			"Cache write", a.TotalCost.CacheWrite5mCost, cache5mTokens,
-			"cache_write_5m", tokenKey5m, styles.CacheWriteTokenColor, "5m TTL"))
+			"cache_write_5m", tokenKey5m, styles.CacheWriteTokenColor, "5m"))
 	}
 
 	if has1hCost {
 		sb.WriteString(m.renderUnifiedCostRow(
 			"Cache write", a.TotalCost.CacheWrite1hCost, cache1hTokens,
-			"cache_write_1h", tokenKey1h, styles.CacheWriteTokenColor, "1h TTL"))
+			"cache_write_1h", tokenKey1h, styles.CacheWriteTokenColor, "1h"))
 	}
 
 	// Cache read - only show if present
@@ -167,17 +172,23 @@ func (m Model) renderAnalysis() string {
 
 	// Savings row (no separator - the rows above sum to hero TOTAL, not savings).
 	// The plain form never highlights, but pads the value like the colored one.
+	// A narrow terminal drops the note whole.
 	if a.TotalCost.CacheSavings > 0 {
+		note := "(from cache reads)"
+		if m.width > 0 && costRowLead+len(note) > m.width {
+			note = ""
+		}
 		if m.noColor {
-			sb.WriteString(fmt.Sprintf("    %-14s %s  (from cache reads)\n",
-				"Savings", render.CostCell(a.TotalCost.CacheSavings, 11)))
+			sb.WriteString(strings.TrimRight(fmt.Sprintf("    %-14s %s  %s",
+				"Savings", render.CostCell(a.TotalCost.CacheSavings, 11), note), " ") + "\n")
 		} else {
 			savingsHighlighted := m.isHighlighted("savings")
 			savingsStr := render.CostStyledGreen(a.TotalCost.CacheSavings, 11, savingsHighlighted, m.noColor)
-			sb.WriteString(fmt.Sprintf("    %s %s  %s\n",
-				savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
-				savingsStr,
-				dimStyle.Render("(from cache reads)")))
+			line := "    " + savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")) + " " + savingsStr
+			if note != "" {
+				line += "  " + dimStyle.Render(note)
+			}
+			sb.WriteString(line + "\n")
 		}
 	}
 
@@ -325,13 +336,16 @@ func (m Model) renderAgentBreakdownContent() string {
 	// Format: 4(indent) + 40(label) + 3(spaces) + cost = 47 chars before cost
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	// Uses plain white (not magnitude gradient) - model tier colors provide cost hierarchy
+	// A terminal narrower than the rows takes the columns it lacks out of
+	// the space before the cost, so the cost stays on screen.
+	labelWidth := 40 - m.agentShrink()
 	parentHighlighted := m.isHighlighted("parent_cost")
 	parentCostStr := render.CostStyled(a.ParentCost.TotalCost, 11, parentHighlighted, m.noColor)
 	if !m.noColor {
-		paddedLabel := fmt.Sprintf("%-40s", "Parent session")
+		paddedLabel := fmt.Sprintf("%-*s", labelWidth, "Parent session")
 		sb.WriteString(fmt.Sprintf("    %s   %s\n", dimStyle.Render(paddedLabel), parentCostStr))
 	} else {
-		sb.WriteString(fmt.Sprintf("    %-40s   %s\n", "Parent session", parentCostStr))
+		sb.WriteString(fmt.Sprintf("    %-*s   %s\n", labelWidth, "Parent session", parentCostStr))
 	}
 
 	// Show each agent with [AN] Model (ID) msgs cost format
@@ -342,7 +356,18 @@ func (m Model) renderAgentBreakdownContent() string {
 	// each run's start. Markers carry the real agent ID (abbreviated), matching
 	// the breakdown TUI's [A<id>] scheme. A running agent's live dot sits in
 	// the indent, so the rows' columns don't move as agents start and stop.
-	for _, row := range agentRows(a, m.clock()) {
+	// A narrowed section drops the run headings' statuses before it cuts a
+	// name, all or none, as show does, so a heading without one can't read as
+	// a run that had none.
+	rows := agentRows(a, m.clock())
+	statuses := true
+	for _, row := range rows {
+		if row.kind == agentRowRun && m.agentShrink() > 0 &&
+			lipgloss.Width(styles.GroupRule+" "+render.WorkflowLabel(a.WorkflowByID(row.runID))) > labelWidth {
+			statuses = false
+		}
+	}
+	for _, row := range rows {
 		switch row.kind {
 		case agentRowRun:
 			// The run's subtotal sits in the cost column, like show's, so a
@@ -350,11 +375,15 @@ func (m Model) renderAgentBreakdownContent() string {
 			// dim like its heading while it repeats the rows below and isn't
 			// part of the column's sum; a folded run's rows are gone, so
 			// then it is.
-			heading := styles.GroupRule + " " + render.WorkflowLabel(a.WorkflowByID(row.runID))
-			if lipgloss.Width(heading) > 40 {
-				heading = withEllipsis(heading, 40)
+			meta := a.WorkflowByID(row.runID)
+			if !statuses {
+				meta.Status = ""
 			}
-			pad := strings.Repeat(" ", 40-lipgloss.Width(heading)+3)
+			heading := styles.GroupRule + " " + render.WorkflowLabel(meta)
+			if lipgloss.Width(heading) > labelWidth {
+				heading = withEllipsis(heading, labelWidth)
+			}
+			pad := strings.Repeat(" ", labelWidth-lipgloss.Width(heading)+3)
 			cost := workflowCost(a.Agents, row.runID)
 			switch {
 			case m.noColor:
@@ -365,14 +394,13 @@ func (m Model) renderAgentBreakdownContent() string {
 				sb.WriteString("    " + dimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, 11) + "\n")
 			}
 		case agentRowFinished:
-			label := fmt.Sprintf("%d finished agents", row.count)
+			label := fmt.Sprintf("%-22s", fmt.Sprintf("%d finished agents", row.count))
 			costStr := render.CostStyled(row.cost, 11, false, m.noColor)
-			msgStr := msgCount(row.msgs)
+			msgs, gap := m.agentMsgsColumn(row.msgs)
 			if m.noColor {
-				sb.WriteString(fmt.Sprintf("    %-22s %8s            %s\n", label, msgStr, costStr))
+				sb.WriteString("    " + label + msgs + gap + costStr + "\n")
 			} else {
-				sb.WriteString(fmt.Sprintf("    %s %s            %s\n",
-					dimStyle.Render(fmt.Sprintf("%-22s", label)), dimStyle.Render(fmt.Sprintf("%8s", msgStr)), costStr))
+				sb.WriteString("    " + dimStyle.Render(label) + dimMsgs(msgs) + gap + costStr + "\n")
 			}
 		case agentRowAgent:
 			sb.WriteString(m.renderAgentRow(row.agent, row.running))
@@ -384,13 +412,42 @@ func (m Model) renderAgentBreakdownContent() string {
 	subtotalHighlighted := m.isHighlighted("agents_subtotal")
 	subtotalStr := render.CostStyledBoldGreen(a.AgentsCost.TotalCost, 11, subtotalHighlighted, m.noColor)
 	if !m.noColor {
-		paddedSubtotal := fmt.Sprintf("%-40s", "Agents subtotal")
+		paddedSubtotal := fmt.Sprintf("%-*s", labelWidth, "Agents subtotal")
 		sb.WriteString(fmt.Sprintf("    %s   %s\n", dimStyle.Render(paddedSubtotal), subtotalStr))
 	} else {
-		sb.WriteString(fmt.Sprintf("    %-40s   %s\n", "Agents subtotal", subtotalStr))
+		sb.WriteString(fmt.Sprintf("    %-*s   %s\n", labelWidth, "Agents subtotal", subtotalStr))
 	}
 
 	return sb.String()
+}
+
+// agentShrink is how many columns the agent section's rows, 58 wide, lack
+// on the terminal.
+func (m Model) agentShrink() int {
+	if m.width <= 0 {
+		return 0
+	}
+	return max(4+40+3+11-m.width, 0)
+}
+
+// dimMsgs dims agentMsgsColumn's count, leaving its leading space plain.
+func dimMsgs(msgs string) string {
+	if msgs == "" {
+		return ""
+	}
+	return " " + dimStyle.Render(msgs[1:])
+}
+
+// agentMsgsColumn is an agent row's message count, " 22 msgs" right-aligned
+// in 9 columns, and the gap before its cost: 12 spaces, less what a narrow
+// terminal lacks. Where no gap is left the count goes, so the cost stays.
+func (m Model) agentMsgsColumn(n int) (msgs, gap string) {
+	width := 12 - m.agentShrink()
+	msgs = fmt.Sprintf(" %8s", msgCount(n))
+	if width < 1 {
+		msgs, width = "", width+len(msgs)
+	}
+	return msgs, strings.Repeat(" ", max(width, 1))
 }
 
 // workflowCost sums the cost of a workflow run's agents.
@@ -417,16 +474,16 @@ func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool) string {
 	// Get primary model for this agent
 	modelName := render.PrimaryModel(agent.CostByModel)
 	modelLabel := render.ClampModel(modelName, 11)
-	msgStr := msgCount(agent.MessageCount)
 
 	dot := " "
 	if running {
 		dot = styles.LiveDot
 	}
 
+	msgs, gap := m.agentMsgsColumn(agent.MessageCount)
 	if m.noColor {
-		return fmt.Sprintf("  %s %-10s %-11s %8s            %s\n",
-			dot, marker, modelLabel, msgStr, costStr)
+		return fmt.Sprintf("  %s %-10s %-11s%s%s%s\n",
+			dot, marker, modelLabel, msgs, gap, costStr)
 	}
 	if running {
 		dot = liveIndicatorStyle.Render(dot)
@@ -439,11 +496,8 @@ func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool) string {
 	modelColor := styles.GetModelColor(modelName)
 	modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
 
-	// Dim the message count
-	msgStyled := dimStyle.Render(fmt.Sprintf("%8s", msgStr))
-
-	return fmt.Sprintf("  %s %s %s %s            %s\n",
-		dot, markerStyled, modelStyled, msgStyled, costStr)
+	return fmt.Sprintf("  %s %s %s%s%s%s\n",
+		dot, markerStyled, modelStyled, dimMsgs(msgs), gap, costStr)
 }
 
 // msgCount is "1 msg" or "N msgs".
@@ -464,7 +518,10 @@ func (m Model) renderInsightsContent() string {
 	// silently compared against the breakdown view's parent+agent insights. No
 	// label without agents: parent-only and all-messages are then identical.
 	if m.analysis.HasAgents {
-		const scope = "main conversation only, agents excluded"
+		scope := "main conversation only, agents excluded"
+		if m.width > 0 && 4+len(scope) > m.width {
+			scope = "main conversation only"
+		}
 		if m.noColor {
 			sb.WriteString("    " + scope + "\n")
 		} else {
@@ -484,18 +541,11 @@ func (m Model) renderInsightsContent() string {
 			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(last.Timestamp)))
 			componentCostStr := formatCostStyledDim(last.MainCostValue)
 			componentStr := dimStyle.Render(componentLabel+":") + " " + componentCostStr
-			sb.WriteString(fmt.Sprintf("    %s %s  %s  %s\n",
-				labelStr,
-				costStr,
-				timestampStr,
-				componentStr))
+			sb.WriteString(m.fitInsight("    "+labelStr+" "+costStr, timestampStr, componentStr))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  %s: %s\n",
-				"Last",
-				render.CostCell(last.Cost, 10),
-				render.Clock(last.Timestamp),
-				componentLabel,
-				render.Cost(last.MainCostValue)))
+			sb.WriteString(m.fitInsight(fmt.Sprintf("    %-10s %s", "Last", render.CostCell(last.Cost, 10)),
+				"("+render.Clock(last.Timestamp)+")",
+				componentLabel+": "+render.Cost(last.MainCostValue)))
 		}
 	}
 
@@ -511,16 +561,10 @@ func (m Model) renderInsightsContent() string {
 			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "Peak"))
 			costStr := render.CostStyled(highest.Cost, 10, highlighted, m.noColor)
 			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(highest.Timestamp)))
-			sb.WriteString(fmt.Sprintf("    %s %s  %s  %s\n",
-				labelStr,
-				costStr,
-				timestampStr,
-				dimStyle.Render(multiplierStr)))
+			sb.WriteString(m.fitInsight("    "+labelStr+" "+costStr, timestampStr, dimStyle.Render(multiplierStr)))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %-10s %s  (%s)  %s\n",
-				"Peak",
-				render.CostCell(highest.Cost, 10),
-				render.Clock(highest.Timestamp),
+			sb.WriteString(m.fitInsight(fmt.Sprintf("    %-10s %s", "Peak", render.CostCell(highest.Cost, 10)),
+				"("+render.Clock(highest.Timestamp)+")",
 				multiplierStr))
 		}
 	}
@@ -553,24 +597,47 @@ func (m Model) renderInsightsContent() string {
 			if highlighted {
 				recentStr = highlightStyle.Render(recentStr)
 			}
-			trendLine := window + " " + recentStr + " vs " + avgStr + " avg"
-			sb.WriteString(fmt.Sprintf("    %s %s  %s %s\n",
-				labelStr,
-				trendLine,
-				symbolStyled,
-				descStyled))
+			sb.WriteString(m.fitTrend("    "+labelStr+" "+window+" "+recentStr,
+				" vs "+avgStr+" avg", "  "+symbolStyled, " "+descStyled))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %-10s %s %s vs %s avg  %s %s\n",
-				"Trend",
-				window,
-				recentStr,
-				avgStr,
-				trendSymbol,
-				trendDesc))
+			sb.WriteString(m.fitTrend(fmt.Sprintf("    %-10s %s %s", "Trend", window, recentStr),
+				" vs "+avgStr+" avg", "  "+trendSymbol, " "+trendDesc))
 		}
 	}
 
 	return sb.String()
+}
+
+// fitInsight is an insight row: lead, then the rest two spaces apart.
+func (m Model) fitInsight(lead string, rest ...string) string {
+	for i := range rest {
+		rest[i] = "  " + rest[i]
+	}
+	return m.fitRow(lead, rest...)
+}
+
+// fitRow ends a body row after the last of its pieces that fits the
+// terminal, so a narrow one loses whole pieces from the right, never half a
+// word. Each piece carries its own leading space.
+func (m Model) fitRow(lead string, rest ...string) string {
+	return joinSegments(append([]string{lead}, rest...), "", m.width) + "\n"
+}
+
+// fitTrend is the trend row in the longest form that fits. The direction
+// is the row's point, so the comparison with the average goes before it.
+func (m Model) fitTrend(lead, vs, symbol, desc string) string {
+	return m.firstFit(lead+vs+symbol+desc, lead+vs+symbol, lead+symbol+desc, lead+symbol, lead) + "\n"
+}
+
+// firstFit is the first of forms, longest first, that fits the terminal,
+// or the last.
+func (m Model) firstFit(forms ...string) string {
+	for _, f := range forms {
+		if m.width <= 0 || lipgloss.Width(f) <= m.width {
+			return f
+		}
+	}
+	return forms[len(forms)-1]
 }
 
 // Panel and section rendering helpers
@@ -662,18 +729,71 @@ func (m Model) renderHeroCost(cost float64, highlighted bool, width int) string 
 // ttlColumnWidth is the width of the "  5m TTL" column after "tokens".
 const ttlColumnWidth = 8
 
+// Cost row columns: indent, label, cost, then the count and " tokens".
+const (
+	costRowLead     = 4 + 14 + 1 + 11 + 2
+	tokenCountWidth = 12
+	tokenWord       = " tokens"
+)
+
 // deltaColumnEnd is where the delta column starts, plus its two-space gap:
 // indent, label, cost, count, " tokens", then the TTL column.
-const deltaColumnEnd = 4 + 14 + 1 + 11 + 2 + 12 + 7 + ttlColumnWidth + 2
+const deltaColumnEnd = costRowLead + tokenCountWidth + len(tokenWord) + ttlColumnWidth + 2
 
 // renderUnifiedCostRow renders a single row with cost and token info combined
 // Format: "  Label          $0.371042     53.9K tokens"
-func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, costField, tokenField string, labelColor lipgloss.TerminalColor, extra string) string {
+// ttl ("5m", "1h") marks a cache-write row. A terminal too narrow for the
+// whole row sheds whole pieces: the word "tokens", then the TTL column,
+// whose TTL moves into the label ("Cache write 5m") so the two cache-write
+// rows stay apart, then the count's padding.
+func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, costField, tokenField string, labelColor lipgloss.TerminalColor, ttl string) string {
 	costHighlighted := m.isHighlighted(costField)
 	tokenChanged := m.recentlyChanged(tokenField)
 	tokenHighlighted := m.isHighlighted(tokenField)
 	delta := m.deltaTokens[tokenField]
 
+	count := render.Number(tokens)
+	word, countWidth := tokenWord, tokenCountWidth
+	ttlWidth := 0
+	if ttl != "" {
+		ttlWidth = ttlColumnWidth
+	}
+	if m.width > 0 {
+		if costRowLead+countWidth+len(word)+ttlWidth > m.width {
+			word = ""
+		}
+		if ttl != "" && costRowLead+countWidth+ttlWidth > m.width {
+			label += " " + ttl
+			ttl, ttlWidth = "", 0
+		}
+		countWidth = max(min(countWidth, m.width-costRowLead), len(count))
+	}
+
+	// Tokens keep a fixed width; a recent change lights them up, and its
+	// delta goes in a column of its own after the TTL so nothing to its
+	// left moves while it shows. Where that column would fall off a narrow
+	// terminal, the delta sits right after the count instead: a shift
+	// beats a delta nobody can see. While it shows there, the TTL moves into
+	// the label to make room, and where even that isn't enough the delta
+	// goes: the count still lights up.
+	var deltaStr string
+	if tokenChanged && delta != 0 {
+		deltaStr = formatDelta(delta)
+		if tokenHighlighted {
+			deltaStr = highlightStyle.Render(deltaStr)
+		}
+	}
+	inline := deltaStr != "" && m.width > 0 && deltaColumnEnd+lipgloss.Width(deltaStr) > m.width
+	if inline {
+		end := costRowLead + countWidth + 1 + lipgloss.Width(deltaStr) + len(word)
+		if ttl != "" && end+ttlWidth > m.width {
+			label += " " + ttl
+			ttl = ""
+		}
+		if end > m.width {
+			deltaStr, inline = "", false
+		}
+	}
 	// Format label with optional color
 	var labelStr string
 	if !m.noColor && labelColor != nil {
@@ -685,20 +805,7 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 
 	costStr := render.CostStyled(cost, 11, costHighlighted, m.noColor)
 
-	// Tokens keep a fixed width; a recent change lights them up, and its
-	// delta goes in a column of its own after the TTL so nothing to its
-	// left moves while it shows. Where that column would fall off a narrow
-	// terminal, the delta sits right after the count instead: a shift
-	// beats a delta nobody can see.
-	var deltaStr string
-	if tokenChanged && delta != 0 {
-		deltaStr = formatDelta(delta)
-		if tokenHighlighted {
-			deltaStr = highlightStyle.Render(deltaStr)
-		}
-	}
-	inline := deltaStr != "" && m.width > 0 && deltaColumnEnd+lipgloss.Width(deltaStr) > m.width
-	tokenStr := fmt.Sprintf("%12s", render.Number(tokens))
+	tokenStr := fmt.Sprintf("%*s", countWidth, count)
 	if tokenHighlighted {
 		tokenStr = highlightStyle.Render(tokenStr)
 	}
@@ -706,13 +813,13 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 		tokenStr += " " + deltaStr
 	}
 
-	// Add extra info (like TTL), padded so the delta column lines up
+	// Add the TTL, padded so the delta column lines up
 	extraStr := ""
-	if extra != "" {
+	if ttl != "" {
 		if !m.noColor {
-			extraStr = "  " + dimStyle.Render(extra)
+			extraStr = "  " + dimStyle.Render(ttl+" TTL")
 		} else {
-			extraStr = "  " + extra
+			extraStr = "  " + ttl + " TTL"
 		}
 	}
 	if deltaStr != "" && !inline {
@@ -720,7 +827,7 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 		extraStr += "  " + deltaStr
 	}
 
-	return fmt.Sprintf("    %s %s  %s tokens%s\n", labelStr, costStr, tokenStr, extraStr)
+	return fmt.Sprintf("    %s %s  %s%s%s\n", labelStr, costStr, tokenStr, word, extraStr)
 }
 
 // renderEmptyState renders a clean empty state for new sessions
@@ -798,16 +905,24 @@ func (m Model) renderCostChart() string {
 		}
 	}
 
-	// Count label: plain when nothing is truncated, shown/total when it is
-	var countInfo string
+	// Count label: plain when nothing is truncated, shown/total when it is.
+	// A narrow terminal gets the shorter forms, then no count, then no max:
+	// whole pieces, never half a word.
+	counts := []string{fmt.Sprintf("(%d msgs)", len(visible))}
 	if len(visible) < len(m.costHistory) {
-		countInfo = fmt.Sprintf("(last %d of %d msgs)", len(visible), len(m.costHistory))
-	} else {
-		countInfo = fmt.Sprintf("(%d msgs)", len(visible))
+		counts = []string{
+			fmt.Sprintf("(last %d of %d msgs)", len(visible), len(m.costHistory)),
+			fmt.Sprintf("(last %d msgs)", len(visible)),
+		}
 	}
-
-	// Add scale labels below the chart
-	scaleInfo := fmt.Sprintf("min: %s  max: %s  %s", render.Cost(minCost), render.Cost(maxCost), countInfo)
+	const indent = "    "
+	scale := indent + "min: " + render.Cost(minCost)
+	var forms []string
+	for _, c := range counts {
+		forms = append(forms, scale+"  max: "+render.Cost(maxCost)+"  "+c)
+	}
+	forms = append(forms, scale+"  max: "+render.Cost(maxCost), scale)
+	scaleInfo := strings.TrimPrefix(m.firstFit(forms...), indent)
 	if !m.noColor {
 		sb.WriteString("    " + dimStyle.Render(scaleInfo) + "\n")
 	} else {

@@ -124,9 +124,9 @@ func (m Model) renderFooterLines(panelWidth int) []string {
 	}
 
 	// r isn't listed: the view is already live, and the notify row offers
-	// it as a retry when something fails. f goes first on a narrow terminal:
-	// the header shows the follow mode.
-	return append(lines, helpLine(WatchKeys(), m.width, m.keysOpen, m.noColor))
+	// it as a retry when something fails. See helpLine for what a narrow
+	// terminal drops first.
+	return append(lines, helpLine(WatchKeys(), m.width, m.keysOpen, !m.followMode, m.noColor))
 }
 
 // renderFooterRule draws the heavy rule above the footer. When the body
@@ -233,8 +233,14 @@ func (m Model) statsSegments(label bool) []string {
 		segs = append(segs, style(footerStyle, "ctx ")+style(ctxStyle, fmt.Sprintf("%.0f%%", pct)))
 	}
 
+	// Stale data gives the rate when it went stale, until that is a whole
+	// window old: then nothing on screen speaks for the last 10 minutes.
 	rateStr := "-/h"
-	if perHour, ok := rollingRate(a.Messages, m.clock(), rateWindow); ok {
+	now, known := m.clock(), true
+	if !m.staleSince.IsZero() {
+		now, known = m.staleSince, now.Sub(m.staleSince) < rateWindow
+	}
+	if perHour, ok := rollingRate(a.Messages, now, rateWindow); ok && known {
 		rateStr = render.Cost(perHour) + "/h"
 	}
 	segs = append(segs, style(footerStyle, fmt.Sprintf("%s (%s)", rateStr, windowLabel(rateWindow))))
@@ -267,7 +273,13 @@ func (m Model) warningRows(width int) []string {
 		notes = append(notes, note)
 	}
 	if hasUnknownModel(a.CostByModel) {
-		notes = append(notes, unknownModelFootnote(unknownModelIDs(a.CostByModel)))
+		// A footnote too long for one row loses its pointer to ficha show
+		// whole rather than split it across rows. The model IDs matter more.
+		note := unknownModelFootnote(unknownModelIDs(a.CostByModel), m.sessionID)
+		if lipgloss.Width(note) > width {
+			note = strings.TrimSuffix(note, unknownModelPointer(m.sessionID))
+		}
+		notes = append(notes, note)
 	}
 	return packNotes(notes, " "+styles.BoxVerticalSep+" ", width, maxWarningRows)
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 
+	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 )
 
@@ -16,12 +17,12 @@ import (
 const unknownModelMarker = "*"
 
 // unknownModelFootnote explains unknownModelMarker in a footer, naming the
-// models: "⚠ * claude-nova-9: fallback pricing, see ficha show". The ID is
-// what a pricing update needs, and a TUI owns the screen, so the stderr
-// warning that names it elsewhere never shows here. ficha show prints that
-// warning: the version that lacks the price, and where newer releases are.
-// The footer has no room for a URL. Past two IDs the rest are counted.
-func unknownModelFootnote(ids []string) string {
+// models: "⚠ * claude-nova-9: fallback pricing, see ficha show 0a1b2c3d".
+// The ID is what a pricing update needs, and a TUI owns the screen, so the
+// stderr warning that names it elsewhere never shows here. ficha show prints
+// that warning: the version that lacks the price, and where newer releases
+// are. The footer has no room for a URL. Past two IDs the rest are counted.
+func unknownModelFootnote(ids []string, sessionID string) string {
 	if len(ids) == 0 {
 		return styles.Warning + " " + unknownModelMarker + " = fallback pricing"
 	}
@@ -29,12 +30,17 @@ func unknownModelFootnote(ids []string) string {
 	if len(ids) > 2 {
 		named += fmt.Sprintf(" +%d more", len(ids)-2)
 	}
-	return styles.Warning + " " + unknownModelMarker + " " + named + ": fallback pricing" + unknownModelPointer
+	return styles.Warning + " " + unknownModelMarker + " " + named + ": fallback pricing" + unknownModelPointer(sessionID)
 }
 
-// unknownModelPointer ends unknownModelFootnote. A line with no room for it
-// drops it rather than clip it to "see ficha".
-const unknownModelPointer = ", see ficha show"
+// unknownModelPointer ends unknownModelFootnote. It names the view's session:
+// ficha show on its own opens the newest one, which a pinned view may not be
+// on. The ID's prefix works from the project's directory, where the view was
+// started. A line with no room for it drops it rather than clip it to "see
+// ficha".
+func unknownModelPointer(sessionID string) string {
+	return ", see ficha show " + render.TruncateID(sessionID, sessionIDDisplayLen)
+}
 
 // newSpinner returns the loading spinner: braille dots, or a spinning line
 // under the ASCII glyph set, colored unless color is off.

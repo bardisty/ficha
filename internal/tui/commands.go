@@ -90,7 +90,9 @@ type sessionWatcherRestartMsg struct{}
 
 // wrapErr lets the shared watcher commands report failures as this model's
 // error message.
-func (m Model) wrapErr(err error) tea.Msg { return errorMsg{err: err, sessionPath: m.sessionPath} }
+func (m Model) wrapErr(err error) tea.Msg {
+	return errorMsg{err: err, sessionPath: m.sessionPath, sessionWatcher: true}
+}
 
 func (m Model) watchFile() tea.Msg { return watchFileCmd(m.sessionPath) }
 
