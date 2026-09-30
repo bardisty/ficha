@@ -118,6 +118,23 @@ func TestPollIgnoresTheCurrentSession(t *testing.T) {
 	}
 }
 
+// The current session's writes since the last poll are the view's own too:
+// on a silent mount no watch event records them, and a switch away mustn't
+// turn them into a hint about the session just left. A write after the
+// switch is news.
+func TestPollIgnoresWritesBeforeASwitch(t *testing.T) {
+	dir, sw := pollProject(t)
+	growFile(t, pollPath(dir, pollCurrent))
+	sw.SetCurrentSession(pollOther)
+	if ev := sw.poll(); ev.path != "" {
+		t.Fatalf("poll after switching away = %+v, want nothing", ev)
+	}
+	growFile(t, pollPath(dir, pollCurrent))
+	if ev := sw.poll(); ev.id != pollCurrent || ev.created {
+		t.Fatalf("poll after a write to the session left = %+v, want activity in %s", ev, pollCurrent)
+	}
+}
+
 // With a working watch, what fsnotify reported doesn't come back from the
 // poll.
 func TestPollSkipsWhatTheWatchReported(t *testing.T) {
