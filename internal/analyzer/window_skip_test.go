@@ -343,3 +343,87 @@ func TestWindowSkipDetailsNameSessionsOutsideTheWindow(t *testing.T) {
 		t.Errorf("global: got %d skipped lines, projects %+v; want 2, and out named", global.SkippedLines, global.Projects)
 	}
 }
+
+// A project with nothing inside the window stays out of global's projects and
+// counts, but its unreadable input still reaches the skip counters, and
+// OutOfWindow carries its SkipDetails. One whose only session the shortcut
+// skips unparsed counts nowhere.
+func TestWindowKeepsSkipsOfAProjectWithNothingInside(t *testing.T) {
+	dir := t.TempDir()
+	project := func(name string) models.ProjectInfo {
+		projDir := filepath.Join(dir, name)
+		if err := os.Mkdir(projDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		return models.ProjectInfo{EncodedPath: name, FullPath: projDir, OriginalPath: "/home/test/" + name, DisplayName: name}
+	}
+	live, out, old := project("live"), project("out"), project("old")
+	writeJSONLFile(t, filepath.Join(live.FullPath, "new.jsonl"), []string{windowMsg})
+	outPath := filepath.Join(out.FullPath, "damaged.jsonl")
+	writeJSONLFile(t, outPath, []string{forkMsg1, corruptLine})
+	writeAgentSession(t, out.FullPath, "damaged", "agent-a1.jsonl", []string{corruptLine, forkMsg2})
+	oldPath := filepath.Join(old.FullPath, "stale.jsonl")
+	writeJSONLFile(t, oldPath, []string{forkMsg3, corruptLine})
+	setMtime(t, oldPath, oldMtime)
+
+	alone, err := AnalyzeAllProjectsInWindow([]models.ProjectInfo{live}, skipWindow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	global, err := AnalyzeAllProjectsInWindow([]models.ProjectInfo{live, out, old}, skipWindow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(global.Projects) != 1 || global.Projects[0].EncodedPath != "live" ||
+		global.ProjectCount != 1 || global.SessionCount != 1 || global.MessageCount != 1 ||
+		global.SkippedProjects != 0 {
+		t.Errorf("records: got %d projects (%d listed), %d sessions, %d messages, %d skipped projects; want live alone, 1, 1, 0",
+			global.ProjectCount, len(global.Projects), global.SessionCount, global.MessageCount, global.SkippedProjects)
+	}
+	if global.TotalCost.TotalCost != alone.TotalCost.TotalCost ||
+		global.TotalUsage.InputTokens != alone.TotalUsage.InputTokens ||
+		!global.FirstActive.Equal(alone.FirstActive) || !global.LastActive.Equal(alone.LastActive) {
+		t.Errorf("totals: got %+v, want those of live alone, %+v", global, alone)
+	}
+	if global.SkippedLines != 2 || global.SkippedSessions != 0 || global.SkippedAgents != 0 {
+		t.Errorf("skip counters: got %d lines, %d sessions, %d agents; want 2, 0, 0",
+			global.SkippedLines, global.SkippedSessions, global.SkippedAgents)
+	}
+	if len(global.OutOfWindow) != 1 || global.OutOfWindow[0].EncodedPath != "out" ||
+		len(global.OutOfWindow[0].SkipDetails) != 1 || global.OutOfWindow[0].SkipDetails[0].SessionID != "damaged" ||
+		global.OutOfWindow[0].SkipDetails[0].Lines != 2 {
+		t.Errorf("OutOfWindow: got %+v, want out alone, naming damaged with 2 lines", global.OutOfWindow)
+	}
+
+	// A transcript that fails to parse counts as a skipped session and is
+	// named, though its project has nothing else inside the window. Discovery
+	// keeps a symlink to a directory, and the parse fails on it.
+	realDir := filepath.Join(dir, "realdir")
+	if err := os.Mkdir(realDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realDir, filepath.Join(out.FullPath, "link.jsonl")); err == nil {
+		linked, err := AnalyzeAllProjectsInWindow([]models.ProjectInfo{live, out}, skipWindow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if linked.ProjectCount != 1 || linked.SkippedSessions != 1 || linked.SkippedProjects != 0 ||
+			len(linked.OutOfWindow) != 1 || len(linked.OutOfWindow[0].SkipDetails) != 2 {
+			t.Errorf("unreadable session: got %d projects, %d skipped sessions, %d skipped projects, out of window %+v; want 1, 1, 0, and out naming both sessions",
+				linked.ProjectCount, linked.SkippedSessions, linked.SkippedProjects, linked.OutOfWindow)
+		}
+		if err := os.Remove(filepath.Join(out.FullPath, "link.jsonl")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Without a window the damaged project is an ordinary record.
+	unwindowed, err := AnalyzeAllProjectsInWindow([]models.ProjectInfo{live, out, old}, models.TimeWindow{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unwindowed.ProjectCount != 3 || len(unwindowed.OutOfWindow) != 0 || unwindowed.SkippedLines != 3 {
+		t.Errorf("no window: got %d projects, %d out of window, %d skipped lines; want 3, 0, 3",
+			unwindowed.ProjectCount, len(unwindowed.OutOfWindow), unwindowed.SkippedLines)
+	}
+}

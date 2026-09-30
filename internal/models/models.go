@@ -701,11 +701,16 @@ type GlobalAnalysis struct {
 	SessionCount    int                      `json:"session_count"` // Sessions successfully analyzed (see ProjectAnalysis)
 	MessageCount    int                      `json:"message_count"`
 	SkippedProjects int                      `json:"skipped_projects"`
-	// Skipped inputs summed over the analyzed projects. A skipped project
-	// contributes only to SkippedProjects — nothing inside it was counted.
+	// Skipped inputs summed over Projects and OutOfWindow, so they can
+	// exceed the sum over Projects alone. A skipped project contributes only
+	// to SkippedProjects — nothing inside it was counted.
 	SkippedSessions int `json:"skipped_sessions,omitempty"` // Sessions that failed to parse
 	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
 	SkippedLines    int `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized)
+	// OutOfWindow holds the projects with nothing inside Window that still
+	// skipped input. They stay out of Projects and the counts, but not out
+	// of the skip counters above, and -v lists their SkipDetails.
+	OutOfWindow []ProjectAnalysis `json:"-"`
 	// Messages whose cache-write cost is a 5m-rate estimate (see SessionAnalysis)
 	EstimatedCostMessages int `json:"estimated_cost_messages,omitempty"`
 	// CostByModel keys priced at a fallback rate (see SessionAnalysis)
