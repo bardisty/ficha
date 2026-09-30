@@ -289,22 +289,35 @@ func CacheTokensByTTL(usage models.TokenUsage) (int64, int64) {
 // Anthropic ID shares it, so it spends the columns on the one part that
 // doesn't tell models apart ("nova-9-202…" rather than "claude-no…").
 //
-// Callers still pass the result through "%-Ns". fmt pads by rune count, and
-// a cut label is exactly width runes whichever ellipsis the glyph set uses
-// ("…" or "..."), so fmt leaves it alone.
+// A display name's last word is its version, and a cut inside it would name a
+// version that doesn't exist ("Fable 5…" for Fable 5.1), so the version goes
+// whole: "Fable…".
+//
+// Callers still pass the result through "%-Ns". fmt pads by rune count, and a
+// cut label is at most width runes whichever ellipsis the glyph set uses ("…"
+// or "..."), so fmt only ever pads it.
 func ClampModel(label string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if utf8.RuneCountInString(label) > width {
-		label = strings.TrimPrefix(label, "claude-")
+	if utf8.RuneCountInString(label) <= width {
+		return label
+	}
+	label = strings.TrimPrefix(label, "claude-")
+	if utf8.RuneCountInString(label) <= width {
+		return label
+	}
+	kept := width - utf8.RuneCountInString(styles.Ellipsis)
+	if i := strings.LastIndexByte(label, ' '); i > 0 && kept >= utf8.RuneCountInString(label[:i]) {
+		return strings.TrimRight(label[:i], " ") + styles.Ellipsis
 	}
 	return truncateRunes(label, width)
 }
 
 // truncateRunes cuts s to at most width runes, ending a cut in the glyph
-// set's ellipsis. A width narrower than the ellipsis gets as much of the
-// ellipsis as fits.
+// set's ellipsis. A cut that lands after a space drops the space too, so the
+// ellipsis sits against the word it cut ("Opus…", not "Opus …"). A width
+// narrower than the ellipsis gets as much of the ellipsis as fits.
 func truncateRunes(s string, width int) string {
 	r := []rune(s)
 	if len(r) <= width {
@@ -314,7 +327,7 @@ func truncateRunes(s string, width int) string {
 	if width <= len(ell) {
 		return string(ell[:width])
 	}
-	return string(r[:width-len(ell)]) + styles.Ellipsis
+	return strings.TrimRight(string(r[:width-len(ell)]), " ") + styles.Ellipsis
 }
 
 // ShortAgentID abbreviates an agent ID to at most 7 bytes for display. Byte
@@ -566,4 +579,52 @@ func costStyledCell(cost float64, width int, highlighted, noColor bool, style li
 		value = style.Render(value)
 	}
 	return left + value + right
+}
+
+// WrapHanging wraps each line of text to width display columns, breaking
+// only between words. A continuation line is indented to where the line's
+// text starts, past its leading spaces and a "Warning: " label, so a wrapped
+// warning reads as one block. A word longer than the room left keeps a line
+// of its own rather than being cut: a URL or model ID must survive intact to
+// be copied. Lines that already fit come back unchanged.
+func WrapHanging(text string, width int) string {
+	lines := strings.SplitAfter(text, "\n")
+	var sb strings.Builder
+	for _, line := range lines {
+		body := strings.TrimSuffix(line, "\n")
+		sb.WriteString(wrapHangingLine(body, width))
+		if len(body) < len(line) {
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
+func wrapHangingLine(line string, width int) string {
+	if lipgloss.Width(line) <= width {
+		return line
+	}
+	text := strings.TrimLeft(line, " ")
+	hang := len(line) - len(text)
+	if strings.HasPrefix(text, "Warning: ") {
+		hang += len("Warning: ")
+	}
+	indent := strings.Repeat(" ", hang)
+	var sb strings.Builder
+	col := 0
+	for i, word := range strings.Fields(text) {
+		w := lipgloss.Width(word)
+		switch {
+		case i == 0:
+			sb.WriteString(line[:len(line)-len(text)] + word)
+			col = len(line) - len(text) + w
+		case col+1+w <= width:
+			sb.WriteString(" " + word)
+			col += 1 + w
+		default:
+			sb.WriteString("\n" + indent + word)
+			col = hang + w
+		}
+	}
+	return sb.String()
 }

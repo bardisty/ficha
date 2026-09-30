@@ -185,7 +185,6 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	// Workflow agents are grouped after regular agents; a dim header line marks
 	// each run's start.
 	msgsGap := strings.Repeat(" ", max(1, labelWidth-20-msgsWidth))
-	narrowed := width < staticReportWidth
 	status := workflowStatuses(styles.GroupRule+" ", labelWidth, analysis)
 	prevWorkflow := ""
 	for _, agent := range analysis.Agents {
@@ -194,7 +193,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 			if agent.WorkflowID != "" {
 				// The run's subtotal sits in the cost column, so a workflow
 				// compares with the parent session at a glance.
-				heading := fitWorkflowLabel(styles.GroupRule+" ", analysis.WorkflowByID(agent.WorkflowID), labelWidth, narrowed, status)
+				heading := fitWorkflowLabel(styles.GroupRule+" ", analysis.WorkflowByID(agent.WorkflowID), labelWidth, status)
 				pad := strings.Repeat(" ", labelWidth-runewidth.StringWidth(heading)+3)
 				cost := workflowCost(analysis.Agents, agent.WorkflowID)
 				if noColor {

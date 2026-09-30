@@ -1,0 +1,35 @@
+╔════════════════════════════════════════════╗
+║  ~/src/app  │  3 sessions                  ║
+╚════════════════════════════════════════════╝
+
+─────[ $0.2291 API-equivalent estimate ]──────
+
+  Input              $0.0180          9.1K
+  Output             $0.0920          7.4K
+  Cache write 5m     $0.0563         20.0K
+  Cache write 1h     $0.0100          1.0K
+  Cache read         $0.0529        122.0K
+  Savings            $0.4761
+
+──────────────[ COST BY MODEL ]───────────────
+
+    Opus 4.8          $0.1587
+    Haiku 4.5         $0.0363
+    Sonnet 5          $0.0341
+
+────────────[ SESSION BREAKDOWN ]─────────────
+
+     # SESSION   MODIFIED  MODEL          COST
+  ────────────────────────────────────────────
+     1 cccc3333  Jan 14    -           (error)
+     2 bbbb2222  Jan 12    Haiku 4.5   $0.0704
+     3 aaaa1111  Jan 10    Opus 4.8    $0.1587
+  ────────────────────────────────────────────
+  Sum (2 sessions):                    $0.2291
+
+══════════════════════════════════════════════
+Total: $0.2291
+Messages: 7 (5 parent, 2 agents)
+Sessions: 3
+──────────────────────────────────────────────
+Storage: /home/user/src/app

@@ -289,7 +289,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 
 		// The parent's model: agents' models show in their own rows.
 		modelName := parentPrimaryModel(a)
-		model := pad(clampModel(modelName, modelWidth), modelWidth)
+		model := pad(render.ClampModel(modelName, modelWidth), modelWidth)
 		agents := fmt.Sprintf("%*s", len("AGENTS"), "-")
 		if a.AgentCount > 0 {
 			agents = fmt.Sprintf("%*d", len("AGENTS"), a.AgentCount)
@@ -308,7 +308,6 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 				costWidth: costWidth,
 				msgs:      treeMsgs,
 				status:    treeStatus,
-				narrowed:  width < staticReportWidth,
 			}))
 		}
 	}
@@ -359,11 +358,10 @@ func agentTreeWidth(a *models.SessionAnalysis, modelWidth int, msgs bool) int {
 }
 
 // treeLayout places an agent tree's rows: each cost in a costWidth cell at
-// costCol, message counts shown with msgs, workflow statuses with status,
-// and narrowed when the report is narrower than its piped width.
+// costCol, message counts shown with msgs, and workflow statuses with status.
 type treeLayout struct {
-	costCol, costWidth     int
-	msgs, status, narrowed bool
+	costCol, costWidth int
+	msgs, status       bool
 }
 
 // renderAgentTreeRows renders a session's agents as a tree under its row,
@@ -442,7 +440,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 			room -= 1 + msgsWidth
 		}
 		modelWidth := min(10, max(room, minModelWidth))
-		model := fmt.Sprintf("%-*s", modelWidth, clampModel(modelName, modelWidth))
+		model := fmt.Sprintf("%-*s", modelWidth, render.ClampModel(modelName, modelWidth))
 		msgs := fmt.Sprintf("%*s", msgsWidth, agentMsgs(agent.MessageCount))
 		if !noColor {
 			marker = lipgloss.NewStyle().Foreground(styles.GetAgentColor(agent.AgentID)).Render(marker)
@@ -464,7 +462,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 			continue
 		}
 		room := costCol - treeIndent - treeStep - 2
-		label := fitWorkflowLabel("", analysis.WorkflowByID(n.workflow), room, layout.narrowed, layout.status)
+		label := fitWorkflowLabel("", analysis.WorkflowByID(n.workflow), room, layout.status)
 		sb.WriteString(line(prefix+dim(label), workflowCost(agents, n.workflow), styles.SecondaryColor))
 		for j, child := range n.children {
 			sb.WriteString(agentRow(indent+dim(rail(last)+connector(j == len(n.children)-1)), child))
@@ -472,12 +470,6 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 	}
 
 	return sb.String()
-}
-
-// clampModel is render.ClampModel for a column that narrows with the
-// terminal, where a cut can land after a space: "Haiku…", not "Haiku …".
-func clampModel(label string, width int) string {
-	return strings.Replace(render.ClampModel(label, width), " "+styles.Ellipsis, styles.Ellipsis, 1)
 }
 
 // workflowStatuses reports whether the workflow labels of analyses, after
@@ -497,15 +489,10 @@ func workflowStatuses(prefix string, width int, analyses ...*models.SessionAnaly
 	return true
 }
 
-// fitWorkflowLabel fits a workflow run's label, after prefix, into width.
-// In a narrowed report the label loses its status unless status is set
-// (see workflowStatuses) before the name is cut, and a cut never leaves a
-// space before its ellipsis. At the piped width the label is cut where it
-// ends, so redirected output stays as it's always been.
-func fitWorkflowLabel(prefix string, meta models.WorkflowMeta, width int, narrowed, status bool) string {
-	if !narrowed {
-		return truncateRight(prefix+render.WorkflowLabel(meta), width)
-	}
+// fitWorkflowLabel fits a workflow run's label, after prefix, into width. The
+// label loses its status unless status is set (see workflowStatuses) before
+// the name is cut, and a cut never leaves a space before its ellipsis.
+func fitWorkflowLabel(prefix string, meta models.WorkflowMeta, width int, status bool) string {
 	if !status {
 		meta.Status = ""
 	}

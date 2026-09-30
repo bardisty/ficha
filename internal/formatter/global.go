@@ -45,7 +45,10 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 	if analysis.Window != nil && len(analysis.Projects) == 0 {
 		return emptyWindow(*analysis.Window)
 	}
-	layout := newProjectsLayout(analysis.Projects, opts)
+	// The cost rows narrow with the frame, but only as far as their fitted
+	// form, so the frame goes no narrower than that.
+	minWidth := lipgloss.Width(costRows(analysis.TotalCost, analysis.TotalUsage, false, false, fittedCostRowWidths(analysis.TotalCost, analysis.TotalUsage), true))
+	layout := newProjectsLayout(analysis.Projects, opts, minWidth)
 	sectionWidth := layout.width
 
 	var sb strings.Builder
@@ -137,7 +140,7 @@ type projectsLayout struct {
 	width      int  // the whole report's width, rules included
 }
 
-func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOptions) projectsLayout {
+func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOptions, minWidth int) projectsLayout {
 	l := projectsLayout{rows: max(opts.TopN, 0), sessions: true, pct: true, active: true}
 	if opts.Details || l.rows > len(projects) {
 		l.rows = len(projects)
@@ -191,7 +194,7 @@ func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOption
 	if opts.Width > 0 {
 		l.width = min(max(fixed+nameWidth, globalStaticWidth), opts.Width)
 	}
-	l.width = max(l.width, fixed+minProjectWidth)
+	l.width = max(l.width, fixed+minProjectWidth, minWidth)
 	l.project = l.width - fixed
 	return l
 }

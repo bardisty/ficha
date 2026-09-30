@@ -726,3 +726,12 @@ func TestGoldenSessionTableShowMixedWidths(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "session_table_show_mixed_widths", FormatSessionTable(goldenMixedWidthAnalysis(), true, 0))
 }
+
+// A workflow name too long for the piped heading loses its status whole
+// before the name is cut, as on a narrowed terminal.
+func TestGoldenSessionTableShowLongWorkflow(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	a := goldenShowWorkflowAnalysis()
+	a.Workflows[0].Name = "dependency-upgrade-audit"
+	checkGolden(t, "session_table_show_long_workflow", FormatSessionTable(a, true, 0))
+}
