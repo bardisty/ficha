@@ -29,8 +29,12 @@ func unknownModelFootnote(ids []string) string {
 	if len(ids) > 2 {
 		named += fmt.Sprintf(" +%d more", len(ids)-2)
 	}
-	return styles.Warning + " " + unknownModelMarker + " " + named + ": fallback pricing, see ficha show"
+	return styles.Warning + " " + unknownModelMarker + " " + named + ": fallback pricing" + unknownModelPointer
 }
+
+// unknownModelPointer ends unknownModelFootnote. A line with no room for it
+// drops it rather than clip it to "see ficha".
+const unknownModelPointer = ", see ficha show"
 
 // newSpinner returns the loading spinner: braille dots, or a spinning line
 // under the ASCII glyph set, colored unless color is off.

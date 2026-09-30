@@ -234,3 +234,26 @@ func TestUnknownModelFootnote(t *testing.T) {
 		}
 	}
 }
+
+// breakdown's stats line drops the pointer to ficha show rather than clip it
+// where the terminal is too narrow, and keeps it where there's room.
+func TestBreakdownUnknownNoteFitsWidth(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	for _, tc := range []struct {
+		width   int
+		pointer bool
+	}{{120, true}, {80, false}} {
+		m := loadedBreakdown(t, tc.width, 24, chromeRows(goldenTime(10, 0, 0), 3))
+		m.unknownModels = []string{"claude-nova-6"}
+		line := m.renderStatsTotals()
+		if !strings.Contains(line, "claude-nova-6: fallback pricing") {
+			t.Errorf("width %d: footnote lost the model: %q", tc.width, line)
+		}
+		if got := strings.Contains(line, unknownModelPointer); got != tc.pointer {
+			t.Errorf("width %d: pointer shown = %v, want %v: %q", tc.width, got, tc.pointer, line)
+		}
+		if w := lipgloss.Width(line); tc.pointer && w > tc.width {
+			t.Errorf("width %d: line is %d wide", tc.width, w)
+		}
+	}
+}

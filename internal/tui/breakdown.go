@@ -922,7 +922,7 @@ func (m BreakdownModel) renderStatsTotals() string {
 			line += sep + note
 		}
 		if len(m.unknownModels) > 0 {
-			line += sep + unknownModelFootnote(m.unknownModels)
+			line += sep + m.fitUnknownNote(line, sep)
 		}
 		return line
 	}
@@ -944,10 +944,22 @@ func (m BreakdownModel) renderStatsTotals() string {
 	}
 	// Explain the MODEL-column asterisk: those rows are fallback-priced
 	if len(m.unknownModels) > 0 {
+		note := m.fitUnknownNote(sb.String(), sep)
 		sb.WriteString(sepStyled)
-		sb.WriteString(warnStyle.Render(unknownModelFootnote(m.unknownModels)))
+		sb.WriteString(warnStyle.Render(note))
 	}
 	return sb.String()
+}
+
+// fitUnknownNote is the fallback-pricing footnote for the stats line after
+// line, without its pointer to ficha show when the terminal is too narrow for
+// it. The model IDs matter more.
+func (m BreakdownModel) fitUnknownNote(line, sep string) string {
+	note := unknownModelFootnote(m.unknownModels)
+	if m.width > 0 && lipgloss.Width(line+sep+note) > m.width {
+		note = strings.TrimSuffix(note, unknownModelPointer)
+	}
+	return note
 }
 
 // renderHelpLine is the key-hint row.
