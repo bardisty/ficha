@@ -183,6 +183,8 @@ Global flags, accepted by every command:
 
 On macOS and Linux, colors adapt to a light or dark terminal background, which ficha asks the terminal for. Inside tmux or screen it can't ask and assumes dark, so on a light background set `COLORFGBG='0;15'`. Quote it: the shell reads an unquoted `;` as the end of the command. On Windows it always uses the dark palette.
 
+Color is off when output goes to a pipe or file. To keep it in a pager, set `CLICOLOR_FORCE=1`, as in `CLICOLOR_FORCE=1 ficha summary | less -R`; the pager gets the 16 basic colors. `ficha help environment` describes the environment variables ficha reads.
+
 Per-command flags:
 
 | Command | Flag | Description |
