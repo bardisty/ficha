@@ -23,6 +23,7 @@ go install github.com/bardisty/ficha@vX.Y.Z
 | 0 | ficha wrote the report. That includes a report missing input it couldn't read: the [skip counters](#skip-counters) say how much, and stderr has a warning. |
 | 1 | ficha couldn't produce the report: no sessions for the project, a session ID that matches none or several, a project directory it can't read, or a live view with no terminal. |
 | 2 | The command line is wrong: an unknown command or flag, a flag value ficha can't parse, or flags that don't go together. |
+| 130 | A live view (`watch`, `breakdown`, `show --live`) got a SIGINT from outside, for example from `kill -INT` or an IDE's stop button. Nothing is printed. Pressing q or ctrl+c inside it exits 0. |
 
 On 1 and 2, ficha prints no report, and stderr starts with an `Error:` line saying why. A script that runs ficha on every prompt, such as a tmux segment or a Claude Code status line, can show nothing on 1, which usually means Claude Code hasn't written a session there yet. Log 2: the script's command line is wrong.
 
