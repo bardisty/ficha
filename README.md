@@ -337,14 +337,34 @@ Claude project directory names start with `-`, so complete them with `--project-
 
 Claude Code passes `session_id` and `transcript_path` to hooks and to the status line command, in the JSON on stdin. `show`, `watch` and `breakdown` take either one.
 
-The status line's JSON already has the session's total as `cost.total_cost_usd`. What ficha adds there is the split between the main conversation and its agents. This script needs `jq`. Save it as `~/.claude/statusline.sh` and make it executable:
+A status line can show the model, how full the context window is, what recent messages cost, and the session's total with the agents' share:
+
+```text
+Opus 5.5 · ctx 68% · $0.19/msg ▲ · $43.67 (agents $12.54)
+```
+
+The model comes from Claude Code's JSON, and the rest from ficha. `$0.19/msg` is the average cost of recent messages in the main conversation. `▲` or `▼` means that's more than 20% above or below the session's average. The script leaves out the agents' share when no agents ran, and the trend before the sixth message.
+
+It needs `jq`. Save it as `~/.claude/statusline.sh` and make it executable:
 
 ```sh
 #!/bin/sh
-ficha show "$(jq -r .transcript_path)" -f json 2>/dev/null |
-  jq -r '"\(.parent_cost.total_cost) \(.agents_cost.total_cost)"' | {
-  read -r main agents && LC_ALL=C printf 'main $%.2f, agents $%.2f\n' "$main" "$agents"
+input=$(cat)
+printf '%s' "$input" | jq -j .model.display_name
+ficha show "$(printf '%s' "$input" | jq -r .transcript_path)" -f json 2>/dev/null |
+  jq -r '"\(.total_cost.total_cost) \(.agents_cost.total_cost) \(.context.percent // "-") \(.insights.recent_avg_cost // "-") \(.insights.cost_trend // "-")"' | {
+  read -r total agents ctx recent trend || exit 0
+  LC_ALL=C; export LC_ALL
+  [ "$ctx" != - ] && printf ' · ctx %.0f%%' "$ctx"
+  case $trend in
+    increasing) printf ' · $%.2f/msg ▲' "$recent" ;;
+    decreasing) printf ' · $%.2f/msg ▼' "$recent" ;;
+    stable) printf ' · $%.2f/msg' "$recent" ;;
+  esac
+  printf ' · $%.2f' "$total"
+  [ "$agents" != 0 ] && printf ' (agents $%.2f)' "$agents"
 }
+echo
 ```
 
 Then add the `statusLine` key to `~/.claude/settings.json`:
