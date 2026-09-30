@@ -1,4 +1,14 @@
+<!-- Title: area: what changed, lower case after the colon, such as
+     "watch: order agents by start". It's this PR's line in the release
+     notes. CONTRIBUTING.md lists the areas. -->
+
 ## What and why
+
+
+
+## For the release notes
+
+Does this change output, flags, exit codes, or json keys or csv columns that scripts rely on? Describe it for the release notes, with the old and new jq path where there is one. If not, delete this section.
 
 
 
