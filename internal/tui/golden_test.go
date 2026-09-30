@@ -224,7 +224,7 @@ func goldenWatchView(t *testing.T, noColor bool) string {
 
 func goldenWatchViewSized(t *testing.T, noColor bool, width, height int) string {
 	t.Helper()
-	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", false, noColor, "", true)
+	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", noColor, "", true)
 	m.project = "webapp"
 	m.now = func() time.Time { return goldenTime(11, 30, 12) }
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})

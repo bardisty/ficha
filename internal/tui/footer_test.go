@@ -148,7 +148,7 @@ func key(t *testing.T, m Model, k string) Model {
 // or resize never moves the reader.
 func TestWatchOpensAtTopAndKeepsPosition(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	m := NewModel("/fixture/sess.jsonl", "sess", false, true, "", false)
+	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
 	m = sized(t, m, 80, 24)
 	m = load(t, m, tallAnalysis(1))
 
@@ -197,7 +197,7 @@ func TestWatchOpensAtTopAndKeepsPosition(t *testing.T) {
 // The footer rule says how much of the body is off-screen, in each direction.
 func TestWatchFooterRuleShowsOverflow(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	m := NewModel("/fixture/sess.jsonl", "sess", false, true, "", false)
+	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
 	m = sized(t, m, 80, 24)
 	m = load(t, m, tallAnalysis(1))
 
@@ -240,7 +240,7 @@ func TestWatchWarningRows(t *testing.T) {
 	a.CostByModel["m9"] = models.CostBreakdown{TotalCost: 0.5}
 
 	for _, w := range []int{80, 60} {
-		m := NewModel("/fixture/sess.jsonl", "sess", false, true, "", false)
+		m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
 		m = sized(t, m, w, 24)
 		m = load(t, m, a)
 		view := m.View()
@@ -269,7 +269,7 @@ func TestWatchWarningRows(t *testing.T) {
 	}
 
 	// No warnings, no row.
-	m := NewModel("/fixture/sess.jsonl", "sess", false, true, "", false)
+	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
 	m = sized(t, m, 80, 24)
 	m = load(t, m, tallAnalysis(1))
 	if got := m.footerHeight(); got != watchFooterBase {
@@ -289,7 +289,7 @@ func TestWatchStatsLine(t *testing.T) {
 		{Timestamp: now.Add(-3 * time.Minute), Cost: models.CostBreakdown{TotalCost: 1.20}},
 	}
 
-	m := NewModel("/fixture/sess.jsonl", "sess", false, true, "", false)
+	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
 	m.now = func() time.Time { return now }
 	m = sized(t, m, 80, 24)
 	m = load(t, m, a)

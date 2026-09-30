@@ -30,7 +30,7 @@ func TestFormatDelta(t *testing.T) {
 }
 
 func TestDetectChanges(t *testing.T) {
-	m := NewModel("/test/path", "test-session", false, true, "", false)
+	m := NewModel("/test/path", "test-session", true, "", false)
 
 	oldAnalysis := &models.SessionAnalysis{
 		TotalCost: models.CostBreakdown{
@@ -143,7 +143,7 @@ func TestDetectChanges_CacheWritePerTTLDeltas(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel("/test/path", "test-session", false, true, "", false)
+			m := NewModel("/test/path", "test-session", true, "", false)
 			old := &models.SessionAnalysis{TotalUsage: tt.old, CostByModel: map[string]models.CostBreakdown{}}
 			neu := &models.SessionAnalysis{TotalUsage: tt.new, CostByModel: map[string]models.CostBreakdown{}}
 			m.detectChanges(old, neu)
@@ -211,7 +211,7 @@ func TestIsEmptySession(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel("/test/path", "test-session", false, true, "", false)
+			m := NewModel("/test/path", "test-session", true, "", false)
 			m.analysis = tt.analysis
 			got := m.isEmptySession()
 			if got != tt.want {
@@ -240,7 +240,7 @@ func TestGetChartWidth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel("/test/path", "test-session", false, true, "", false)
+			m := NewModel("/test/path", "test-session", true, "", false)
 			m.width = tt.width
 			got := m.getChartWidth()
 			if got != tt.want {
@@ -251,7 +251,7 @@ func TestGetChartWidth(t *testing.T) {
 }
 
 func TestRecentlyChangedIsReadOnly(t *testing.T) {
-	m := NewModel("/test/path", "test-session", false, false, "", false)
+	m := NewModel("/test/path", "test-session", false, "", false)
 	m.changedAt["stale"] = time.Now().Add(-3 * highlightDuration)
 	m.deltaTokens["stale"] = 42
 	m.changedAt["fresh"] = time.Now()
@@ -317,7 +317,7 @@ func TestRenderHeaderPanelAlignment(t *testing.T) {
 		for _, loading := range []bool{true, false} {
 			for _, prev := range []bool{false, true} {
 				for _, width := range widths {
-					m := NewModel("/test/path", "0123456789abcdef", false, noColor, "", false)
+					m := NewModel("/test/path", "0123456789abcdef", noColor, "", false)
 					m.loading = loading
 					if prev {
 						m.prevSessionID = "fedcba9876543210"
@@ -342,7 +342,7 @@ func TestWaitForFileChangeRegistersWaitGroupBeforeScheduling(t *testing.T) {
 	// watcher is nil, so the command exits immediately once invoked; the
 	// WaitGroup must still be registered when the command is constructed,
 	// or a quit-time Wait can observe zero while the command is pending
-	m := NewModel("/test/path", "test-session", false, false, "", false)
+	m := NewModel("/test/path", "test-session", false, "", false)
 	cmd := waitForFileChangeCmd(m.wg, m.closing, nil, m.done, m.sessionPath)
 
 	waitDone := make(chan struct{})
@@ -371,7 +371,7 @@ func TestWaitForFileChangeRegistersWaitGroupBeforeScheduling(t *testing.T) {
 func TestWaitForNewSessionNilWatcherReturnsNilCmd(t *testing.T) {
 	// With no session watcher there is nothing to wait for; a nil command
 	// keeps the WaitGroup untouched (tea.Batch ignores nil commands)
-	m := NewModel("/test/path", "test-session", false, false, "", false)
+	m := NewModel("/test/path", "test-session", false, "", false)
 	if m.waitForNewSession() != nil {
 		t.Error("watch model: expected nil cmd when sessionWatcher is nil")
 	}
@@ -406,7 +406,7 @@ func TestPanelWidthFor(t *testing.T) {
 func TestViewFitsNarrowTerminal(t *testing.T) {
 	width := 60
 
-	m := NewModel("/test/path", "test-session", false, true, "", false)
+	m := NewModel("/test/path", "test-session", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 30})
 	m = updated.(Model)
 	for i, line := range strings.Split(m.View(), "\n") {

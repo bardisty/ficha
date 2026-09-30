@@ -56,12 +56,11 @@ func (m Model) loadAnalysis() tea.Msg {
 	if m.closing != nil && m.closing.Load() {
 		return nil
 	}
-	// Always include messages for the cost trend chart
-	// The verbose flag controls additional output details, but we need messages
-	// for the live chart regardless. The agent cache skips re-parsing unchanged
-	// agent sub-sessions on each reload. AllMessages so the chart covers agent
-	// spend too; the analyzer keeps parent-block-then-agent-blocks order and
-	// updateCostChart merges chronologically on every reload.
+	// The cost trend chart needs every message. The agent cache skips
+	// re-parsing unchanged agent sub-sessions on each reload. AllMessages so
+	// the chart covers agent spend too; the analyzer keeps
+	// parent-block-then-agent-blocks order and updateCostChart merges
+	// chronologically on every reload.
 	analysis, err := analyzer.AnalyzeSessionWithCache(m.sessionPath, m.sessionID, analyzer.AllMessages, m.agentCache)
 	if err != nil {
 		return errorMsg{err: err, sessionPath: m.sessionPath}

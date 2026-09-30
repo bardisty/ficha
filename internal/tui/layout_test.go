@@ -17,7 +17,7 @@ func TestWatchFrameHeightIsStable(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	for _, size := range [][2]int{{80, 24}, {120, 40}, {80, 15}, {60, 10}, {40, 8}} {
 		w, h := size[0], size[1]
-		m := NewModel("/p/"+sessA+".jsonl", sessA, false, true, "", true)
+		m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
 		m = sized(t, m, w, h)
 		m = load(t, m, tallAnalysis(1))
 		plain := m.View()
@@ -41,7 +41,7 @@ func TestWatchFrameHeightIsStable(t *testing.T) {
 
 func TestWatchCompactAndTooSmall(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	m := NewModel("/p/"+sessA+".jsonl", sessA, false, true, "", true)
+	m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
 	m = load(t, sized(t, m, 80, 12), tallAnalysis(1))
 	view := m.View()
 	if strings.Contains(view, "╔") || strings.Contains(view, "q: quit") {
@@ -63,7 +63,7 @@ func TestWatchCompactAndTooSmall(t *testing.T) {
 // moves while it shows.
 func TestTokenDeltaColumn(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	m := NewModel("/p/s.jsonl", "s", false, true, "", false)
+	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = sized(t, m, 100, 40)
 	before := m.renderUnifiedCostRow("Cache write", 1.5, 50000, "c", "tok", nil, "5m TTL")
 	m.deltaTokens["tok"] = 2700
@@ -83,7 +83,7 @@ func TestTokenDeltaColumn(t *testing.T) {
 // background reload doesn't bring "Loading..." back.
 func TestWatchTickOnlyWhileHighlighted(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	m := NewModel("/p/s.jsonl", "s", false, true, "", false)
+	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = sized(t, m, 80, 24)
 	m = load(t, m, tallAnalysis(1))
 	if m.ticking {
@@ -128,7 +128,7 @@ func lineOf(s, sub string) int {
 // its count rather than off the screen.
 func TestTokenDeltaNarrowFallsBackInline(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	m := NewModel("/p/s.jsonl", "s", false, true, "", false)
+	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = sized(t, m, 60, 20)
 	m.deltaTokens["tok"] = 2700
 	m.changedAt["tok"] = time.Now()
@@ -146,7 +146,7 @@ func TestTokenDeltaNarrowFallsBackInline(t *testing.T) {
 // After a failed first load stops the spinner, a retry that shows
 // "Loading..." again must restart it rather than show a frozen frame.
 func TestSpinnerRestartsAfterFailedLoad(t *testing.T) {
-	m := NewModel("/nonexistent/s.jsonl", "s", false, false, "", false)
+	m := NewModel("/nonexistent/s.jsonl", "s", false, "", false)
 	m = sized(t, m, 80, 24)
 	updated, _ := m.Update(errorMsg{err: errSessionFileGone})
 	m = updated.(Model)
@@ -166,7 +166,7 @@ func TestSpinnerRestartsAfterFailedLoad(t *testing.T) {
 // A message after an idle stretch starts a fresh 1s clock chain, and the
 // slow chain it replaces ends at its next tick.
 func TestClockChainSpeedsUpAfterIdle(t *testing.T) {
-	m := NewModel("/p/s.jsonl", "s", false, true, "", false)
+	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = sized(t, m, 80, 24)
 	now := time.Now()
 	idle := tallAnalysis(1)

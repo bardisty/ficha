@@ -35,7 +35,7 @@ func watchViewWithUnknownModel(t *testing.T, noColor bool) string {
 	}
 	a.SkippedLines = 0
 
-	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", false, noColor, "", false)
+	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", noColor, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 60})
 	m = updated.(Model)
 	updated, _ = m.Update(analysisMsg{analysis: a})

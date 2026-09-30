@@ -68,7 +68,7 @@ func TestBreakdownFooterShowsSkippedAgents(t *testing.T) {
 // The watch footer follows the same contract from SessionAnalysis.
 func TestWatchFooterShowsSkippedAgents(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
-	m := NewModel("/fixture/sess.jsonl", "sess", false, true, "", false)
+	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = updated.(Model)
 	updated, _ = m.Update(analysisMsg{analysis: &models.SessionAnalysis{
@@ -103,7 +103,7 @@ func TestWatchEmptySessionDisclosesSkippedLines(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewModel(sessionPath, sessionID, false, true, "", false)
+	m := NewModel(sessionPath, sessionID, true, "", false)
 	msg, ok := m.loadAnalysis().(analysisMsg)
 	if !ok {
 		t.Fatalf("loadAnalysis returned %T, want analysisMsg", m.loadAnalysis())

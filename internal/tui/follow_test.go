@@ -24,7 +24,7 @@ const (
 func followModel(t *testing.T, follow bool) Model {
 	t.Helper()
 	forceProfile(t, termenv.Ascii)
-	m := NewModel("/p/"+sessA+".jsonl", sessA, false, true, "", follow)
+	m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", follow)
 	m = sized(t, m, 80, 24)
 	return load(t, m, tallAnalysis(30.05))
 }
@@ -221,7 +221,7 @@ func TestDescribeErr(t *testing.T) {
 // The window title carries the project and total, and is only re-sent when
 // it changes.
 func TestWatchWindowTitle(t *testing.T) {
-	m := NewModel("/p/"+sessA+".jsonl", sessA, false, true, "", true)
+	m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
 	m.project = "webapp"
 	m = sized(t, m, 80, 24)
 	m = load(t, m, tallAnalysis(30.05))
@@ -260,7 +260,7 @@ func TestHeaderWhenMtimeEqualsLastMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewModel(path, sessA, false, true, "", false)
+	m := NewModel(path, sessA, true, "", false)
 	m.now = func() time.Time { return stamp.Add(12 * time.Second) }
 	m = sized(t, m, 80, 24)
 	msg, ok := m.loadAnalysis().(analysisMsg)
@@ -290,7 +290,7 @@ func TestFollowKeepsWatchingAfterSwitch(t *testing.T) {
 	if err := sw.Start(); err != nil {
 		t.Fatal(err)
 	}
-	m := NewModel(pathA, sessA, false, true, "", true)
+	m := NewModel(pathA, sessA, true, "", true)
 	m.sessionWatcher = sw
 	t.Cleanup(func() { shutdownWatchers(m.closeOnce, m.closing, m.done, m.watcher, sw, m.wg) })
 
