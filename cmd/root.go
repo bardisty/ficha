@@ -39,7 +39,7 @@ Examples:
   ficha global             Totals across every project`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Version:       version(),
+		Version:       versionLine(),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// Resolve output sinks once, before any command writes: cobra walks
 			// up to the root's SetOut/SetErr, so this honors test redirection.
@@ -93,7 +93,7 @@ Examples:
 			return rootRun(cfg, cmd, args)
 		},
 	}
-	rootCmd.SetVersionTemplate("ficha {{.Version}}\n")
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.SetFlagErrorFunc(flagError)
 	// cobra defaults this lazily, only on its own unknown-command path, and
 	// rootArgs calls SuggestionsFor directly.
