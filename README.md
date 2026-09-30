@@ -39,7 +39,7 @@ ficha only reads the transcripts Claude Code keeps on your machine. It makes no 
 
    ```sh
    ficha watch      # session totals, following each new session
-   ficha breakdown  # every message's cost as it arrives
+   ficha breakdown  # each message's cost, tokens and agent, as it arrives
    ```
 
    Press `?` for the keys and `q` to quit.
@@ -175,7 +175,7 @@ ficha shows the sessions of the project you're in, so run it from the directory 
 | --- | --- |
 | `ficha [show]` | The latest session, or the one you name: cost, tokens, context and agents |
 | `ficha watch` | The latest session as a live dashboard, switching to each new session as it starts |
-| `ficha breakdown` | A live, scrollable table of every message's cost |
+| `ficha breakdown` | Every message, live, with its agent, model, cost and tokens. Sort by cost or step through the costliest to see what drove the total |
 | `ficha list` | This project's sessions: when, length, model, agents, cost and title |
 | `ficha summary` | Totals across this project's sessions |
 | `ficha global` | Totals across every project |
