@@ -147,17 +147,18 @@ func (m *BreakdownModel) refreshViewport() {
 		return
 	}
 	var content string
+	m.lineRows, m.linePos = nil, nil
 	switch {
 	case len(m.messages) > 0:
-		content, m.lineRows = m.renderTableContent()
+		// One blank line per table line; tableView draws the ones on screen.
+		m.lineRows, m.linePos = m.tableLines()
+		content = strings.Repeat("\n", len(m.lineRows)-1)
 	case m.waiting():
-		content, m.lineRows = m.renderWaiting(), nil
+		content = clipToWidth(m.renderWaiting(), m.width)
 	case !m.loading && m.err == nil:
-		content, m.lineRows = m.renderEmptyState(), nil
-	default:
-		content, m.lineRows = "", nil
+		content = clipToWidth(m.renderEmptyState(), m.width)
 	}
-	m.viewport.SetContent(clipToWidth(content, m.width))
+	m.viewport.SetContent(content)
 	if m.autoScroll {
 		m.viewport.GotoBottom()
 	}

@@ -56,10 +56,14 @@ func TestBreakdownSort_OrdersByCost(t *testing.T) {
 	}
 }
 
-// tableContent is the viewport's content, the rows and dividers.
+// tableContent is the whole table, the rows and dividers, as the viewport
+// would show it scrolled end to end.
 func tableContent(m BreakdownModel) string {
-	content, _ := m.renderTableContent()
-	return content
+	lines := make([]string, len(m.lineRows))
+	for i := range m.lineRows {
+		lines[i] = m.renderLine(i)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Sorted, new rows load and count, but the view holds the row the reader

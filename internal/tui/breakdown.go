@@ -66,8 +66,10 @@ type BreakdownModel struct {
 	// until another key is pressed; "" when none.
 	selectedKey string
 	// lineRows maps each viewport content line to the display Index of the
-	// message on it, or 0 for a day divider.
+	// message on it, or 0 for a day divider; linePos to the message's
+	// position in messages. See tableLines.
 	lineRows []int
+	linePos  []int
 	// sortByCost orders the table most expensive first (s toggles it).
 	// timeYOffset and timeFollow are the time-ordered view's scroll position
 	// and follow state, which s restores.
@@ -610,7 +612,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.pausedAt = 0
 	m.pausePending = false
 	m.selectedKey = ""
-	m.lineRows = nil
+	m.lineRows, m.linePos = nil, nil
 	m.sortByCost = false
 	m.relayout()
 	if m.ready {
@@ -781,7 +783,7 @@ func (m BreakdownModel) View() string {
 		lines = append(lines, m.renderTableSeparator(panelWidth))
 	}
 	if m.ready {
-		lines = append(lines, m.viewport.View())
+		lines = append(lines, m.tableView())
 	} else {
 		lines = append(lines, "")
 	}
@@ -1142,34 +1144,59 @@ func (m BreakdownModel) renderTableSeparator(panelWidth int) string {
 	return sep
 }
 
-// renderTableContent renders all message rows for the viewport, and for each
-// line the display Index of the message on it (0 for a day divider).
-func (m BreakdownModel) renderTableContent() (string, []int) {
-	var sb strings.Builder
-	layout := m.table
-	lineRows := make([]int, 0, len(m.messages))
-	order := m.rowOrder()
-
-	for n, i := range order {
+// tableLines lays the table out, one entry per viewport line: the display
+// Index of the message on it (0 for a day divider), and its position in
+// m.messages (for a divider, the message it heads). Nothing is rendered, so
+// it's cheap enough to redo on every change.
+func (m BreakdownModel) tableLines() (lineRows, linePos []int) {
+	lineRows = make([]int, 0, len(m.messages))
+	linePos = make([]int, 0, len(m.messages))
+	for _, i := range m.rowOrder() {
 		msg := m.messages[i]
 		// Rows carry only a time, so mark where the local day changes. A
 		// zero timestamp (unparseable in the transcript) has no day to mark.
 		// In cost order neighbors aren't neighbors in time: no days to mark.
 		if !m.sortByCost && i > 0 && !msg.Timestamp.IsZero() && !m.messages[i-1].Timestamp.IsZero() &&
 			!render.SameLocalDay(m.messages[i-1].Timestamp, msg.Timestamp) {
-			sb.WriteString(m.renderDayMarker(msg.Timestamp))
-			sb.WriteString("\n")
 			lineRows = append(lineRows, 0)
+			linePos = append(linePos, i)
 		}
-		highlight := m.isNewMessage(msg) || (m.selectedKey != "" && !m.noColor && breakdownMsgKey(msg) == m.selectedKey)
-		sb.WriteString(m.renderRow(msg, highlight, layout))
 		lineRows = append(lineRows, msg.Index)
-		if n < len(order)-1 {
-			sb.WriteString("\n")
-		}
+		linePos = append(linePos, i)
 	}
+	return lineRows, linePos
+}
 
-	return sb.String(), lineRows
+// renderLine renders line i of the table: a message row, or a day divider.
+func (m BreakdownModel) renderLine(i int) string {
+	msg := m.messages[m.linePos[i]]
+	if m.lineRows[i] == 0 {
+		return m.renderDayMarker(msg.Timestamp)
+	}
+	highlight := m.isNewMessage(msg) || (m.selectedKey != "" && !m.noColor && breakdownMsgKey(msg) == m.selectedKey)
+	return m.renderRow(msg, highlight, m.table)
+}
+
+// tableView draws the table rows in the viewport's window. The viewport
+// holds a blank line per table line, which is all its scrolling needs, and
+// only the rows on screen are rendered: at thousands of rows, rendering them
+// all on every highlight cost far more than the reload itself.
+func (m BreakdownModel) tableView() string {
+	if len(m.lineRows) == 0 {
+		return m.viewport.View()
+	}
+	top := m.viewport.YOffset
+	end := min(top+m.viewport.Height, len(m.lineRows))
+	rows := make([]string, 0, max(end-top, 0))
+	for i := top; i < end; i++ {
+		rows = append(rows, m.renderLine(i))
+	}
+	// A copy, so the window's viewport pads and clips it as the real one
+	// would; the real one keeps its placeholder lines and offset.
+	window := m.viewport
+	window.SetContent(clipToWidth(strings.Join(rows, "\n"), m.width))
+	window.SetYOffset(0)
+	return window.View()
 }
 
 // renderDayMarker renders the divider row placed above the first message of a
