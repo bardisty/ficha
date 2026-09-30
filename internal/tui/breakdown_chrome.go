@@ -25,10 +25,11 @@ const (
 
 // Below compactBelowHeight rows the boxed panel and the spacer rows cost more
 // than the data rows they'd push out. Below compactBelowWidth columns the
-// panel can't be drawn at its minimum width plus indent.
+// box gives way to the compact header. That width is breakdown's own, not
+// minPanelWidth's: watch keeps its box down to its 40-column minimum.
 const (
 	compactBelowHeight = 16
-	compactBelowWidth  = minPanelWidth + 4
+	compactBelowWidth  = 44
 )
 
 // Below this height no layout leaves a data row, so View says the terminal
@@ -67,7 +68,7 @@ func (m BreakdownModel) headerRows() int {
 
 // panelWidth is the width of breakdown's rules and panel: watch's width, or
 // the table's when the table is wider, so the frame never falls short of the
-// rows it frames. Unlike panelWidthFor it has no 40-column floor: the compact
+// rows it frames. Unlike panelWidthFor it has no floor: the compact
 // frame has no box, so its rules can shrink to the terminal.
 func (m BreakdownModel) panelWidth() int { return m.frameWidth(m.table) }
 

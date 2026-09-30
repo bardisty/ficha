@@ -159,6 +159,10 @@ func TestWatchHeaderStates(t *testing.T) {
 			p.project = "a-very-long-project-name"
 			p.lastActivity = now.Add(-12 * time.Second)
 		}, "║  aaaaaaaa │ ● FOLLOWING │ 12s ago"},
+		{"narrowest gives up margin before the status", func(p *liveHeaderParams) {
+			p.width = minPanelWidth
+			p.lastActivity = now.Add(-12 * time.Minute)
+		}, "║ aaaaaaaa │ ○ FOLLOWING │ idle 12m  ║"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

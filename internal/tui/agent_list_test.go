@@ -253,3 +253,26 @@ func TestGoldenWatchAgentsFoldedASCII(t *testing.T) {
 	useASCII(t)
 	checkGolden(t, "watch_agents_folded_ascii", goldenAgentList(t, true))
 }
+
+// A run name too long for its heading with a status drops every heading's
+// status at full width too, not only on a narrow terminal, so the short
+// name beside it can't be the only run that reads as having one.
+func TestRunHeadingStatusesAllOrNone(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	for _, width := range []int{0, 100, 60} {
+		m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
+		m.now = func() time.Time { return foldNow }
+		m.width = width
+		m.analysis = foldAnalysis()
+		m.analysis.Workflows[1].Name = "audit-codebase-nightly"
+		got := m.renderAgentBreakdownContent()
+		for _, want := range []string{"── workflow: review-changes  ", "── workflow: audit-codebase-nightly  "} {
+			if !strings.Contains(got, want) {
+				t.Errorf("width %d: no heading %q:\n%s", width, want, got)
+			}
+		}
+		if strings.Contains(got, "(completed)") || strings.Contains(got, "(running)") {
+			t.Errorf("width %d: a heading kept its status:\n%s", width, got)
+		}
+	}
+}

@@ -14,11 +14,11 @@ import (
 // Panel sizing: panels, separators, and section headers are designed for
 // defaultPanelWidth columns; on narrower terminals they shrink toward
 // minPanelWidth so box-drawing lines don't wrap and desynchronize the fixed
-// header/footer height math. Below minPanelWidth (plus indent) the frame is
-// clipped by View's MaxWidth instead.
+// header/footer height math. minPanelWidth plus the 2-column indent is
+// minTermWidth, so the whole frame fits at every width watch draws.
 const (
 	defaultPanelWidth = 76
-	minPanelWidth     = 40
+	minPanelWidth     = minTermWidth - 2
 )
 
 // panelWidthFor returns the panel width for a terminal width: the design width
@@ -247,8 +247,8 @@ func (m Model) renderContextSection() string {
 	// The panel's 2-column inner indent and the "Context " label come first;
 	// the gauge right-aligns its percentage, so "Context  95%" and
 	// "Context 100%" align.
-	// The panel keeps a 40-column minimum and clips below it; size the gauge
-	// to the columns actually on screen so it drops fields instead.
+	// The panel keeps a minimum width and clips below it; size the gauge to
+	// the columns actually on screen so it drops fields instead.
 	avail := panelWidthFor(m.width)
 	if m.width > 0 {
 		avail = min(avail, m.width-2)
@@ -356,13 +356,13 @@ func (m Model) renderAgentBreakdownContent() string {
 	// each run's start. Markers carry the real agent ID (abbreviated), matching
 	// the breakdown TUI's [A<id>] scheme. A running agent's live dot sits in
 	// the indent, so the rows' columns don't move as agents start and stop.
-	// A narrowed section drops the run headings' statuses before it cuts a
-	// name, all or none, as show does, so a heading without one can't read as
-	// a run that had none.
+	// When a heading doesn't fit, every heading drops its status before a
+	// name is cut, all or none, as show does, so a heading without one can't
+	// read as a run that had none.
 	rows := agentRows(a, m.clock())
 	statuses := true
 	for _, row := range rows {
-		if row.kind == agentRowRun && m.agentShrink() > 0 &&
+		if row.kind == agentRowRun &&
 			lipgloss.Width(styles.GroupRule+" "+render.WorkflowLabel(a.WorkflowByID(row.runID))) > labelWidth {
 			statuses = false
 		}

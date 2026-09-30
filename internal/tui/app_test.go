@@ -392,8 +392,9 @@ func TestPanelWidthFor(t *testing.T) {
 		{120, 76}, // wide terminals cap at the design width
 		{78, 76},  // exact fit including the 2-column indent
 		{60, 58},  // narrow: terminal width minus indent
-		{42, 40},  // at the floor
-		{30, 40},  // below the floor — clamped (View clips the overflow)
+		{42, 40},  // narrow: terminal width minus indent
+		{40, 38},  // watch's minimum terminal: at the floor
+		{30, 38},  // below the floor — clamped (View clips the overflow)
 	}
 
 	for _, tt := range tests {

@@ -50,15 +50,23 @@ type liveHeaderParams struct {
 func renderLiveHeaderPanel(p liveHeaderParams) string {
 	var sb strings.Builder
 
-	// Fallback for an absurdly small width; callers clamp to >= 40 via
-	// panelWidthFor, so this rarely fires.
+	// Fallback for an absurdly small width; callers clamp to >=
+	// minPanelWidth via panelWidthFor, so this rarely fires.
 	width := p.width
-	if width < 40 {
-		width = 76
+	if width < minPanelWidth {
+		width = defaultPanelWidth
 	}
 
-	// Inner width (accounting for box borders and padding)
-	innerWidth := width - 6 // 2 for borders, 2 for left padding, 2 for right padding
+	// Inner width: the box's borders and a 2-column margin inside each. The
+	// widest everyday content, ID, mode and "idle 11mo", is 34 columns, so
+	// the two boxes narrower than 40 give up a column of each margin rather
+	// than cut the status: "idle 12m" without its "m" would misread. It goes
+	// by width, not content, so the text doesn't shift as the status grows.
+	margin := "  "
+	if width < minPanelWidth+2 {
+		margin = " "
+	}
+	innerWidth := width - 2 - 2*len(margin)
 
 	// Fit the content to innerWidth *before* computing padding: full content
 	// wider than innerWidth would clamp padding to 0 and push the right border
@@ -83,10 +91,10 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 		// Content line
 		sb.WriteString("  ")
 		sb.WriteString(styles.BoxVertical)
-		sb.WriteString("  ")
+		sb.WriteString(margin)
 		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
-		sb.WriteString("  ")
+		sb.WriteString(margin)
 		sb.WriteString(styles.BoxVertical)
 		sb.WriteString("\n")
 
@@ -106,10 +114,10 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 		// Content line
 		sb.WriteString("  ")
 		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
-		sb.WriteString("  ")
+		sb.WriteString(margin)
 		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
-		sb.WriteString("  ")
+		sb.WriteString(margin)
 		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
 		sb.WriteString("\n")
 
