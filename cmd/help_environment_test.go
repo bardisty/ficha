@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-// `ficha help environment` names the four variables it documents, and root
+// `ficha help environment` names the six variables it documents, and root
 // help lists it as a topic.
 func TestEnvironmentHelpTopic(t *testing.T) {
 	out, _, err := executeCLISplit(t, "help", "environment")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"CLAUDE_CONFIG_DIR", "NO_COLOR", "CLICOLOR_FORCE", "COLORFGBG"} {
+	for _, name := range []string{"CLAUDE_CONFIG_DIR", "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE", "CI", "COLORFGBG"} {
 		if !strings.Contains(out, name) {
 			t.Errorf("help environment missing %s:\n%s", name, out)
 		}

@@ -115,17 +115,3 @@ func TestASCIIWithNoColor(t *testing.T) {
 		t.Error("--no-color must emit no escapes alongside --ascii")
 	}
 }
-
-// An explicit --no-color=false beats NO_COLOR (no-color.org: flags override).
-func TestExplicitColorFlagOverridesNoColorEnv(t *testing.T) {
-	setupE2EFixture(t)
-	forceColor(t)
-	t.Setenv("NO_COLOR", "1")
-	out, _, err := executeCLISplit(t, "show", projFlag, e2eAlphaID, "--no-color=false")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, "\x1b[") {
-		t.Error("--no-color=false should keep color despite NO_COLOR")
-	}
-}

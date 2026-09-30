@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bardisty/ficha/internal/styles"
+	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 )
 
@@ -57,13 +58,14 @@ Exit status:
 				cfg.commandPath += " --live"
 			}
 
-			// NO_COLOR (no-color.org) means the same as --no-color: any
-			// non-empty value turns color off. lipgloss already drops escapes
-			// for it, but ficha's own no-color text fallbacks key off noColor.
+			// NO_COLOR (no-color.org), or CLICOLOR=0 without CLICOLOR_FORCE,
+			// means the same as --no-color. lipgloss already drops escapes for
+			// them, but ficha's own no-color text fallbacks key off noColor.
 			// An explicit --no-color=false still wins, as no-color.org asks.
-			if os.Getenv("NO_COLOR") != "" && !cmd.Flags().Changed("no-color") {
+			if termenv.EnvNoColor() && !cmd.Flags().Changed("no-color") {
 				cfg.noColor = true
 			}
+			applyColorOverride(cmd, cfg)
 			// Glyphs are process-wide; set them every run (true or false) so
 			// an in-process caller's earlier --ascii can't leak into this one.
 			styles.SetASCII(cfg.ascii)
