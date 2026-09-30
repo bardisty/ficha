@@ -39,12 +39,13 @@ type BreakdownModel struct {
 	skippedLines   int               // JSONL lines skipped during parsing (malformed or oversized)
 	skippedAgents  int               // Agent sub-sessions that could not be read
 	estimatedCosts int               // Messages whose cache-write cost is a 5m-rate estimate
-	hasUnknown     bool              // Any message priced from the fallback table (marked in the rows)
+	unknownModels  []string          // Fallback-priced model IDs in the rows, sorted; marked in the rows
 	hasAgents      bool              // Any agent row in the merged list — drives the insight scope label
 	runTags        map[string]string // Workflow run ID -> AGENT-column run tag
 	runNames       map[string]string // AGENT-column run tag -> workflow name
 	err            error
 	loading        bool
+	loaded         bool // a load has landed for this session; see showLoading
 	lastUpdated    time.Time
 
 	// agentCache memoizes agent sub-session parses so a reload triggered by a
@@ -65,8 +66,10 @@ type BreakdownModel struct {
 	// until another key is pressed; "" when none.
 	selectedKey string
 	// lineRows maps each viewport content line to the display Index of the
-	// message on it, or 0 for a day divider.
+	// message on it, or 0 for a day divider; linePos to the message's
+	// position in messages. See tableLines.
 	lineRows []int
+	linePos  []int
 	// sortByCost orders the table most expensive first (s toggles it).
 	// timeYOffset and timeFollow are the time-ordered view's scroll position
 	// and follow state, which s restores.
@@ -144,7 +147,7 @@ type (
 		skippedLines   int
 		skippedAgents  int
 		estimatedCosts int
-		hasUnknown     bool
+		unknownModels  []string
 		hasAgents      bool
 		workflows      []models.WorkflowMeta
 		modTime        time.Time // session file mtime at load; zero if unknown
@@ -354,7 +357,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinner.TickMsg:
 		// Let the spinner stop once nothing shows it; spinnerCmd restarts it.
-		if !m.loading {
+		if !m.showLoading() {
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -386,7 +389,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.skippedLines = msg.skippedLines
 		m.skippedAgents = msg.skippedAgents
 		m.estimatedCosts = msg.estimatedCosts
-		m.hasUnknown = msg.hasUnknown
+		m.unknownModels = msg.unknownModels
 		m.hasAgents = msg.hasAgents
 		m.runTags = workflowRunTags(msg.workflows)
 		m.runNames = make(map[string]string, len(msg.workflows))
@@ -405,6 +408,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			clock = clockCmd(time.Second, m.clockGen)
 		}
 		m.loading = false
+		m.loaded = true
 		m.lastUpdated = time.Now()
 		m.err = nil
 		m.refreshViewport()
@@ -581,7 +585,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 		m.hint = nil
 	}
 
-	// Reset state for clean switch. hasUnknown and err must reset too, or the
+	// Reset state for clean switch. unknownModels and err must reset too, or the
 	// old session's "* = fallback pricing" footnote (and a stale header
 	// error) persist under the new session until its first load lands — or
 	// indefinitely if that load errors.
@@ -596,7 +600,8 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.skippedLines = 0
 	m.skippedAgents = 0
 	m.estimatedCosts = 0
-	m.hasUnknown = false
+	m.unknownModels = nil
+	m.loaded = false
 	m.err = nil
 	m.newMsgKeys = make(map[string]time.Time)
 	m.lastActivity = time.Time{}
@@ -607,7 +612,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.pausedAt = 0
 	m.pausePending = false
 	m.selectedKey = ""
-	m.lineRows = nil
+	m.lineRows, m.linePos = nil, nil
 	m.sortByCost = false
 	m.relayout()
 	if m.ready {
@@ -778,7 +783,7 @@ func (m BreakdownModel) View() string {
 		lines = append(lines, m.renderTableSeparator(panelWidth))
 	}
 	if m.ready {
-		lines = append(lines, m.viewport.View())
+		lines = append(lines, m.tableView())
 	} else {
 		lines = append(lines, "")
 	}
@@ -916,8 +921,8 @@ func (m BreakdownModel) renderStatsTotals() string {
 		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts); note != "" {
 			line += sep + note
 		}
-		if m.hasUnknown {
-			line += sep + unknownModelFootnote(m.unknownModelIDs())
+		if len(m.unknownModels) > 0 {
+			line += sep + m.fitUnknownNote(line, sep)
 		}
 		return line
 	}
@@ -938,11 +943,23 @@ func (m BreakdownModel) renderStatsTotals() string {
 		sb.WriteString(warnStyle.Render(note))
 	}
 	// Explain the MODEL-column asterisk: those rows are fallback-priced
-	if m.hasUnknown {
+	if len(m.unknownModels) > 0 {
+		note := m.fitUnknownNote(sb.String(), sep)
 		sb.WriteString(sepStyled)
-		sb.WriteString(warnStyle.Render(unknownModelFootnote(m.unknownModelIDs())))
+		sb.WriteString(warnStyle.Render(note))
 	}
 	return sb.String()
+}
+
+// fitUnknownNote is the fallback-pricing footnote for the stats line after
+// line, without its pointer to ficha show when the terminal is too narrow for
+// it. The model IDs matter more.
+func (m BreakdownModel) fitUnknownNote(line, sep string) string {
+	note := unknownModelFootnote(m.unknownModels)
+	if m.width > 0 && lipgloss.Width(line+sep+note) > m.width {
+		note = strings.TrimSuffix(note, unknownModelPointer)
+	}
+	return note
 }
 
 // renderHelpLine is the key-hint row.
@@ -973,7 +990,7 @@ func (m BreakdownModel) headerParams(width int) liveHeaderParams {
 	}
 	return liveHeaderParams{
 		sessionID:    m.sessionID,
-		loading:      m.loading,
+		loading:      m.showLoading(),
 		err:          m.err,
 		spinnerView:  m.spinner.View(),
 		noColor:      m.noColor,
@@ -1139,34 +1156,59 @@ func (m BreakdownModel) renderTableSeparator(panelWidth int) string {
 	return sep
 }
 
-// renderTableContent renders all message rows for the viewport, and for each
-// line the display Index of the message on it (0 for a day divider).
-func (m BreakdownModel) renderTableContent() (string, []int) {
-	var sb strings.Builder
-	layout := m.table
-	lineRows := make([]int, 0, len(m.messages))
-	order := m.rowOrder()
-
-	for n, i := range order {
+// tableLines lays the table out, one entry per viewport line: the display
+// Index of the message on it (0 for a day divider), and its position in
+// m.messages (for a divider, the message it heads). Nothing is rendered, so
+// it's cheap enough to redo on every change.
+func (m BreakdownModel) tableLines() (lineRows, linePos []int) {
+	lineRows = make([]int, 0, len(m.messages))
+	linePos = make([]int, 0, len(m.messages))
+	for _, i := range m.rowOrder() {
 		msg := m.messages[i]
 		// Rows carry only a time, so mark where the local day changes. A
 		// zero timestamp (unparseable in the transcript) has no day to mark.
 		// In cost order neighbors aren't neighbors in time: no days to mark.
 		if !m.sortByCost && i > 0 && !msg.Timestamp.IsZero() && !m.messages[i-1].Timestamp.IsZero() &&
 			!render.SameLocalDay(m.messages[i-1].Timestamp, msg.Timestamp) {
-			sb.WriteString(m.renderDayMarker(msg.Timestamp))
-			sb.WriteString("\n")
 			lineRows = append(lineRows, 0)
+			linePos = append(linePos, i)
 		}
-		highlight := m.isNewMessage(msg) || (m.selectedKey != "" && !m.noColor && breakdownMsgKey(msg) == m.selectedKey)
-		sb.WriteString(m.renderRow(msg, highlight, layout))
 		lineRows = append(lineRows, msg.Index)
-		if n < len(order)-1 {
-			sb.WriteString("\n")
-		}
+		linePos = append(linePos, i)
 	}
+	return lineRows, linePos
+}
 
-	return sb.String(), lineRows
+// renderLine renders line i of the table: a message row, or a day divider.
+func (m BreakdownModel) renderLine(i int) string {
+	msg := m.messages[m.linePos[i]]
+	if m.lineRows[i] == 0 {
+		return m.renderDayMarker(msg.Timestamp)
+	}
+	highlight := m.isNewMessage(msg) || (m.selectedKey != "" && !m.noColor && breakdownMsgKey(msg) == m.selectedKey)
+	return m.renderRow(msg, highlight, m.table)
+}
+
+// tableView draws the table rows in the viewport's window. The viewport
+// holds a blank line per table line, which is all its scrolling needs, and
+// only the rows on screen are rendered: at thousands of rows, rendering them
+// all on every highlight cost far more than the reload itself.
+func (m BreakdownModel) tableView() string {
+	if len(m.lineRows) == 0 {
+		return m.viewport.View()
+	}
+	top := m.viewport.YOffset
+	end := min(top+m.viewport.Height, len(m.lineRows))
+	rows := make([]string, 0, max(end-top, 0))
+	for i := top; i < end; i++ {
+		rows = append(rows, m.renderLine(i))
+	}
+	// A copy, so the window's viewport pads and clips it as the real one
+	// would; the real one keeps its placeholder lines and offset.
+	window := m.viewport
+	window.SetContent(clipToWidth(strings.Join(rows, "\n"), m.width))
+	window.SetYOffset(0)
+	return window.View()
 }
 
 // renderDayMarker renders the divider row placed above the first message of a
@@ -1311,13 +1353,15 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	// display-sorted list is fine.
 	var totalCost float64
 	var minCost, maxCost float64
-	hasUnknown := false
+	// The footer names the fallback-priced models on every frame, so they're
+	// worked out here, once per load, off the UI goroutine.
+	unknown := make(map[string]models.CostBreakdown)
 	hasAgents := false
 
 	for i, msg := range messages {
 		totalCost += msg.Cost.TotalCost
-		if !hasUnknown && !pricing.IsKnownModel(msg.Model) {
-			hasUnknown = true
+		if !pricing.IsKnownModel(msg.Model) {
+			unknown[msg.Model] = models.CostBreakdown{}
 		}
 		if msg.AgentID != "" {
 			hasAgents = true
@@ -1346,7 +1390,7 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 		skippedLines:   result.SkippedLines,
 		skippedAgents:  result.SkippedAgents,
 		estimatedCosts: result.EstimatedCostMessages,
-		hasUnknown:     hasUnknown,
+		unknownModels:  unknownModelIDs(unknown),
 		hasAgents:      hasAgents,
 		workflows:      result.Workflows,
 		modTime:        modTime,

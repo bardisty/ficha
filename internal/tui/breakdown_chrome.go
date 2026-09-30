@@ -93,14 +93,20 @@ func (m BreakdownModel) clockInterval() time.Duration {
 	return clockInterval(m.lastActivity, m.clock())
 }
 
-// spinnerCmd restarts the spinner when a load begins. The header shows it
-// for every load, background reloads included. A second chain is harmless:
-// the spinner drops ticks with a stale tag.
+// spinnerCmd restarts the spinner when a load will show "Loading...". A
+// second chain is harmless: the spinner drops ticks with a stale tag.
 func (m BreakdownModel) spinnerCmd() tea.Cmd {
-	if m.loading {
+	if m.showLoading() {
 		return m.spinner.Tick
 	}
 	return nil
+}
+
+// showLoading reports whether the header shows "Loading...": only until the
+// session's first load lands, as in watch. A reload keeps the last status up
+// instead of flickering on every write, even for a session with no rows.
+func (m BreakdownModel) showLoading() bool {
+	return m.loading && !m.loaded
 }
 
 // breakdownLastActivity is the newest message timestamp, else the session
@@ -141,17 +147,18 @@ func (m *BreakdownModel) refreshViewport() {
 		return
 	}
 	var content string
+	m.lineRows, m.linePos = nil, nil
 	switch {
 	case len(m.messages) > 0:
-		content, m.lineRows = m.renderTableContent()
+		// One blank line per table line; tableView draws the ones on screen.
+		m.lineRows, m.linePos = m.tableLines()
+		content = strings.Repeat("\n", len(m.lineRows)-1)
 	case m.waiting():
-		content, m.lineRows = m.renderWaiting(), nil
-	case !m.loading && m.err == nil:
-		content, m.lineRows = m.renderEmptyState(), nil
-	default:
-		content, m.lineRows = "", nil
+		content = clipToWidth(m.renderWaiting(), m.width)
+	case !m.showLoading() && m.err == nil:
+		content = clipToWidth(m.renderEmptyState(), m.width)
 	}
-	m.viewport.SetContent(clipToWidth(content, m.width))
+	m.viewport.SetContent(content)
 	if m.autoScroll {
 		m.viewport.GotoBottom()
 	}

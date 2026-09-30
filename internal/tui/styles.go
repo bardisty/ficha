@@ -16,9 +16,11 @@ import (
 const unknownModelMarker = "*"
 
 // unknownModelFootnote explains unknownModelMarker in a footer, naming the
-// models: "⚠ * claude-nova-9: fallback pricing". The ID is what a pricing
-// update needs, and a TUI owns the screen, so the stderr warning that names
-// it elsewhere never shows. Past two IDs the rest are counted.
+// models: "⚠ * claude-nova-9: fallback pricing, see ficha show". The ID is
+// what a pricing update needs, and a TUI owns the screen, so the stderr
+// warning that names it elsewhere never shows here. ficha show prints that
+// warning: the version that lacks the price, and where newer releases are.
+// The footer has no room for a URL. Past two IDs the rest are counted.
 func unknownModelFootnote(ids []string) string {
 	if len(ids) == 0 {
 		return styles.Warning + " " + unknownModelMarker + " = fallback pricing"
@@ -27,8 +29,12 @@ func unknownModelFootnote(ids []string) string {
 	if len(ids) > 2 {
 		named += fmt.Sprintf(" +%d more", len(ids)-2)
 	}
-	return styles.Warning + " " + unknownModelMarker + " " + named + ": fallback pricing"
+	return styles.Warning + " " + unknownModelMarker + " " + named + ": fallback pricing" + unknownModelPointer
 }
+
+// unknownModelPointer ends unknownModelFootnote. A line with no room for it
+// drops it rather than clip it to "see ficha".
+const unknownModelPointer = ", see ficha show"
 
 // newSpinner returns the loading spinner: braille dots, or a spinning line
 // under the ASCII glyph set, colored unless color is off.

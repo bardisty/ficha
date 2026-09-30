@@ -63,34 +63,63 @@ func TestBreakdownClockAgesHeader(t *testing.T) {
 	}
 }
 
-// The spinner runs only while a load is in flight: it stops once the load
-// lands and restarts with the next one.
+// "Loading..." and its spinner show only until a session's first load
+// lands, as in watch: a reload keeps the last status up, and a switch to
+// another session shows it again.
 func TestBreakdownSpinnerStopsWhenLoaded(t *testing.T) {
 	m := NewBreakdownModel("/nonexistent/s.jsonl", "s", false, "", false)
 	if _, cmd := m.Update(spinner.TickMsg{}); cmd == nil {
 		t.Fatal("spinner didn't tick during the first load")
 	}
-	updated, _ := m.Update(breakdownMsgsMsg{messages: chromeRows(goldenTime(10, 0, 0), 2)})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	updated, _ = updated.Update(breakdownMsgsMsg{messages: chromeRows(goldenTime(10, 0, 0), 2)})
 	m = updated.(BreakdownModel)
 	if _, cmd := m.Update(spinner.TickMsg{}); cmd != nil {
 		t.Fatal("spinner kept ticking with nothing loading")
 	}
 
 	isTick := func(msg tea.Msg) bool { _, ok := msg.(spinner.TickMsg); return ok }
-	for name, msg := range map[string]tea.Msg{
-		"r":      tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")},
-		"resume": tea.ResumeMsg{},
-		"switch": sessionActivityMsg{path: "/nonexistent/t.jsonl", id: "t", created: true},
+	for _, tc := range []struct {
+		name    string
+		msg     tea.Msg
+		loading bool
+	}{
+		{"r", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}, false},
+		{"resume", tea.ResumeMsg{}, false},
+		{"write", fileChangedMsg{}, false},
+		{"switch", sessionActivityMsg{path: "/nonexistent/t.jsonl", id: "t", created: true}, true},
 	} {
 		m := m
 		m.followMode = true
-		updated, cmd := m.Update(msg)
-		if !updated.(BreakdownModel).loading {
-			t.Fatalf("%s: no load started", name)
+		updated, cmd := m.Update(tc.msg)
+		got := updated.(BreakdownModel)
+		if !got.loading {
+			t.Fatalf("%s: no load started", tc.name)
 		}
-		if !batchHas(cmd, isTick) {
-			t.Errorf("%s: the load didn't restart the spinner", name)
+		if batchHas(cmd, isTick) != tc.loading {
+			t.Errorf("%s: spinner restarted = %v, want %v", tc.name, !tc.loading, tc.loading)
 		}
+		if strings.Contains(got.View(), "Loading...") != tc.loading {
+			t.Errorf("%s: header shows Loading... = %v, want %v:\n%s", tc.name, !tc.loading, tc.loading, got.View())
+		}
+	}
+}
+
+// A session with no rows yet has loaded all the same; its reloads keep
+// "no messages yet" up too.
+func TestBreakdownEmptySessionReloadKeepsStatus(t *testing.T) {
+	m := NewBreakdownModel("/nonexistent/s.jsonl", "s", true, "", false)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	updated, _ = updated.Update(breakdownMsgsMsg{})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	// A resize redraws the table area while the reload is in flight.
+	updated, _ = updated.Update(tea.WindowSizeMsg{Width: 90, Height: 24})
+	v := updated.View()
+	if strings.Contains(v, "Loading...") {
+		t.Errorf("reload of an empty session shows Loading...:\n%s", v)
+	}
+	if !strings.Contains(v, emptyStateText) {
+		t.Errorf("reload of an empty session blanked the empty state:\n%s", v)
 	}
 }
 

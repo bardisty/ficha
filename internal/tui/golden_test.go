@@ -390,3 +390,21 @@ func TestGoldenBreakdownViewASCII(t *testing.T) {
 	useASCII(t)
 	checkGolden(t, "breakdown_view_ascii", goldenBreakdownView(t, true))
 }
+
+// breakdown's header panel says "Loading..." while the first load is in
+// flight, and a reload keeps the last status up.
+func TestGoldenBreakdownHeaderLoading(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	header := func(m tea.Model) string {
+		return strings.Join(strings.Split(m.View(), "\n")[:3], "\n")
+	}
+	m := NewBreakdownModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", true, "", false)
+	m.now = func() time.Time { return goldenTime(11, 30, 0) }
+	var model tea.Model = m
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	checkGolden(t, "breakdown_header_first_load", header(model))
+
+	model, _ = model.Update(breakdownMsgsMsg{messages: goldenBreakdownMessages(), insights: &models.MessageInsights{}})
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	checkGolden(t, "breakdown_header_reload", header(model))
+}

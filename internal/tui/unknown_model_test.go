@@ -114,7 +114,7 @@ func breakdownViewWithUnknownModel(t *testing.T, noColor bool) string {
 	m = updated.(BreakdownModel)
 	updated, _ = m.Update(breakdownMsgsMsg{
 		messages: msgs, totalCost: 3.34, minCost: 0.01, maxCost: 1.87,
-		hasUnknown: true,
+		unknownModels: []string{unknownModelID},
 	})
 	m = updated.(BreakdownModel)
 	m.lastUpdated = goldenTime(11, 30, 0)
@@ -224,13 +224,36 @@ func TestUnknownModelFootnote(t *testing.T) {
 		want string
 	}{
 		{nil, "⚠ * = fallback pricing"},
-		{[]string{"claude-nova-9"}, "⚠ * claude-nova-9: fallback pricing"},
-		{[]string{"a", "b"}, "⚠ * a, b: fallback pricing"},
-		{[]string{"a", "b", "c", "d"}, "⚠ * a, b +2 more: fallback pricing"},
+		{[]string{"claude-nova-9"}, "⚠ * claude-nova-9: fallback pricing, see ficha show"},
+		{[]string{"a", "b"}, "⚠ * a, b: fallback pricing, see ficha show"},
+		{[]string{"a", "b", "c", "d"}, "⚠ * a, b +2 more: fallback pricing, see ficha show"},
 	}
 	for _, tt := range tests {
 		if got := unknownModelFootnote(tt.ids); got != tt.want {
 			t.Errorf("unknownModelFootnote(%v) = %q, want %q", tt.ids, got, tt.want)
+		}
+	}
+}
+
+// breakdown's stats line drops the pointer to ficha show rather than clip it
+// where the terminal is too narrow, and keeps it where there's room.
+func TestBreakdownUnknownNoteFitsWidth(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	for _, tc := range []struct {
+		width   int
+		pointer bool
+	}{{120, true}, {80, false}} {
+		m := loadedBreakdown(t, tc.width, 24, chromeRows(goldenTime(10, 0, 0), 3))
+		m.unknownModels = []string{"claude-nova-6"}
+		line := m.renderStatsTotals()
+		if !strings.Contains(line, "claude-nova-6: fallback pricing") {
+			t.Errorf("width %d: footnote lost the model: %q", tc.width, line)
+		}
+		if got := strings.Contains(line, unknownModelPointer); got != tc.pointer {
+			t.Errorf("width %d: pointer shown = %v, want %v: %q", tc.width, got, tc.pointer, line)
+		}
+		if w := lipgloss.Width(line); tc.pointer && w > tc.width {
+			t.Errorf("width %d: line is %d wide", tc.width, w)
 		}
 	}
 }
