@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -21,15 +22,36 @@ type SessionWatcher struct {
 	// known holds the session IDs present when watching started plus every
 	// one created since. Only a Create of an ID outside it is a new session;
 	// a Create of a known ID is an atomic replace, which is just activity.
-	known     map[string]bool
-	sessionMu sync.RWMutex // Protects currentSession and known
+	known map[string]bool
+	// sigs holds each session file's size and mtime as last seen, so the
+	// poll can tell a write from nothing new.
+	sigs      map[string]sessionSig
+	sessionMu sync.RWMutex // Protects currentSession, known and sigs
 	watcher   *fsnotify.Watcher
 	done      chan struct{}
 	// restartCh signals waiters to restart (used when session changes)
 	restartCh chan struct{}
 	restartMu sync.Mutex
 	closeOnce sync.Once // Ensures Stop() logic runs exactly once
+
+	// The poll's state, touched only by the goroutine in WaitForSessionEvent.
+	pollEvery  time.Duration
+	nextPoll   time.Time
+	polls      int
+	dirPending bool // the project directory hadn't appeared at Start
 }
+
+// sessionSig is a session file's size and mtime.
+type sessionSig struct {
+	size int64
+	mod  time.Time
+}
+
+// fullScanEvery is how many polls pass between stats of every session. The
+// polls between stat only sessions written to within idleAfter: a stat over
+// WSL's 9p mounts takes milliseconds, and a project can hold hundreds of
+// sessions. A write to an older session is noticed within 30 seconds.
+const fullScanEvery = 15
 
 // NewSessionWatcher creates a new session watcher
 func NewSessionWatcher(projectDir, currentSession string) *SessionWatcher {
@@ -37,6 +59,8 @@ func NewSessionWatcher(projectDir, currentSession string) *SessionWatcher {
 		projectDir:     filepath.Clean(projectDir),
 		currentSession: currentSession,
 		known:          make(map[string]bool),
+		sigs:           make(map[string]sessionSig),
+		pollEvery:      subagentPollInterval,
 		done:           make(chan struct{}),
 		restartCh:      make(chan struct{}),
 	}
@@ -91,6 +115,8 @@ func (sw *SessionWatcher) Start() error {
 	if target != sw.projectDir {
 		if _, statErr := os.Stat(sw.projectDir); statErr == nil {
 			_ = watcher.Add(sw.projectDir)
+		} else {
+			sw.dirPending = true
 		}
 	}
 
@@ -162,6 +188,8 @@ type sessionEvent struct {
 
 // WaitForSessionEvent blocks until another session in the project is created
 // or written to, the current session is changed externally, or shutdown.
+// Alongside the fsnotify watch it polls the project directory, since a watch
+// can start without error and never deliver an event, as on WSL's 9p mounts.
 func (sw *SessionWatcher) WaitForSessionEvent() sessionEvent {
 	// Check done channel before starting to avoid unnecessary work
 	select {
@@ -178,8 +206,21 @@ func (sw *SessionWatcher) WaitForSessionEvent() sessionEvent {
 	restartCh := sw.restartCh
 	sw.restartMu.Unlock()
 
+	// The schedule outlives this call: another session's steady writes
+	// return from it every few hundred milliseconds, and a timer started
+	// afresh each time would never fire.
+	pollTimer := time.NewTimer(time.Until(sw.nextPoll))
+	defer pollTimer.Stop()
+
 	for {
 		select {
+		case <-pollTimer.C:
+			ev := sw.poll()
+			sw.nextPoll = time.Now().Add(sw.pollEvery)
+			if ev.path != "" {
+				return ev
+			}
+			pollTimer.Reset(sw.pollEvery)
 		case <-sw.done:
 			return sessionEvent{}
 		case <-restartCh:
@@ -213,6 +254,7 @@ func (sw *SessionWatcher) WaitForSessionEvent() sessionEvent {
 // session file can land in it before the watch does, so any already there
 // count as created now.
 func (sw *SessionWatcher) adoptProjectDir() sessionEvent {
+	sw.dirPending = false
 	if err := sw.watcher.Add(sw.projectDir); err != nil {
 		return sessionEvent{}
 	}
@@ -220,12 +262,77 @@ func (sw *SessionWatcher) adoptProjectDir() sessionEvent {
 	if err != nil {
 		return sessionEvent{}
 	}
+	// Every session goes into known, not just the one reported, or the next
+	// poll would report the rest as new.
+	var first sessionEvent
 	for _, e := range entries {
-		if ev := sw.handleSessionFile(filepath.Join(sw.projectDir, e.Name()), fsnotify.Create); ev.path != "" {
-			return ev
+		if ev := sw.handleSessionFile(filepath.Join(sw.projectDir, e.Name()), fsnotify.Create); first.path == "" {
+			first = ev
+		}
+	}
+	return first
+}
+
+// poll lists the project directory for what the watch missed: a session
+// file not seen before is a new session, and a new size or mtime on another
+// is activity. New sessions are found by name alone; see fullScanEvery for
+// which sessions it stats.
+func (sw *SessionWatcher) poll() sessionEvent {
+	entries, err := os.ReadDir(sw.projectDir)
+	if err != nil {
+		return sessionEvent{}
+	}
+	if sw.dirPending {
+		return sw.adoptProjectDir()
+	}
+	full := sw.polls%fullScanEvery == 0
+	sw.polls++
+	now := time.Now()
+	for _, e := range entries {
+		if !uuidPattern.MatchString(e.Name()) {
+			continue
+		}
+		if full {
+			select {
+			case <-sw.done:
+				return sessionEvent{}
+			default:
+			}
+		}
+		path := filepath.Join(sw.projectDir, e.Name())
+		id := strings.TrimSuffix(e.Name(), ".jsonl")
+		sw.sessionMu.RLock()
+		current, known := id == sw.currentSession, sw.known[id]
+		prev, seen := sw.sigs[id]
+		sw.sessionMu.RUnlock()
+		switch {
+		case !known:
+			return sw.handleSessionFile(path, fsnotify.Create)
+		case current:
+			// Its writes are the view's own. Tracking them keeps a session
+			// the view just left from reading as active.
+			sw.observe(id, path)
+		case !full && (!seen || now.Sub(prev.mod) >= idleAfter):
+		case sw.observe(id, path):
+			return sessionEvent{path: path, id: id}
 		}
 	}
 	return sessionEvent{}
+}
+
+// observe records a session file's size and mtime, and reports whether
+// either moved since the last time. The first sighting doesn't count.
+func (sw *SessionWatcher) observe(id, path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	sig := sessionSig{size: info.Size(), mod: info.ModTime()}
+	sw.sessionMu.Lock()
+	defer sw.sessionMu.Unlock()
+	prev, seen := sw.sigs[id]
+	sw.sigs[id] = sig
+	return seen && (prev.size != sig.size || !prev.mod.Equal(sig.mod))
 }
 
 // handleSessionFile classifies a file event: another session's file at the
@@ -241,6 +348,8 @@ func (sw *SessionWatcher) handleSessionFile(filePath string, op fsnotify.Op) ses
 		return sessionEvent{}
 	}
 	sessionID := strings.TrimSuffix(filename, ".jsonl")
+	// The poll then finds nothing new in a write reported here.
+	sw.observe(sessionID, filePath)
 
 	sw.sessionMu.Lock()
 	defer sw.sessionMu.Unlock()
