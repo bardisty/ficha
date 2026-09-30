@@ -24,6 +24,7 @@ GOMOD=$(GOCMD) mod
 # toolchain line.
 GOLANGCI_LINT_VERSION=v1.64.8
 LINT_GOTOOLCHAIN=$(shell awk '$$1 == "go" { g = "go" $$2 } $$1 == "toolchain" { t = $$2 } END { print (t != "" ? t : g) }' go.mod)
+GOLANGCI_LINT=GOTOOLCHAIN=$(LINT_GOTOOLCHAIN) $(GOCMD) run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 # Version from VERSION file
 VERSION=$(shell cat VERSION 2>/dev/null || echo "dev")
@@ -74,9 +75,9 @@ test-coverage:
 	$(GOTEST) $(TESTFLAGS) -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 
-# Install to GOPATH/bin
+# Install to GOBIN, or GOPATH/bin when GOBIN is unset, the way go install does
 install:
-	$(GOBUILD) $(LDFLAGS) -o $(shell go env GOPATH)/bin/$(BINARY) .
+	CGO_ENABLED=0 $(GOCMD) install -trimpath $(LDFLAGS) .
 
 # Clean build artifacts
 clean:
@@ -91,13 +92,13 @@ deps:
 tidy:
 	$(GOMOD) tidy
 
-# Run the application
+# Run the application with the version stamped, e.g. make run ARGS='watch -p DIR'
 run:
-	$(GOCMD) run . $(ARGS)
+	$(GOCMD) run $(LDFLAGS) . $(ARGS)
 
 # Run golangci-lint, building the pinned version on first use
 lint:
-	GOTOOLCHAIN=$(LINT_GOTOOLCHAIN) $(GOCMD) run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
+	$(GOLANGCI_LINT) run ./...
 
 # Lists every Go file, skipping hidden files and directories at any depth.
 # gofmt, unlike go test and golangci-lint, descends into hidden directories,
@@ -105,9 +106,13 @@ lint:
 # progress rewritten or failed.
 FIND_GO = find . -path '*/.*' -prune -o -name '*.go' -print
 
-# Format all Go files
+# Format all Go files, then fix what lint's goimports check flags, such as a
+# third-party import in the standard library's group. The fix runs through the
+# pinned linter so it agrees with make lint, and ./... skips hidden
+# directories the way FIND_GO does.
 fmt:
 	$(FIND_GO) | xargs gofmt -w
+	$(GOLANGCI_LINT) run --fix --enable-only goimports ./...
 
 # Run go vet standalone. The gate (check) enforces the same analyzers through
 # golangci-lint's govet, so running this separately is only for convenience.
@@ -176,27 +181,27 @@ screenshots: build
 # Help
 help:
 	@echo "Available targets:"
-	@echo "  build           - Build for current platform"
-	@echo "  build-linux     - Build for Linux AMD64"
-	@echo "  build-linux-arm64 - Build for Linux ARM64"
-	@echo "  build-windows   - Build for Windows AMD64"
-	@echo "  build-darwin    - Build for macOS AMD64"
+	@echo "  build              - Build for current platform"
+	@echo "  build-linux        - Build for Linux AMD64"
+	@echo "  build-linux-arm64  - Build for Linux ARM64"
+	@echo "  build-windows      - Build for Windows AMD64"
+	@echo "  build-darwin       - Build for macOS AMD64"
 	@echo "  build-darwin-arm64 - Build for macOS ARM64"
-	@echo "  build-all       - Build for all platforms"
-	@echo "  test            - Run tests"
-	@echo "  update-golden   - Regenerate .golden rendering snapshots"
-	@echo "  test-coverage   - Run tests with coverage"
-	@echo "  install         - Install to GOPATH/bin"
-	@echo "  clean           - Clean build artifacts"
-	@echo "  deps            - Download dependencies"
-	@echo "  tidy            - Tidy dependencies"
-	@echo "  run             - Run the application"
-	@echo "  lint            - Run golangci-lint"
-	@echo "  fmt             - Format all Go files"
-	@echo "  vet             - Run go vet"
-	@echo "  fmt-check       - Fail on unformatted files without rewriting them"
-	@echo "  test-race       - Run tests with the race detector (plain tests without cgo)"
-	@echo "  check           - Run fmt, lint, and test"
-	@echo "  ci              - Run what CI runs: fmt-check, lint, test-race, build-all"
-	@echo "  fixture         - Build synthetic transcripts in bin/fixture (FIXTURE=dir)"
-	@echo "  screenshots     - Regenerate the README screenshots (needs vhs)"
+	@echo "  build-all          - Build for all platforms"
+	@echo "  test               - Run tests"
+	@echo "  update-golden      - Regenerate .golden rendering snapshots"
+	@echo "  test-coverage      - Run tests with coverage"
+	@echo "  install            - Install to GOBIN (or GOPATH/bin)"
+	@echo "  clean              - Clean build artifacts"
+	@echo "  deps               - Download dependencies"
+	@echo "  tidy               - Tidy dependencies"
+	@echo "  run                - Run from source, e.g. make run ARGS='watch -p DIR'"
+	@echo "  lint               - Run golangci-lint"
+	@echo "  fmt                - Format all Go files and fix import grouping"
+	@echo "  vet                - Run go vet"
+	@echo "  fmt-check          - Fail on unformatted files without rewriting them"
+	@echo "  test-race          - Run tests with the race detector (plain tests without cgo)"
+	@echo "  check              - Run fmt, lint, and test"
+	@echo "  ci                 - Run what CI runs: fmt-check, lint, test-race, build-all"
+	@echo "  fixture            - Build synthetic transcripts in bin/fixture (FIXTURE=dir)"
+	@echo "  screenshots        - Regenerate the README screenshots (needs vhs)"

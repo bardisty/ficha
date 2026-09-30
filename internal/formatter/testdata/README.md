@@ -10,7 +10,7 @@ TUI live in `internal/tui/testdata/`.
 After an **intentional** rendering change:
 
 ```bash
-make update-golden        # or: go test ./internal/formatter ./internal/tui -run TestGolden -update
+make update-golden        # or: go test ./internal/formatter ./internal/tui ./cmd -run TestGolden -update
 git diff                  # review — the diff IS the behavior change
 ```
 
@@ -26,5 +26,6 @@ A golden diff you didn't intend means you regressed the layout.
   through `analyzer.AnalyzeMultipleSessions`, the same path `cmd/summary`
   uses. Their costs come from the live pricing catalog, so a pricing-table
   change legitimately changes them.
-- Editors must not strip trailing whitespace here — chart and padded lines
-  end in spaces.
+- Editors must not strip trailing whitespace here, since chart and padded
+  lines end in spaces, or add a final newline to a file that lacks one.
+  `.editorconfig` says both for `*.golden`.

@@ -1,0 +1,8 @@
+root = true
+
+# Goldens are compared byte for byte: lines end in padding, most files have
+# no final newline, and git stores them as-is (-text), so CRLF would stick.
+[*.golden]
+trim_trailing_whitespace = false
+insert_final_newline = false
+end_of_line = lf
