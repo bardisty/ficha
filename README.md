@@ -295,7 +295,7 @@ Before 1.0, a minor release can rename or remove keys. [Compatibility](docs/mach
 
 ## Scripting
 
-`show`, `watch` and `breakdown` take a session ID or the path to a session's transcript. A path, or a full 36-character ID, works from any directory. Claude Code passes both to hooks and to the status line command, as `transcript_path` and `session_id` in the JSON on stdin.
+`show`, `watch` and `breakdown` take a session ID or the path to a session's transcript. A path, or a full 36-character ID, works from any directory. Claude Code passes both to hooks and to the status line command, as `transcript_path` and `session_id` in the JSON on stdin. A transcript copied elsewhere finds its agents only in the folder beside it named like the file without `.jsonl`, so copy that folder too and keep both names. Without it, ficha shows the main conversation alone and says so on stderr.
 
 In Claude Code's own status line, that JSON already has the session's total as `cost.total_cost_usd`. What ficha adds there is the split between the main conversation and its agents. It needs `jq`. Save it as `~/.claude/statusline.sh` and make it executable:
 
