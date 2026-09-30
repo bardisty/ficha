@@ -7,19 +7,17 @@ import (
 func newWatchCmd(cfg *config) *cobra.Command {
 	watchCmd := &cobra.Command{
 		Use:   "watch [session-id]",
-		Short: "Watch session in real-time (alias for show --live)",
-		Long: `Watch a Claude Code session in real-time, updating as new messages arrive.
+		Short: "Watch the latest session live, following new ones",
+		Long: `A live dashboard for the project's latest Claude Code session: cost, tokens,
+context window and agents, updated as messages arrive.
 
-This is an alias for 'ficha show --live'.
-
-By default, auto-follows the latest session in the project. When you start a new
-Claude Code session (via /exit, /clear, or restart), the view automatically
-switches to the new session.
+When a new session starts, after /clear or a restart, watch switches to it.
+Give a session ID, or pass --no-follow, to stay on one session.
 
 Examples:
-  ficha watch                   Watch and auto-follow latest session
-  ficha watch --no-follow       Watch latest session, don't auto-follow
-  ficha watch abc123            Watch specific session (pinned, no auto-follow)`,
+  ficha watch                   Follow the latest session
+  ficha watch --no-follow       Stay on the latest session
+  ficha watch abc123            Watch one session`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeSessionIDs(cfg),
 		RunE: func(cmd *cobra.Command, args []string) error {

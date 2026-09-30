@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -67,9 +68,8 @@ Exit status:
 			// an in-process caller's earlier --ascii can't leak into this one.
 			styles.SetASCII(cfg.ascii)
 
-			// version prints plain text and ignores --format entirely
-			if cmd.Name() == "version" {
-				return nil
+			if cmd.Annotations[noGlobalFlagsAnnotation] != "" {
+				return noGlobalFlags(cmd)
 			}
 			// Validate format flag
 			if !validFormats[strings.ToLower(cfg.format)] {
@@ -129,6 +129,12 @@ Exit status:
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newOutputHelpTopic())
 	rootCmd.AddCommand(newEnvironmentHelpTopic())
+	// cobra adds help lazily too, but its Run reads the output streams only
+	// when it runs, so adding it here is safe.
+	rootCmd.InitDefaultHelpCmd()
+	if help := subcommandNamed(rootCmd, "help"); help != nil {
+		help.Args = helpTopicArgs
+	}
 	usageArgs(rootCmd)
 
 	return rootCmd
@@ -145,6 +151,10 @@ func initCompletion(root *cobra.Command) {
 		if c.Name() == "completion" {
 			c.RunE = func(c *cobra.Command, _ []string) error { return c.Help() }
 			usageArgs(c)
+			takeNoGlobalFlags(c)
+			for _, shell := range c.Commands() {
+				takeNoGlobalFlags(shell)
+			}
 		}
 	}
 }
@@ -153,7 +163,7 @@ func initCompletion(root *cobra.Command) {
 func Execute() {
 	root := newRootCmd()
 	initCompletion(root)
-	err := root.Execute()
+	err := root.ExecuteContext(withCommandLine(context.Background(), os.Args[1:]))
 	if err == nil {
 		return
 	}

@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -129,10 +131,17 @@ func noArgs(cmd *cobra.Command, args []string) error {
 }
 
 // flagError rewrites pflag's value-parse errors, which quote Go's strconv
-// internals, into the shape ficha's own flag validation uses. Other flag
-// errors (unknown flag, missing value) already read well and pass through.
+// internals, into the shape ficha's own flag validation uses. An unknown
+// flag on bare `ficha` that a command takes gets pointed at that command.
+// Other flag errors (missing value) already read well and pass through.
 // cobra calls it for every flag parse error, so all of them exit 2.
-func flagError(_ *cobra.Command, err error) error {
+func flagError(cmd *cobra.Command, err error) error {
+	var notExist *pflag.NotExistError
+	if errors.As(err, &notExist) && !cmd.HasParent() {
+		if hint := commandFlagHint(cmd, notExist); hint != "" {
+			return usageErrorf("%v. %s", err, hint)
+		}
+	}
 	var invalid *pflag.InvalidValueError
 	if !errors.As(err, &invalid) {
 		return usageError(err)
@@ -151,4 +160,87 @@ func flagError(_ *cobra.Command, err error) error {
 		return usageError(err)
 	}
 	return usageErrorf("invalid --%s value %q: %s", f.Name, invalid.GetValue(), want)
+}
+
+// commandFlagHint names the commands that take the unknown flag bare
+// `ficha` rejected, as in `ficha -f csv --messages`. Bare ficha is show,
+// but with only the project flags.
+func commandFlagHint(root *cobra.Command, e *pflag.NotExistError) string {
+	// Owners that analyze one project, as bare ficha does, come first: they
+	// make the better suggestion for `ficha --since 7d`.
+	var owners, others []string
+	var flag string
+	for _, c := range root.Commands() {
+		if !c.IsAvailableCommand() {
+			continue
+		}
+		// For a shorthand, the name is the one letter pflag didn't know.
+		f := c.Flags().Lookup(e.GetSpecifiedName())
+		if e.GetSpecifiedShortnames() != "" {
+			f = c.Flags().ShorthandLookup(e.GetSpecifiedName())
+		}
+		if f == nil || f.Hidden {
+			continue
+		}
+		if c.Flags().Lookup("project") != nil {
+			owners = append(owners, c.Name())
+		} else {
+			others = append(others, c.Name())
+		}
+		flag = "--" + f.Name
+		if e.GetSpecifiedShortnames() != "" {
+			flag = "-" + f.Shorthand
+		}
+	}
+	owners = append(owners, others...)
+	if len(owners) == 0 {
+		return ""
+	}
+	hint := fmt.Sprintf("%s is a %s flag", flag, strings.Join(owners, " and "))
+	args, ok := commandLine(root.Context())
+	if !ok {
+		return hint + "."
+	}
+	// With the flag first, as in `ficha --details summary`, cobra takes the
+	// command name for the unknown flag's value and never reaches it. A name
+	// that owns the flag moves to the front; any other leaves the fix to the
+	// reader.
+	command := owners[0]
+	var rest []string
+	for i, a := range args {
+		c := subcommandNamed(root, a)
+		if c == nil || !c.IsAvailableCommand() {
+			continue
+		}
+		if !slices.Contains(owners, c.Name()) {
+			return hint + "."
+		}
+		command = c.Name()
+		rest = append(slices.Clone(args[:i]), args[i+1:]...)
+		break
+	}
+	if rest == nil {
+		rest = args
+	}
+	quoted := make([]string, len(rest))
+	for i, a := range rest {
+		quoted[i] = shellQuote(a)
+	}
+	return fmt.Sprintf("%s: %s %s %s", hint, root.Name(), command, strings.Join(quoted, " "))
+}
+
+type commandLineKey struct{}
+
+// withCommandLine carries the arguments ficha was run with, which cobra
+// doesn't pass to a flag error function, so a hint can repeat them.
+func withCommandLine(ctx context.Context, args []string) context.Context {
+	return context.WithValue(ctx, commandLineKey{}, args)
+}
+
+func commandLine(ctx context.Context) ([]string, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	args, ok := ctx.Value(commandLineKey{}).([]string)
+	return args, ok
 }

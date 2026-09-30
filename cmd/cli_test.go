@@ -76,16 +76,18 @@ func TestResolveVersion(t *testing.T) {
 	}
 }
 
-// The version command prints plain text and is exempt from --format validation,
-// so an otherwise-invalid -f must not error.
-func TestVersionSubcommandIgnoresFormat(t *testing.T) {
-	out, err := executeCLI(t, "version", "-f", "xml")
-	if err != nil {
-		t.Fatalf("version -f xml should not error (format is ignored): %v", err)
+// version prints fixed text, so a global flag given to it would be silently
+// ignored; it's rejected as a usage error instead.
+func TestVersionSubcommandRejectsGlobalFlags(t *testing.T) {
+	_, err := executeCLI(t, "version", "-f", "xml")
+	if err == nil {
+		t.Fatal("version -f xml should error")
 	}
-	want := versionLine() + "\n"
-	if out != want {
-		t.Errorf("got %q, want %q", out, want)
+	if want := "ficha version doesn't take --format"; err.Error() != want {
+		t.Errorf("got %q, want %q", err, want)
+	}
+	if got := exitCode(err); got != exitUsage {
+		t.Errorf("exit %d, want %d", got, exitUsage)
 	}
 }
 
