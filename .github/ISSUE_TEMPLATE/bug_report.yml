@@ -7,14 +7,15 @@ body:
     attributes:
       label: ficha version
       description: Output of `ficha version`.
-      placeholder: ficha 0.24.0
+      placeholder: ficha 0.55.0 (01ff73c, go1.25.14, linux/amd64)
     validations:
       required: true
   - type: input
     id: platform
     attributes:
-      label: OS and architecture
-      placeholder: macOS 15 arm64, Ubuntu 24.04 amd64, Windows 11 amd64
+      label: OS
+      description: The release, like "macOS 15" or "Ubuntu 24.04". `ficha version` already gives the architecture.
+      placeholder: macOS 15, Ubuntu 24.04, Windows 11
     validations:
       required: true
   - type: input
