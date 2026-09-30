@@ -57,8 +57,15 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 		width = defaultPanelWidth
 	}
 
-	// Inner width: the box's borders and a 2-column margin inside each.
+	// Inner width: the box's borders and a 2-column margin inside each. The
+	// widest everyday content, ID, mode and "idle 11mo", is 34 columns, so
+	// the two boxes narrower than 40 give up a column of each margin rather
+	// than cut the status: "idle 12m" without its "m" would misread. It goes
+	// by width, not content, so the text doesn't shift as the status grows.
 	margin := "  "
+	if width < minPanelWidth+2 {
+		margin = " "
+	}
 	innerWidth := width - 2 - 2*len(margin)
 
 	// Fit the content to innerWidth *before* computing padding: full content
@@ -66,13 +73,6 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 	// out of column on narrow terminals. fitStatusHeader elides in order of
 	// least value; MaxWidth hard-clips as a final guarantee.
 	content := fitStatusHeader(p, innerWidth)
-	if lipgloss.Width(content) > innerWidth {
-		// A narrow box gives up a column of each margin before it cuts the
-		// status: "idle 12m" losing its "m" would misread.
-		margin = " "
-		innerWidth = width - 2 - 2*len(margin)
-		content = fitStatusHeader(p, innerWidth)
-	}
 	if lipgloss.Width(content) > innerWidth {
 		content = lipgloss.NewStyle().MaxWidth(innerWidth).Render(content)
 	}
