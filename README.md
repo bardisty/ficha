@@ -92,9 +92,10 @@ sha256sum -c --ignore-missing checksums.txt &&
   rm "$f" checksums.txt
 ```
 
-If the check fails, the chain stops there. Nothing is installed, and both files stay where they are. To install for all users instead, swap the `mkdir` line for `sudo mkdir -p /usr/local/bin && sudo install -m 755 "$f" /usr/local/bin/ficha &&`.
+> [!IMPORTANT]
+> Run `ficha version` next. If it says command not found, `~/.local/bin` isn't on your `PATH` yet. macOS never adds it, and Debian and Ubuntu add it at login only if it already existed. Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`, or for bash to `~/.bashrc` (`~/.bash_profile` on macOS), and open a new terminal.
 
-Then run `ficha version`. If it says command not found, `~/.local/bin` isn't on your `PATH` yet. macOS never adds it, and Debian and Ubuntu add it at login only if it already existed. Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`, or for bash to `~/.bashrc` (`~/.bash_profile` on macOS), and open a new terminal.
+If the check fails, the chain stops there. Nothing is installed, and both files stay where they are. To install for all users instead, swap the `mkdir` line for `sudo mkdir -p /usr/local/bin && sudo install -m 755 "$f" /usr/local/bin/ficha &&`.
 
 The macOS binaries aren't notarized. That's fine with curl, but Gatekeeper blocks a binary downloaded in a browser on first run. Clear the flag before you install it, with `xattr -d com.apple.quarantine ficha-darwin-arm64` (or `-amd64`).
 
@@ -119,9 +120,10 @@ if ((Get-FileHash ficha-windows-amd64.exe).Hash -eq $want) {
 }
 ```
 
-`-eq` ignores case, so the uppercase hash from `Get-FileHash` matches the lowercase one in `checksums.txt`. If ficha is running, say in a `ficha watch` window, Windows won't let the block replace it. Quit ficha and run the block again.
+> [!IMPORTANT]
+> The first time, add the folder to your user `PATH`, or `ficha` won't be found. `rundll32 sysdm.cpl,EditEnvironmentVariables` opens the Environment Variables window. Under the variables for your user, select `Path`, then Edit, New, and paste `%LOCALAPPDATA%\Programs\ficha`. Click OK in both windows, open a new terminal, and run `ficha version`.
 
-The first time, add the folder to your user `PATH`. `rundll32 sysdm.cpl,EditEnvironmentVariables` opens the Environment Variables window. Under the variables for your user, select `Path`, then Edit, New, and paste `%LOCALAPPDATA%\Programs\ficha`. Click OK in both windows, open a new terminal, and run `ficha version`.
+If ficha is running, say in a `ficha watch` window, Windows won't let the block replace it. Quit ficha and run the block again. `-eq` ignores case, so the uppercase hash from `Get-FileHash` matches the lowercase one in `checksums.txt`.
 
 #### Verifying provenance
 
