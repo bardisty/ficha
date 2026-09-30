@@ -13,7 +13,6 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/paths"
-	"github.com/bardisty/ficha/internal/render"
 )
 
 // ErrSessionNotFound is returned when a specific session ID cannot be matched
@@ -85,7 +84,7 @@ func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.Sessi
 	// index: current Claude Code doesn't write one, so without it every
 	// session would count.
 	if orphanCount > 0 && cfg.verbose && index != nil {
-		fmt.Fprintf(cfg.stderr, "Note: Found %d session(s) not in sessions-index.json\n", orphanCount)
+		writeNote(cfg, "Found %d session(s) not in sessions-index.json", orphanCount)
 	}
 
 	return sessions, projDir, nil
@@ -272,7 +271,7 @@ func locateSession(cfg *config, arg, excludeDir string) (*models.SessionEntry, s
 		if isFullSessionID(id) && strings.EqualFold(h.sessionID, id) {
 			session, err := parser.SessionFromFile(filepath.Join(h.projectDir, h.sessionID+".jsonl"))
 			if err == nil {
-				fmt.Fprintf(cfg.stderr, "Note: session %s is in %s.\n", shortSessionID(h.sessionID), where)
+				writeNote(cfg, "session %s is in %s.", shortSessionID(h.sessionID), where)
 				return &session, h.projectDir, nil
 			}
 		}
@@ -354,12 +353,7 @@ func sessionFromPath(cfg *config, arg string) (*models.SessionEntry, string, err
 	}
 	if agentsOutOfReach(path, session.SessionID) {
 		dir := filepath.Join(filepath.Dir(arg), session.SessionID) + string(filepath.Separator)
-		note := fmt.Sprintf("Note: any agents this session ran aren't counted. ficha looks for them in %s, which isn't there.\n", dir)
-		// Wrapped between words, like the warnings.
-		if width := terminalWidth(cfg.stderr); width > 0 {
-			note = render.WrapHanging(note, width)
-		}
-		fmt.Fprint(cfg.stderr, note)
+		writeNote(cfg, "any agents this session ran aren't counted. ficha looks for them in %s, which isn't there.", dir)
 	}
 	return &session, filepath.Dir(path), nil
 }

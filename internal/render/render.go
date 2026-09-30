@@ -583,10 +583,12 @@ func costStyledCell(cost float64, width int, highlighted, noColor bool, style li
 
 // WrapHanging wraps each line of text to width display columns, breaking
 // only between words. A continuation line is indented to where the line's
-// text starts, past its leading spaces and a "Warning: " label, so a wrapped
-// warning reads as one block. A word longer than the room left keeps a line
-// of its own rather than being cut: a URL or model ID must survive intact to
-// be copied. Lines that already fit come back unchanged.
+// text starts, past its leading spaces and a "Warning: " or "Note: " label,
+// so a wrapped warning or note reads as one block. A word longer than the
+// room left keeps a line of its own, or stays beside the label, rather than
+// being cut: a URL, path or model ID must survive intact to be copied. A
+// space inside a path is still a place to break, and a line that wraps
+// loses its runs of spaces. Lines that already fit come back unchanged.
 func WrapHanging(text string, width int) string {
 	lines := strings.SplitAfter(text, "\n")
 	var sb strings.Builder
@@ -606,8 +608,10 @@ func wrapHangingLine(line string, width int) string {
 	}
 	text := strings.TrimLeft(line, " ")
 	hang := len(line) - len(text)
-	if strings.HasPrefix(text, "Warning: ") {
-		hang += len("Warning: ")
+	for _, label := range []string{"Warning: ", "Note: "} {
+		if strings.HasPrefix(text, label) {
+			hang += len(label)
+		}
 	}
 	indent := strings.Repeat(" ", hang)
 	var sb strings.Builder
@@ -618,7 +622,9 @@ func wrapHangingLine(line string, width int) string {
 		case i == 0:
 			sb.WriteString(line[:len(line)-len(text)] + word)
 			col = len(line) - len(text) + w
-		case col+1+w <= width:
+		// Right after the label, a break would put the word at the same
+		// column on the next line, leaving the label alone for nothing.
+		case col+1+w <= width, col+1 == hang:
 			sb.WriteString(" " + word)
 			col += 1 + w
 		default:

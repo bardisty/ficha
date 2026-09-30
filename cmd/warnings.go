@@ -25,12 +25,28 @@ func printReport(cfg *config, warnings *bytes.Buffer, output string) {
 	if cfg.format == "csv" {
 		output = strings.TrimSuffix(output, "\n")
 	}
-	// On a terminal the warnings wrap between words to its width. Redirected,
-	// they stay one line each for logs and scripts.
-	if width := terminalWidth(cfg.stderr); width > 0 {
-		warnings = bytes.NewBufferString(render.WrapHanging(warnings.String(), width))
-	}
+	warnings = bytes.NewBufferString(wrapStderr(cfg.stderr, warnings.String()))
 	writeReport(cfg.stdout, cfg.stderr, warnings, output, isTerminal(cfg.stderr))
+}
+
+// stderrWidth is terminalWidth, swappable because tests can't give ficha a
+// terminal.
+var stderrWidth = terminalWidth
+
+// wrapStderr wraps notes and warnings between words to the width of the
+// terminal stderr is on, each continuation under the text after its label.
+// Redirected, each stays one line for logs and scripts.
+func wrapStderr(stderr io.Writer, text string) string {
+	if width := stderrWidth(stderr); width > 0 {
+		return render.WrapHanging(text, width)
+	}
+	return text
+}
+
+// writeNote writes "Note: " and the formatted text to stderr as one line,
+// wrapped like the warnings.
+func writeNote(cfg *config, format string, args ...any) {
+	fmt.Fprint(cfg.stderr, wrapStderr(cfg.stderr, "Note: "+fmt.Sprintf(format, args...)+"\n"))
 }
 
 func writeReport(stdout, stderr io.Writer, warnings *bytes.Buffer, output string, warningsLast bool) {
