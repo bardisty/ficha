@@ -114,7 +114,7 @@ func breakdownViewWithUnknownModel(t *testing.T, noColor bool) string {
 	m = updated.(BreakdownModel)
 	updated, _ = m.Update(breakdownMsgsMsg{
 		messages: msgs, totalCost: 3.34, minCost: 0.01, maxCost: 1.87,
-		hasUnknown: true,
+		unknownModels: []string{unknownModelID},
 	})
 	m = updated.(BreakdownModel)
 	m.lastUpdated = goldenTime(11, 30, 0)
@@ -224,9 +224,9 @@ func TestUnknownModelFootnote(t *testing.T) {
 		want string
 	}{
 		{nil, "⚠ * = fallback pricing"},
-		{[]string{"claude-nova-9"}, "⚠ * claude-nova-9: fallback pricing"},
-		{[]string{"a", "b"}, "⚠ * a, b: fallback pricing"},
-		{[]string{"a", "b", "c", "d"}, "⚠ * a, b +2 more: fallback pricing"},
+		{[]string{"claude-nova-9"}, "⚠ * claude-nova-9: fallback pricing, see ficha show"},
+		{[]string{"a", "b"}, "⚠ * a, b: fallback pricing, see ficha show"},
+		{[]string{"a", "b", "c", "d"}, "⚠ * a, b +2 more: fallback pricing, see ficha show"},
 	}
 	for _, tt := range tests {
 		if got := unknownModelFootnote(tt.ids); got != tt.want {

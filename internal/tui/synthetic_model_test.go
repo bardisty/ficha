@@ -94,8 +94,8 @@ func TestBreakdownIgnoresSyntheticModel(t *testing.T) {
 	if !ok {
 		t.Fatalf("loadBreakdown returned %T, want breakdownMsgsMsg", m.loadBreakdown())
 	}
-	if msg.hasUnknown {
-		t.Error("hasUnknown = true for a transcript whose only non-catalog model is <synthetic>")
+	if len(msg.unknownModels) > 0 {
+		t.Errorf("unknownModels = %q for a transcript whose only non-catalog model is <synthetic>", msg.unknownModels)
 	}
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = updated.(BreakdownModel)

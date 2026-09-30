@@ -39,7 +39,7 @@ type BreakdownModel struct {
 	skippedLines   int               // JSONL lines skipped during parsing (malformed or oversized)
 	skippedAgents  int               // Agent sub-sessions that could not be read
 	estimatedCosts int               // Messages whose cache-write cost is a 5m-rate estimate
-	hasUnknown     bool              // Any message priced from the fallback table (marked in the rows)
+	unknownModels  []string          // Fallback-priced model IDs in the rows, sorted; marked in the rows
 	hasAgents      bool              // Any agent row in the merged list — drives the insight scope label
 	runTags        map[string]string // Workflow run ID -> AGENT-column run tag
 	runNames       map[string]string // AGENT-column run tag -> workflow name
@@ -144,7 +144,7 @@ type (
 		skippedLines   int
 		skippedAgents  int
 		estimatedCosts int
-		hasUnknown     bool
+		unknownModels  []string
 		hasAgents      bool
 		workflows      []models.WorkflowMeta
 		modTime        time.Time // session file mtime at load; zero if unknown
@@ -386,7 +386,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.skippedLines = msg.skippedLines
 		m.skippedAgents = msg.skippedAgents
 		m.estimatedCosts = msg.estimatedCosts
-		m.hasUnknown = msg.hasUnknown
+		m.unknownModels = msg.unknownModels
 		m.hasAgents = msg.hasAgents
 		m.runTags = workflowRunTags(msg.workflows)
 		m.runNames = make(map[string]string, len(msg.workflows))
@@ -581,7 +581,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 		m.hint = nil
 	}
 
-	// Reset state for clean switch. hasUnknown and err must reset too, or the
+	// Reset state for clean switch. unknownModels and err must reset too, or the
 	// old session's "* = fallback pricing" footnote (and a stale header
 	// error) persist under the new session until its first load lands — or
 	// indefinitely if that load errors.
@@ -596,7 +596,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.skippedLines = 0
 	m.skippedAgents = 0
 	m.estimatedCosts = 0
-	m.hasUnknown = false
+	m.unknownModels = nil
 	m.err = nil
 	m.newMsgKeys = make(map[string]time.Time)
 	m.lastActivity = time.Time{}
@@ -916,8 +916,8 @@ func (m BreakdownModel) renderStatsTotals() string {
 		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts); note != "" {
 			line += sep + note
 		}
-		if m.hasUnknown {
-			line += sep + unknownModelFootnote(m.unknownModelIDs())
+		if len(m.unknownModels) > 0 {
+			line += sep + unknownModelFootnote(m.unknownModels)
 		}
 		return line
 	}
@@ -938,9 +938,9 @@ func (m BreakdownModel) renderStatsTotals() string {
 		sb.WriteString(warnStyle.Render(note))
 	}
 	// Explain the MODEL-column asterisk: those rows are fallback-priced
-	if m.hasUnknown {
+	if len(m.unknownModels) > 0 {
 		sb.WriteString(sepStyled)
-		sb.WriteString(warnStyle.Render(unknownModelFootnote(m.unknownModelIDs())))
+		sb.WriteString(warnStyle.Render(unknownModelFootnote(m.unknownModels)))
 	}
 	return sb.String()
 }
@@ -1311,13 +1311,15 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 	// display-sorted list is fine.
 	var totalCost float64
 	var minCost, maxCost float64
-	hasUnknown := false
+	// The footer names the fallback-priced models on every frame, so they're
+	// worked out here, once per load, off the UI goroutine.
+	unknown := make(map[string]models.CostBreakdown)
 	hasAgents := false
 
 	for i, msg := range messages {
 		totalCost += msg.Cost.TotalCost
-		if !hasUnknown && !pricing.IsKnownModel(msg.Model) {
-			hasUnknown = true
+		if !pricing.IsKnownModel(msg.Model) {
+			unknown[msg.Model] = models.CostBreakdown{}
 		}
 		if msg.AgentID != "" {
 			hasAgents = true
@@ -1346,7 +1348,7 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 		skippedLines:   result.SkippedLines,
 		skippedAgents:  result.SkippedAgents,
 		estimatedCosts: result.EstimatedCostMessages,
-		hasUnknown:     hasUnknown,
+		unknownModels:  unknownModelIDs(unknown),
 		hasAgents:      hasAgents,
 		workflows:      result.Workflows,
 		modTime:        modTime,

@@ -31,15 +31,15 @@ func TestBreakdownStaleLoadDroppedAfterSwitch(t *testing.T) {
 
 	// A stale load for the OLD session lands after the switch: must be dropped.
 	stale := breakdownMsgsMsg{
-		messages:    []models.BreakdownMessage{{Index: 1, Cost: models.CostBreakdown{TotalCost: 9.99}}},
-		totalCost:   9.99,
-		hasUnknown:  true,
-		sessionPath: oldPath,
+		messages:      []models.BreakdownMessage{{Index: 1, Cost: models.CostBreakdown{TotalCost: 9.99}}},
+		totalCost:     9.99,
+		unknownModels: []string{"m9"},
+		sessionPath:   oldPath,
 	}
 	updated, _ = m.Update(stale)
 	m = updated.(BreakdownModel)
-	if len(m.messages) != 0 || m.totalCost != 0 || m.hasUnknown {
-		t.Fatalf("stale load applied: messages=%d totalCost=%v hasUnknown=%v", len(m.messages), m.totalCost, m.hasUnknown)
+	if len(m.messages) != 0 || m.totalCost != 0 || len(m.unknownModels) > 0 {
+		t.Fatalf("stale load applied: messages=%d totalCost=%v unknownModels=%q", len(m.messages), m.totalCost, m.unknownModels)
 	}
 	if !m.loading {
 		t.Fatal("stale load cleared the loading state; the real new-session load is still pending")
@@ -69,7 +69,7 @@ func TestBreakdownStaleLoadDroppedAfterSwitch(t *testing.T) {
 }
 
 // Switching away from a session that used fallback pricing must clear
-// hasUnknown (and any header error), so the "* = fallback pricing" footnote and
+// unknownModels (and any header error), so the "* = fallback pricing" footnote and
 // a stale error don't bleed into the new session during its loading window.
 func TestBreakdownSwitchClearsUnknownFootnote(t *testing.T) {
 	m := NewBreakdownModel("/proj/old.jsonl", "old", true, "", true)
@@ -78,7 +78,7 @@ func TestBreakdownSwitchClearsUnknownFootnote(t *testing.T) {
 
 	// Old session: a fallback-priced row and a header error.
 	m.messages = []models.BreakdownMessage{{Index: 1}}
-	m.hasUnknown = true
+	m.unknownModels = []string{"m9"}
 	m.err = errTestStale
 	m.loading = false
 	if !strings.Contains(m.View(), "fallback pricing") {
@@ -89,8 +89,8 @@ func TestBreakdownSwitchClearsUnknownFootnote(t *testing.T) {
 	// load lands) neither the footnote nor the stale error may remain.
 	updated, _ = m.Update(sessionActivityMsg{path: "/proj/new.jsonl", id: "new", created: true})
 	m = updated.(BreakdownModel)
-	if m.hasUnknown {
-		t.Error("hasUnknown leaked across the switch")
+	if len(m.unknownModels) > 0 {
+		t.Error("unknownModels leaked across the switch")
 	}
 	if m.err != nil {
 		t.Errorf("err leaked across the switch: %v", m.err)
