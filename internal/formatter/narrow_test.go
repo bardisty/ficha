@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	"github.com/muesli/termenv"
 )
 
@@ -25,6 +27,7 @@ func narrowReports(t *testing.T, width int, noColor bool) map[string]string {
 		"show":                     FormatSessionTable(goldenShowAnalysis(), noColor, width),
 		"show workflows":           FormatSessionTable(goldenShowWorkflowAnalysis(), noColor, width),
 		"show mixed widths":        FormatSessionTable(goldenMixedWidthAnalysis(), noColor, width),
+		"show long workflow":       FormatSessionTable(goldenShowLongWorkflowAnalysis(), noColor, width),
 		"summary":                  FormatSessionTable(goldenSummaryAnalysis(), noColor, width),
 		"summary details":          FormatSummaryTableWithDetails(analysis, results, "", noColor, false, width),
 		"summary expand":           FormatSummaryTableWithDetails(analysis, results, "", noColor, true, width),
@@ -202,6 +205,84 @@ func TestWorkflowStatusesAllOrNothing(t *testing.T) {
 		if withStatus != 0 && withStatus != 2 {
 			t.Errorf("width %d: %d of 2 workflow headings show a status:\n%s", width, withStatus, out)
 		}
+	}
+}
+
+// However far the label column grows or narrows, every cost in AGENT
+// SUB-SESSIONS lines up: the parent, each heading and agent, the subtotal.
+func TestShowAgentCostsAlignAsLabelColumnGrows(t *testing.T) {
+	for _, noColor := range []bool{true, false} {
+		if !noColor {
+			forceProfile(t, termenv.ANSI256)
+		}
+		for _, width := range []int{0, 50, 55, 60, 65, 70, 76} {
+			out := FormatSessionTable(goldenShowLongWorkflowAnalysis(), noColor, width)
+			_, section, _ := strings.Cut(out, "AGENT SUB-SESSIONS")
+			section, _, _ = strings.Cut(section, "MESSAGE INSIGHTS")
+			var dots []int
+			for line := range strings.SplitSeq(section, "\n") {
+				plain := ansiRe.ReplaceAllString(line, "")
+				if i := strings.LastIndex(plain, "$"); i >= 0 {
+					dots = append(dots, runewidth.StringWidth(plain[:i+strings.Index(plain[i:], ".")]))
+				}
+			}
+			if len(dots) != 9 {
+				t.Fatalf("width %d (noColor=%v): %d cost rows, want 9:\n%s", width, noColor, len(dots), section)
+			}
+			for _, d := range dots[1:] {
+				if d != dots[0] {
+					t.Errorf("width %d (noColor=%v): costs don't line up:\n%s", width, noColor, section)
+					break
+				}
+			}
+			statuses := strings.Count(section, "(running)") + strings.Count(section, "(completed)")
+			if statuses != 0 && statuses != 2 || width == 0 && statuses != 2 {
+				t.Errorf("width %d (noColor=%v): %d of 2 headings show a status:\n%s", width, noColor, statuses, section)
+			}
+		}
+	}
+}
+
+// A name too long for WorkflowLabel's cap is cut before its status is, so
+// a heading never loses its status to the cap while the others keep theirs.
+func TestWorkflowLabelKeepsStatusPastTheCap(t *testing.T) {
+	long := models.WorkflowMeta{RunID: "wf1", Name: "review-changes-across-the-billing-and-auth-modules", Status: "running"}
+	got := workflowLabel(long)
+	if want := "workflow: review-changes-across-the-b… (running)"; got != want {
+		t.Errorf("long name: got %q, want %q", got, want)
+	}
+	if w, limit := runewidth.StringWidth(got), runewidth.StringWidth(render.WorkflowLabel(long)); w != limit {
+		t.Errorf("long name: %d wide, want the cap's %d", w, limit)
+	}
+	// Cut at the cap as one string, this would end in "(co…".
+	mid := models.WorkflowMeta{RunID: "wf1", Name: "review-changes-across-the-billing", Status: "completed"}
+	if got, want := workflowLabel(mid), "workflow: review-changes-across-the… (completed)"; got != want {
+		t.Errorf("mid-length name: got %q, want %q", got, want)
+	}
+	for _, meta := range []models.WorkflowMeta{
+		{RunID: "wf1", Name: "audit-codebase", Status: "running"},
+		{RunID: "wf1", Name: long.Name},
+		{RunID: "wf_2e7850b6-b19"},
+	} {
+		if got, want := workflowLabel(meta), render.WorkflowLabel(meta); got != want {
+			t.Errorf("%+v: got %q, want render's %q", meta, got, want)
+		}
+	}
+
+	// A status too long to show takes the others' with it.
+	odd := goldenShowLongWorkflowAnalysis()
+	odd.Workflows[1].Name = "revie"
+	odd.Workflows[1].Status = "a-very-long-status-string-from-a-future-version"
+	if out := FormatSessionTable(odd, true, 0); strings.Contains(out, "(running)") {
+		t.Errorf("piped, one heading kept its status beside one that couldn't:\n%s", out)
+	}
+
+	// The long run still going, the short one done: piped, both say so.
+	a := goldenShowLongWorkflowAnalysis()
+	a.Workflows[0].Status, a.Workflows[1].Status = "completed", "running"
+	out := FormatSessionTable(a, true, 0)
+	if !strings.Contains(out, "(completed)") || !strings.Contains(out, "(running)") {
+		t.Errorf("piped, a heading lost its status:\n%s", out)
 	}
 }
 

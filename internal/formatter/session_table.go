@@ -149,7 +149,8 @@ func agentMsgsWidth(agents []models.AgentAnalysis) int {
 
 // formatAgentBreakdownContent renders agent breakdown rows (content only, no header)
 // Layout: [AN] Model (ID) msgs cost
-// All rows align costs at column 45 (2 indent + 43 content), or further left
+// All rows align costs at column 45 (2 indent + 43 content), further right
+// when a workflow heading needs the room and width has it, or further left
 // when the rows would be wider than width
 // Example:
 //
@@ -160,14 +161,22 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	var sb strings.Builder
 
 	// labelWidth is the room before the cost column, less the indent and a
-	// 3-space gap: 40, narrowed to fit width, but never so far that an agent
-	// row's marker, model and message count (10+1+11+1+msgs, then a space)
-	// would reach the cost.
+	// 3-space gap: 40, or as wide as the widest workflow heading with its
+	// status. It narrows to fit width, but never so far that an agent row's
+	// marker, model and message count (10+1+11+1+msgs, then a space) would
+	// reach the cost. Past width, headings are cut as workflowStatuses says.
 	msgsWidth := agentMsgsWidth(analysis.Agents)
-	labelWidth := max(min(40, width-2-3-11), msgsWidth+21)
+	labelWidth := 40
+	for _, agent := range analysis.Agents {
+		if agent.WorkflowID != "" {
+			heading := styles.GroupRule + " " + workflowLabel(analysis.WorkflowByID(agent.WorkflowID))
+			labelWidth = max(labelWidth, runewidth.StringWidth(heading))
+		}
+	}
+	labelWidth = max(min(labelWidth, width-2-3-11), msgsWidth+21)
 
-	// Parent session cost - right-aligned cost at column 45
-	// Format: 2(indent) + 40(label) + 3(spaces) + cost = 45 chars before cost
+	// Parent session cost, after 2(indent) + labelWidth + 3(spaces): column 45
+	// unless a workflow heading or the width moved it
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	if noColor {
 		sb.WriteString(fmt.Sprintf("  %-*s   %s\n", labelWidth, "Parent session", render.CostCell(analysis.ParentCost.TotalCost, 11)))
