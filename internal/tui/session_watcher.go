@@ -25,8 +25,11 @@ type SessionWatcher struct {
 	known map[string]bool
 	// sigs holds each session file's size and mtime as last seen, so the
 	// poll can tell a write from nothing new.
-	sigs      map[string]sessionSig
-	sessionMu sync.RWMutex // Protects currentSession, known and sigs
+	sigs map[string]sessionSig
+	// switches counts SetCurrentSession calls, so observe can tell that one
+	// landed between its stat and its record.
+	switches  int
+	sessionMu sync.RWMutex // Protects currentSession, known, sigs and switches
 	watcher   *fsnotify.Watcher
 	done      chan struct{}
 	// restartCh signals waiters to restart (used when session changes)
@@ -70,7 +73,18 @@ func NewSessionWatcher(projectDir, currentSession string) *SessionWatcher {
 // This also signals any waiting goroutine to restart with the new session
 func (sw *SessionWatcher) SetCurrentSession(sessionID string) {
 	sw.sessionMu.Lock()
+	// Writes the session being left made since the poll last looked were the
+	// view's own; a silent watch reported none of them. Record them before
+	// it stops being current, under the same lock, so the next poll can't
+	// take them for news. A file that can't be stated keeps its last
+	// signature.
+	if left := sw.currentSession; left != "" && left != sessionID {
+		if sig, ok := statSig(filepath.Join(sw.projectDir, left+".jsonl")); ok {
+			sw.sigs[left] = sig
+		}
+	}
 	sw.currentSession = sessionID
+	sw.switches++
 	sw.sessionMu.Unlock()
 
 	// Signal any waiting goroutine to restart
@@ -334,16 +348,38 @@ func (sw *SessionWatcher) poll() sessionEvent {
 // observe records a session file's size and mtime, and reports whether
 // either moved since the last time. The first sighting doesn't count.
 func (sw *SessionWatcher) observe(id, path string) (sessionSig, bool) {
+	sw.sessionMu.RLock()
+	switches := sw.switches
+	sw.sessionMu.RUnlock()
+	sig, ok := statSig(path)
+	if !ok {
+		return sessionSig{}, false
+	}
+	return sw.record(id, sig, switches)
+}
+
+// record is observe's second half, for a sig taken when switches
+// SetCurrentSession calls had been made. A switch since then may have
+// recorded a newer sig for the session it left, which this one must not
+// overwrite, so it's dropped; the next poll stats the file again.
+func (sw *SessionWatcher) record(id string, sig sessionSig, switches int) (sessionSig, bool) {
+	sw.sessionMu.Lock()
+	defer sw.sessionMu.Unlock()
+	if sw.switches != switches {
+		return sig, false
+	}
+	prev, seen := sw.sigs[id]
+	sw.sigs[id] = sig
+	return sig, seen && (prev.size != sig.size || !prev.mod.Equal(sig.mod))
+}
+
+// statSig is a file's size and mtime, and false when it can't be stated.
+func statSig(path string) (sessionSig, bool) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return sessionSig{}, false
 	}
-	sig := sessionSig{size: info.Size(), mod: info.ModTime()}
-	sw.sessionMu.Lock()
-	defer sw.sessionMu.Unlock()
-	prev, seen := sw.sigs[id]
-	sw.sigs[id] = sig
-	return sig, seen && (prev.size != sig.size || !prev.mod.Equal(sig.mod))
+	return sessionSig{size: info.Size(), mod: info.ModTime()}, true
 }
 
 // handleSessionFile classifies a file event: another session's file at the
