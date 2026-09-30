@@ -102,6 +102,5 @@ func newVersionCmd() *cobra.Command {
 			return nil
 		},
 	}
-	takeNoGlobalFlags(cmd)
 	return cmd
 }
