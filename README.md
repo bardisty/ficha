@@ -268,6 +268,7 @@ For bash and zsh, `ficha completion <shell> --help` describes a system-wide setu
 - Unreadable input is counted, never swallowed: `skipped_sessions`, `skipped_agents`, `skipped_lines`, `estimated_cost_messages`.
 - Agent spend is always split out: `jq '.parent_cost.total_cost + .agents_cost.total_cost == .total_cost.total_cost'` holds, up to float rounding.
 - `cost_by_model` keys are canonical model IDs, so summing by key needs no normalization.
+- ficha exits 0 when it wrote a report, even one that skipped unreadable input, 1 when it couldn't, and 2 when the command line is wrong. [Exit status](docs/machine-output.md#exit-status) has the details.
 
 The full export contract is in [docs/machine-output.md](docs/machine-output.md). It covers each command's shape, flag interactions, record provenance, the counters, timestamps, per-message rows, what csv leaves out, and csv safety.
 
