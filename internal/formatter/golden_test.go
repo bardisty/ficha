@@ -582,6 +582,51 @@ func goldenShowWorkflowAnalysis() *models.SessionAnalysis {
 	return a
 }
 
+// goldenShowLongWorkflowAnalysis sets a run whose name WorkflowLabel cuts
+// beside a short-named run still going, so the widest heading is as wide as
+// a heading gets.
+func goldenShowLongWorkflowAnalysis() *models.SessionAnalysis {
+	a := goldenShowWorkflowAnalysis()
+	a.Workflows[0].Status = "running"
+	a.Workflows = append(a.Workflows, models.WorkflowMeta{
+		RunID: "wf_9c1d0e2f-a37", Name: "review-changes-across-the-billing-and-auth-modules", Status: "completed",
+	})
+	a.Agents = append(a.Agents, models.AgentAnalysis{
+		AgentID:      "r1e2v3i4e5w6",
+		WorkflowID:   "wf_9c1d0e2f-a37",
+		MessageCount: 9,
+		TotalCost:    models.CostBreakdown{TotalCost: 0.75},
+		CostByModel:  map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 0.75}},
+		StartTime:    goldenTime(11, 30, 0),
+		EndTime:      goldenTime(11, 40, 0),
+		Duration:     models.Duration(10 * time.Minute),
+	})
+	a.AgentCount++
+	a.AgentMessageCount += 9
+	a.MessageCount += 9
+	a.AgentsCost.TotalCost += 0.75
+	a.TotalCost.TotalCost += 0.75
+	sonnet := a.CostByModel["claude-sonnet-5"]
+	sonnet.TotalCost += 0.75
+	a.CostByModel["claude-sonnet-5"] = sonnet
+	a.WorkflowCount = 2
+	return a
+}
+
+// Piped, the label column grows to the widest heading, so the short run
+// keeps its "(running)".
+func TestGoldenSessionTableShowLongAndRunningWorkflows(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	checkGolden(t, "session_table_show_long_running_workflows", FormatSessionTable(goldenShowLongWorkflowAnalysis(), true, 0))
+}
+
+// At 60 columns the column grows only as far as the cost still fits, and
+// the headings lose their statuses together.
+func TestGoldenSessionTableShowLongAndRunningWorkflowsNarrow(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	checkGolden(t, "session_table_show_long_running_workflows_w60", FormatSessionTable(goldenShowLongWorkflowAnalysis(), true, 60))
+}
+
 func TestGoldenSessionTableShowWorkflows(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "session_table_show_workflows", FormatSessionTable(goldenShowWorkflowAnalysis(), true, 0))
@@ -727,8 +772,8 @@ func TestGoldenSessionTableShowMixedWidths(t *testing.T) {
 	checkGolden(t, "session_table_show_mixed_widths", FormatSessionTable(goldenMixedWidthAnalysis(), true, 0))
 }
 
-// A workflow name too long for the piped heading loses its status whole
-// before the name is cut, as on a narrowed terminal.
+// A workflow heading wider than the default label column widens it, and
+// the cost column moves right with it.
 func TestGoldenSessionTableShowLongWorkflow(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	a := goldenShowWorkflowAnalysis()

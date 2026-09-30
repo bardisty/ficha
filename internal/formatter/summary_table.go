@@ -226,7 +226,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 				modelWidth = max(modelWidth, min(full, max(maxModelWidth, cut)))
 			}
 			for _, wf := range r.Analysis.Workflows {
-				label := treeIndent + treeStep + runewidth.StringWidth(render.WorkflowLabel(wf)) + 2
+				label := treeIndent + treeStep + runewidth.StringWidth(workflowLabel(wf)) + 2
 				modelWidth = max(modelWidth, min(label-costCol()+modelWidth, maxModelWidth))
 			}
 		}
@@ -472,6 +472,27 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 	return sb.String()
 }
 
+// workflowLabel is render.WorkflowLabel, except that a label too long for
+// that function's cap loses the end of its name rather than its status. Cut
+// off by the cap, a status would go from one heading while the others keep
+// theirs, and that heading would read as a run that had none.
+func workflowLabel(meta models.WorkflowMeta) string {
+	label := render.WorkflowLabel(meta)
+	suffix := " (" + meta.Status + ")"
+	if meta.Status == "" || strings.HasSuffix(label, suffix) {
+		return label
+	}
+	// Cut, the label is as wide as the cap allows.
+	room := runewidth.StringWidth(label) - runewidth.StringWidth(suffix)
+	meta.Status = ""
+	name := render.WorkflowLabel(meta)
+	if room <= runewidth.StringWidth("workflow: ") {
+		return name
+	}
+	cut := strings.TrimSuffix(truncateRight(name, room), styles.Ellipsis)
+	return strings.TrimRight(cut, " ") + styles.Ellipsis + suffix
+}
+
 // workflowStatuses reports whether the workflow labels of analyses, after
 // prefix, keep their statuses in width: all do when each fits with its own,
 // else none does, so a label without one can't read as a run that had none.
@@ -481,7 +502,15 @@ func workflowStatuses(prefix string, width int, analyses ...*models.SessionAnaly
 			continue
 		}
 		for _, agent := range a.Agents {
-			if agent.WorkflowID != "" && runewidth.StringWidth(prefix+render.WorkflowLabel(a.WorkflowByID(agent.WorkflowID))) > width {
+			if agent.WorkflowID == "" {
+				continue
+			}
+			// A status too long for the label's cap never shows, and can't
+			// sit beside headings that show theirs.
+			meta := a.WorkflowByID(agent.WorkflowID)
+			label := workflowLabel(meta)
+			statusCut := meta.Status != "" && !strings.HasSuffix(label, " ("+meta.Status+")")
+			if statusCut || runewidth.StringWidth(prefix+label) > width {
 				return false
 			}
 		}
@@ -496,7 +525,7 @@ func fitWorkflowLabel(prefix string, meta models.WorkflowMeta, width int, status
 	if !status {
 		meta.Status = ""
 	}
-	label := prefix + render.WorkflowLabel(meta)
+	label := prefix + workflowLabel(meta)
 	if runewidth.StringWidth(label) <= width {
 		return label
 	}
