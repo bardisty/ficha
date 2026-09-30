@@ -13,6 +13,7 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/paths"
+	"github.com/bardisty/ficha/internal/render"
 )
 
 // ErrSessionNotFound is returned when a specific session ID cannot be matched
@@ -351,7 +352,34 @@ func sessionFromPath(cfg *config, arg string) (*models.SessionEntry, string, err
 	if err != nil {
 		return nil, "", err
 	}
+	if agentsOutOfReach(path, session.SessionID) {
+		dir := filepath.Join(filepath.Dir(arg), session.SessionID) + string(filepath.Separator)
+		note := fmt.Sprintf("Note: any agents this session ran aren't counted. ficha looks for them in %s, which isn't there.\n", dir)
+		// Wrapped between words, like the warnings.
+		if width := terminalWidth(cfg.stderr); width > 0 {
+			note = render.WrapHanging(note, width)
+		}
+		fmt.Fprint(cfg.stderr, note)
+	}
 	return &session, filepath.Dir(path), nil
+}
+
+// agentsOutOfReach reports whether a transcript's agents can't be found:
+// there's no folder named for the session beside it, where Claude Code writes
+// them, and it isn't under the projects directory. A copy that took the folder
+// along finds its agents, and a session there that ran none has nothing
+// missing. It checks the directory the analyzer searches, the one the path
+// names, so a link to a transcript in the projects directory still counts as
+// outside it.
+func agentsOutOfReach(path, sessionID string) bool {
+	if info, err := os.Stat(filepath.Join(filepath.Dir(path), sessionID)); err == nil && info.IsDir() {
+		return false
+	}
+	projects, err := paths.GetProjectsDir()
+	if err != nil {
+		return false
+	}
+	return !isWithin(filepath.Dir(path), projects)
 }
 
 // unwrapPathError drops an *os.PathError's own copy of the path, for a
