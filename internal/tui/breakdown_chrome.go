@@ -155,7 +155,7 @@ func (m *BreakdownModel) refreshViewport() {
 		content = strings.Repeat("\n", len(m.lineRows)-1)
 	case m.waiting():
 		content = clipToWidth(m.renderWaiting(), m.width)
-	case !m.loading && m.err == nil:
+	case !m.showLoading() && m.err == nil:
 		content = clipToWidth(m.renderEmptyState(), m.width)
 	}
 	m.viewport.SetContent(content)

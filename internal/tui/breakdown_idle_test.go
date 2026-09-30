@@ -112,8 +112,14 @@ func TestBreakdownEmptySessionReloadKeepsStatus(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	updated, _ = updated.Update(breakdownMsgsMsg{})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
-	if v := updated.View(); strings.Contains(v, "Loading...") {
+	// A resize redraws the table area while the reload is in flight.
+	updated, _ = updated.Update(tea.WindowSizeMsg{Width: 90, Height: 24})
+	v := updated.View()
+	if strings.Contains(v, "Loading...") {
 		t.Errorf("reload of an empty session shows Loading...:\n%s", v)
+	}
+	if !strings.Contains(v, emptyStateText) {
+		t.Errorf("reload of an empty session blanked the empty state:\n%s", v)
 	}
 }
 
