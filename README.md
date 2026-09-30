@@ -50,7 +50,7 @@ If ficha says Claude Code has no sessions there, run it from the directory you s
 
 Install ficha where Claude Code runs, since it reads the transcripts Claude Code keeps in that machine's home directory.
 
-ficha runs on Linux, macOS and Windows, and CI tests all three. It has been checked against the transcripts of Claude Code 2.1. If a newer Claude Code makes it start skipping lines, see [Troubleshooting](#troubleshooting).
+ficha runs on Linux, macOS and Windows, and CI tests all three. It has been checked against the transcripts of Claude Code 2.1.
 
 ### Prebuilt binaries
 
