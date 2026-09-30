@@ -68,10 +68,16 @@ func TestBreakdownView_CompactAndTooSmall(t *testing.T) {
 	}
 	// The narrowest layout (#, TIME, MODEL, COST) is 39 columns; any less
 	// would clip the digits off the costs.
-	for _, sz := range []struct{ w, h int }{{38, 10}, {25, 10}, {80, 6}} {
+	for _, sz := range []struct {
+		w, h int
+		need string
+	}{{38, 10, "need 39 cols"}, {25, 10, "need 39 cols"}, {80, 6, "need 7 rows"}} {
 		m = loadedBreakdown(t, sz.w, sz.h, chromeRows(goldenTime(10, 0, 0), 5))
-		if out := m.View(); strings.TrimSpace(out) != "terminal too small" {
-			t.Errorf("%dx%d should say the terminal is too small, got:\n%s", sz.w, sz.h, out)
+		out := m.View()
+		for _, want := range []string{"terminal too small", sz.need, "q to quit"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%dx%d should say %q, got:\n%s", sz.w, sz.h, want, out)
+			}
 		}
 	}
 	m = loadedBreakdown(t, 39, 10, chromeRows(goldenTime(10, 0, 0), 5))
@@ -86,7 +92,7 @@ func TestBreakdownView_ShowsLoadError(t *testing.T) {
 		m := loadedBreakdown(t, 100, h, chromeRows(goldenTime(10, 0, 0), 5))
 		updated, _ := m.Update(breakdownErrorMsg{err: errors.New("boom")})
 		m = updated.(BreakdownModel)
-		if out := m.View(); !strings.Contains(out, "boom, showing last data") {
+		if out := m.View(); !strings.Contains(out, "boom • r to retry") {
 			t.Errorf("height %d: the error should be on screen:\n%s", h, out)
 		}
 	}

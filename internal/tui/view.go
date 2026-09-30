@@ -55,7 +55,7 @@ func clipToWidth(frame string, termWidth int) string {
 // View renders the TUI
 func (m Model) View() string {
 	if m.tooSmall() {
-		return m.renderTooSmall()
+		return renderTooSmall(m.width, m.height, minTermWidth, minTermHeight)
 	}
 
 	var sb strings.Builder
@@ -88,19 +88,19 @@ func (m Model) View() string {
 	return clipToWidth(sb.String(), m.width)
 }
 
-// renderTooSmall replaces the frame when no layout fits.
-func (m Model) renderTooSmall() string {
-	// Short lines, so the message itself survives a tiny terminal.
-	var short []string
-	if m.width < minTermWidth {
-		short = append(short, fmt.Sprintf("%d columns, need %d", m.width, minTermWidth))
+// renderTooSmall replaces a view's frame when no layout fits, naming the
+// minimum the terminal misses. The lines stay short, and each leads with what
+// matters, so the message survives clipping at 20 columns.
+func renderTooSmall(width, height, minWidth, minHeight int) string {
+	lines := []string{"terminal too small"}
+	if width < minWidth {
+		lines = append(lines, fmt.Sprintf("need %d cols", minWidth))
 	}
-	if m.height < minTermHeight {
-		short = append(short, fmt.Sprintf("%d rows, need %d", m.height, minTermHeight))
+	if height < minHeight {
+		lines = append(lines, fmt.Sprintf("need %d rows", minHeight))
 	}
-	lines := append([]string{"terminal too small"}, short...)
 	lines = append(lines, "q to quit")
-	return clipToWidth("  "+strings.Join(lines, "\n  "), m.width)
+	return clipToWidth("  "+strings.Join(lines, "\n  "), width)
 }
 
 // renderAnalysis renders the live analysis body. Cache-write tokens are split by
