@@ -82,19 +82,22 @@ func editDistance(a, b string) int {
 	return prev[len(b)]
 }
 
-// globalFlagsUsage is the block cobra's default usage template prints the
-// inherited flags with. TestNoFlagCommandsHideGlobalFlags fails if a cobra
-// upgrade changes it.
-const globalFlagsUsage = `{{if .HasAvailableInheritedFlags}}
-
-Global Flags:
-{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}`
-
-// takeNoGlobalFlags keeps the global flags out of cmd's help. version and
-// the completion scripts print fixed text, so no global flag changes them,
-// and noGlobalFlags rejects any that are given.
+// takeNoGlobalFlags keeps the global flags out of cmd's help and completion.
+// version and the completion scripts print fixed text, so no global flag
+// changes them, and noGlobalFlags rejects any that are given. cmd must
+// already be in the tree, under a root that has its global flags.
+//
+// cobra has no way to leave inherited flags out of one command, so each
+// global flag gets a hidden local copy of the same name. The copy shadows the
+// global one, which drops it from InheritedFlags, and so from the help's
+// Global Flags block and from completion, which skips hidden flags. The copy
+// still parses the global flag's value, so noGlobalFlags can name it.
 func takeNoGlobalFlags(cmd *cobra.Command) {
-	cmd.SetUsageTemplate(strings.Replace(cmd.UsageTemplate(), globalFlagsUsage, "", 1))
+	cmd.Root().PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		shadow := *f
+		shadow.Hidden = true
+		cmd.Flags().AddFlag(&shadow)
+	})
 	cmd.Annotations = map[string]string{noGlobalFlagsAnnotation: "true"}
 }
 
@@ -107,10 +110,8 @@ func noGlobalFlags(cmd *cobra.Command) error {
 		return nil
 	}
 	var given string
-	// Visit would see nothing: InheritedFlags is a fresh set that shares the
-	// flags but not the record of which were set.
-	cmd.InheritedFlags().VisitAll(func(f *pflag.Flag) {
-		if f.Changed && given == "" {
+	cmd.Root().PersistentFlags().VisitAll(func(g *pflag.Flag) {
+		if f := cmd.Flags().Lookup(g.Name); f != nil && f.Changed && given == "" {
 			given = "--" + f.Name
 		}
 	})

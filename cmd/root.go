@@ -132,7 +132,9 @@ Exit status:
 	rootCmd.AddCommand(newWatchCmd(cfg))
 	rootCmd.AddCommand(newGlobalCmd(cfg))
 	rootCmd.AddCommand(newBreakdownCmd(cfg))
-	rootCmd.AddCommand(newVersionCmd())
+	version := newVersionCmd()
+	rootCmd.AddCommand(version)
+	takeNoGlobalFlags(version)
 	rootCmd.AddCommand(newOutputHelpTopic())
 	rootCmd.AddCommand(newEnvironmentHelpTopic())
 	// cobra adds help lazily too, but its Run reads the output streams only

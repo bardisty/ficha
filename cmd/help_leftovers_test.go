@@ -109,8 +109,6 @@ func TestNoFlagCommandsRejectGlobalFlags(t *testing.T) {
 	}
 }
 
-// Also fails if a cobra upgrade changes the template block takeNoGlobalFlags
-// removes.
 func TestNoFlagCommandsHideGlobalFlags(t *testing.T) {
 	for _, args := range [][]string{{"version", "--help"}, {"completion", "--help"}, {"completion", "zsh", "--help"}} {
 		out, err := executeLikeMain(t, args...)
@@ -127,6 +125,45 @@ func TestNoFlagCommandsHideGlobalFlags(t *testing.T) {
 	}
 	if !strings.Contains(out, "Global Flags") {
 		t.Errorf("show --help should still list the global flags:\n%s", out)
+	}
+}
+
+// Completion offers none of the global flags version and completion reject,
+// and still offers them everywhere else.
+func TestNoFlagCommandsCompleteNoGlobalFlags(t *testing.T) {
+	globals := []string{"--format", "-f", "--verbose", "-v", "--no-color", "--ascii"}
+	for _, args := range [][]string{{"version"}, {"completion"}, {"completion", "bash"}} {
+		out, err := executeLikeMain(t, append(append([]string{"__complete"}, args...), "-")...)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		for _, line := range strings.Split(out, "\n") {
+			name, _, _ := strings.Cut(line, "\t")
+			for _, g := range globals {
+				if name == g {
+					t.Errorf("%v completes %s:\n%s", args, g, out)
+				}
+			}
+		}
+		if !strings.Contains(out, "--help") {
+			t.Errorf("%v should still complete --help:\n%s", args, out)
+		}
+	}
+	out, err := executeLikeMain(t, "__complete", "completion", "bash", "-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "--no-descriptions") {
+		t.Errorf("completion bash should still complete its own flag:\n%s", out)
+	}
+	out, err = executeLikeMain(t, "__complete", "show", "-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range globals {
+		if !strings.Contains(out, g+"\t") {
+			t.Errorf("show should complete %s:\n%s", g, out)
+		}
 	}
 }
 
