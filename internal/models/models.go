@@ -428,6 +428,10 @@ type SessionEntry struct {
 	SkippedSessions int `json:"skipped_sessions,omitempty"` // 1 when this session's own transcript could not be read
 	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
 	SkippedLines    int `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized), incl. agents
+	// SkippedFiles names the transcripts behind SkippedLines, the session's
+	// own first, for -v. The scan fills it from the same parse as the count,
+	// so the files always add up to SkippedLines.
+	SkippedFiles []FileSkips `json:"-"`
 }
 
 // SessionsIndex represents the sessions-index.json file

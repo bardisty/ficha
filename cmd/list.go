@@ -63,6 +63,10 @@ func runList(cfg *config) error {
 	// The counts come from the same parse `show` runs, so warn about the
 	// inputs it dropped — otherwise a session whose transcript could not be read
 	// is indistinguishable from one that holds no messages.
+	// The files -v names come from that scan as well, not from results: the
+	// analysis parses again, and a transcript still being written can gain or
+	// finish a line in between, which would list files that don't add up to
+	// the count.
 	skips := skipWarning{counts: "message counts and costs"}
 	var details []models.SkipDetail
 	for _, s := range sessions {
@@ -75,6 +79,7 @@ func runList(cfg *config) error {
 				Unreadable: s.SkippedSessions > 0,
 				Lines:      s.SkippedLines,
 				Agents:     s.SkippedAgents,
+				Files:      s.SkippedFiles,
 			})
 		}
 	}
