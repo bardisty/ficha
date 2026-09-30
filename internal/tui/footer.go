@@ -362,7 +362,7 @@ func (m Model) renderNotifyRow(width int) string {
 	switch {
 	case m.err != nil:
 		color = styles.ErrorColor
-		text = errNotice(m.err)
+		text = errNotice(m.err, width)
 	case m.switched != nil:
 		lead := "switched to " + render.TruncateID(m.sessionID, sessionIDDisplayLen)
 		if m.switched.auto {
@@ -396,12 +396,18 @@ func (m Model) renderNotifyRow(width int) string {
 	return style(color, text)
 }
 
-// errNotice is the notify-row text for a load or watch error, in both views.
-// It doesn't say the numbers on screen are the last ones read: they stay up,
-// the header's age keeps growing, and at 80 columns saying so would push the
-// retry hint off the row.
-func errNotice(err error) string {
-	return styles.Warning + " " + describeErr(err) + " " + styles.Bullet + " r to retry"
+// errNotice is the notify-row text for a load or watch error, in both views,
+// fitted to width. The retry hint is what the reader acts on, so a row too
+// narrow for all of it cuts the description instead. It doesn't say the
+// numbers on screen are the last ones read: they stay up, the header's age
+// keeps growing, and at 80 columns saying so would push the hint off the row.
+func errNotice(err error, width int) string {
+	tail := " " + styles.Bullet + " r to retry"
+	text := styles.Warning + " " + describeErr(err)
+	if lipgloss.Width(text+tail) > width {
+		text = withEllipsis(text, max(width-lipgloss.Width(tail), 1))
+	}
+	return text + tail
 }
 
 // describeErr turns a load or watch error into notify-row text. A missing

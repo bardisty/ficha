@@ -775,7 +775,7 @@ func (m BreakdownModel) View() string {
 // saw.
 func (m BreakdownModel) renderNotifyRow() string {
 	if m.err != nil {
-		text := errNotice(m.err)
+		text := errNotice(m.err, m.panelWidth())
 		if m.noColor {
 			return "  " + text
 		}
