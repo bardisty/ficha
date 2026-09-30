@@ -10,6 +10,7 @@ import (
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
+	"github.com/bardisty/ficha/internal/render"
 )
 
 // printReport writes a static report and the warnings gathered while building
@@ -23,6 +24,11 @@ import (
 func printReport(cfg *config, warnings *bytes.Buffer, output string) {
 	if cfg.format == "csv" {
 		output = strings.TrimSuffix(output, "\n")
+	}
+	// On a terminal the warnings wrap between words to its width. Redirected,
+	// they stay one line each for logs and scripts.
+	if width := terminalWidth(cfg.stderr); width > 0 {
+		warnings = bytes.NewBufferString(render.WrapHanging(warnings.String(), width))
 	}
 	writeReport(cfg.stdout, cfg.stderr, warnings, output, isTerminal(cfg.stderr))
 }

@@ -1,6 +1,7 @@
 package formatter
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -152,9 +153,8 @@ func TestHeaderWindowFitsNarrowBox(t *testing.T) {
 	}
 }
 
-// In a narrowed report a workflow's status goes whole before its name is
-// cut, and a cut never leaves a space before the ellipsis. At the piped
-// width the label is cut where it ends, as it always was.
+// A workflow's status goes whole before its name is cut, and a cut never
+// leaves a space before the ellipsis, piped or narrowed alike.
 func TestFitWorkflowLabel(t *testing.T) {
 	meta := models.WorkflowMeta{RunID: "wf1", Name: "review-changes", Status: "completed"}
 	for width, want := range map[int]string{
@@ -164,15 +164,12 @@ func TestFitWorkflowLabel(t *testing.T) {
 		20: "workflow: review-ch…",
 		16: "workflow: revie…",
 	} {
-		if got := fitWorkflowLabel("", meta, width, true, width >= 36); got != want {
+		if got := fitWorkflowLabel("", meta, width, width >= 36); got != want {
 			t.Errorf("width %d: got %q, want %q", width, got, want)
 		}
 	}
-	if got := fitWorkflowLabel("", meta, 11, true, false); strings.Contains(got, " "+"…") {
+	if got := fitWorkflowLabel("", meta, 11, false); strings.Contains(got, " "+"…") {
 		t.Errorf("width 11: %q leaves a space before the ellipsis", got)
-	}
-	if got, want := fitWorkflowLabel("", meta, 30, false, false), "workflow: review-changes (com…"; got != want {
-		t.Errorf("piped: got %q, want %q", got, want)
 	}
 }
 
@@ -228,5 +225,15 @@ func TestCostChartFitsNarrowTerminals(t *testing.T) {
 				t.Errorf("chart at %d: line is %d wide:\n%s", width, w, line)
 			}
 		}
+	}
+}
+
+// At 45 and 46 columns summary -d's MODEL column narrows far enough to cut
+// a display name, and the cut drops the version whole.
+func TestGoldenSummaryDetailsModelCut(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	analysis, results := summaryDetailsAnalysis(t, summaryDetailsFixture(t))
+	for _, width := range []int{45, 46} {
+		checkGolden(t, fmt.Sprintf("summary_details_%d", width), FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, width))
 	}
 }

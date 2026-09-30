@@ -247,6 +247,15 @@ func TestClampModel(t *testing.T) {
 		{"claude-nova-9", 9, "nova-9"},
 		{"claude-nova-9", 13, "claude-nova-9"}, // fits whole: the full ID stays
 		{"us.anthropic.claude-opus-4-9-v1:0", 11, "us.anthrop…"},
+		// A narrowed column drops a display name's version whole rather
+		// than cut inside it, and never leaves a space before the ellipsis.
+		{"Fable 5.1", 8, "Fable…"},
+		{"Fable 5.1", 7, "Fable…"},
+		{"Fable 5.1", 6, "Fable…"},
+		{"Fable 5.1", 5, "Fabl…"},
+		{"Opus 5.5", 6, "Opus…"},
+		{"Sonnet 4.5", 9, "Sonnet…"},
+		{"claude-nova 9-1", 7, "nova…"},
 		// Degenerate widths yield no panic.
 		{"Opus 4.8", 1, "…"},
 		{"Opus 4.8", 0, ""},
@@ -654,6 +663,16 @@ func TestTrendSymbol(t *testing.T) {
 	styles.SetASCII(false)
 }
 
+// A cut after a space drops the space, so the ellipsis sits against the word.
+func TestTruncateRunesTrimsSpaceBeforeEllipsis(t *testing.T) {
+	if got := truncateRunes("workflow: review changes", 11); got != "workflow:…" {
+		t.Errorf("truncateRunes = %q, want %q", got, "workflow:…")
+	}
+	if got := truncateRunes("ab cd", 4); got != "ab…" {
+		t.Errorf("truncateRunes = %q, want %q", got, "ab…")
+	}
+}
+
 func TestClampModelASCIIEllipsis(t *testing.T) {
 	styles.SetASCII(true)
 	t.Cleanup(func() { styles.SetASCII(false) })
@@ -662,6 +681,9 @@ func TestClampModelASCIIEllipsis(t *testing.T) {
 	}
 	if got := ClampModel("claude-opus-4-9", 2); got != ".." {
 		t.Errorf("ClampModel ASCII width 2 = %q, want ..", got)
+	}
+	if got := ClampModel("Fable 5.1", 8); got != "Fable..." {
+		t.Errorf("ClampModel ASCII = %q, want Fable...", got)
 	}
 }
 
@@ -713,5 +735,32 @@ func TestDateTimeAddsYearOnlyWhenNeeded(t *testing.T) {
 	}
 	if got := Date(time.Time{}, now); got != "-" {
 		t.Errorf("Date(zero) = %q", got)
+	}
+}
+
+// Warnings wrap between words, each continuation under the text of its own
+// line, and a word too long for the room keeps a line to itself.
+func TestWrapHanging(t *testing.T) {
+	in := "Warning: unknown model \"claude-nova-9\" priced at fallback $5/$25 per MTok\n" +
+		"  ficha 0.55.0 has no price for it. A newer release may know it: https://github.com/bardisty/ficha/releases\n"
+	want := "Warning: unknown model \"claude-nova-9\"\n" +
+		"         priced at fallback $5/$25 per\n" +
+		"         MTok\n" +
+		"  ficha 0.55.0 has no price for it. A\n" +
+		"  newer release may know it:\n" +
+		"  https://github.com/bardisty/ficha/releases\n"
+	if got := WrapHanging(in, 40); got != want {
+		t.Errorf("WrapHanging at 40:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(WrapHanging(in, 40), "\n"), "\n") {
+		if w := lipgloss.Width(line); w > 40 && !strings.Contains(line, "https://") {
+			t.Errorf("line is %d columns wide: %q", w, line)
+		}
+	}
+	if got := WrapHanging(in, 200); got != in {
+		t.Errorf("lines that fit changed:\n%s", got)
+	}
+	if got := WrapHanging("", 40); got != "" {
+		t.Errorf("empty input = %q", got)
 	}
 }

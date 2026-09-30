@@ -44,7 +44,7 @@ func projectsTable(analysis *models.GlobalAnalysis, noColor bool, opts GlobalTab
 	if opts.Now.IsZero() {
 		opts.Now = time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
 	}
-	return renderProjectsTable(analysis, noColor, newProjectsLayout(analysis.Projects, opts), opts)
+	return renderProjectsTable(analysis, noColor, newProjectsLayout(analysis.Projects, opts, 0), opts)
 }
 
 // A negative topN must be clamped, not used as a slice index (projects[-1] panics).
@@ -327,14 +327,15 @@ func TestGlobalTableNarrowTerminalDropsColumns(t *testing.T) {
 		if got := strings.Contains(out, "SESSIONS"); got != tc.sessions {
 			t.Errorf("width %d by %s: SESSIONS shown = %v, want %v:\n%s", tc.width, tc.sortBy, got, tc.sessions, out)
 		}
-		// Below 60, the cost rows above the table are wider than the
-		// terminal, so only the header box, the table and the footer are
-		// held to it.
-		table := out
-		if tc.width < 60 {
-			lines := strings.Split(out, "\n")
-			table = strings.Join(lines[:3], "\n") + "\n" + out[strings.Index(out, "PROJECTS ("):]
+		// The cost rows narrow with the frame. Only the hero total, which
+		// has no shorter form, may run past it.
+		var kept []string
+		for _, line := range strings.Split(out, "\n") {
+			if !strings.Contains(line, "API-equivalent estimate") {
+				kept = append(kept, line)
+			}
 		}
+		table := strings.Join(kept, "\n")
 		if w := maxLineWidth(table); w > tc.width {
 			t.Errorf("width %d by %s: widest line is %d columns:\n%s", tc.width, tc.sortBy, w, table)
 		}
@@ -394,6 +395,32 @@ func TestGlobalTableNamesItsSort(t *testing.T) {
 		}
 		if !strings.Contains(out, "LAST ACTIVE") || !strings.Contains(out, "30m ago") {
 			t.Errorf("%s details=%v: want LAST ACTIVE with relative times:\n%s", tc.sortBy, tc.details, out)
+		}
+	}
+}
+
+// Below global's narrowest layout the frame stops shrinking, and it never
+// stops narrower than the cost rows, even when Savings and the cache-read
+// count are wider than any project's cost.
+func TestGlobalCostRowsNeverOutgrowFrame(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	a := goldenGlobalAnalysis()
+	for i, c := range []float64{5000, 2000, 900, 30, 1} {
+		if i < len(a.Projects) {
+			a.Projects[i].TotalCost.TotalCost = c
+		}
+	}
+	a.TotalCost.CacheSavings = 54000
+	a.TotalUsage.CacheReadInputTokens = 12_345_000_000
+	for _, width := range []int{20, 30, 33, 36} {
+		opts := goldenGlobalOptions(false)
+		opts.Width = width
+		out := FormatGlobalTable(a, true, opts)
+		frame := lipgloss.Width(strings.SplitN(out, "\n", 2)[0])
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(line, "  ") && strings.Contains(line, "$") && lipgloss.Width(line) > frame {
+				t.Errorf("width %d: %q is %d columns, frame is %d", width, line, lipgloss.Width(line), frame)
+			}
 		}
 	}
 }

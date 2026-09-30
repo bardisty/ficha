@@ -282,27 +282,53 @@ func renderHeroCost(cost float64, width int, noColor bool) string {
 // TTL moving into its label so the two rows stay apart, then the "tokens"
 // after each count. The block sheds each together, so its rows read alike.
 func renderCostRows(cost models.CostBreakdown, usage models.TokenUsage, width int, noColor bool) string {
-	out := costRows(cost, usage, true, true, noColor)
+	out := costRows(cost, usage, true, true, costRowWidths{cost: 11, tokens: 12}, noColor)
 	if lipgloss.Width(out) > width {
-		out = costRows(cost, usage, false, true, noColor)
+		out = costRows(cost, usage, false, true, costRowWidths{cost: 11, tokens: 12}, noColor)
 	}
 	if lipgloss.Width(out) > width {
-		out = costRows(cost, usage, false, false, noColor)
+		out = costRows(cost, usage, false, false, costRowWidths{cost: 11, tokens: 12}, noColor)
+	}
+	if lipgloss.Width(out) > width {
+		// Give up only the columns the rows don't fit in: the cost column
+		// takes back spare room first, so its $ stays where it usually is.
+		w := fittedCostRowWidths(cost, usage)
+		spare := width - lipgloss.Width(costRows(cost, usage, false, false, w, true))
+		grow := max(0, min(spare, 11-w.cost))
+		w.cost += grow
+		w.tokens += max(0, min(spare-grow, 12-w.tokens))
+		out = costRows(cost, usage, false, false, w, noColor)
 	}
 	return out
 }
 
+// costRowWidths sizes the cost rows' cost and token-count columns.
+type costRowWidths struct{ cost, tokens int }
+
+// fittedCostRowWidths sizes both columns to their widest value rather than
+// the usual 11 and 12, for global's narrowest layouts. show and summary never
+// draw narrow enough to need it.
+func fittedCostRowWidths(cost models.CostBreakdown, usage models.TokenUsage) costRowWidths {
+	cache5m, cache1h := render.CacheTokensByTTL(usage)
+	var w costRowWidths
+	for _, n := range []int64{usage.InputTokens, usage.OutputTokens, cache5m, cache1h, usage.CacheReadInputTokens} {
+		w.tokens = max(w.tokens, len(render.Number(n)))
+	}
+	w.cost = render.CostCellWidth(0, cost.InputCost, cost.OutputCost, cost.CacheWrite5mCost, cost.CacheWrite1hCost, cost.CacheReadCost, cost.CacheSavings)
+	return w
+}
+
 // costRows renders the cost rows with or without their notes and the
-// "tokens" unit.
-func costRows(cost models.CostBreakdown, usage models.TokenUsage, notes, unit bool, noColor bool) string {
+// "tokens" unit, in columns w wide.
+func costRows(cost models.CostBreakdown, usage models.TokenUsage, notes, unit bool, w costRowWidths, noColor bool) string {
 	var sb strings.Builder
-	sb.WriteString(renderUnifiedCostRow("Input", cost.InputCost, usage.InputTokens, nil, unit, "", noColor))
-	sb.WriteString(renderUnifiedCostRow("Output", cost.OutputCost, usage.OutputTokens, styles.OutputTokenColor, unit, "", noColor))
+	sb.WriteString(renderUnifiedCostRow("Input", cost.InputCost, usage.InputTokens, nil, unit, "", w, noColor))
+	sb.WriteString(renderUnifiedCostRow("Output", cost.OutputCost, usage.OutputTokens, styles.OutputTokenColor, unit, "", w, noColor))
 	cacheWrite := func(ttl string, c float64, tokens int64) string {
 		if notes {
-			return renderUnifiedCostRow("Cache write", c, tokens, styles.CacheWriteTokenColor, unit, ttl+" TTL", noColor)
+			return renderUnifiedCostRow("Cache write", c, tokens, styles.CacheWriteTokenColor, unit, ttl+" TTL", w, noColor)
 		}
-		return renderUnifiedCostRow("Cache write "+ttl, c, tokens, styles.CacheWriteTokenColor, unit, "", noColor)
+		return renderUnifiedCostRow("Cache write "+ttl, c, tokens, styles.CacheWriteTokenColor, unit, "", w, noColor)
 	}
 	cache5mTokens, cache1hTokens := render.CacheTokensByTTL(usage)
 	if cost.CacheWrite5mCost > 0 {
@@ -312,10 +338,10 @@ func costRows(cost models.CostBreakdown, usage models.TokenUsage, notes, unit bo
 		sb.WriteString(cacheWrite("1h", cost.CacheWrite1hCost, cache1hTokens))
 	}
 	if cost.CacheReadCost > 0 || usage.CacheReadInputTokens > 0 {
-		sb.WriteString(renderUnifiedCostRow("Cache read", cost.CacheReadCost, usage.CacheReadInputTokens, styles.CacheReadTokenColor, unit, "", noColor))
+		sb.WriteString(renderUnifiedCostRow("Cache read", cost.CacheReadCost, usage.CacheReadInputTokens, styles.CacheReadTokenColor, unit, "", w, noColor))
 	}
 	if cost.CacheSavings > 0 {
-		sb.WriteString(renderSavingsRow(cost.CacheSavings, notes, noColor))
+		sb.WriteString(renderSavingsRow(cost.CacheSavings, notes, w.cost, noColor))
 	}
 	return sb.String()
 }
@@ -323,7 +349,7 @@ func costRows(cost models.CostBreakdown, usage models.TokenUsage, notes, unit bo
 // renderUnifiedCostRow renders a single row with cost and token info
 // combined, the count followed by "tokens" when unit is set:
 // "  Label            $0.3710      53.9K tokens"
-func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor lipgloss.TerminalColor, unit bool, extra string, noColor bool) string {
+func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor lipgloss.TerminalColor, unit bool, extra string, w costRowWidths, noColor bool) string {
 	// Format label with optional color
 	var labelStr string
 	if !noColor && labelColor != nil {
@@ -333,11 +359,10 @@ func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor l
 		labelStr = fmt.Sprintf("%-14s", label)
 	}
 
-	// Format cost (11 chars width)
-	costStr := formatCostStyled(cost, 11, noColor)
+	costStr := formatCostStyled(cost, w.cost, noColor)
 
 	// Format tokens
-	tokenStr := fmt.Sprintf("%12s", render.Number(tokens))
+	tokenStr := fmt.Sprintf("%*s", w.tokens, render.Number(tokens))
 	if unit {
 		tokenStr += " tokens"
 	}
@@ -359,9 +384,9 @@ func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor l
 // cost), with its "(from cache reads)" note when note is set. In no-color
 // mode the label and note are plain; otherwise the label is cyan and the
 // value green.
-func renderSavingsRow(savings float64, note, noColor bool) string {
+func renderSavingsRow(savings float64, note bool, costWidth int, noColor bool) string {
 	if noColor {
-		row := fmt.Sprintf("  %-14s %s", "Savings", render.CostCell(savings, 11))
+		row := fmt.Sprintf("  %-14s %s", "Savings", render.CostCell(savings, costWidth))
 		if note {
 			row += "  (from cache reads)"
 		}
@@ -369,7 +394,7 @@ func renderSavingsRow(savings float64, note, noColor bool) string {
 	}
 	row := fmt.Sprintf("  %s %s",
 		savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
-		formatCostStyledGreen(savings, 11, noColor))
+		formatCostStyledGreen(savings, costWidth, noColor))
 	if note {
 		row += "  " + dimStyle.Render("(from cache reads)")
 	}
