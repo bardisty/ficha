@@ -1,0 +1,17 @@
+# Groups the generated release notes (gh release create --generate-notes) by
+# PR label. A PR sits in the first category whose labels it carries, and the
+# catch-all at the end keeps unlabeled PRs in the notes.
+changelog:
+  categories:
+    - title: Breaking changes
+      labels:
+        - breaking change
+    - title: Model pricing
+      labels:
+        - pricing
+    - title: Dependencies
+      labels:
+        - dependencies
+    - title: Changes
+      labels:
+        - "*"
