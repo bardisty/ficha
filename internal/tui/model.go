@@ -82,6 +82,10 @@ type Model struct {
 	// fallback polls the session file while its watcher can't be created
 	fallback watchFallback
 
+	// fileSig is the session file's sessionFileSig when the last load
+	// started; the poll reloads when the file no longer matches it
+	fileSig string
+
 	// Session following. The session watcher runs in every mode: following
 	// switches to a newly created session, and pinned shows it as a hint.
 	projectDir      string          // Project directory to watch for new sessions
@@ -204,6 +208,8 @@ func NewModel(sessionPath, sessionID string, noColor bool, projectDir string, fo
 	}
 	if sessionPath != "" {
 		m.subagentSig = subagentTreeSignature(filepath.Dir(sessionPath), sessionID)
+		// Init's load starts after this and reads at least as much.
+		m.fileSig = sessionFileSig(sessionPath)
 	}
 	return m
 }
@@ -272,8 +278,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			m.loading = true
-			return m, tea.Batch(m.loadAnalysis, m.spinnerCmd(), m.retryWatchNow())
+			load := m.startLoad()
+			return m, tea.Batch(load, m.spinnerCmd(), m.retryWatchNow())
 
 		case "ctrl+z":
 			if canSuspend() {
@@ -319,8 +325,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.waiting() {
 			return m, nil
 		}
-		m.loading = true
-		return m, tea.Batch(m.loadAnalysis, m.spinnerCmd())
+		load := m.startLoad()
+		return m, tea.Batch(load, m.spinnerCmd())
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -442,8 +448,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// the file is re-created (the waiter reports that) or r retries.
 			return m, armCmd
 		}
-		m.loading = true
-		return m, tea.Batch(m.loadAnalysis, armCmd, m.spinnerCmd())
+		load := m.startLoad()
+		return m, tea.Batch(load, armCmd, m.spinnerCmd())
 
 	case watcherFailedMsg:
 		// Another session's attempt, or one that lost a race to a watcher
@@ -470,8 +476,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// since the last poll would otherwise wait for the next write.
 		var catchUp tea.Cmd
 		if m.fallback.active() {
-			m.loading = true
-			catchUp = m.loadAnalysis
+			catchUp = m.startLoad()
 		}
 		m.fallback.reset()
 		// A replacement watcher (rapid session switches can have two watchFile
@@ -512,8 +517,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The waiter that reported this change has exited; the reload's
 		// analysisMsg/errorMsg arms its replacement
 		m.fileWaiterActive = false
-		m.loading = true
-		return m, tea.Batch(m.loadAnalysis, m.spinnerCmd())
+		load := m.startLoad()
+		return m, tea.Batch(load, m.spinnerCmd())
 
 	case sessionSwitchedMsg:
 		return m.switchTo(msg.newSessionPath, msg.newSessionID, true)
@@ -556,10 +561,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sig := subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
 		treeChanged := sig != m.subagentSig
 		m.subagentSig = sig
-		fileChanged := m.fallback.pollChanged(m.sessionPath)
-		if treeChanged || fileChanged {
-			m.loading = true
-			return m, tea.Batch(m.loadAnalysis, subagentPollCmd(), m.spinnerCmd())
+		if treeChanged || sessionFileSig(m.sessionPath) != m.fileSig {
+			load := m.startLoad()
+			return m, tea.Batch(load, subagentPollCmd(), m.spinnerCmd())
 		}
 		return m, subagentPollCmd()
 	}
@@ -588,7 +592,6 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	// load window (parity with breakdown's session-switch reset).
 	m.analysis = nil
 	m.err = nil
-	m.loading = true
 	m.lastActivity = time.Time{}
 	m.changedAt = make(map[string]time.Time)
 	m.deltaTokens = make(map[string]int64)
@@ -622,7 +625,8 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	// The new file gets its own watcher attempt, and its own backoff
 	m.fallback.reset()
 
-	cmds := []tea.Cmd{m.loadAnalysis, func() tea.Msg { return m.watchFile() }}
+	// After every reset above: the load copies the model as it is now.
+	cmds := []tea.Cmd{m.startLoad(), func() tea.Msg { return m.watchFile() }}
 	if m.sessionWatcher != nil {
 		m.sessionWatcher.SetCurrentSession(m.sessionID)
 		// An automatic switch was reported by the session waiter, which has
@@ -634,6 +638,15 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	}
 	cmds = append(cmds, m.spinnerCmd())
 	return m, tea.Batch(cmds...)
+}
+
+// startLoad marks a reload as started and returns it. The poll's baseline
+// moves here rather than when the load lands, so a load already reading a
+// write keeps the next poll from reloading for it again.
+func (m *Model) startLoad() tea.Cmd {
+	m.loading = true
+	m.fileSig = sessionFileSig(m.sessionPath)
+	return m.loadAnalysis
 }
 
 // hintVisible reports whether the hint is still on screen: it fades once

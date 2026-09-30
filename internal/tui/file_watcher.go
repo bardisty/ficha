@@ -149,6 +149,10 @@ func awaitRecreate(watcher *fsnotify.Watcher, done chan struct{}, isBack func(fs
 // run the parent file can go silent for many minutes while agent files under
 // {sessionID}/subagents/workflows/ accumulate tokens — without the poll those
 // costs would surface only on the next parent-file write.
+//
+// The same tick checks the session file itself. A watcher can start without
+// error and never deliver an event: fsnotify on WSL's 9p and drvfs mounts
+// does that, and network filesystems may too.
 const subagentPollInterval = 2 * time.Second
 
 // subagentPollMsg signals a subagent-tree poll tick.
@@ -159,6 +163,18 @@ func subagentPollCmd() tea.Cmd {
 	return tea.Tick(subagentPollInterval, func(t time.Time) tea.Msg {
 		return subagentPollMsg(t)
 	})
+}
+
+// sessionFileSig fingerprints the session file by size and mtime. Appends
+// always grow it, so a coarse mtime clock can't hide one. The views take it
+// as a load starts, before the parse, so a write the load already covers
+// doesn't trigger a second reload on the next poll.
+func sessionFileSig(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "missing"
+	}
+	return fmt.Sprintf("%d|%d", info.Size(), info.ModTime().UnixNano())
 }
 
 // subagentTreeSignature fingerprints the session's subagent transcripts plus

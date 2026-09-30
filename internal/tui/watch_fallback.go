@@ -3,7 +3,6 @@ package tui
 import (
 	"errors"
 	"fmt"
-	"os"
 	"runtime"
 	"syscall"
 	"time"
@@ -70,15 +69,15 @@ func watchFailureReason(err error) string {
 }
 
 // watchFallback carries the view while its session file has no watcher: the
-// failure the notify row shows, the retry backoff, and the fingerprint the
-// poll compares instead. The failure stays up through reloads; only a watcher
-// that starts, or a switch to another session, clears it.
+// failure the notify row shows and the retry backoff. The poll that reloads
+// in the meantime runs whether or not a watcher is up; see sessionFileSig.
+// The failure stays up through reloads; only a watcher that starts, or a
+// switch to another session, clears it.
 type watchFallback struct {
 	err     error         // watchUnavailableError; nil while a watcher is up
 	gen     int           // identifies the live retry timer
 	pending bool          // a retry timer is scheduled
 	delay   time.Duration // the next retry's wait; 0 means watchRetryMin
-	fileSig string        // session file size and mtime at the last poll
 }
 
 // notice is the notify-row text while polling. A row too narrow for all of
@@ -98,11 +97,6 @@ func (f watchFallback) active() bool { return f.err != nil }
 // fail records a creation failure and returns the retry timer, unless one is
 // already scheduled (a manual retry failing while the timer runs).
 func (f *watchFallback) fail(err error) tea.Cmd {
-	if f.err == nil {
-		// Writes between the initial load and now went unseen, so the first
-		// poll reloads unconditionally.
-		f.fileSig = ""
-	}
 	f.err = watchUnavailableError{err: err}
 	if f.pending {
 		return nil
@@ -129,28 +123,4 @@ func (f *watchFallback) retryDue(msg watchRetryMsg) bool {
 	}
 	f.pending = false
 	return true
-}
-
-// pollChanged reports whether the session file changed since the last poll.
-// Always false while a watcher is up; the watcher reports changes then.
-func (f *watchFallback) pollChanged(sessionPath string) bool {
-	if !f.active() {
-		return false
-	}
-	sig := sessionFileSig(sessionPath)
-	if sig == f.fileSig {
-		return false
-	}
-	f.fileSig = sig
-	return true
-}
-
-// sessionFileSig fingerprints the session file by size and mtime. Appends
-// always grow it, so a coarse mtime clock can't hide one.
-func sessionFileSig(path string) string {
-	info, err := os.Stat(path)
-	if err != nil {
-		return "missing"
-	}
-	return fmt.Sprintf("%d|%d", info.Size(), info.ModTime().UnixNano())
 }
