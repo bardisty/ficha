@@ -472,9 +472,10 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 // AnalyzeMultipleSessionsInWindow is AnalyzeMultipleSessions counting only
 // the messages inside window (see analyzeParsedSession). A session with
 // nothing inside it drops out of results and the counts, as if it weren't
-// there, though its unreadable lines and agents stay in the skip counters.
-// The aggregate carries the window. Every session falling outside it isn't
-// an error: the aggregate is then empty.
+// there, though its unreadable lines and agents stay in the skip counters,
+// and in the aggregate's SkipDetails. The aggregate carries the window.
+// Every session falling outside it isn't an error: the aggregate is then
+// empty.
 //
 // With a Since bound, a session whose files were all last written a day or
 // more before it isn't parsed at all (see writtenBefore), so the skip
@@ -581,7 +582,8 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 			// so the warning holds for any window.
 			aggregate.SkippedAgents += sessionAnalysis.SkippedAgents
 			aggregate.SkippedLines += sessionAnalysis.SkippedLines
-			results[idx] = models.SessionResult{Entry: entry, Analysis: nil}
+			// Kept until the filter below, so SkipDetails can name it.
+			results[idx] = models.SessionResult{Entry: entry, Analysis: sessionAnalysis}
 			outside[idx] = true
 			continue
 		}
@@ -641,6 +643,17 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 	if parsedSessions == 0 && oldSessions == 0 {
 		return nil, nil, fmt.Errorf("all %d sessions failed to parse", len(entries))
 	}
+
+	// Every session the skip counters count, which takes in those outside
+	// the window that were parsed. A session the window skipped unparsed
+	// counts nowhere, and has no Analysis.
+	var counted []models.SessionResult
+	for i, r := range results {
+		if !outside[i] || r.Analysis != nil {
+			counted = append(counted, r)
+		}
+	}
+	aggregate.SkipDetails = SkipDetails(counted)
 
 	if !window.IsZero() {
 		aggregate.Window = &window
