@@ -356,3 +356,32 @@ func TestBreakdownGoBack(t *testing.T) {
 		t.Errorf("header doesn't say PINNED after going back:\n%s", m.View())
 	}
 }
+
+// The rows tableView draws are the whole table's lines at the viewport's
+// offset, day dividers included, wherever it's scrolled.
+func TestBreakdownTableViewMatchesTableAtEveryOffset(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	rows := chromeRows(goldenTime(22, 0, 0), 60)
+	// A day divider partway down.
+	for i := 30; i < len(rows); i++ {
+		rows[i].Timestamp = rows[i].Timestamp.Add(24 * time.Hour)
+	}
+	m := loadedBreakdown(t, 100, 20, rows)
+	all := strings.Split(tableContent(m), "\n")
+	if len(all) != len(rows)+1 {
+		t.Fatalf("table has %d lines, want %d rows and a divider", len(all), len(rows)+1)
+	}
+	for _, offset := range []int{0, 1, 25, 29, 30, len(all) - m.viewport.Height} {
+		m.viewport.SetYOffset(offset)
+		got := strings.Split(m.tableView(), "\n")
+		want := all[offset:min(offset+m.viewport.Height, len(all))]
+		if len(got) != m.viewport.Height {
+			t.Fatalf("offset %d: %d lines, want the viewport's %d", offset, len(got), m.viewport.Height)
+		}
+		for i, line := range want {
+			if strings.TrimRight(got[i], " ") != strings.TrimRight(line, " ") {
+				t.Errorf("offset %d line %d: %q, want %q", offset, i, got[i], line)
+			}
+		}
+	}
+}
