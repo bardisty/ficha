@@ -123,7 +123,7 @@ if ((Get-FileHash ficha-windows-amd64.exe).Hash -eq $want) {
 > [!IMPORTANT]
 > The first time, add the folder to your user `PATH`, or `ficha` won't be found. `rundll32 sysdm.cpl,EditEnvironmentVariables` opens the Environment Variables window. Under the variables for your user, select `Path`, then Edit, New, and paste `%LOCALAPPDATA%\Programs\ficha`. Click OK in both windows, open a new terminal, and run `ficha version`.
 
-If ficha is running, say in a `ficha watch` window, Windows won't let the block replace it. Quit ficha and run the block again. `-eq` ignores case, so the uppercase hash from `Get-FileHash` matches the lowercase one in `checksums.txt`.
+If ficha is running, say in a `ficha watch` window, Windows won't let the block replace it. Quit ficha and run the block again.
 
 #### Verifying provenance
 
