@@ -210,7 +210,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 				} else {
 					// Dim like its heading: the subtotal repeats the rows
 					// below it and isn't part of the column's sum.
-					sb.WriteString("  " + dimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, 11) + "\n")
+					sb.WriteString("  " + styles.DimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, 11) + "\n")
 				}
 			}
 		}
@@ -237,7 +237,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
 
 			// Dim the message count
-			msgStyled := dimStyle.Render(fmt.Sprintf("%*s", msgsWidth, msgStr))
+			msgStyled := styles.DimStyle.Render(fmt.Sprintf("%*s", msgsWidth, msgStr))
 
 			costStr := formatCostStyled(agent.TotalCost.TotalCost, 11, noColor)
 
@@ -278,7 +278,7 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 		if noColor {
 			return s
 		}
-		return dimStyle.Render(s)
+		return styles.DimStyle.Render(s)
 	}
 	// row writes a labelled row of fields, dropping trailing fields past the
 	// first until it fits.
@@ -352,7 +352,7 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 			case models.TrendDecreasing:
 				trendSymbol = lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(trendSymbol)
 			default:
-				trendSymbol = dimStyle.Render(trendSymbol)
+				trendSymbol = styles.DimStyle.Render(trendSymbol)
 			}
 		}
 		direction := trendSymbol + " " + insights.TrendDescription()

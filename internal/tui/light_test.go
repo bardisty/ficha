@@ -4,13 +4,13 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/bardisty/ficha/internal/styles"
 	"github.com/muesli/termenv"
 )
 
 // darkOnlyIndexes are the xterm-256 colors ficha draws only on a dark
 // background. Any of them in light-background output is a color that
-// bypassed the adaptive palette.
+// bypassed the palette.
 var darkOnlyIndexes = map[string]bool{
 	"42": true, "43": true, "75": true, "99": true, "196": true, "212": true, "213": true, "214": true,
 	"220": true, "221": true, "240": true, "245": true, "248": true, "250": true, "252": true,
@@ -21,8 +21,8 @@ var fgIndex = regexp.MustCompile(`38;5;(\d+)`)
 // On a light background both TUIs draw from the light palette.
 func TestLightBackgroundTUIs(t *testing.T) {
 	forceProfile(t, termenv.ANSI256)
-	lipgloss.SetHasDarkBackground(false)
-	t.Cleanup(func() { lipgloss.SetHasDarkBackground(true) })
+	styles.SetDark(false)
+	t.Cleanup(func() { styles.SetDark(true) })
 
 	for name, out := range map[string]string{
 		"watch":     goldenWatchView(t, false),

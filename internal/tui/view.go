@@ -184,9 +184,9 @@ func (m Model) renderAnalysis() string {
 		} else {
 			savingsHighlighted := m.isHighlighted("savings")
 			savingsStr := render.CostStyledGreen(a.TotalCost.CacheSavings, 11, savingsHighlighted, m.noColor)
-			line := "    " + savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")) + " " + savingsStr
+			line := "    " + styles.SavingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")) + " " + savingsStr
 			if note != "" {
-				line += "  " + dimStyle.Render(note)
+				line += "  " + styles.DimStyle.Render(note)
 			}
 			sb.WriteString(line + "\n")
 		}
@@ -343,7 +343,7 @@ func (m Model) renderAgentBreakdownContent() string {
 	parentCostStr := render.CostStyled(a.ParentCost.TotalCost, 11, parentHighlighted, m.noColor)
 	if !m.noColor {
 		paddedLabel := fmt.Sprintf("%-*s", labelWidth, "Parent session")
-		sb.WriteString(fmt.Sprintf("    %s   %s\n", dimStyle.Render(paddedLabel), parentCostStr))
+		sb.WriteString(fmt.Sprintf("    %s   %s\n", styles.DimStyle.Render(paddedLabel), parentCostStr))
 	} else {
 		sb.WriteString(fmt.Sprintf("    %-*s   %s\n", labelWidth, "Parent session", parentCostStr))
 	}
@@ -389,9 +389,9 @@ func (m Model) renderAgentBreakdownContent() string {
 			case m.noColor:
 				sb.WriteString("    " + heading + pad + render.CostCell(cost, 11) + "\n")
 			case row.folded:
-				sb.WriteString("    " + dimStyle.Render(heading) + pad + render.CostStyled(cost, 11, false, false) + "\n")
+				sb.WriteString("    " + styles.DimStyle.Render(heading) + pad + render.CostStyled(cost, 11, false, false) + "\n")
 			default:
-				sb.WriteString("    " + dimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, 11) + "\n")
+				sb.WriteString("    " + styles.DimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, 11) + "\n")
 			}
 		case agentRowFinished:
 			label := fmt.Sprintf("%-22s", fmt.Sprintf("%d finished agents", row.count))
@@ -400,7 +400,7 @@ func (m Model) renderAgentBreakdownContent() string {
 			if m.noColor {
 				sb.WriteString("    " + label + msgs + gap + costStr + "\n")
 			} else {
-				sb.WriteString("    " + dimStyle.Render(label) + dimMsgs(msgs) + gap + costStr + "\n")
+				sb.WriteString("    " + styles.DimStyle.Render(label) + dimMsgs(msgs) + gap + costStr + "\n")
 			}
 		case agentRowAgent:
 			sb.WriteString(m.renderAgentRow(row.agent, row.running))
@@ -413,7 +413,7 @@ func (m Model) renderAgentBreakdownContent() string {
 	subtotalStr := render.CostStyledBoldGreen(a.AgentsCost.TotalCost, 11, subtotalHighlighted, m.noColor)
 	if !m.noColor {
 		paddedSubtotal := fmt.Sprintf("%-*s", labelWidth, "Agents subtotal")
-		sb.WriteString(fmt.Sprintf("    %s   %s\n", dimStyle.Render(paddedSubtotal), subtotalStr))
+		sb.WriteString(fmt.Sprintf("    %s   %s\n", styles.DimStyle.Render(paddedSubtotal), subtotalStr))
 	} else {
 		sb.WriteString(fmt.Sprintf("    %-*s   %s\n", labelWidth, "Agents subtotal", subtotalStr))
 	}
@@ -435,7 +435,7 @@ func dimMsgs(msgs string) string {
 	if msgs == "" {
 		return ""
 	}
-	return " " + dimStyle.Render(msgs[1:])
+	return " " + styles.DimStyle.Render(msgs[1:])
 }
 
 // agentMsgsColumn is an agent row's message count, " 22 msgs" right-aligned
@@ -486,7 +486,7 @@ func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool) string {
 			dot, marker, modelLabel, msgs, gap, costStr)
 	}
 	if running {
-		dot = liveIndicatorStyle.Render(dot)
+		dot = styles.LiveIndicatorStyle.Render(dot)
 	}
 	// Color the marker by hashing the full agent ID (matches breakdown)
 	agentColor := styles.GetAgentColor(agent.AgentID)
@@ -525,7 +525,7 @@ func (m Model) renderInsightsContent() string {
 		if m.noColor {
 			sb.WriteString("    " + scope + "\n")
 		} else {
-			sb.WriteString("    " + dimStyle.Render(scope) + "\n")
+			sb.WriteString("    " + styles.DimStyle.Render(scope) + "\n")
 		}
 	}
 
@@ -536,11 +536,11 @@ func (m Model) renderInsightsContent() string {
 		highlighted := m.isHighlighted("insights_last")
 
 		if !m.noColor {
-			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "Last"))
+			labelStr := styles.DimStyle.Render(fmt.Sprintf("%-10s", "Last"))
 			costStr := render.CostStyled(last.Cost, 10, highlighted, m.noColor)
-			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(last.Timestamp)))
+			timestampStr := styles.DimStyle.Render(fmt.Sprintf("(%s)", render.Clock(last.Timestamp)))
 			componentCostStr := formatCostStyledDim(last.MainCostValue)
-			componentStr := dimStyle.Render(componentLabel+":") + " " + componentCostStr
+			componentStr := styles.DimStyle.Render(componentLabel+":") + " " + componentCostStr
 			sb.WriteString(m.fitInsight("    "+labelStr+" "+costStr, timestampStr, componentStr))
 		} else {
 			sb.WriteString(m.fitInsight(fmt.Sprintf("    %-10s %s", "Last", render.CostCell(last.Cost, 10)),
@@ -558,10 +558,10 @@ func (m Model) renderInsightsContent() string {
 		highlighted := m.isHighlighted("insights_highest")
 
 		if !m.noColor {
-			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "Peak"))
+			labelStr := styles.DimStyle.Render(fmt.Sprintf("%-10s", "Peak"))
 			costStr := render.CostStyled(highest.Cost, 10, highlighted, m.noColor)
-			timestampStr := dimStyle.Render(fmt.Sprintf("(%s)", render.Clock(highest.Timestamp)))
-			sb.WriteString(m.fitInsight("    "+labelStr+" "+costStr, timestampStr, dimStyle.Render(multiplierStr)))
+			timestampStr := styles.DimStyle.Render(fmt.Sprintf("(%s)", render.Clock(highest.Timestamp)))
+			sb.WriteString(m.fitInsight("    "+labelStr+" "+costStr, timestampStr, styles.DimStyle.Render(multiplierStr)))
 		} else {
 			sb.WriteString(m.fitInsight(fmt.Sprintf("    %-10s %s", "Peak", render.CostCell(highest.Cost, 10)),
 				"("+render.Clock(highest.Timestamp)+")",
@@ -580,7 +580,7 @@ func (m Model) renderInsightsContent() string {
 		window := fmt.Sprintf("last %d", insights.TrendWindow)
 
 		if !m.noColor {
-			labelStr := dimStyle.Render(fmt.Sprintf("%-10s", "Trend"))
+			labelStr := styles.DimStyle.Render(fmt.Sprintf("%-10s", "Trend"))
 			// Color the trend symbol and description based on direction
 			var symbolStyled, descStyled string
 			switch insights.CostTrend {
@@ -591,11 +591,11 @@ func (m Model) renderInsightsContent() string {
 				symbolStyled = lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(trendSymbol)
 				descStyled = lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(trendDesc)
 			default:
-				symbolStyled = dimStyle.Render(trendSymbol)
-				descStyled = dimStyle.Render(trendDesc)
+				symbolStyled = styles.DimStyle.Render(trendSymbol)
+				descStyled = styles.DimStyle.Render(trendDesc)
 			}
 			if highlighted {
-				recentStr = highlightStyle.Render(recentStr)
+				recentStr = styles.HighlightStyle.Render(recentStr)
 			}
 			sb.WriteString(m.fitTrend("    "+labelStr+" "+window+" "+recentStr,
 				" vs "+avgStr+" avg", "  "+symbolStyled, " "+descStyled))
@@ -679,7 +679,7 @@ func (m Model) headerParams(width int) liveHeaderParams {
 // formatCostStyledDim returns a cost string entirely in dim style
 // Used for secondary cost displays like component breakdowns in insights
 func formatCostStyledDim(cost float64) string {
-	return dimStyle.Render(render.Cost(cost))
+	return styles.DimStyle.Render(render.Cost(cost))
 }
 
 // formatDelta formats a token-count change as "(+2.7K)" or "(-1.0K)", or ""
@@ -718,12 +718,12 @@ func (m Model) renderHeroCost(cost float64, highlighted bool, width int) string 
 	}
 
 	// A highlight covers the value only, not " TOTAL"
-	costStyled := heroCostStyle.Render(costFull + " TOTAL")
+	costStyled := styles.HeroCostStyle.Render(costFull + " TOTAL")
 	if highlighted {
-		costStyled = highlightStyle.Render(costFull) + heroCostStyle.Render(" TOTAL")
+		costStyled = styles.HighlightStyle.Render(costFull) + styles.HeroCostStyle.Render(" TOTAL")
 	}
 
-	return dimStyle.Render(leftLine) + "[ " + costStyled + " ]" + dimStyle.Render(rightLine)
+	return styles.DimStyle.Render(leftLine) + "[ " + costStyled + " ]" + styles.DimStyle.Render(rightLine)
 }
 
 // ttlColumnWidth is the width of the "  5m TTL" column after "tokens".
@@ -780,7 +780,7 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 	if tokenChanged && delta != 0 {
 		deltaStr = formatDelta(delta)
 		if tokenHighlighted {
-			deltaStr = highlightStyle.Render(deltaStr)
+			deltaStr = styles.HighlightStyle.Render(deltaStr)
 		}
 	}
 	inline := deltaStr != "" && m.width > 0 && deltaColumnEnd+lipgloss.Width(deltaStr) > m.width
@@ -807,7 +807,7 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 
 	tokenStr := fmt.Sprintf("%*s", countWidth, count)
 	if tokenHighlighted {
-		tokenStr = highlightStyle.Render(tokenStr)
+		tokenStr = styles.HighlightStyle.Render(tokenStr)
 	}
 	if inline {
 		tokenStr += " " + deltaStr
@@ -817,7 +817,7 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 	extraStr := ""
 	if ttl != "" {
 		if !m.noColor {
-			extraStr = "  " + dimStyle.Render(ttl+" TTL")
+			extraStr = "  " + styles.DimStyle.Render(ttl+" TTL")
 		} else {
 			extraStr = "  " + ttl + " TTL"
 		}
@@ -854,7 +854,7 @@ func (m Model) renderEmptyState() string {
 	if m.noColor {
 		sb.WriteString(pad + msg + "\n")
 	} else {
-		sb.WriteString(pad + dimStyle.Render(msg) + "\n")
+		sb.WriteString(pad + styles.DimStyle.Render(msg) + "\n")
 	}
 
 	return sb.String()
@@ -924,7 +924,7 @@ func (m Model) renderCostChart() string {
 	forms = append(forms, scale+"  max: "+render.Cost(maxCost), scale)
 	scaleInfo := strings.TrimPrefix(m.firstFit(forms...), indent)
 	if !m.noColor {
-		sb.WriteString("    " + dimStyle.Render(scaleInfo) + "\n")
+		sb.WriteString("    " + styles.DimStyle.Render(scaleInfo) + "\n")
 	} else {
 		sb.WriteString("    " + scaleInfo + "\n")
 	}

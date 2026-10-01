@@ -106,26 +106,26 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 	} else {
 		// Top border
 		sb.WriteString("  ")
-		sb.WriteString(panelBorderStyle.Render(styles.BoxTopLeft))
-		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
-		sb.WriteString(panelBorderStyle.Render(styles.BoxTopRight))
+		sb.WriteString(styles.PanelBorderStyle.Render(styles.BoxTopLeft))
+		sb.WriteString(styles.PanelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
+		sb.WriteString(styles.PanelBorderStyle.Render(styles.BoxTopRight))
 		sb.WriteString("\n")
 
 		// Content line
 		sb.WriteString("  ")
-		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
+		sb.WriteString(styles.PanelBorderStyle.Render(styles.BoxVertical))
 		sb.WriteString(margin)
 		sb.WriteString(content)
 		sb.WriteString(strings.Repeat(" ", padding))
 		sb.WriteString(margin)
-		sb.WriteString(panelBorderStyle.Render(styles.BoxVertical))
+		sb.WriteString(styles.PanelBorderStyle.Render(styles.BoxVertical))
 		sb.WriteString("\n")
 
 		// Bottom border
 		sb.WriteString("  ")
-		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomLeft))
-		sb.WriteString(panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
-		sb.WriteString(panelBorderStyle.Render(styles.BoxBottomRight))
+		sb.WriteString(styles.PanelBorderStyle.Render(styles.BoxBottomLeft))
+		sb.WriteString(styles.PanelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width-2)))
+		sb.WriteString(styles.PanelBorderStyle.Render(styles.BoxBottomRight))
 	}
 
 	return sb.String()
@@ -187,13 +187,13 @@ func buildStatusHeader(p liveHeaderParams, project string, form statusForm) stri
 	idle := !p.lastActivity.IsZero() && p.now.Sub(p.lastActivity) >= idleAfter
 
 	dot := styles.LiveDot
-	modeStyle := liveIndicatorStyle
+	modeStyle := styles.LiveIndicatorStyle
 	switch {
 	case p.err != nil:
 		modeStyle = lipgloss.NewStyle().Bold(true).Foreground(styles.ErrorColor)
 	case idle:
 		dot = styles.IdleDot
-		modeStyle = dimStyle
+		modeStyle = styles.DimStyle
 	}
 
 	short := form == statusShort
@@ -218,7 +218,7 @@ func buildStatusHeader(p liveHeaderParams, project string, form statusForm) stri
 	case p.lastActivity.IsZero(), p.noMessages && !idle:
 		status = "no messages yet"
 	case idle:
-		status = style(dimStyle, "idle "+strings.TrimSuffix(render.Ago(p.lastActivity, p.now), " ago"))
+		status = style(styles.DimStyle, "idle "+strings.TrimSuffix(render.Ago(p.lastActivity, p.now), " ago"))
 	case short:
 		status = messageAge(p.lastActivity, p.now)
 	default:
@@ -227,13 +227,13 @@ func buildStatusHeader(p liveHeaderParams, project string, form statusForm) stri
 
 	var segs []string
 	if project != "" {
-		segs = append(segs, style(sectionHeaderStyle, project))
+		segs = append(segs, style(styles.SectionHeaderStyle, project))
 	}
 	if p.sessionID != "" {
 		segs = append(segs, render.TruncateID(p.sessionID, sessionIDDisplayLen))
 	}
 	segs = append(segs, style(modeStyle, dot+" "+p.mode), status)
-	return strings.Join(segs, style(panelBorderStyle, " "+styles.BoxVerticalSep+" "))
+	return strings.Join(segs, style(styles.PanelBorderStyle, " "+styles.BoxVerticalSep+" "))
 }
 
 // messageAge is render.Ago with seconds under a minute: in a live view,

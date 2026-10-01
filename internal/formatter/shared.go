@@ -13,17 +13,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Local aliases for frequently used styles
-var (
-	savingsLabelStyle  = styles.SavingsLabelStyle
-	footerStyle        = styles.FooterStyle
-	heroCostStyle      = styles.HeroCostStyle
-	sectionHeaderStyle = styles.SectionHeaderStyle
-	panelBorderStyle   = styles.PanelBorderStyle
-	dimStyle           = styles.DimStyle
-	headerStyle        = styles.HeaderStyle
-)
-
 // sessionsWord returns "session" or "sessions" for a count, keeping every
 // surface that prints one grammatically consistent.
 func sessionsWord(n int) string {
@@ -233,7 +222,7 @@ func renderPanel(lead string, fields []string, giveWay []int, width int, noColor
 	styled := rest
 	if lead != "" {
 		content = lead + sep + rest
-		styled = sectionHeaderStyle.Render(lead) + panelBorderStyle.Render(sep) + rest
+		styled = styles.SectionHeaderStyle.Render(lead) + styles.PanelBorderStyle.Render(sep) + rest
 		if noColor {
 			styled = content
 		}
@@ -245,8 +234,8 @@ func renderPanel(lead string, fields []string, giveWay []int, width int, noColor
 	if noColor {
 		return top + "\n" + styles.BoxVertical + "  " + content + pad + "  " + styles.BoxVertical + "\n" + bottom
 	}
-	side := panelBorderStyle.Render(styles.BoxVertical)
-	return panelBorderStyle.Render(top) + "\n" + side + "  " + styled + pad + "  " + side + "\n" + panelBorderStyle.Render(bottom)
+	side := styles.PanelBorderStyle.Render(styles.BoxVertical)
+	return styles.PanelBorderStyle.Render(top) + "\n" + side + "  " + styled + pad + "  " + side + "\n" + styles.PanelBorderStyle.Render(bottom)
 }
 
 // renderHeroCost renders the total cost integrated into a section header.
@@ -274,7 +263,7 @@ func renderHeroCost(cost float64, width int, noColor bool) string {
 		return leftLine + bracketedCost + rightLine
 	}
 
-	return dimStyle.Render(leftLine) + "[ " + heroCostStyle.Render(costStr) + " ]" + dimStyle.Render(rightLine)
+	return styles.DimStyle.Render(leftLine) + "[ " + styles.HeroCostStyle.Render(costStr) + " ]" + styles.DimStyle.Render(rightLine)
 }
 
 // renderCostRows renders the cost and token rows every static report opens
@@ -371,7 +360,7 @@ func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor l
 	extraStr := ""
 	if extra != "" {
 		if !noColor {
-			extraStr = "  " + dimStyle.Render(extra)
+			extraStr = "  " + styles.DimStyle.Render(extra)
 		} else {
 			extraStr = "  " + extra
 		}
@@ -393,10 +382,10 @@ func renderSavingsRow(savings float64, note bool, costWidth int, noColor bool) s
 		return row + "\n"
 	}
 	row := fmt.Sprintf("  %s %s",
-		savingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
+		styles.SavingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")),
 		formatCostStyledGreen(savings, costWidth, noColor))
 	if note {
-		row += "  " + dimStyle.Render("(from cache reads)")
+		row += "  " + styles.DimStyle.Render("(from cache reads)")
 	}
 	return row + "\n"
 }
@@ -422,7 +411,7 @@ func footerStats(fields []string, width int, noColor bool) string {
 	lines := splitFooterFields(fields, "  "+footerSep()+"  ", width)
 	if !noColor {
 		for i, l := range lines {
-			lines[i] = footerStyle.Render(l)
+			lines[i] = styles.FooterStyle.Render(l)
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -474,7 +463,7 @@ func renderFooterDoubleRule(width int, noColor bool) string {
 	if noColor {
 		return strings.Repeat(styles.BoxHorizontal, width)
 	}
-	return panelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width))
+	return styles.PanelBorderStyle.Render(strings.Repeat(styles.BoxHorizontal, width))
 }
 
 // renderFooterSingleRule renders the light rule drawn under the footer stats.
@@ -482,7 +471,7 @@ func renderFooterSingleRule(width int, noColor bool) string {
 	if noColor {
 		return strings.Repeat(styles.LineHorizontal, width)
 	}
-	return dimStyle.Render(strings.Repeat(styles.LineHorizontal, width))
+	return styles.DimStyle.Render(strings.Repeat(styles.LineHorizontal, width))
 }
 
 // formatCostByModelContent renders cost by model rows (content only, no header)

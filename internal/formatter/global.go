@@ -253,7 +253,7 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, layout p
 		if noColor {
 			sb.WriteString(fmt.Sprintf("  %s\n", summaryText))
 		} else {
-			sb.WriteString(fmt.Sprintf("  %s\n", dimStyle.Render(summaryText)))
+			sb.WriteString(fmt.Sprintf("  %s\n", styles.DimStyle.Render(summaryText)))
 		}
 	}
 
@@ -307,12 +307,12 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 	indent := strings.Repeat(" ", rowIndent)
 	rule := indent + strings.Repeat(styles.LineHorizontal, layout.width-rowIndent)
 	if !noColor {
-		rule = indent + dimStyle.Render(strings.Repeat(styles.LineHorizontal, layout.width-rowIndent))
+		rule = indent + styles.DimStyle.Render(strings.Repeat(styles.LineHorizontal, layout.width-rowIndent))
 	}
 	if noColor {
 		sb.WriteString(join(header...) + "\n")
 	} else {
-		sb.WriteString(headerStyle.Render(join(header...)) + "\n")
+		sb.WriteString(styles.HeaderStyle.Render(join(header...)) + "\n")
 	}
 	sb.WriteString(rule + "\n")
 
@@ -322,7 +322,7 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 		if opts.SortBy == key {
 			return lipgloss.NewStyle()
 		}
-		return dimStyle
+		return styles.DimStyle
 	}
 
 	var cumulative float64
@@ -362,13 +362,13 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 			}
 		} else {
 			costColor := styles.GetCostGradientColor(p.TotalCost.TotalCost, minCost, maxCost)
-			cells = []string{dimStyle.Render(rank), name}
+			cells = []string{styles.DimStyle.Render(rank), name}
 			if layout.sessions {
 				cells = append(cells, keyStyle("sessions").Render(sessions))
 			}
 			cells = append(cells, render.CostColored(p.TotalCost.TotalCost, costColor, layout.cost))
 			if layout.pct {
-				cells = append(cells, dimStyle.Render(pct))
+				cells = append(cells, styles.DimStyle.Render(pct))
 			}
 			if layout.cumulative > 0 {
 				cells = append(cells, render.CostColored(cumulative, styles.SuccessColor, layout.cumulative))

@@ -79,7 +79,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 	if storageDir != "" {
 		line := "Storage: " + storageDir
 		if !noColor {
-			line = dimStyle.Render(line)
+			line = styles.DimStyle.Render(line)
 		}
 		sb.WriteString("\n" + line)
 	}
@@ -258,14 +258,14 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	if noColor {
 		sb.WriteString(headerRow + "\n" + rule + "\n")
 	} else {
-		sb.WriteString(headerStyle.Render(headerRow) + "\n" + "  " + dimStyle.Render(strings.Repeat(styles.LineHorizontal, contentWidth)) + "\n")
+		sb.WriteString(styles.HeaderStyle.Render(headerRow) + "\n" + "  " + styles.DimStyle.Render(strings.Repeat(styles.LineHorizontal, contentWidth)) + "\n")
 	}
 
 	dim := func(s string) string {
 		if noColor {
 			return s
 		}
-		return dimStyle.Render(s)
+		return styles.DimStyle.Render(s)
 	}
 	for i := len(sorted) - 1; i >= 0; i-- {
 		r := sorted[i]
@@ -297,7 +297,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		costStr := render.CostCell(cost, costWidth)
 		if !noColor {
 			model = lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName)).Render(model)
-			agents = dimStyle.Render(agents)
+			agents = styles.DimStyle.Render(agents)
 			costStr = render.CostColored(cost, styles.GetCostGradientColor(cost, minCost, maxCost), costWidth)
 		}
 		sb.WriteString(row(num, id, modified, model, agents, costStr) + "\n")
@@ -322,7 +322,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	if noColor {
 		sb.WriteString(rule + "\n")
 	} else {
-		sb.WriteString("  " + dimStyle.Render(strings.Repeat(styles.LineHorizontal, contentWidth)) + "\n")
+		sb.WriteString("  " + styles.DimStyle.Render(strings.Repeat(styles.LineHorizontal, contentWidth)) + "\n")
 	}
 	sb.WriteString(fmt.Sprintf("  %-*s  %s\n", sumLabelWidth, sumLabel, sumCost))
 
@@ -429,7 +429,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 		if noColor {
 			return s
 		}
-		return dimStyle.Render(s)
+		return styles.DimStyle.Render(s)
 	}
 	agentRow := func(prefix string, agent *models.AgentAnalysis) string {
 		modelName := render.PrimaryModel(agent.CostByModel)
@@ -445,7 +445,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 		if !noColor {
 			marker = lipgloss.NewStyle().Foreground(styles.GetAgentColor(agent.AgentID)).Render(marker)
 			model = lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName)).Render(model)
-			msgs = dimStyle.Render(msgs)
+			msgs = styles.DimStyle.Render(msgs)
 		}
 		left := prefix + marker + " " + model
 		if layout.msgs {
