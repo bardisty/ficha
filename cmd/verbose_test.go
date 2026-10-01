@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 )
 
 func TestDescribeSkippedLines(t *testing.T) {
@@ -56,8 +57,9 @@ func TestSkipWarningListsFilesOnlyUnderVerbose(t *testing.T) {
 		"    /p/s.jsonl\n" +
 		"  agent a1: skipped line 9 (oversized)\n" +
 		"    /p/s/subagents/agent-a1.jsonl\n"
-	if loud.String() != want {
-		t.Errorf("with -v:\n got %q\nwant %q", loud.String(), want)
+	// The paths are marked to stay whole, and printReport's wrap unmarks them
+	if got := render.WrapHanging(loud.String(), 0); got != want {
+		t.Errorf("with -v:\n got %q\nwant %q", got, want)
 	}
 }
 

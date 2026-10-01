@@ -11,6 +11,7 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/paths"
+	"github.com/bardisty/ficha/internal/render"
 )
 
 // tracef prints one step of project and session resolution under -v, so a
@@ -174,14 +175,16 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 		return resolvedProject{}, err
 	}
 
-	if match.MatchInfo != "" {
-		writeNote(cfg, "%s", match.MatchInfo)
-	}
 	label := match.EncodedPath
 	for _, p := range allProjects {
 		if p.FullPath == match.ProjectDir && p.OriginalPath != "" {
 			label = p.OriginalPath
 		}
+	}
+	if match.MatchInfo != "" {
+		// The note names the project's path, which has to stay whole if
+		// the note wraps
+		writeNote(cfg, "%s", strings.Replace(match.MatchInfo, label, render.NoBreak(label), 1))
 	}
 	return resolvedProject{dir: match.ProjectDir, label: label}, nil
 }

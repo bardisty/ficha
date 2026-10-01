@@ -13,6 +13,7 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/paths"
+	"github.com/bardisty/ficha/internal/render"
 )
 
 // ErrSessionNotFound is returned when a specific session ID cannot be matched
@@ -68,7 +69,7 @@ func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.Sessi
 	index, indexErr := parser.ParseSessionsIndex(indexPath)
 	if indexErr != nil && !os.IsNotExist(indexErr) {
 		// Index exists but is malformed - warn but continue
-		fmt.Fprintf(cfg.stderr, "Warning: failed to parse sessions-index.json: %v\n", indexErr)
+		writeWarning(cfg, "failed to parse sessions-index.json: %s", errorText(indexErr))
 	}
 
 	// Merge sources
@@ -271,7 +272,7 @@ func locateSession(cfg *config, arg, excludeDir string) (*models.SessionEntry, s
 		if isFullSessionID(id) && strings.EqualFold(h.sessionID, id) {
 			session, err := parser.SessionFromFile(filepath.Join(h.projectDir, h.sessionID+".jsonl"))
 			if err == nil {
-				writeNote(cfg, "session %s is in %s.", shortSessionID(h.sessionID), where)
+				writeNote(cfg, "session %s is in %s.", shortSessionID(h.sessionID), render.NoBreak(where))
 				return &session, h.projectDir, nil
 			}
 		}
@@ -353,7 +354,7 @@ func sessionFromPath(cfg *config, arg string) (*models.SessionEntry, string, err
 	}
 	if agentsOutOfReach(path, session.SessionID) {
 		dir := filepath.Join(filepath.Dir(arg), session.SessionID) + string(filepath.Separator)
-		writeNote(cfg, "any agents this session ran aren't counted. ficha looks for them in %s, which isn't there.", dir)
+		writeNote(cfg, "any agents this session ran aren't counted. ficha looks for them in %s, which isn't there.", render.NoBreak(dir))
 	}
 	return &session, filepath.Dir(path), nil
 }
