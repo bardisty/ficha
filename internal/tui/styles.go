@@ -43,13 +43,22 @@ func unknownModelPointer(sessionID string) string {
 }
 
 // newSpinner returns the loading spinner: braille dots, or a spinning line
-// under the ASCII glyph set, colored unless color is off.
+// under the ASCII glyph set, colored unless color is off. Its frames are the
+// glyph alone. The dot frames come padded with a space, and the spinner's
+// style wraps a frame whole, so a caller couldn't trim it from the view. The
+// header puts the gap after the spinner, the same for both sets.
 func newSpinner(noColor bool) spinner.Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	if styles.ASCII() {
 		s.Spinner = spinner.Line
 	}
+	// A new slice: the frames belong to the spinner package.
+	frames := make([]string, len(s.Spinner.Frames))
+	for i, f := range s.Spinner.Frames {
+		frames[i] = strings.TrimRight(f, " ")
+	}
+	s.Spinner.Frames = frames
 	if !noColor {
 		s.Style = styles.SpinnerStyle
 	}
