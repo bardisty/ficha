@@ -118,6 +118,10 @@ type BreakdownModel struct {
 	// started; the poll reloads when the file no longer matches it
 	fileSig string
 
+	// loadGen counts the loads started, so a poll result can tell that one
+	// started after it was sent; see pollResultMsg.stale
+	loadGen int
+
 	// Auto-follow mode for tracking new sessions
 	projectDir      string          // Project directory to watch for new sessions
 	followMode      bool            // Whether to auto-follow new sessions
@@ -559,11 +563,16 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.waiting() {
 			return m, subagentPollCmd()
 		}
-		sig := subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
-		treeChanged := sig != m.subagentSig
-		m.subagentSig = sig
-		if treeChanged || sessionFileSig(m.sessionPath) != m.fileSig {
-			load := m.startLoad()
+		return m, pollSessionCmd(m.sessionPath, m.sessionID, m.loadGen)
+
+	case pollResultMsg:
+		if msg.stale(m.sessionPath, m.loadGen) {
+			return m, subagentPollCmd()
+		}
+		treeChanged := msg.treeSig != m.subagentSig
+		m.subagentSig = msg.treeSig
+		if treeChanged || msg.fileSig != m.fileSig {
+			load := m.startLoadFrom(msg.fileSig)
 			return m, tea.Batch(load, subagentPollCmd(), m.spinnerCmd())
 		}
 		return m, subagentPollCmd()
@@ -1402,8 +1411,15 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 
 // startLoad marks a reload as started and returns it; see Model.startLoad.
 func (m *BreakdownModel) startLoad() tea.Cmd {
+	return m.startLoadFrom(sessionFileSig(m.sessionPath))
+}
+
+// startLoadFrom is startLoad with the baseline already measured, as the
+// poll's result has it.
+func (m *BreakdownModel) startLoadFrom(fileSig string) tea.Cmd {
 	m.loading = true
-	m.fileSig = sessionFileSig(m.sessionPath)
+	m.loadGen++
+	m.fileSig = fileSig
 	return m.loadBreakdownCmd()
 }
 

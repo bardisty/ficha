@@ -97,19 +97,19 @@ func TestWatcherFailurePollsUntilRecovery(t *testing.T) {
 			// A write that landed between the initial load and the failure
 			// is caught by the first poll.
 			growFile(t, sessionPath)
-			m, _ = m.Update(subagentPollMsg(time.Now()))
+			m, _ = pollOnce(t, m)
 			if !h.loading(m) {
 				t.Fatal("first poll after the failure missed a write from before it")
 			}
 			m, _ = m.Update(h.loaded)
 
-			m, _ = m.Update(subagentPollMsg(time.Now()))
+			m, _ = pollOnce(t, m)
 			if h.loading(m) {
 				t.Fatal("poll reloaded an unchanged file")
 			}
 
 			growFile(t, sessionPath)
-			m, _ = m.Update(subagentPollMsg(time.Now()))
+			m, _ = pollOnce(t, m)
 			if !h.loading(m) {
 				t.Fatal("poll missed an append to the session file")
 			}
@@ -145,7 +145,7 @@ func TestWatcherFailurePollsUntilRecovery(t *testing.T) {
 			m, _ = m.Update(h.loaded)
 
 			// That reload read the write, so the poll has nothing to add.
-			m, _ = m.Update(subagentPollMsg(time.Now()))
+			m, _ = pollOnce(t, m)
 			if h.loading(m) {
 				t.Fatal("poll reloaded for a write the recovery reload already read")
 			}
