@@ -25,6 +25,10 @@ args = ap.parse_args()
 # "./-name" still makes it.
 if args.root.startswith("-"):
     ap.error("root %r looks like a flag; write ./%s for a directory of that name" % (args.root, args.root))
+# An empty root is an unset variable in quotes far more often than a choice,
+# and abspath would turn it into the working directory.
+if args.root == "":
+    ap.error("root is empty; write . for the current directory")
 
 root = os.path.abspath(args.root)
 projects = os.path.join(root, "config", "projects")
