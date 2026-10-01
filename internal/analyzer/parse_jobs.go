@@ -105,13 +105,14 @@ func (a *sessionAgents) jobs(cache *AgentParseCache) []parseJob {
 }
 
 // parseSession parses a session's transcript and its agent files in
-// parallel. The error is the parent transcript's.
+// parallel, taking from cache what hasn't changed. The error is the parent
+// transcript's.
 func parseSession(sessionPath, sessionID string, cache *AgentParseCache) (*parser.ParseResult, *sessionAgents, error) {
 	agents := discoverAgents(sessionPath, sessionID)
 	var result *parser.ParseResult
 	var err error
 	runParseJobs(append(agents.jobs(cache), newParseJob(sessionPath, func() {
-		result, err = parser.ParseJSONLFileWithResult(sessionPath)
+		result, err = loadParentParse(sessionPath, cache)
 	})))
 	if err != nil {
 		return nil, nil, err

@@ -52,10 +52,10 @@ func AnalyzeSession(sessionPath string, sessionID string, scope MessageScope) (*
 }
 
 // AnalyzeSessionWithCache is AnalyzeSession with an optional agent-parse cache.
-// The parent session file is always re-parsed (it is the file being appended to
-// in live views); only agent sub-sessions are served from the cache when
-// unchanged. A nil cache parses every agent, matching AnalyzeSession. The
-// parent and the agents it has to parse are read in parallel.
+// The parent transcript and each agent sub-session are served from the cache
+// when unchanged, so a reload parses only the files written since the last
+// one. A nil cache parses every file, matching AnalyzeSession. The files it
+// has to parse are read in parallel.
 func AnalyzeSessionWithCache(sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache) (*models.SessionAnalysis, error) {
 	return analyzeSessionExcludingSeen(sessionPath, sessionID, scope, cache, nil)
 }
