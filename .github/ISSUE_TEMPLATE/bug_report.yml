@@ -7,7 +7,7 @@ body:
     attributes:
       label: ficha version
       description: Output of `ficha version`.
-      placeholder: ficha 0.55.0 (01ff73c, go1.25.14, linux/amd64)
+      placeholder: ficha 0.55.0 (01ff73c, go1.26.8, linux/amd64)
     validations:
       required: true
   - type: input
