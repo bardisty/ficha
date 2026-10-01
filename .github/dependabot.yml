@@ -7,6 +7,14 @@ updates:
     commit-message:
       prefix: deps
     groups:
+      # The terminal libraries set go.mod's go line, and one that asks for
+      # a Go the linter can't load fails lint. In a group of their own,
+      # that holds up only their PR.
+      terminal-ui:
+        patterns:
+          - "charm.land/*"
+          - "github.com/charmbracelet/*"
+          - "github.com/NimbleMarkets/ntcharts*"
       go-modules:
         patterns: ["*"]
 

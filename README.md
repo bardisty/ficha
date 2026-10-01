@@ -19,7 +19,7 @@ ficha only reads the transcripts Claude Code keeps on your machine. It makes no 
 
 ## Quick start
 
-1. Install ficha on the machine where Claude Code runs, or inside WSL if Claude Code runs there. [Install](#install) has a download block for each platform that checks the file before installing it. With Go 1.25.6 or newer, this works too:
+1. Install ficha on the machine where Claude Code runs, or inside WSL if Claude Code runs there. [Install](#install) has a download block for each platform that checks the file before installing it. With Go 1.26.8 or newer, this works too:
 
    ```sh
    go install github.com/bardisty/ficha@latest
@@ -137,7 +137,7 @@ Point it at wherever you installed ficha. On Windows that's `"$env:LOCALAPPDATA\
 
 ### From source
 
-With Go 1.25.6 or newer:
+With Go 1.26.8 or newer:
 
 ```sh
 go install github.com/bardisty/ficha@latest

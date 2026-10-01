@@ -1,8 +1,6 @@
 module github.com/bardisty/ficha
 
-go 1.25.6
-
-toolchain go1.25.14
+go 1.26.8
 
 require (
 	github.com/NimbleMarkets/ntcharts v0.5.1

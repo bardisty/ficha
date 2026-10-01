@@ -4,9 +4,9 @@ Thanks for looking. This is a small Go CLI with one job, so the rules below are 
 
 ## Setup
 
-You need Go 1.25.6 or newer. Any later release works, 1.27 included. There's nothing else to install.
+You need Go 1.26.8 or newer. Any later release works, 1.27 included. There's nothing else to install.
 
-`make lint` builds golangci-lint v1.64.8 with `go run` the first time you call it, and so does `make fmt`, which uses the linter to fix imports. The build uses the Go named on go.mod's `toolchain` line. So the first run may download that Go, go1.25.14 today, before it builds the linter. Later runs use the cached build.
+`make lint` builds golangci-lint v1.64.8 with `go run` the first time you call it, and so does `make fmt`, which uses the linter to fix imports. The build uses the Go named on go.mod's `go` line. So the first run may download that Go, go1.26.8 today, before it builds the linter. Later runs use the cached build.
 
 Don't lint with a golangci-lint you installed yourself. With Go 1.27 or later, v1.64.8 can't read the standard library and reports dozens of bogus typecheck errors. v2 rejects this repo's config.
 
@@ -47,7 +47,7 @@ make ci
 
 That lists any file gofmt would change instead of rewriting it, then lints, runs the tests with `-race`, and cross-compiles all five release binaries. `-race` needs cgo and a C compiler. Without them, `make ci` runs the plain tests and prints a line saying why it skipped `-race`. In CI that's an error.
 
-CI's `check` job runs `make ci` and then govulncheck. govulncheck isn't in `make ci`, because it needs a newer Go than go.mod and a fresh advisory isn't your PR's fault. CI also runs the plain tests on macOS and Windows.
+CI's `check` job runs `make ci` and then govulncheck. govulncheck isn't in `make ci`, because a fresh advisory isn't your PR's fault. CI also runs the plain tests on macOS and Windows.
 
 `make test` prints one line per package. Pass `go test` flags through `TESTFLAGS` when you want more, as in `make test TESTFLAGS=-v` or `make test TESTFLAGS='-run TestGolden'`.
 
@@ -66,11 +66,11 @@ On Windows, or anywhere without make, run the gate's steps from the repo root yo
 
 ```sh
 gofmt -l cmd internal main.go
-GOTOOLCHAIN=go1.25.14 go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...
+GOTOOLCHAIN=go1.26.8 go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...
 go test ./...
 ```
 
-The lint line runs the linter under the Go named on go.mod's `toolchain` line, as `make lint` does. PowerShell and cmd don't take the `VAR=value` prefix. Set the variable for the session instead, with `$env:GOTOOLCHAIN = "go1.25.14"` in PowerShell or `set GOTOOLCHAIN=go1.25.14` in cmd, and drop the prefix.
+The lint line runs the linter under the Go named on go.mod's `go` line, as `make lint` does. PowerShell and cmd don't take the `VAR=value` prefix. Set the variable for the session instead, with `$env:GOTOOLCHAIN = "go1.26.8"` in PowerShell or `set GOTOOLCHAIN=go1.26.8` in cmd, and drop the prefix.
 
 `gofmt -l` names the files it would change, and `go fmt ./...` rewrites them. Don't point gofmt at `.`: it descends into hidden directories, where other worktrees may be nested. Adding `--fix --enable-only goimports` to the lint line fixes imports, which is the rest of `make fmt`. `make update-golden` is `go test ./internal/formatter ./internal/tui ./cmd -run TestGolden -update`. On Windows, build with `go build -o bin/ficha.exe .`, since `make build` names the binary `bin/ficha` everywhere.
 

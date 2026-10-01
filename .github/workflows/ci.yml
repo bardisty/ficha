@@ -33,11 +33,11 @@ jobs:
       - name: make ci
         run: make ci
 
-      # govulncheck needs a newer Go than go.mod, and setup-go exports
-      # GOTOOLCHAIN=local, so the install opts back into toolchain switching.
-      # The scan itself must run under the job's toolchain: `go run` would
-      # check the newer toolchain's standard library instead of the one ficha
-      # is built with.
+      # setup-go exports GOTOOLCHAIN=local. The install opts back into
+      # toolchain switching, so a govulncheck that needs a newer Go than
+      # go.mod still builds. The scan itself must run under the job's
+      # toolchain: `go run` would check the newer toolchain's standard
+      # library instead of the one ficha is built with.
       - name: govulncheck
         run: |
           GOTOOLCHAIN=auto go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
