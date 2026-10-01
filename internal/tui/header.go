@@ -205,13 +205,11 @@ func buildStatusHeader(p liveHeaderParams, project string, form statusForm) stri
 		status = "waiting for a session"
 	case p.loading:
 		status = "loading..."
-		spin := p.spinnerView
 		if short {
-			// The dot spinner's frames end in a space of their own.
-			status, spin = "loading", strings.TrimRight(spin, " ")
+			status = "loading"
 		}
 		if !p.noColor {
-			status = spin + " " + status
+			status = p.spinnerView + " " + status
 		}
 	case (p.lastActivity.IsZero() || p.noMessages && !idle) && short:
 		status = "no msgs"

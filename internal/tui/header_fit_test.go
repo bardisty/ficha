@@ -15,10 +15,10 @@ import (
 // word. The wide form comes back as soon as it fits.
 func TestHeaderStatusIsNeverCutMidWord(t *testing.T) {
 	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
-	// The view's own spinner: its frames are two columns, a dot and a space.
-	// The spinner forms below draw in color. Escapes take no columns, so the
-	// test reads the text without them.
-	dots := stripANSI(newSpinner(false).View())
+	// The view's own spinner, in its style, as the models hand it over. The
+	// spinner forms below draw in color. Escapes take no columns, so the test
+	// reads the lines without them.
+	dots := newSpinner(false).View()
 	forms := []struct {
 		name string
 		edit func(*liveHeaderParams)
@@ -33,7 +33,7 @@ func TestHeaderStatusIsNeverCutMidWord(t *testing.T) {
 		{"idle for months", func(p *liveHeaderParams) { p.lastActivity = now.Add(-340 * 24 * time.Hour) }, []string{"idle 11mo"}},
 		{"loading", func(p *liveHeaderParams) { p.loading = true }, []string{"loading...", "loading"}},
 		{"loading with a spinner", func(p *liveHeaderParams) { p.loading = true; p.noColor = false; p.spinnerView = dots },
-			[]string{dots + " loading...", strings.TrimRight(dots, " ") + " loading"}},
+			[]string{"⣾ loading...", "⣾ loading"}},
 		{"loading with the ASCII spinner", func(p *liveHeaderParams) { p.loading = true; p.noColor = false; p.spinnerView = "|" },
 			[]string{"| loading...", "| loading"}},
 		{"error", func(p *liveHeaderParams) { p.err = errors.New("x"); p.lastActivity = now.Add(-12 * time.Second) },
@@ -144,5 +144,47 @@ func TestHeaderStatusTakesBackTheDroppedProjectsRoom(t *testing.T) {
 		if got := fitStatusHeader(p, width); got != want {
 			t.Errorf("waiting at %d: %q, want %q", width, got, want)
 		}
+	}
+}
+
+// The header alone puts the gap after the spinner: one space in the full form
+// and the short one, for the dots and for the ASCII line, in both views. The
+// spinner view arrives styled, so a space inside a frame would sit between
+// the escapes, where the header can't trim it.
+func TestLoadingSpinnerIsOneSpaceFromTheStatus(t *testing.T) {
+	for _, ascii := range []bool{false, true} {
+		glyph := "⣾"
+		if ascii {
+			glyph = "|"
+		}
+		t.Run(glyph, func(t *testing.T) {
+			if ascii {
+				useASCII(t)
+			}
+			for _, f := range newSpinner(false).Spinner.Frames {
+				if strings.ContainsRune(f, ' ') {
+					t.Errorf("frame %q carries a space of its own", f)
+				}
+			}
+
+			watch := NewModel("/test/path", sessA, false, "", false)
+			watch.loading = true
+			breakdown := NewBreakdownModel("/test/path", sessA, false, "", false)
+			breakdown.loading = true
+			for view, p := range map[string]liveHeaderParams{
+				"watch":     watch.headerParams(defaultPanelWidth),
+				"breakdown": breakdown.headerParams(defaultPanelWidth),
+			} {
+				for form, want := range map[statusForm]string{
+					statusFull:  glyph + " loading...",
+					statusShort: glyph + " loading",
+				} {
+					got := stripANSI(buildStatusHeader(p, p.project, form))
+					if !strings.HasSuffix(got, " "+want) || strings.HasSuffix(got, "  "+want) {
+						t.Errorf("%s, form %d: %q, want one space before %q", view, form, got, want)
+					}
+				}
+			}
+		})
 	}
 }
