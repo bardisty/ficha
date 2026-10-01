@@ -15,6 +15,13 @@ Usage: mkhistory.py <root> [sessions] [--skew]
   with it when a change touches how lines are read or how the work is spread
   over threads.
 
+  --skew also writes eight short sessions over the last two days whose
+  transcript, or whose one agent's, ends on a tool result of 64 KB or more.
+  --since reads the end of a file from the day before its window to see when
+  the file stops, and an end like that holds no whole line to tell it, so the
+  file is parsed in full. Whatever the hour or the timezone, --since today
+  meets a few of them.
+
 Every file's mtime lands just after its newest line, as it would on a real
 disk. --since skips a file last written before the window, so a file whose
 mtime predated its own lines would drop messages that belong in the report.
@@ -29,10 +36,14 @@ from datetime import datetime, timedelta, timezone
 
 ap = argparse.ArgumentParser(description="Build a large synthetic history for timing ficha.")
 ap.add_argument("root", help="directory to write config/projects/ under")
-ap.add_argument("sessions", nargs="?", type=int, default=300, help="how many sessions to write (default 300). --skew adds three long ones")
+ap.add_argument("sessions", nargs="?", type=int, default=300, help="how many sessions to write (default 300). --skew adds three long ones and eight short ones")
 ap.add_argument("--skew", action="store_true",
                 help="shape it like a real history: 40 projects with half the sessions in one, and a few very long lines")
 args = ap.parse_args()
+# "--" hands the parser anything as a path, and a directory named like a flag
+# is a typo far more often than a choice. "./-name" still gets one.
+if args.root.startswith("-"):
+    ap.error("root %r looks like a flag; write ./%s for a directory of that name" % (args.root, args.root))
 
 root = os.path.abspath(args.root)
 n_sessions = args.sessions
@@ -88,9 +99,9 @@ def assistant(dt, model, sid, cwd):
             "cwd": cwd}
 
 
-def user(dt, sid, cwd):
+def user(dt, sid, cwd, output=None):
     return {"type": "user", "timestamp": ts(dt), "sessionId": sid,
-            "message": {"role": "user", "content": [{"type": "tool_result", "content": tool_output()}]},
+            "message": {"role": "user", "content": [{"type": "tool_result", "content": output or tool_output()}]},
             "cwd": cwd}
 
 
@@ -159,3 +170,33 @@ if args.skew:
         end = NOW - timedelta(seconds=rng.randint(0, 60 * 86400))
         write(os.path.join(project_dirs[0], sid + ".jsonl"),
               convo(end, turns, rng.choice(MODELS), sid, cwd_of(project_dirs[0])))
+
+    # Sessions cut off while a long tool result was the last thing written, in
+    # the parent's transcript or in its agent's. Such a line fills the 64 KB
+    # ficha reads from the end of a file, so no whole line is left there to
+    # date it.
+    #
+    # ficha reads that end only for a file written in the 24 hours before the
+    # window. For --since today those hours are the local yesterday, which
+    # lies somewhere in the last 48 hours, so one session every 6 hours puts
+    # at least three there.
+    #
+    # They draw their random numbers after everything above, which leaves
+    # every other file as it is without them.
+    for i in range(8):
+        pdir = project_dirs[i]
+        sid, cwd = str(uuid.UUID(int=rng.getrandbits(128))), cwd_of(pdir)
+        end = NOW - timedelta(hours=3 + 6 * i)
+        # The long line is the file's newest, so the mtime agrees with it.
+        cut = user(end, sid, cwd, Pad(rng.randint(65536, 2000000)))
+        if i % 2:
+            # The parent ends as any other does, and its agent is the one cut
+            # off, the only thing keeping the session from being skipped.
+            aend = end - timedelta(minutes=10)
+            cut["timestamp"] = ts(aend)
+            write(os.path.join(pdir, sid, "subagents", "agent-a%016x.jsonl" % rng.getrandbits(64)),
+                  convo(aend - timedelta(seconds=5), rng.randint(10, 60), rng.choice(MODELS), sid, cwd) + [cut])
+            write(os.path.join(pdir, sid + ".jsonl"), convo(end, rng.randint(20, 80), rng.choice(MODELS), sid, cwd))
+        else:
+            write(os.path.join(pdir, sid + ".jsonl"),
+                  convo(end - timedelta(seconds=5), rng.randint(20, 80), rng.choice(MODELS), sid, cwd) + [cut])
