@@ -7,7 +7,6 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
@@ -124,7 +123,7 @@ func parseSession(sessionPath, sessionID string, cache *AgentParseCache) (*parse
 // each slice parallel to the entries.
 type sessionParses struct {
 	parsed []*parser.ParseResult // nil when the parse failed or never ran
-	old    []bool                // written too long before the window to be parsed
+	old    []bool                // ends too long before the window to be parsed
 	agents []*sessionAgents
 }
 
@@ -137,15 +136,11 @@ func planSessionParses(entries []models.SessionEntry, window models.TimeWindow) 
 		old:    make([]bool, len(entries)),
 		agents: make([]*sessionAgents, len(entries)),
 	}
-	var cutoff time.Time
-	if !window.Since.IsZero() {
-		cutoff = window.Since.Add(-windowSkipSlack)
-	}
 	var jobs []parseJob
 	for i, entry := range entries {
 		agents := discoverAgents(entry.FullPath, entry.SessionID)
 		parses.agents[i] = agents
-		if !cutoff.IsZero() && writtenBefore(entry, agents, cutoff) {
+		if !window.Since.IsZero() && writtenBefore(entry, agents, window.Since) {
 			parses.old[i] = true
 			continue
 		}

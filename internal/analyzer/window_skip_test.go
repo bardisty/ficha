@@ -427,3 +427,115 @@ func TestWindowKeepsSkipsOfAProjectWithNothingInside(t *testing.T) {
 			unwindowed.ProjectCount, len(unwindowed.OutOfWindow), unwindowed.SkippedLines)
 	}
 }
+
+// Written yesterday, counting from skipWindow: inside the day of slack, so
+// the mtime alone can't rule the file out and its last lines decide.
+var slackMtime = time.Date(2024, 1, 16, 12, 0, 0, 0, time.UTC)
+
+// stampedLine is a line of any type with only a timestamp, as the user and
+// system lines between assistant messages are.
+func stampedLine(ts string) string {
+	return `{"type":"user","timestamp":"` + ts + `"}`
+}
+
+// parsedInSlack writes lines to a transcript last written inside the slack
+// and reports whether a windowed run parsed it. Every case holds corruptLine,
+// which only a parse counts.
+func parsedInSlack(t *testing.T, lines ...string) bool {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sess.jsonl")
+	writeJSONLFile(t, path, lines)
+	setMtime(t, path, slackMtime)
+	newPath := filepath.Join(dir, "new.jsonl")
+	writeJSONLFile(t, newPath, []string{windowMsg})
+	setMtime(t, newPath, newMtime)
+
+	agg, results, err := AnalyzeMultipleSessionsInWindow(diskEntries(t, path, newPath), skipWindow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Parsed or not, the report is the same: nothing in these files is
+	// inside the window but windowMsg.
+	if agg.MessageCount != 1 || len(results) != 1 || results[0].Entry.SessionID != "new" {
+		t.Errorf("got %d messages in %+v, want the new session's one", agg.MessageCount, results)
+	}
+	return agg.SkippedLines == 1
+}
+
+// A file written inside the day of slack is skipped when its last lines are
+// more than an hour older than --since, and parsed when they aren't or when
+// they can't say.
+func TestWindowSkipReadsTheTailInsideTheSlack(t *testing.T) {
+	// A line longer than the tail read, as a large tool result is.
+	longLine := `{"type":"user","timestamp":"2024-01-15T10:20:00Z","content":"` + strings.Repeat("x", 70*1024) + `"}`
+
+	cases := []struct {
+		name   string
+		lines  []string
+		parsed bool
+	}{
+		{"old tail", []string{forkMsg1, corruptLine, forkMsg2}, false},
+		{"old tail after a long line", []string{corruptLine, longLine, forkMsg2, stampedLine("2024-01-15T10:30:00Z")}, false},
+		{"tail within the hour before since", []string{forkMsg1, corruptLine, stampedLine("2024-01-16T23:30:00Z")}, true},
+		{"newest line isn't last", []string{corruptLine, stampedLine("2024-01-16T23:30:00Z"), forkMsg2}, true},
+		{"no complete line in the tail", []string{forkMsg1, corruptLine, longLine}, true},
+		{"no timestamp in the tail", []string{forkMsg1, corruptLine, longLine, `{"type":"summary","summary":"untimed"}`}, true},
+		{"only a corrupt line", []string{corruptLine}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := parsedInSlack(t, c.lines...); got != c.parsed {
+				t.Errorf("parsed: got %v, want %v", got, c.parsed)
+			}
+		})
+	}
+}
+
+// A message inside the window in a file the mtime says is yesterday's, as a
+// file system clock behind the writer's leaves it, is still counted: the tail
+// shows it.
+func TestWindowSkipKeepsAMessageTheTailShows(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sess.jsonl")
+	writeJSONLFile(t, path, []string{forkMsg1, windowMsg, forkMsg2})
+	setMtime(t, path, slackMtime)
+
+	agg, results, err := AnalyzeMultipleSessionsInWindow(diskEntries(t, path), skipWindow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agg.MessageCount != 1 || len(results) != 1 {
+		t.Errorf("got %d messages in %d sessions, want 1 in 1", agg.MessageCount, len(results))
+	}
+}
+
+// Agent files get the same tail read, and one that can't be ruled out keeps
+// its whole session parsed.
+func TestWindowSkipReadsAgentTails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sess.jsonl")
+	writeJSONLFile(t, path, []string{forkMsg1, corruptLine})
+	setMtime(t, path, oldMtime)
+	agentPath := filepath.Join(dir, "sess", "subagents", "agent-a1.jsonl")
+	newPath := filepath.Join(dir, "new.jsonl")
+	writeJSONLFile(t, newPath, []string{windowMsg})
+	setMtime(t, newPath, newMtime)
+
+	skippedLines := func(agentLines ...string) int {
+		t.Helper()
+		writeAgentSession(t, dir, "sess", "agent-a1.jsonl", agentLines)
+		setMtime(t, agentPath, slackMtime)
+		agg, _, err := AnalyzeMultipleSessionsInWindow(diskEntries(t, path, newPath), skipWindow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return agg.SkippedLines
+	}
+	if got := skippedLines(forkMsg2); got != 0 {
+		t.Errorf("agent with an old tail: SkippedLines got %d, want 0 (the session isn't parsed)", got)
+	}
+	if got := skippedLines(forkMsg2, stampedLine("2024-01-16T23:30:00Z")); got != 1 {
+		t.Errorf("agent with a recent tail: SkippedLines got %d, want 1 (the session is parsed)", got)
+	}
+}
