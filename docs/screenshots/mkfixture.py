@@ -14,10 +14,19 @@ long ago the last message arrived and a rolling rate, and both read wrong agains
 a transcript from the past. Wall-clock times in the screenshots therefore change
 on every regeneration.
 """
-import json, os, random, re, sys, uuid
+import argparse, json, os, random, re, uuid
 from datetime import datetime, timedelta, timezone
 
-root = os.path.abspath(sys.argv[1])
+ap = argparse.ArgumentParser(description="Build the synthetic fixture to run ficha against.")
+ap.add_argument("root", help="directory to write config/ and work/ under")
+args = ap.parse_args()
+# argparse takes "-1" as a path on its own, and any flag after "--". A
+# directory named like one is a typo far more often than a choice, and
+# "./-name" still makes it.
+if args.root.startswith("-"):
+    ap.error("root %r looks like a flag; write ./%s for a directory of that name" % (args.root, args.root))
+
+root = os.path.abspath(args.root)
 projects = os.path.join(root, "config", "projects")
 work = os.path.join(root, "work")
 rng = random.Random(42)
