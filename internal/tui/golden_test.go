@@ -415,7 +415,7 @@ func TestGoldenBreakdownViewASCII(t *testing.T) {
 	checkGolden(t, "breakdown_view_ascii", goldenBreakdownView(t, true))
 }
 
-// breakdown's header panel says "Loading..." while the first load is in
+// breakdown's header panel says "loading..." while the first load is in
 // flight, and a reload keeps the last status up.
 func TestGoldenBreakdownHeaderLoading(t *testing.T) {
 	forceProfile(t, termenv.Ascii)

@@ -236,7 +236,7 @@ func TestTokenDeltaColumn(t *testing.T) {
 }
 
 // The highlight tick runs only while something is highlighted, and a
-// background reload doesn't bring "Loading..." back.
+// background reload doesn't bring "loading..." back.
 func TestWatchTickOnlyWhileHighlighted(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/s.jsonl", "s", true, "", false)
@@ -254,7 +254,7 @@ func TestWatchTickOnlyWhileHighlighted(t *testing.T) {
 
 	m.loading = true
 	if !strings.Contains(m.View(), "last msg") && !strings.Contains(m.View(), "no messages") {
-		t.Errorf("background reload showed Loading:\n%s", m.View())
+		t.Errorf("background reload showed loading:\n%s", m.View())
 	}
 	m = load(t, m, tallAnalysis(2))
 	if !m.ticking {
@@ -306,7 +306,7 @@ func TestTokenDeltaNarrowFallsBackInline(t *testing.T) {
 }
 
 // After a failed first load stops the spinner, a retry that shows
-// "Loading..." again must restart it rather than show a frozen frame.
+// "loading..." again must restart it rather than show a frozen frame.
 func TestSpinnerRestartsAfterFailedLoad(t *testing.T) {
 	m := NewModel("/nonexistent/s.jsonl", "s", false, "", false)
 	m = sized(t, m, 80, 24)
@@ -318,7 +318,7 @@ func TestSpinnerRestartsAfterFailedLoad(t *testing.T) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
 	m = updated.(Model)
 	if !m.showLoading() {
-		t.Fatal("retry doesn't show Loading")
+		t.Fatal("retry doesn't show loading")
 	}
 	if !batchHas(cmd, func(msg tea.Msg) bool { _, ok := msg.(spinner.TickMsg); return ok }) {
 		t.Error("retry didn't restart the spinner")

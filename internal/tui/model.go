@@ -668,7 +668,7 @@ func (m *Model) startLoadFrom(fileSig string) tea.Cmd {
 // the other session has been quiet for idleAfter, and n stops acting on it.
 func (m Model) hintVisible() bool { return hintShowing(m.hint, m.clock()) }
 
-// spinnerCmd restarts the spinner when a reload will show "Loading...". A
+// spinnerCmd restarts the spinner when a reload will show "loading...". A
 // second chain is harmless: the spinner drops ticks with a stale tag.
 func (m Model) spinnerCmd() tea.Cmd {
 	if m.showLoading() {
@@ -677,7 +677,7 @@ func (m Model) spinnerCmd() tea.Cmd {
 	return nil
 }
 
-// showLoading reports whether the header shows "Loading...": only while
+// showLoading reports whether the header shows "loading...": only while
 // there is no data yet, on the first load and after a switch. A background
 // reload keeps the last status up instead of flickering on every write.
 func (m Model) showLoading() bool {

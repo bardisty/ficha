@@ -63,7 +63,7 @@ func TestBreakdownClockAgesHeader(t *testing.T) {
 	}
 }
 
-// "Loading..." and its spinner show only until a session's first load
+// "loading..." and its spinner show only until a session's first load
 // lands, as in watch: a reload keeps the last status up, and a switch to
 // another session shows it again.
 func TestBreakdownSpinnerStopsWhenLoaded(t *testing.T) {
@@ -99,8 +99,8 @@ func TestBreakdownSpinnerStopsWhenLoaded(t *testing.T) {
 		if batchHas(cmd, isTick) != tc.loading {
 			t.Errorf("%s: spinner restarted = %v, want %v", tc.name, !tc.loading, tc.loading)
 		}
-		if strings.Contains(got.View(), "Loading...") != tc.loading {
-			t.Errorf("%s: header shows Loading... = %v, want %v:\n%s", tc.name, !tc.loading, tc.loading, got.View())
+		if strings.Contains(got.View(), "loading...") != tc.loading {
+			t.Errorf("%s: header shows loading... = %v, want %v:\n%s", tc.name, !tc.loading, tc.loading, got.View())
 		}
 	}
 }
@@ -115,8 +115,8 @@ func TestBreakdownEmptySessionReloadKeepsStatus(t *testing.T) {
 	// A resize redraws the table area while the reload is in flight.
 	updated, _ = updated.Update(tea.WindowSizeMsg{Width: 90, Height: 24})
 	v := updated.View()
-	if strings.Contains(v, "Loading...") {
-		t.Errorf("reload of an empty session shows Loading...:\n%s", v)
+	if strings.Contains(v, "loading...") {
+		t.Errorf("reload of an empty session shows loading...:\n%s", v)
 	}
 	if !strings.Contains(v, emptyStateText) {
 		t.Errorf("reload of an empty session blanked the empty state:\n%s", v)

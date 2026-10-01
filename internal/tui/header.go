@@ -135,23 +135,25 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 type statusForm int
 
 const (
-	statusFull     statusForm = iota // "last msg 12s ago"
-	statusNoPrefix                   // "12s ago"
-	statusTerse                      // "12s ago", and "no msgs" for "no messages yet"
+	statusFull  statusForm = iota // "last msg 12s ago", "no messages yet"
+	statusShort                   // "12s ago", "no msgs"
 )
 
 // fitStatusHeader builds the mode-style header content and fits it to width,
-// giving up detail in order of least value: the "last msg" prefix, then
-// project name characters, then the project name altogether, then the words
-// of a status that is a phrase. The ID and the mode stay whole, since they
-// tell one pane from the next, and a status loses words, never letters:
-// "no messag" reads as a glitch where "no msgs" doesn't.
+// giving up detail in order of least value: the status's spare words, then
+// project name characters, then the project name altogether. The status goes
+// first so that the project doesn't come and go with the session's state:
+// "12s ago", "no msgs" and "idle 7m" are one width, where "no messages yet"
+// would cost an empty session its project 8 columns before an idle one. The
+// ID and the mode stay whole, since they tell one pane from the next, and a
+// status loses words, never letters: "no messag" reads as a glitch where
+// "no msgs" doesn't.
 func fitStatusHeader(p liveHeaderParams, width int) string {
 	form := statusFull
 	project := p.project
 	content := buildStatusHeader(p, project, form)
 	if lipgloss.Width(content) > width {
-		form = statusNoPrefix
+		form = statusShort
 		content = buildStatusHeader(p, project, form)
 	}
 	if over := lipgloss.Width(content) - width; over > 0 && project != "" {
@@ -163,9 +165,11 @@ func fitStatusHeader(p liveHeaderParams, width int) string {
 			project = ""
 		}
 		content = buildStatusHeader(p, project, form)
-	}
-	if lipgloss.Width(content) > width {
-		content = buildStatusHeader(p, project, statusTerse)
+		// A dropped project frees up to 6 columns, enough for the dots of
+		// "loading..." or the article of "waiting for a session".
+		if full := buildStatusHeader(p, "", statusFull); project == "" && lipgloss.Width(full) <= width {
+			content = full
+		}
 	}
 	return content
 }
@@ -192,30 +196,30 @@ func buildStatusHeader(p liveHeaderParams, project string, form statusForm) stri
 		modeStyle = dimStyle
 	}
 
-	terse := form == statusTerse
+	short := form == statusShort
 	var status string
 	switch {
-	case p.waiting && terse:
+	case p.waiting && short:
 		status = "waiting for session"
 	case p.waiting:
 		status = "waiting for a session"
 	case p.loading:
-		status = "Loading..."
+		status = "loading..."
 		spin := p.spinnerView
-		if terse {
+		if short {
 			// The dot spinner's frames end in a space of their own.
-			status, spin = "Loading", strings.TrimRight(spin, " ")
+			status, spin = "loading", strings.TrimRight(spin, " ")
 		}
 		if !p.noColor {
 			status = spin + " " + status
 		}
-	case (p.lastActivity.IsZero() || p.noMessages && !idle) && terse:
+	case (p.lastActivity.IsZero() || p.noMessages && !idle) && short:
 		status = "no msgs"
 	case p.lastActivity.IsZero(), p.noMessages && !idle:
 		status = "no messages yet"
 	case idle:
 		status = style(dimStyle, "idle "+strings.TrimSuffix(render.Ago(p.lastActivity, p.now), " ago"))
-	case form != statusFull:
+	case short:
 		status = messageAge(p.lastActivity, p.now)
 	default:
 		status = "last msg " + messageAge(p.lastActivity, p.now)

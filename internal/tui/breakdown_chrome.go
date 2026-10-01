@@ -94,7 +94,7 @@ func (m BreakdownModel) clockInterval() time.Duration {
 	return clockInterval(m.lastActivity, m.clock())
 }
 
-// spinnerCmd restarts the spinner when a load will show "Loading...". A
+// spinnerCmd restarts the spinner when a load will show "loading...". A
 // second chain is harmless: the spinner drops ticks with a stale tag.
 func (m BreakdownModel) spinnerCmd() tea.Cmd {
 	if m.showLoading() {
@@ -103,7 +103,7 @@ func (m BreakdownModel) spinnerCmd() tea.Cmd {
 	return nil
 }
 
-// showLoading reports whether the header shows "Loading...": only until the
+// showLoading reports whether the header shows "loading...": only until the
 // session's first load lands, as in watch. A reload keeps the last status up
 // instead of flickering on every write, even for a session with no rows.
 func (m BreakdownModel) showLoading() bool {
