@@ -201,8 +201,9 @@ func TestSetDarkRebuildsThePalette(t *testing.T) {
 	}
 }
 
-// On a 16-color terminal each color is the nearest basic one. lipgloss's own
-// table would turn the yellows, the pink and the cyan into reds and greens.
+// On a 16-color terminal each color is the nearest basic one. The table the
+// output writer converts with would turn the yellows, the pink and the cyan
+// into reds and greens.
 func TestSetBasicKeepsEachColorsHue(t *testing.T) {
 	SetBasic(true)
 	t.Cleanup(func() { SetBasic(false) })

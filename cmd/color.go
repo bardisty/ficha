@@ -60,16 +60,20 @@ func writerProfile(p termenv.Profile) colorprofile.Profile {
 
 // pickPalette asks the terminal for its background and picks the light or
 // dark palette, and the 16-color one where that's all the terminal has. It
-// is the only place ficha queries the terminal, and a terminal that never
-// answers costs one wait. So it runs once per run, right before a table is
-// formatted or a live view is built, and not at all for a run that prints
-// no color: json, csv, --no-color, a pipe, CI, and every command that never
-// gets as far as a report.
+// is the only place ficha waits on the terminal for an answer, and a
+// terminal that never answers costs one wait. So it runs once per run, and
+// not at all for a run that prints no color: json, csv, --no-color, a pipe,
+// CI, and every command that fails before it has a report to draw.
+//
+// A report calls it once it knows there are transcripts to read, and before
+// it reads them. While termenv waits for the answer it drops everything
+// else the terminal has queued, and after a long read that would be the
+// keys typed ahead for the shell.
 //
 // Inside tmux or screen termenv doesn't ask, and goes by COLORFGBG. On
 // Windows, and wherever it can't tell, the answer is dark.
 func pickPalette(cfg *config) {
-	if cfg.format != "table" || cfg.noColor || cfg.profile == colorprofile.NoTTY || cfg.palettePicked {
+	if cfg.format != "table" || cfg.terminal == nil || cfg.profile == colorprofile.NoTTY || cfg.palettePicked {
 		return
 	}
 	cfg.palettePicked = true

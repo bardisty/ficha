@@ -94,6 +94,29 @@ func TestPlainRunsDoNotAskForTheBackground(t *testing.T) {
 
 var basicColor = regexp.MustCompile(`\x1b\[(?:1;)?(?:3|9)[0-7]m`)
 
+// The run after one on a 16-color terminal gets its own palette back.
+func TestBasicPaletteDoesNotLeak(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("termenv goes by the Windows version there, not TERM")
+	}
+	setupE2EFixture(t)
+	fakeTerminal(t)
+	t.Setenv("TERM", "xterm")
+	if out := showOut(t); strings.Contains(out, "38;5;") {
+		t.Fatalf("TERM=xterm should draw basic colors:\n%q", out)
+	}
+	// Every run starts from the 256-color palette, one that draws nothing
+	// in color included.
+	showOut(t, "--no-color")
+	if got, want := styles.WarningColor, lipgloss.Color("221"); got != want {
+		t.Errorf("after a plain run the warning color is %v, want %v", got, want)
+	}
+	t.Setenv("TERM", "xterm-256color")
+	if out := showOut(t); !strings.Contains(out, "38;5;245m") {
+		t.Errorf("a 256-color run after a 16-color one should draw the 256-color palette:\n%q", out)
+	}
+}
+
 // A terminal with 16 colors, and a pipe that CLICOLOR_FORCE colors, get the
 // basic colors and nothing a 16-color terminal can't draw.
 func TestBasicTerminalGetsBasicColors(t *testing.T) {
@@ -110,6 +133,9 @@ func TestBasicTerminalGetsBasicColors(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			if name == "TERM=xterm" && runtime.GOOS == "windows" {
+				t.Skip("termenv goes by the Windows version there, not TERM")
+			}
 			setup(t)
 			t.Cleanup(func() { styles.SetBasic(false) })
 			out := showOut(t)

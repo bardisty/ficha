@@ -130,8 +130,10 @@ func TestKeyNamesFromTerminalInput(t *testing.T) {
 	input := []struct{ bytes, want string }{
 		{"j", "j"}, {"j", "j"}, {"j", "j"},
 		{"G", "G"}, {"?", "?"}, {"-", "-"},
-		{" ", "space"}, {"\x1b[27;2;32~", "shift+space"}, {"\x1b[32;2u", "shift+space"},
-		{"\x1b[27;5;99~", "ctrl+c"}, {"\x1b[99;5u", "ctrl+c"}, {"\x1b[27u", "esc"},
+		{" ", "space"}, {"\x1b[32u", "space"}, {"\x1b[27;2;32~", "shift+space"}, {"\x1b[32;2u", "shift+space"},
+		{"\x1b[27;2;71~", "G"}, {"\x1b[103:71;2u", "G"}, {"\x1b[27;2;63~", "?"}, {"\x1b[27;1;45~", "-"},
+		{"\x1b[27;5;99~", "ctrl+c"}, {"\x1b[99;5u", "ctrl+c"}, {"\x1b[27;5;122~", "ctrl+z"}, {"\x1b[122;5u", "ctrl+z"},
+		{"\x1b[27;5;100~", "ctrl+d"}, {"\x1b[27u", "esc"},
 		{"\x03", "ctrl+c"}, {"\x1a", "ctrl+z"}, {"\x04", "ctrl+d"}, {"\x15", "ctrl+u"},
 		{"\x1b[A", "up"}, {"\x1b[B", "down"}, {"\x1b[C", "right"}, {"\x1b[D", "left"},
 		{"\x1b[H", "home"}, {"\x1b[F", "end"},

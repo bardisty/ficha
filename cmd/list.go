@@ -138,6 +138,7 @@ func runListTable(cfg *config) error {
 		return err
 	}
 	sortSessionsByModified(sessions)
+	pickPalette(cfg)
 
 	aggregate, results, err := analyzer.AnalyzeMultipleSessions(sessions)
 	if err != nil {
@@ -163,7 +164,6 @@ func runListTable(cfg *config) error {
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
 
-	pickPalette(cfg)
 	output := formatter.FormatSessionListTable(results, cfg.noColor, formatter.ListTableOptions{
 		Project: parser.ProjectDisplayName(projectDir),
 		Width:   terminalWidth(cfg.stdout),

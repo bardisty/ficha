@@ -121,9 +121,10 @@ func (p pair) resolve() color.Color {
 		n = p.dark
 	}
 	if basicPalette {
-		// lipgloss would pick the basic color at the writer, from a table
-		// that sends the palette's yellows to bright red. termenv picks
-		// the nearest of the 16, which keeps a yellow yellow.
+		// Left to the writer that fits escapes to the terminal, the basic
+		// color would come from a fixed table that sends the palette's
+		// yellows to bright red. termenv picks the nearest of the 16,
+		// which keeps a yellow yellow.
 		nearest, _ := termenv.ANSI.Convert(termenv.ANSI256Color(n)).(termenv.ANSIColor)
 		n = uint8(nearest) //nolint:gosec // one of the 16 basic colors
 	}
@@ -163,7 +164,7 @@ var palette = struct {
 	agentOlive: pair{dark: 221, light: 58},
 }
 
-// The palette as SetDark last resolved it.
+// The palette as SetDark and SetBasic last resolved it.
 var (
 	PrimaryColor   color.Color // Purple
 	SecondaryColor color.Color // Gray (dimmed but readable)
@@ -213,7 +214,7 @@ var (
 	AgentColors []color.Color
 )
 
-// The styles built from the palette, rebuilt by SetDark.
+// The styles built from the palette, rebuilt with it.
 var (
 	// HeaderStyle uses bold white for clean, minimal section headers
 	HeaderStyle lipgloss.Style

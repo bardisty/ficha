@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/render"
@@ -35,6 +37,11 @@ func printReport(cfg *config, warnings *bytes.Buffer, output string) {
 	warnings = bytes.NewBufferString(wrapStderr(cfg.stderr, warnings.String()))
 	stdout, stderr := cfg.stdout, cfg.stderr
 	if cfg.format == "table" && !cfg.noColor {
+		// Windows' classic console prints escapes as text until a program
+		// asks it to interpret them. Elsewhere this does nothing.
+		if f, ok := cfg.stdout.(*os.File); ok {
+			lipgloss.EnableLegacyWindowsANSI(f)
+		}
 		stdout = &colorprofile.Writer{Forward: stdout, Profile: cfg.profile}
 		stderr = &colorprofile.Writer{Forward: stderr, Profile: cfg.profile}
 	}

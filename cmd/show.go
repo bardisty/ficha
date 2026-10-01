@@ -78,6 +78,8 @@ func runShow(cfg *config, args []string, live bool) error {
 		return runLiveMode(cfg, session, projectDir, followMode)
 	}
 
+	pickPalette(cfg)
+
 	// Analyze the session. Per-message data is retained only for --messages,
 	// which switches json/csv to per-message granularity; the table never renders
 	// the message list (insights are computed regardless), so it ignores the flag.
@@ -91,8 +93,6 @@ func runShow(cfg *config, args []string, live bool) error {
 		return fmt.Errorf("analyzing session: %w", err)
 	}
 
-	// The note about skipped sessions below is styled, like the table.
-	pickPalette(cfg)
 	var warnings bytes.Buffer
 	// Only the table skips a reply-less newest session. Scripts asking for
 	// json or csv get the newest session, as they always have, and can see
