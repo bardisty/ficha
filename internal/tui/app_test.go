@@ -302,7 +302,7 @@ func assertPanelLinesAligned(t *testing.T, panel, label string) {
 
 func TestRenderHeaderPanelAlignment(t *testing.T) {
 	// Force color so the loading status includes the spinner, which is wider
-	// than the plain "Loading..." string the old padding math measured
+	// than the plain "loading..." string the old padding math measured
 	r := lipgloss.DefaultRenderer()
 	origProfile := r.ColorProfile()
 	r.SetColorProfile(termenv.ANSI256)

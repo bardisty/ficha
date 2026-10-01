@@ -147,7 +147,7 @@ func TestWatchHeaderStates(t *testing.T) {
 			"webapp │ aaaaaaaa │ ● FOLLOWING │ no messages yet"},
 		{"empty and long dead", func(p *liveHeaderParams) { p.noMessages = true; p.lastActivity = now.Add(-72 * time.Hour) },
 			"webapp │ aaaaaaaa │ ○ FOLLOWING │ idle 3d"},
-		{"loading", func(p *liveHeaderParams) { p.loading = true }, "webapp │ aaaaaaaa │ ● FOLLOWING │ Loading..."},
+		{"loading", func(p *liveHeaderParams) { p.loading = true }, "webapp │ aaaaaaaa │ ● FOLLOWING │ loading..."},
 		{"no project", func(p *liveHeaderParams) { p.project = ""; p.lastActivity = now }, "aaaaaaaa │ ● FOLLOWING │ last msg 0s ago"},
 		{"narrow drops the prefix, then shortens the project", func(p *liveHeaderParams) {
 			p.width = 54

@@ -31,11 +31,11 @@ func TestHeaderStatusIsNeverCutMidWord(t *testing.T) {
 		{"active", func(p *liveHeaderParams) { p.lastActivity = now.Add(-12 * time.Second) }, []string{"last msg 12s ago", "12s ago"}},
 		{"idle", func(p *liveHeaderParams) { p.lastActivity = now.Add(-7 * time.Minute) }, []string{"idle 7m"}},
 		{"idle for months", func(p *liveHeaderParams) { p.lastActivity = now.Add(-340 * 24 * time.Hour) }, []string{"idle 11mo"}},
-		{"loading", func(p *liveHeaderParams) { p.loading = true }, []string{"Loading...", "Loading"}},
+		{"loading", func(p *liveHeaderParams) { p.loading = true }, []string{"loading...", "loading"}},
 		{"loading with a spinner", func(p *liveHeaderParams) { p.loading = true; p.noColor = false; p.spinnerView = dots },
-			[]string{dots + " Loading...", strings.TrimRight(dots, " ") + " Loading"}},
+			[]string{dots + " loading...", strings.TrimRight(dots, " ") + " loading"}},
 		{"loading with the ASCII spinner", func(p *liveHeaderParams) { p.loading = true; p.noColor = false; p.spinnerView = "|" },
-			[]string{"| Loading...", "| Loading"}},
+			[]string{"| loading...", "| loading"}},
 		{"error", func(p *liveHeaderParams) { p.err = errors.New("x"); p.lastActivity = now.Add(-12 * time.Second) },
 			[]string{"last msg 12s ago", "12s ago"}},
 		{"waiting", func(p *liveHeaderParams) { p.waiting = true; p.sessionID = "" }, []string{"waiting for a session", "waiting for session"}},
@@ -83,21 +83,66 @@ func TestHeaderStatusIsNeverCutMidWord(t *testing.T) {
 	}
 }
 
-// The phrase gives way last: while dropping the project is enough, the
-// status keeps its words.
-func TestHeaderShortensTheStatusOnlyAfterTheProject(t *testing.T) {
+// The status gives up its words before the project gives up anything, so
+// the project reads the same whether the session is empty, active or idle.
+func TestHeaderShortensTheStatusBeforeTheProject(t *testing.T) {
 	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
 	p := liveHeaderParams{sessionID: sessA, noColor: true, project: "webapp", mode: "FOLLOWING", now: now}
 	for width, want := range map[int]string{
 		49: "webapp │ aaaaaaaa │ ● FOLLOWING │ no messages yet",
-		48: "weba… │ aaaaaaaa │ ● FOLLOWING │ no messages yet",
-		46: "aaaaaaaa │ ● FOLLOWING │ no messages yet",
-		40: "aaaaaaaa │ ● FOLLOWING │ no messages yet",
-		39: "aaaaaaaa │ ● FOLLOWING │ no msgs",
+		48: "webapp │ aaaaaaaa │ ● FOLLOWING │ no msgs",
+		41: "webapp │ aaaaaaaa │ ● FOLLOWING │ no msgs",
+		40: "weba… │ aaaaaaaa │ ● FOLLOWING │ no msgs",
+		39: "web… │ aaaaaaaa │ ● FOLLOWING │ no msgs",
+		38: "aaaaaaaa │ ● FOLLOWING │ no msgs",
 		32: "aaaaaaaa │ ● FOLLOWING │ no msgs",
 	} {
 		if got := fitStatusHeader(p, width); got != want {
 			t.Errorf("width %d: %q, want %q", width, got, want)
+		}
+	}
+
+	active, idle := p, p
+	active.lastActivity = now.Add(-12 * time.Second)
+	idle.lastActivity = now.Add(-7 * time.Minute)
+	project := func(p liveHeaderParams, width int) string {
+		project, _, _ := strings.Cut(fitStatusHeader(p, width), "aaaaaaaa")
+		return project
+	}
+	for width := 32; width <= 60; width++ {
+		want := project(p, width)
+		for name, q := range map[string]liveHeaderParams{"active": active, "idle": idle} {
+			if got := project(q, width); got != want {
+				t.Errorf("width %d: an %s session shows project %q, an empty one %q", width, name, got, want)
+			}
+		}
+	}
+}
+
+// A project that is dropped leaves room behind it, and a status whose full
+// form fits there takes it back.
+func TestHeaderStatusTakesBackTheDroppedProjectsRoom(t *testing.T) {
+	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	p := liveHeaderParams{sessionID: sessA, noColor: true, project: "webapp", mode: "FOLLOWING", now: now, loading: true}
+	for width, want := range map[int]string{
+		39: "web… │ aaaaaaaa │ ● FOLLOWING │ loading",
+		38: "aaaaaaaa │ ● FOLLOWING │ loading...",
+		35: "aaaaaaaa │ ● FOLLOWING │ loading...",
+		34: "aaaaaaaa │ ● FOLLOWING │ loading",
+	} {
+		if got := fitStatusHeader(p, width); got != want {
+			t.Errorf("loading at %d: %q, want %q", width, got, want)
+		}
+	}
+	p.loading, p.waiting, p.sessionID = false, true, ""
+	for width, want := range map[int]string{
+		40: "web… │ ● FOLLOWING │ waiting for session",
+		39: "● FOLLOWING │ waiting for a session",
+		35: "● FOLLOWING │ waiting for a session",
+		34: "● FOLLOWING │ waiting for session",
+	} {
+		if got := fitStatusHeader(p, width); got != want {
+			t.Errorf("waiting at %d: %q, want %q", width, got, want)
 		}
 	}
 }
