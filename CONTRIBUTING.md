@@ -108,6 +108,8 @@ In a fresh fixture that glob matches the one session. With no flags, `live.py` a
 
 For a change that affects how fast ficha reads many sessions, the fixture is too small to time. `docs/screenshots/mkhistory.py <dir>` writes roughly 400 MB of history: some 300 sessions across six projects, spread over the last 60 days. Point `CLAUDE_CONFIG_DIR` at `<dir>/config` and time `ficha global -f json`, with and without `--since today`, before and after your change.
 
+That history is even: six projects of one size, and no line over 3 KB. Real histories aren't. One project holds most of the bytes, and most bytes sit in a few long tool results. `python3 docs/screenshots/mkhistory.py <dir> --skew` writes that shape in about 800 MB. Time against it too when your change touches how ficha reads lines or spreads the work over threads.
+
 `make screenshots` regenerates the README's images from a fresh fixture, so every run changes the webp files even when nothing on screen did. Run it only when the layout changed.
 
 ## Comments
