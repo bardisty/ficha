@@ -155,7 +155,9 @@ func awaitRecreate(watcher *fsnotify.Watcher, done chan struct{}, isBack func(fs
 // does that, and network filesystems may too.
 const subagentPollInterval = 2 * time.Second
 
-// subagentPollMsg signals a subagent-tree poll tick.
+// subagentPollMsg signals a subagent-tree poll tick. The next tick is
+// scheduled when this one's pollResultMsg arrives, so a poll slower than the
+// interval can't have a second one start behind it.
 type subagentPollMsg time.Time
 
 // subagentPollCmd schedules the next subagent-tree poll tick.
@@ -163,6 +165,41 @@ func subagentPollCmd() tea.Cmd {
 	return tea.Tick(subagentPollInterval, func(t time.Time) tea.Msg {
 		return subagentPollMsg(t)
 	})
+}
+
+// pollResultMsg carries what one poll measured, and the session and load
+// count it was sent under. The stats run in a command, not in Update, so a
+// slow filesystem delays the reload and never a key press.
+type pollResultMsg struct {
+	sessionPath string
+	loadGen     int
+	treeSig     string
+	fileSig     string
+}
+
+// treeSignature is subagentTreeSignature, replaceable in tests.
+var treeSignature = subagentTreeSignature
+
+// pollSessionCmd fingerprints the session file and its subagent tree. The
+// tree comes first: it is the slow one, and the file's fingerprint becomes
+// the baseline of the load a change starts, so it is taken last.
+func pollSessionCmd(sessionPath, sessionID string, loadGen int) tea.Cmd {
+	return func() tea.Msg {
+		return pollResultMsg{
+			sessionPath: sessionPath,
+			loadGen:     loadGen,
+			treeSig:     treeSignature(filepath.Dir(sessionPath), sessionID),
+			fileSig:     sessionFileSig(sessionPath),
+		}
+	}
+}
+
+// stale reports whether the view switched sessions or started a load after
+// the poll was sent. That load took its own baseline, and the poll may have
+// measured before it or after, so comparing the two could reload twice for
+// one write. The next poll compares against the new baseline instead.
+func (r pollResultMsg) stale(sessionPath string, loadGen int) bool {
+	return r.sessionPath != sessionPath || r.loadGen != loadGen
 }
 
 // sessionFileSig fingerprints the session file by size and mtime. Appends

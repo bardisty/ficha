@@ -3,7 +3,6 @@ package tui
 import (
 	"strings"
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -27,13 +26,13 @@ func TestPollCatchesWritesASilentWatcherMissed(t *testing.T) {
 		t.Run(h.name, func(t *testing.T) {
 			m, sessionPath := startWatching(t, h)
 
-			m, _ = m.Update(subagentPollMsg(time.Now()))
+			m, _ = pollOnce(t, m)
 			if h.loading(m) {
 				t.Fatal("poll reloaded an unchanged file")
 			}
 
 			growFile(t, sessionPath)
-			m, _ = m.Update(subagentPollMsg(time.Now()))
+			m, _ = pollOnce(t, m)
 			if !h.loading(m) {
 				t.Fatal("poll missed a write the watcher never reported")
 			}
@@ -45,7 +44,7 @@ func TestPollCatchesWritesASilentWatcherMissed(t *testing.T) {
 			}
 			m, _ = m.Update(h.loaded)
 
-			m, _ = m.Update(subagentPollMsg(time.Now()))
+			m, _ = pollOnce(t, m)
 			if h.loading(m) {
 				t.Fatal("poll reloaded again for a write it already caught")
 			}
@@ -66,7 +65,7 @@ func TestPollDoesNotRepeatAWatcherReload(t *testing.T) {
 				t.Fatal("watcher event did not reload")
 			}
 			m, _ = m.Update(h.loaded)
-			m, _ = m.Update(subagentPollMsg(time.Now()))
+			m, _ = pollOnce(t, m)
 			if h.loading(m) {
 				t.Fatal("poll reloaded after a watcher reload of the same write")
 			}
@@ -87,12 +86,12 @@ func TestPollReloadsOnceForAWriteDuringALoad(t *testing.T) {
 			growFile(t, sessionPath)
 			m, _ = m.Update(h.loaded)
 
-			m, _ = m.Update(subagentPollMsg(time.Now()))
+			m, _ = pollOnce(t, m)
 			if !h.loading(m) {
 				t.Fatal("poll missed a write made during the load")
 			}
 			m, _ = m.Update(h.loaded)
-			m, _ = m.Update(subagentPollMsg(time.Now()))
+			m, _ = pollOnce(t, m)
 			if h.loading(m) {
 				t.Fatal("poll reloaded twice for one write")
 			}

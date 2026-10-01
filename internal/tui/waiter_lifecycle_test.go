@@ -77,7 +77,7 @@ func TestWatchPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 	// still blocked on the watcher, so no cycle may arm another.
 	for i := range 10 {
 		growFile(t, agentPath)
-		mm, cmd = m.Update(subagentPollMsg(time.Now()))
+		mm, cmd = pollOnce(t, m)
 		m = mm.(Model)
 		if cmd == nil {
 			t.Fatalf("cycle %d: poll tick with changed signature did not trigger a reload", i)
@@ -140,7 +140,7 @@ func TestBreakdownPollReloadsDoNotArmExtraWaiters(t *testing.T) {
 
 	for i := range 10 {
 		growFile(t, agentPath)
-		mm, cmd = m.Update(subagentPollMsg(time.Now()))
+		mm, cmd = pollOnce(t, m)
 		m = mm.(BreakdownModel)
 		if cmd == nil {
 			t.Fatalf("cycle %d: poll tick with changed signature did not trigger a reload", i)
@@ -203,7 +203,7 @@ func TestWatchQuitCompletesAfterMixedReloads(t *testing.T) {
 	// Mixed reload history: poll-triggered completions...
 	for range 5 {
 		growFile(t, agentPath)
-		mm, _ = m.Update(subagentPollMsg(time.Now()))
+		mm, _ = pollOnce(t, m)
 		m = mm.(Model)
 		mm, cmd = m.Update(analysisMsg{})
 		m = mm.(Model)
@@ -238,7 +238,7 @@ func TestBreakdownQuitCompletesAfterMixedReloads(t *testing.T) {
 
 	for range 5 {
 		growFile(t, agentPath)
-		mm, _ = m.Update(subagentPollMsg(time.Now()))
+		mm, _ = pollOnce(t, m)
 		m = mm.(BreakdownModel)
 		mm, cmd = m.Update(breakdownMsgsMsg{})
 		m = mm.(BreakdownModel)
@@ -272,7 +272,7 @@ func TestWatchSessionSwitchResetsWaiterAccounting(t *testing.T) {
 
 	// Leave a poll-triggered reload completed so the flag machinery has state
 	growFile(t, agentPath)
-	mm, _ = m.Update(subagentPollMsg(time.Now()))
+	mm, _ = pollOnce(t, m)
 	m = mm.(Model)
 	mm, _ = m.Update(analysisMsg{})
 	m = mm.(Model)

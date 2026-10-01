@@ -91,6 +91,10 @@ type Model struct {
 	// started; the poll reloads when the file no longer matches it
 	fileSig string
 
+	// loadGen counts the loads started, so a poll result can tell that one
+	// started after it was sent; see pollResultMsg.stale
+	loadGen int
+
 	// Session following. The session watcher runs in every mode: following
 	// switches to a newly created session, and pinned shows it as a hint.
 	projectDir      string          // Project directory to watch for new sessions
@@ -549,11 +553,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.waiting() {
 			return m, subagentPollCmd()
 		}
-		sig := subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
-		treeChanged := sig != m.subagentSig
-		m.subagentSig = sig
-		if treeChanged || sessionFileSig(m.sessionPath) != m.fileSig {
-			load := m.startLoad()
+		return m, pollSessionCmd(m.sessionPath, m.sessionID, m.loadGen)
+
+	case pollResultMsg:
+		if msg.stale(m.sessionPath, m.loadGen) {
+			return m, subagentPollCmd()
+		}
+		treeChanged := msg.treeSig != m.subagentSig
+		m.subagentSig = msg.treeSig
+		if treeChanged || msg.fileSig != m.fileSig {
+			load := m.startLoadFrom(msg.fileSig)
 			return m, tea.Batch(load, subagentPollCmd(), m.spinnerCmd())
 		}
 		return m, subagentPollCmd()
@@ -643,8 +652,15 @@ func (m *Model) markStale() {
 // moves here rather than when the load lands, so a load already reading a
 // write keeps the next poll from reloading for it again.
 func (m *Model) startLoad() tea.Cmd {
+	return m.startLoadFrom(sessionFileSig(m.sessionPath))
+}
+
+// startLoadFrom is startLoad with the baseline already measured, as the
+// poll's result has it.
+func (m *Model) startLoadFrom(fileSig string) tea.Cmd {
 	m.loading = true
-	m.fileSig = sessionFileSig(m.sessionPath)
+	m.loadGen++
+	m.fileSig = fileSig
 	return m.loadAnalysis
 }
 
