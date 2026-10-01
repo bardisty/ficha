@@ -221,7 +221,6 @@ func TestBreakdownInsights_ScopeGivesWayToPeak(t *testing.T) {
 // IN or a widened MODEL column is what grew it, and never wider than the
 // terminal.
 func TestBreakdownFrameTracksTableWidth(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	unknown := append(goldenBreakdownMessages(), models.BreakdownMessage{
 		Index: 8, Timestamp: goldenTime(11, 30, 0), Model: "claude-experimental-model-with-a-long-id",
 		Cost: models.CostBreakdown{TotalCost: 0.2},
@@ -325,7 +324,6 @@ func runTagRows(n int) ([]models.BreakdownMessage, []models.WorkflowMeta) {
 // The stats line spells out the run tags drawn on the visible rows, and
 // only those: a key to a tag that's scrolled away explains nothing.
 func TestBreakdownRunTagKey_NamesVisibleTags(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	msgs, runs := runTagRows(40)
 	m := loadedBreakdown(t, 100, 24, nil)
 	updated, _ := m.Update(breakdownMsgsMsg{messages: msgs, workflows: runs, insights: &models.MessageInsights{}})
@@ -355,7 +353,6 @@ func TestBreakdownRunTagKey_NamesVisibleTags(t *testing.T) {
 // The key never pushes the totals off: entries that don't fit go whole, and
 // a layout that dropped the tags from the AGENT column has nothing to key.
 func TestBreakdownRunTagKey_GivesWay(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	msgs, runs := runTagRows(6)
 	for _, tc := range []struct {
 		width int
@@ -380,7 +377,6 @@ func TestBreakdownRunTagKey_GivesWay(t *testing.T) {
 // A workflow name comes from a file on disk. Whatever it holds, the key
 // stays on one row and sends the terminal nothing but text.
 func TestBreakdownRunTagKey_PrintableNames(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	msgs, runs := runTagRows(6)
 	runs[0].Name = "review\nchan\x1b[31mges\t"
 	runs[1].Name = ""

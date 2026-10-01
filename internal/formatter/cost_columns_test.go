@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -79,7 +78,6 @@ func assertRowsAligned(t *testing.T, out, header string, rowKeys []string) {
 // Costs of $1000 and up widen the column instead of overflowing it, and
 // two- and four-decimal values share a decimal column.
 func TestGlobalTableLargeCostsStayAligned(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	names := []string{"alpha", "beta", "gamma"}
 	analysis := globalAnalysisWithProjects(
 		map[string]float64{"alpha": 0.25, "beta": 1234.56, "gamma": 98765.43},
@@ -92,7 +90,6 @@ func TestGlobalTableLargeCostsStayAligned(t *testing.T) {
 }
 
 func TestSummaryTableLargeCostsStayAligned(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	aggregate := &models.SessionAnalysis{
 		SessionID: "aggregate", IsSummary: true, SessionCount: 3,
 		CostByModel: map[string]models.CostBreakdown{},
@@ -151,7 +148,6 @@ func TestListShortIDsStayUnique(t *testing.T) {
 // On a terminal, titles are cut to fit its width. Piped, they print whole.
 // Control characters from the transcript never reach the terminal.
 func TestListTitlesFitTerminal(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	long := "Refactor the auth middleware to use short-lived tokens and rotate refresh keys"
 	results := []models.SessionResult{
 		listResult("aaaaaaaa-1", long, 1.5),
@@ -176,7 +172,6 @@ func TestListTitlesFitTerminal(t *testing.T) {
 // get less than 12 columns. Past that, TITLE shrinks, to nothing at the
 // narrowest, rather than the rows wrap.
 func TestListNarrowTerminalDropsColumns(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	results := []models.SessionResult{
 		listResult("aaaaaaaa-1", "Refactor the auth middleware", 1.5),
 		listResult("bbbbbbbb-2", "Fix flaky test", 0.25),
@@ -227,7 +222,6 @@ func findLine(t *testing.T, out, needle string) string {
 // A session left open for days has a LENGTH wider than "12h 34m"; the
 // column grows rather than pushing that row out of line.
 func TestListLongSessionStaysAligned(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	long := listResult("aaaaaaaa-1", "long", 1.5)
 	long.Analysis.Duration = models.Duration(200*time.Hour + 30*time.Minute)
 	results := []models.SessionResult{long, listResult("bbbbbbbb-2", "short", 0.25)}
@@ -254,7 +248,6 @@ func TestListLongSessionStaysAligned(t *testing.T) {
 // A project path comes from a transcript's cwd, so an escape in it must not
 // reach the terminal or throw off the header box.
 func TestHeaderStripsControlCharacters(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	out := renderPanel("/tmp/x\x1b[31mred", []string{"3 sessions"}, []int{panelLead}, 76, true)
 	if strings.Contains(out, "\x1b") {
 		t.Errorf("escape reached the header: %q", out)

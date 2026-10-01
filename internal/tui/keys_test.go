@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/muesli/termenv"
 )
 
 func keyType(t *testing.T, m Model, k tea.KeyType) (Model, tea.Cmd) {
@@ -15,7 +14,6 @@ func keyType(t *testing.T, m Model, k tea.KeyType) (Model, tea.Cmd) {
 
 // Pager keys reach the viewport's keymap, and j/k still move by one line.
 func TestWatchPagerKeys(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = load(t, sized(t, m, 80, 24), tallAnalysis(1))
 	page := m.viewport.Height
@@ -48,7 +46,6 @@ func TestWatchPagerKeys(t *testing.T) {
 
 // Repeated keys that arrive as one chunk each count.
 func TestWatchRepeatedKeyChunk(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = load(t, sized(t, m, 80, 24), tallAnalysis(1))
 	m = key(t, m, "jjjj")

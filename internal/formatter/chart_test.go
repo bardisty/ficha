@@ -26,7 +26,6 @@ func chartFixture(n int) []float64 {
 func TestRenderCostChartTruncationDisclosed(t *testing.T) {
 	for _, noColor := range []bool{true, false} {
 		if noColor {
-			forceProfile(t, termenv.Ascii)
 		} else {
 			forceProfile(t, termenv.ANSI256)
 		}
@@ -44,7 +43,6 @@ func TestRenderCostChartTruncationDisclosed(t *testing.T) {
 // left edge rather than the points bunching against the right one. The axis
 // says the points are sessions in order, not dates.
 func TestRenderCostChartSizedToPoints(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	got := renderCostChart(chartFixture(15), 76, true)
 	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
 	bars := lines[:len(lines)-2]

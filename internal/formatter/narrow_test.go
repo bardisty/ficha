@@ -287,12 +287,10 @@ func TestWorkflowLabelKeepsStatusPastTheCap(t *testing.T) {
 }
 
 func TestGoldenSessionTableShowNarrow(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "session_table_show_w50", FormatSessionTable(goldenShowWorkflowAnalysis(), true, 50))
 }
 
 func TestGoldenSummaryDetailsNarrow(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	analysis, results := summaryDetailsAnalysis(t, summaryWorkflowFixture(t))
 	checkGolden(t, "summary_details_expand_workflows_w50", FormatSummaryTableWithDetails(analysis, results, "", true, true, 50))
 }
@@ -312,7 +310,6 @@ func TestCostChartFitsNarrowTerminals(t *testing.T) {
 // At 45 and 46 columns summary -d's MODEL column narrows far enough to cut
 // a display name, and the cut drops the version whole.
 func TestGoldenSummaryDetailsModelCut(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	analysis, results := summaryDetailsAnalysis(t, summaryDetailsFixture(t))
 	for _, width := range []int{45, 46} {
 		checkGolden(t, fmt.Sprintf("summary_details_%d", width), FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, width))

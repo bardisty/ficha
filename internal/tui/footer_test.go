@@ -10,7 +10,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
@@ -150,7 +149,6 @@ func key(t *testing.T, m Model, k string) Model {
 // watch opens at the top so the total is on the first screen, and a reload
 // or resize never moves the reader.
 func TestWatchOpensAtTopAndKeepsPosition(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
 	m = sized(t, m, 80, 24)
 	m = load(t, m, tallAnalysis(1))
@@ -199,7 +197,6 @@ func TestWatchOpensAtTopAndKeepsPosition(t *testing.T) {
 
 // The footer rule says how much of the body is off-screen, in each direction.
 func TestWatchFooterRuleShowsOverflow(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
 	m = sized(t, m, 80, 24)
 	m = load(t, m, tallAnalysis(1))
@@ -234,7 +231,6 @@ func TestWatchFooterRuleShowsOverflow(t *testing.T) {
 // Warnings take their own rows, wrap rather than clip, and the frame still
 // fits the terminal with them.
 func TestWatchWarningRows(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	a := tallAnalysis(1)
 	a.SkippedLines = 2
 	// A short ID, so the footnote naming it still packs beside the other
@@ -282,7 +278,6 @@ func TestWatchWarningRows(t *testing.T) {
 // The stats line shows "-" until the session spans the rate window, and drops
 // its least important segments first on a narrow terminal.
 func TestWatchStatsLine(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
 	a := tallAnalysis(30.05)
 	a.MessageCount = 400

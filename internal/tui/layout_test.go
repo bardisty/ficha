@@ -10,13 +10,11 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 // The frame fills the terminal exactly at every size, with or without a
 // notice in the notify row, so a notice never shifts the body.
 func TestWatchFrameHeightIsStable(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	for _, size := range [][2]int{{80, 24}, {120, 40}, {80, 15}, {60, 10}, {41, 8}, {40, 8}} {
 		w, h := size[0], size[1]
 		m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
@@ -46,7 +44,6 @@ func TestWatchFrameHeightIsStable(t *testing.T) {
 // clips the finished frame to the width, so the pieces are measured before
 // that clip hides what fell off.
 func TestWatchFrameFitsNarrowTerminals(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	a := tallAnalysis(1)
 	a.SkippedLines = 2
 	a.EstimatedCostMessages = 3
@@ -78,7 +75,6 @@ func TestWatchFrameFitsNarrowTerminals(t *testing.T) {
 }
 
 func TestWatchCompactAndTooSmall(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
 	m = load(t, sized(t, m, 80, 12), tallAnalysis(1))
 	view := m.View()
@@ -143,7 +139,6 @@ func TestTooSmallIgnoresUnknownSize(t *testing.T) {
 // never cut mid-word.
 // ? keys stays at the end: it's the way to the hints dropped.
 func TestWatchHelpLineDropsWholeHints(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	for _, tc := range []struct {
 		w    int
 		want string
@@ -165,7 +160,6 @@ func TestWatchHelpLineDropsWholeHints(t *testing.T) {
 // While pinned, f is the key that resumes following, so the help line keeps
 // f follow and drops g/G top/bottom first. The hints keep their table order.
 func TestHelpLineKeepsFollowWhilePinned(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	for _, tc := range []struct {
 		keys   []Key
 		w      int
@@ -190,7 +184,6 @@ func TestHelpLineKeepsFollowWhilePinned(t *testing.T) {
 // Compact watch keeps its help row, so with two warning rows the footer takes
 // five rows; at the smallest size that still leaves the body one.
 func TestWatchCompactFrameFitsWithWarnings(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	a := tallAnalysis(1)
 	a.SkippedLines = 2
 	a.EstimatedCostMessages = 3
@@ -218,7 +211,6 @@ func TestWatchCompactFrameFitsWithWarnings(t *testing.T) {
 // A token delta sits in its own column after the TTL: nothing to its left
 // moves while it shows.
 func TestTokenDeltaColumn(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = sized(t, m, 100, 40)
 	before := m.renderUnifiedCostRow("Cache write", 1.5, 50000, "c", "tok", nil, "5m")
@@ -238,7 +230,6 @@ func TestTokenDeltaColumn(t *testing.T) {
 // The highlight tick runs only while something is highlighted, and a
 // background reload doesn't bring "loading..." back.
 func TestWatchTickOnlyWhileHighlighted(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = sized(t, m, 80, 24)
 	m = load(t, m, tallAnalysis(1))
@@ -283,7 +274,6 @@ func lineOf(s, sub string) int {
 // On a terminal too narrow for the delta column, the delta moves next to
 // its count rather than off the screen.
 func TestTokenDeltaNarrowFallsBackInline(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = sized(t, m, 60, 20)
 	m.deltaTokens["tok"] = 2700

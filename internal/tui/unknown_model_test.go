@@ -96,7 +96,6 @@ func TestWatchMarksUnknownModel(t *testing.T) {
 
 // A catalog-only session must gain neither the marker nor the footnote.
 func TestWatchOmitsUnknownModelFootnoteWhenAllKnown(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	out := stripANSI(goldenWatchView(t, true))
 	if strings.Contains(out, "fallback pricing") {
 		t.Errorf("footnote must not render when every model is priced from the catalog:\n%s", out)
@@ -158,7 +157,6 @@ func TestBreakdownMarksUnknownModel(t *testing.T) {
 // stays the same width as an unmarked one. Measured in display columns, not
 // bytes: a clamped label carries a 3-byte, 1-column ellipsis.
 func TestUnknownModelMarkerKeepsColumnWidth(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	out := stripANSI(breakdownViewWithUnknownModel(t, true))
 
 	marked, plain := findRow(t, out, unknownModelPrefix), findRow(t, out, "Opus 4.8")
@@ -214,7 +212,6 @@ func costByModelRows(out string) []string {
 // With room, breakdown shows an unknown model's full ID, the one a pricing
 // update needs, and the footnote names it.
 func TestBreakdownShowsFullUnknownModelID(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	out := stripANSI(breakdownViewWithUnknownModel(t, true))
 	if row := findRow(t, out, unknownModelPrefix); !strings.Contains(row, unknownModelID+unknownModelMarker) {
 		t.Errorf("at 120 columns the row should carry the full ID:\n%q", row)
@@ -246,7 +243,6 @@ func TestUnknownModelFootnote(t *testing.T) {
 // breakdown's stats line drops the pointer to ficha show rather than clip it
 // where the terminal is too narrow, and keeps it where there's room.
 func TestBreakdownUnknownNoteFitsWidth(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	for _, tc := range []struct {
 		width   int
 		pointer bool

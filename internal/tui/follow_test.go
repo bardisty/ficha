@@ -11,7 +11,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/muesli/termenv"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -23,7 +22,6 @@ const (
 
 func followModel(t *testing.T, follow bool) Model {
 	t.Helper()
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", follow)
 	m = sized(t, m, 80, 24)
 	return load(t, m, tallAnalysis(30.05))
@@ -253,7 +251,6 @@ func TestLastActivity(t *testing.T) {
 // filesystem clock, a copied or restored file) still has messages. Drive the
 // real load so the flag is checked where the mtime enters.
 func TestHeaderWhenMtimeEqualsLastMessage(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	stamp := time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC)
 	path := filepath.Join(t.TempDir(), sessA+".jsonl")
 	line := `{"type":"assistant","timestamp":"2026-02-01T10:00:00Z","requestId":"r1","message":{"id":"m1","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}` + "\n"
@@ -411,7 +408,6 @@ var followViews = []followView{
 		name: "breakdown",
 		open: func(t *testing.T, follow bool) tea.Model {
 			t.Helper()
-			forceProfile(t, termenv.Ascii)
 			m := NewBreakdownModel("/p/"+sessA+".jsonl", sessA, true, "", follow)
 			rows := chromeRows(goldenTime(10, 0, 0), 2)
 			rows[0].Cost.TotalCost, rows[1].Cost.TotalCost = 30, 0.05

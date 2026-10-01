@@ -134,7 +134,6 @@ func TestRenderProjectsTableWideNamesAlign(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.noColor {
-				forceProfile(t, termenv.Ascii)
 			} else {
 				forceProfile(t, termenv.ANSI256)
 			}
@@ -245,7 +244,6 @@ func maxLineWidth(out string) int {
 // Piped, the report keeps a fixed layout that fits in 80 columns whatever
 // the path lengths, with or without the cumulative column.
 func TestGlobalTableFitsEightyColumnsWhenPiped(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	for _, details := range []bool{false, true} {
 		opts := goldenGlobalOptions(details)
 		out := FormatGlobalTable(goldenGlobalAnalysis(), true, opts)
@@ -273,7 +271,6 @@ func TestGlobalTableFitsEightyColumnsWhenPiped(t *testing.T) {
 // On a terminal, PROJECT widens to show a long path whole, up to the
 // terminal's width, and no line runs past it. The other columns take 50.
 func TestGlobalTableSizesProjectToTerminal(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	analysis := goldenGlobalAnalysis()
 	path := "~/source/github.com/acme/billing-service/fix-round"
 	if len(path) != 50 {
@@ -298,7 +295,6 @@ func TestGlobalTableSizesProjectToTerminal(t *testing.T) {
 // then SESSIONS, each unless the rows are sorted by it, rather than wrapping
 // each row.
 func TestGlobalTableNarrowTerminalDropsColumns(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	for _, tc := range []struct {
 		width                 int
 		sortBy                string
@@ -371,7 +367,6 @@ func TestSplitFooterFields(t *testing.T) {
 // The title names the sort, LAST ACTIVE shows the key for --sort-by activity,
 // and a running total only appears where it means something: cost order.
 func TestGlobalTableNamesItsSort(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	for _, tc := range []struct {
 		sortBy     string
 		details    bool
@@ -403,7 +398,6 @@ func TestGlobalTableNamesItsSort(t *testing.T) {
 // stops narrower than the cost rows, even when Savings and the cache-read
 // count are wider than any project's cost.
 func TestGlobalCostRowsNeverOutgrowFrame(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	a := goldenGlobalAnalysis()
 	for i, c := range []float64{5000, 2000, 900, 30, 1} {
 		if i < len(a.Projects) {

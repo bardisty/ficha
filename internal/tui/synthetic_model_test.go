@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/muesli/termenv"
 )
 
 // syntheticSession writes a transcript mixing real replies with the zero-token
@@ -32,7 +31,6 @@ func syntheticSession(t *testing.T) (path, id string) {
 // A synthetic line is a known zero-cost pseudo-model: watch neither lists it
 // in COST BY MODEL nor names it in the fallback-pricing footnote.
 func TestWatchIgnoresSyntheticModel(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	path, id := syntheticSession(t)
 
 	m := NewModel(path, id, true, "", false)
@@ -61,7 +59,6 @@ func TestWatchIgnoresSyntheticModel(t *testing.T) {
 // A session that only ever hit API errors has no model with a cost, so watch
 // leaves COST BY MODEL out rather than draw a heading over nothing.
 func TestWatchAllSyntheticSessionHasNoCostByModel(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	id := "synthetic-only"
 	path := filepath.Join(t.TempDir(), id+".jsonl")
 	line := `{"type":"assistant","timestamp":"2026-02-01T10:01:00Z","isApiErrorMessage":true,"message":{"id":"s1","model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0}}}`
@@ -86,7 +83,6 @@ func TestWatchAllSyntheticSessionHasNoCostByModel(t *testing.T) {
 // breakdown keeps each synthetic line as a row, since it is a line in the
 // transcript, but without the fallback marker or footnote.
 func TestBreakdownIgnoresSyntheticModel(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	path, id := syntheticSession(t)
 
 	m := NewBreakdownModel(path, id, true, "", false)

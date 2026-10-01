@@ -8,7 +8,6 @@ import (
 
 	"github.com/bardisty/ficha/internal/models"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/muesli/termenv"
 )
 
 // The footer is one line and already carries the fallback-pricing footnote, so
@@ -45,7 +44,6 @@ func TestAccountingFootnote(t *testing.T) {
 // An agent the breakdown could not read must show up in its footer.
 // The breakdown TUI owns the screen — stderr warnings never reach it.
 func TestBreakdownFooterShowsSkippedAgents(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewBreakdownModel("/fixture/sess.jsonl", "sess", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = updated.(BreakdownModel)
@@ -67,7 +65,6 @@ func TestBreakdownFooterShowsSkippedAgents(t *testing.T) {
 
 // The watch footer follows the same contract from SessionAnalysis.
 func TestWatchFooterShowsSkippedAgents(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = updated.(Model)
@@ -93,8 +90,6 @@ func TestWatchFooterShowsSkippedAgents(t *testing.T) {
 // fixture whose single line is unparseable (0 messages, SkippedLines=1) so the
 // empty-session + nonzero-skips path exercises the actual load.
 func TestWatchEmptySessionDisclosesSkippedLines(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
-
 	tmpDir := t.TempDir()
 	sessionID := "empty-with-skip"
 	sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")

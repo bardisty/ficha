@@ -6,7 +6,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/muesli/termenv"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -33,7 +32,6 @@ func sortRows(n int) []models.BreakdownMessage {
 // Sorted, the table runs most expensive first under each row's own number,
 // with no day dividers, and the footer rule names the mode.
 func TestBreakdownSort_OrdersByCost(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := loadedBreakdown(t, 100, 24, sortRows(40))
 	if !strings.Contains(tableContent(m), "── ") {
 		t.Fatal("setup: time order should draw a day divider at midnight")
@@ -71,7 +69,6 @@ func tableContent(m BreakdownModel) string {
 // scrolling to the bottom resumes following. At the very top, a new most
 // expensive row shows at the top.
 func TestBreakdownSort_PausesFollowing(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	withPeak := append(sortRows(40), models.BreakdownMessage{
 		Index: 41, Timestamp: goldenTime(23, 50, 0).Add(40 * time.Minute), Model: "claude-opus-4-8",
 		Cost: models.CostBreakdown{TotalCost: 1},
@@ -103,7 +100,6 @@ func TestBreakdownSort_PausesFollowing(t *testing.T) {
 // s again restores time order where the reader left it: following if they
 // were following, at their scroll position if they had scrolled up.
 func TestBreakdownSort_RestoresTimeOrder(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := pressKeys(t, loadedBreakdown(t, 100, 24, sortRows(40)), "s")
 	updated, _ := m.Update(breakdownMsgsMsg{messages: sortRows(45), insights: &models.MessageInsights{}})
 	m = pressKeys(t, updated.(BreakdownModel), "s")
@@ -124,7 +120,6 @@ func TestBreakdownSort_RestoresTimeOrder(t *testing.T) {
 
 // p still walks the most expensive rows; sorted, the peak is the top row.
 func TestBreakdownSort_PeakIsAtTheTop(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := pressKeys(t, loadedBreakdown(t, 100, 24, sortRows(40)), "s", "G", "p")
 	if m.viewport.YOffset != 0 || m.selectedKey != breakdownMsgKey(m.messages[5]) {
 		t.Errorf("p in cost order: offset %d, selected %q", m.viewport.YOffset, m.selectedKey)

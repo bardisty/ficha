@@ -23,7 +23,6 @@ func escKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyEsc} }
 // ? opens the list and ? or esc closes it, and neither touches anything else:
 // the scroll position, follow mode and the switch notice stay as they were.
 func TestWatchKeyListToggles(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/s.jsonl", "s", true, "", true)
 	m = load(t, sized(t, m, 80, 24), tallAnalysis(1))
 	m = key(t, m, "jjj")
@@ -52,7 +51,6 @@ func TestWatchKeyListToggles(t *testing.T) {
 // Any other key closes the list and then does what it always does, so a key
 // read off the list works the first time.
 func TestWatchKeyListOtherKeysCloseAndAct(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/s.jsonl", "s", true, "", true)
 	m = load(t, sized(t, m, 80, 24), tallAnalysis(1))
 
@@ -76,7 +74,6 @@ func TestWatchKeyListOtherKeysCloseAndAct(t *testing.T) {
 // ctrl+z, a resume and a resize leave the list open, and live data keeps
 // arriving under it.
 func TestWatchKeyListSurvivesSuspendResizeAndLoads(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewModel("/p/s.jsonl", "s", true, "", true)
 	m = key(t, load(t, sized(t, m, 80, 24), tallAnalysis(1)), "?")
 
@@ -98,7 +95,6 @@ func TestWatchKeyListSurvivesSuspendResizeAndLoads(t *testing.T) {
 // Keys that change breakdown's state close the list and act, as in watch.
 // ? and esc touch neither the sort nor p's selection.
 func TestBreakdownKeyListKeys(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := loadedBreakdown(t, 80, 24, chromeRows(goldenTime(10, 0, 0), 100))
 	m = pressKeys(t, m, "p")
 	selected := m.selectedKey
@@ -134,7 +130,6 @@ func TestBreakdownKeyListKeys(t *testing.T) {
 // the compact frame at 15 rows, and at 40 columns it drops alternate keys
 // rather than cut a description. The too-small screen wins over it.
 func TestKeyListFits(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	pinSuspend(t, true)
 	tables := map[string][]Key{"watch": WatchKeys(), "breakdown": BreakdownKeys()}
 	views := map[string]func(w, h int) tea.Model{
@@ -194,7 +189,6 @@ func TestKeyListSuspendRow(t *testing.T) {
 }
 
 func TestGoldenWatchKeyList(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	pinSuspend(t, true)
 	m := NewModel("/fixture/sess.jsonl", "s", true, "", true)
 	checkGolden(t, "watch_keys_80x24", key(t, sized(t, m, 80, 24), "?").View())

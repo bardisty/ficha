@@ -8,14 +8,12 @@ import (
 	"time"
 
 	"github.com/bardisty/ficha/internal/models"
-	"github.com/muesli/termenv"
 )
 
 // rateModel is watch on a session whose last 10 minutes cost $1.20, or
 // $7.20/h, with a clock the test moves.
 func rateModel(t *testing.T) (Model, *time.Time) {
 	t.Helper()
-	forceProfile(t, termenv.Ascii)
 	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
 	a := tallAnalysis(30.05)
 	a.MessageCount = 2

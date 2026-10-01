@@ -6,7 +6,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/muesli/termenv"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -56,7 +55,6 @@ func crossMidnightMessages() []models.BreakdownMessage {
 // which is not where the UTC day changes.
 func TestBreakdownRowsUseLocalTimeAndMarkDayChange(t *testing.T) {
 	withLocal(t, time.FixedZone("UTC+1", 3600))
-	forceProfile(t, termenv.Ascii)
 
 	for _, noColor := range []bool{true, false} {
 		out := breakdownViewFor(t, crossMidnightMessages(), noColor)
@@ -89,7 +87,6 @@ func TestBreakdownRowsUseLocalTimeAndMarkDayChange(t *testing.T) {
 // In UTC the same three rows span two UTC days, so the marker moves with the
 // zone: it goes before the 00:30 row.
 func TestBreakdownDayMarkerFollowsZone(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	out := breakdownViewFor(t, crossMidnightMessages(), true)
 	lines := strings.Split(out, "\n")
 	found := false
@@ -109,7 +106,6 @@ func TestBreakdownDayMarkerFollowsZone(t *testing.T) {
 // The watch view's insight times are local, matching its header clock.
 func TestWatchInsightTimesAreLocal(t *testing.T) {
 	withLocal(t, time.FixedZone("UTC-7", -7*3600))
-	forceProfile(t, termenv.Ascii)
 
 	for _, noColor := range []bool{true, false} {
 		m := NewModel("/fixture/sess.jsonl", "0a1b2c3d", noColor, "", false)
@@ -135,7 +131,6 @@ func TestWatchInsightTimesAreLocal(t *testing.T) {
 // The compact insights line's "@ HH:MM" is local too.
 func TestBreakdownPeakTimeIsLocal(t *testing.T) {
 	withLocal(t, time.FixedZone("UTC+1", 3600))
-	forceProfile(t, termenv.Ascii)
 
 	msgs := crossMidnightMessages()
 	insights := &models.MessageInsights{
@@ -158,7 +153,6 @@ func TestBreakdownZeroTimestamp(t *testing.T) {
 		t.Skipf("tz database unavailable: %v", err)
 	}
 	withLocal(t, loc)
-	forceProfile(t, termenv.Ascii)
 
 	msgs := []models.BreakdownMessage{
 		{Index: 1, Model: "claude-opus-4-8", Cost: models.CostBreakdown{TotalCost: 0.1}},
