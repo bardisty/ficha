@@ -800,11 +800,12 @@ func TestWrapHangingKeepsMarkedPathWhole(t *testing.T) {
 
 func TestWrapHangingKeepsRunsOfSpaces(t *testing.T) {
 	path := "/srv/two  spaces/and   three"
-	in := "Warning: failed to parse sessions-index.json: open " + NoBreak(path) + ": permission denied\n"
-	want := "Warning: failed to parse\n" +
-		"         sessions-index.json: open\n" +
+	in := "Warning: ignoring " + NoBreak(path) + ": permission denied\n"
+	want := "Warning: ignoring\n" +
 		"         " + path + ":\n" +
 		"         permission denied\n"
+	// The path and its colon are 29 columns, which with the 9 of indent is
+	// all of 38. Unmarked, "/srv/two  spaces/and" would end the first line
 	if got := WrapHanging(in, 38); got != want {
 		t.Errorf("marked path with runs of spaces at 38:\ngot:\n%s\nwant:\n%s", got, want)
 	}
@@ -824,21 +825,22 @@ func TestWrapHangingKeepsRunsOfSpaces(t *testing.T) {
 // one broken in two with an indent in between can't.
 func TestWrapHangingMarkedPathLongerThanWidth(t *testing.T) {
 	short := "/srv/My Config/projects/-srv-webapp/sessions-index.json"
-	in := "Warning: failed to parse sessions-index.json: open " + NoBreak(short) + ": permission denied\n"
-	want := "Warning: failed to parse sessions-index.json: open\n" +
+	in := "Warning: ignoring " + NoBreak(short) + ": permission denied\n"
+	want := "Warning: ignoring\n" +
 		short + ":\n" +
 		"         permission denied\n"
-	// The path and its colon are 56 columns: they fit in 60, but not after
-	// the 9 columns of indent
-	if got := WrapHanging(in, 60); got != want {
-		t.Errorf("at 60:\ngot:\n%s\nwant:\n%s", got, want)
+	// The path and its colon are 56 columns: they fit in 64, but after the 9
+	// columns of indent they'd need 65
+	if got := WrapHanging(in, 64); got != want {
+		t.Errorf("at 64:\ngot:\n%s\nwant:\n%s", got, want)
 	}
-	// With room for both, the path hangs like any other word
-	want = "Warning: failed to parse sessions-index.json: open\n" +
-		"         " + short + ": permission\n" +
-		"         denied\n"
-	if got := WrapHanging(in, 77); got != want {
-		t.Errorf("at 77:\ngot:\n%s\nwant:\n%s", got, want)
+	// With room for both, the path hangs like any other word. It still can't
+	// follow the label, where it would end at column 74
+	want = "Warning: ignoring\n" +
+		"         " + short + ":\n" +
+		"         permission denied\n"
+	if got := WrapHanging(in, 65); got != want {
+		t.Errorf("at 65:\ngot:\n%s\nwant:\n%s", got, want)
 	}
 
 	path := "/Users/dev/Library/Application Support/Claude Config/projects/-Users-dev-My-Projects-webapp/"
