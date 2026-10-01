@@ -15,6 +15,11 @@ Usage: mkhistory.py <root> [sessions] [--skew]
   with it when a change touches how lines are read or how the work is spread
   over threads.
 
+  One session in 40 ends in the last three hours. --skew gives each of those
+  a project of its own, so from 03:00 local time --since today reads one
+  project per 40 sessions, eight with the default 300. Before 03:00, the ones
+  that ended before midnight are yesterday's.
+
   --skew also writes eight short sessions over the last two days, each ending
   on a tool result of 64 KB or more, in its transcript or in its one agent's.
   --since reads the last 64 KB of a file written in the day before its window
@@ -45,6 +50,10 @@ args = ap.parse_args()
 # "./-name" still makes it.
 if args.root.startswith("-"):
     ap.error("root %r looks like a flag; write ./%s for a directory of that name" % (args.root, args.root))
+# An empty root is an unset variable in quotes far more often than a choice,
+# and abspath would turn it into the working directory.
+if args.root == "":
+    ap.error("root is empty; write . for the current directory")
 
 root = os.path.abspath(args.root)
 n_sessions = args.sessions
@@ -131,17 +140,23 @@ def write(path, lines, corrupt=False):
 project_dirs = [os.path.join(projects, "-srv-proj%d" % i) for i in range(40 if args.skew else 6)]
 written, others = [], 0
 for s in range(n_sessions):
+    # Most sessions spread over 60 days; one in 40 ends in the last three hours.
+    recent = s % 40 == 0
     if args.skew:
         # Half to the first project. The rest take turns, so none is left empty.
         if rng.random() < 0.5:
             pdir = project_dirs[0]
         else:
             pdir, others = project_dirs[1 + others % (len(project_dirs) - 1)], others + 1
+        if recent:
+            # A project each, so --since today has several to read. The draw
+            # above still runs for these, so changing which sessions are
+            # recent moves no other session.
+            pdir = project_dirs[s // 40 % len(project_dirs)]
     else:
         pdir = rng.choice(project_dirs)
     sid = str(uuid.UUID(int=rng.getrandbits(128)))
-    # Most sessions spread over 60 days; a handful end today.
-    end = NOW - (timedelta(minutes=rng.randint(1, 180)) if s % 40 == 0 else timedelta(seconds=rng.randint(0, 60 * 86400)))
+    end = NOW - (timedelta(minutes=rng.randint(1, 180)) if recent else timedelta(seconds=rng.randint(0, 60 * 86400)))
     model = rng.choice(MODELS)
     lines = convo(end, rng.randint(*TURNS), model, sid, cwd_of(pdir))
     if written and s % 50 == 25:
