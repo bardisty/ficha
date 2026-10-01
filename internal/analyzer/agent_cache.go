@@ -18,6 +18,10 @@ import (
 // per keystroke-driven update. Caching their parse makes reloads scale with the
 // parent file alone.
 //
+// Despite its name it also keeps the parent transcript's last parse. A
+// reload set off by an agent write, as every poll during a workflow run is,
+// then parses nothing but the agent that changed.
+//
 // Safe for concurrent use: bubbletea runs commands in goroutines, and several
 // reloads may briefly overlap (e.g. a manual refresh during a pending load). A
 // nil *AgentParseCache disables caching (every call parses), which is the
@@ -25,6 +29,15 @@ import (
 type AgentParseCache struct {
 	mu      sync.Mutex
 	entries map[string]agentParseEntry
+	parents map[string]parentParseEntry
+}
+
+// parentParseEntry is a parent transcript's parse and the file it was read
+// from. result is shared by every load that hits it, so nothing may change
+// result.Messages in place.
+type parentParseEntry struct {
+	info   os.FileInfo
+	result *parser.ParseResult
 }
 
 // agentParseEntry is a cached parse keyed by file identity. messages are
@@ -38,7 +51,44 @@ type agentParseEntry struct {
 
 // NewAgentParseCache returns an empty, ready-to-use cache.
 func NewAgentParseCache() *AgentParseCache {
-	return &AgentParseCache{entries: make(map[string]agentParseEntry)}
+	return &AgentParseCache{
+		entries: make(map[string]agentParseEntry),
+		parents: make(map[string]parentParseEntry),
+	}
+}
+
+// parseTranscript parses a parent transcript. Tests replace it to count
+// parses.
+var parseTranscript = parser.ParseJSONLFileWithResult
+
+// loadParentParse parses a session's own transcript. With a non-nil cache, a
+// file that is the one last parsed, at the same size and mtime, is served
+// from memory. Any write changes one of those: an append grows the file, and
+// an atomic replace puts a different file at the path, which os.SameFile
+// tells apart even at an equal size and mtime. A nil cache always parses.
+func loadParentParse(sessionPath string, cache *AgentParseCache) (*parser.ParseResult, error) {
+	if cache == nil {
+		return parseTranscript(sessionPath)
+	}
+	// The stat comes before the parse, so a write between the two leaves the
+	// newer parse stored under the older stat, and the next load parses again.
+	info, statErr := statOpened(sessionPath)
+	if statErr == nil {
+		cache.mu.Lock()
+		e, found := cache.parents[sessionPath]
+		cache.mu.Unlock()
+		if found && e.info.Size() == info.Size() && e.info.ModTime().Equal(info.ModTime()) && os.SameFile(e.info, info) {
+			return e.result, nil
+		}
+	}
+	result, err := parseTranscript(sessionPath)
+	if err != nil || statErr != nil {
+		return result, err
+	}
+	cache.mu.Lock()
+	cache.parents[sessionPath] = parentParseEntry{info: info, result: result}
+	cache.mu.Unlock()
+	return result, nil
 }
 
 // lookup returns the cached parse for path if the file identity (mtime + size)
@@ -89,6 +139,19 @@ func loadAgentMessages(agentPath string, cache *AgentParseCache) ([]models.Messa
 		// same way as the uncached path.
 	}
 	return parseAgentMessages(agentPath)
+}
+
+// statOpened stats path through an open handle, which records the file's
+// identity there and then. On Windows os.Stat leaves it to be looked up by
+// path when os.SameFile first asks, and by then a replacement may be what the
+// path names.
+func statOpened(path string) (os.FileInfo, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.Stat()
 }
 
 // parseAgentMessages parses an agent JSONL file and returns its cost-annotated
