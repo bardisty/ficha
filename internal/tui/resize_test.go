@@ -31,7 +31,7 @@ func TestWatchZeroHeightTerminalDoesNotPanic(t *testing.T) {
 
 	// Panics here without the viewportHeight clamp.
 	updated, _ = m.Update(analysisMsg{analysis: analysis})
-	_ = updated.(Model).View()
+	_ = frameOf(updated.(Model))
 }
 
 func TestBreakdownZeroHeightTerminalDoesNotPanic(t *testing.T) {
@@ -52,5 +52,5 @@ func TestBreakdownZeroHeightTerminalDoesNotPanic(t *testing.T) {
 
 	// Panics here without the viewportHeight clamp.
 	updated, _ = m.Update(breakdownMsgsMsg{messages: msgs, totalCost: 1.2, minCost: 0.1, maxCost: 0.1})
-	_ = updated.(BreakdownModel).View()
+	_ = frameOf(updated.(BreakdownModel))
 }

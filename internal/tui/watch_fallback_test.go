@@ -195,7 +195,7 @@ func TestWatcherFailureRKeyRetriesNow(t *testing.T) {
 			m, _ = m.Update(watchFileCmd(sessionPath))
 			attempts.Store(0)
 
-			_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+			_, cmd := m.Update(keyMsg(t, "r"))
 			runBatch(cmd)
 			if attempts.Load() != 1 {
 				t.Fatalf("r made %d watcher attempts, want 1", attempts.Load())

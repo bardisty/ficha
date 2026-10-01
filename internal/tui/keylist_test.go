@@ -18,27 +18,24 @@ func pinSuspend(t *testing.T, can bool) {
 	t.Cleanup(func() { canSuspend = orig })
 }
 
-func escKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyEsc} }
-
 // ? opens the list and ? or esc closes it, and neither touches anything else:
 // the scroll position, follow mode and the switch notice stay as they were.
 func TestWatchKeyListToggles(t *testing.T) {
 	m := NewModel("/p/s.jsonl", "s", true, "", true)
 	m = load(t, sized(t, m, 80, 24), tallAnalysis(1))
-	m = key(t, m, "jjj")
+	m = press(t, m, "j", "j", "j")
 	m.switched = &switchNotice{}
 
-	m = key(t, m, "?")
+	m = press(t, m, "?")
 	if !m.keysOpen {
 		t.Fatal("? didn't open the key list")
 	}
-	m = key(t, m, "?")
+	m = press(t, m, "?")
 	if m.keysOpen {
 		t.Fatal("? didn't close the key list")
 	}
-	m = key(t, m, "?")
-	updated, _ := m.Update(escKey())
-	m = updated.(Model)
+	m = press(t, m, "?")
+	m = press(t, m, "esc")
 	if m.keysOpen {
 		t.Fatal("esc didn't close the key list")
 	}
@@ -54,15 +51,15 @@ func TestWatchKeyListOtherKeysCloseAndAct(t *testing.T) {
 	m := NewModel("/p/s.jsonl", "s", true, "", true)
 	m = load(t, sized(t, m, 80, 24), tallAnalysis(1))
 
-	m = key(t, key(t, m, "?"), "f")
+	m = press(t, m, "?", "f")
 	if m.keysOpen || m.followMode {
 		t.Errorf("f with the list open: open %v, follow %v; want closed and pinned", m.keysOpen, m.followMode)
 	}
-	m = key(t, key(t, m, "?"), "j")
+	m = press(t, m, "?", "j")
 	if m.keysOpen || m.viewport.YOffset != 1 {
 		t.Errorf("j with the list open: open %v, YOffset %d; want closed and 1", m.keysOpen, m.viewport.YOffset)
 	}
-	updated, cmd := key(t, m, "?").Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	updated, cmd := press(t, m, "?").Update(keyMsg(t, "q"))
 	if cmd == nil {
 		t.Fatal("q with the list open didn't quit")
 	}
@@ -75,9 +72,9 @@ func TestWatchKeyListOtherKeysCloseAndAct(t *testing.T) {
 // arriving under it.
 func TestWatchKeyListSurvivesSuspendResizeAndLoads(t *testing.T) {
 	m := NewModel("/p/s.jsonl", "s", true, "", true)
-	m = key(t, load(t, sized(t, m, 80, 24), tallAnalysis(1)), "?")
+	m = press(t, load(t, sized(t, m, 80, 24), tallAnalysis(1)), "?")
 
-	m, _ = keyType(t, m, tea.KeyCtrlZ)
+	m = press(t, m, "ctrl+z")
 	updated, _ := m.Update(tea.ResumeMsg{})
 	m = sized(t, updated.(Model), 60, 20)
 	m = load(t, m, tallAnalysis(2))
@@ -87,7 +84,7 @@ func TestWatchKeyListSurvivesSuspendResizeAndLoads(t *testing.T) {
 	if m.analysis.MessageCount != tallAnalysis(2).MessageCount {
 		t.Error("a load while the list was open didn't reach the model")
 	}
-	if lines := strings.Split(m.View(), "\n"); len(lines) != 20 {
+	if lines := strings.Split(frameOf(m), "\n"); len(lines) != 20 {
 		t.Errorf("after the resize the list's frame is %d rows, want 20", len(lines))
 	}
 }
@@ -96,30 +93,28 @@ func TestWatchKeyListSurvivesSuspendResizeAndLoads(t *testing.T) {
 // ? and esc touch neither the sort nor p's selection.
 func TestBreakdownKeyListKeys(t *testing.T) {
 	m := loadedBreakdown(t, 80, 24, chromeRows(goldenTime(10, 0, 0), 100))
-	m = pressKeys(t, m, "p")
+	m = press(t, m, "p")
 	selected := m.selectedKey
-	m = pressKeys(t, m, "?")
+	m = press(t, m, "?")
 	if !m.keysOpen {
 		t.Fatal("? didn't open the key list")
 	}
-	updated, _ := m.Update(escKey())
-	m = updated.(BreakdownModel)
+	m = press(t, m, "esc")
 	if m.keysOpen || m.selectedKey != selected || m.sortByCost {
 		t.Errorf("esc: open %v, selection kept %v, sorted %v", m.keysOpen, m.selectedKey == selected, m.sortByCost)
 	}
 
-	m = pressKeys(t, m, "?", "s")
+	m = press(t, m, "?", "s")
 	if m.keysOpen || !m.sortByCost {
 		t.Errorf("s with the list open: open %v, sorted %v; want closed and sorted", m.keysOpen, m.sortByCost)
 	}
-	m = pressKeys(t, m, "?", "f")
+	m = press(t, m, "?", "f")
 	if m.keysOpen || !m.followMode {
 		t.Errorf("f with the list open: open %v, follow %v; want closed and following", m.keysOpen, m.followMode)
 	}
 
-	m = pressKeys(t, m, "?")
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlZ})
-	updated, _ = updated.Update(tea.WindowSizeMsg{Width: 60, Height: 15})
+	m = press(t, m, "?", "ctrl+z")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 15})
 	if !updated.(BreakdownModel).keysOpen {
 		t.Error("ctrl+z or a resize closed the list")
 	}
@@ -135,15 +130,15 @@ func TestKeyListFits(t *testing.T) {
 	views := map[string]func(w, h int) tea.Model{
 		"watch": func(w, h int) tea.Model {
 			m := NewModel("/p/s.jsonl", "s", true, "", true)
-			return key(t, load(t, sized(t, m, w, h), tallAnalysis(1)), "?")
+			return press(t, load(t, sized(t, m, w, h), tallAnalysis(1)), "?")
 		},
 		"breakdown": func(w, h int) tea.Model {
-			return pressKeys(t, loadedBreakdown(t, w, h, chromeRows(goldenTime(10, 0, 0), 50)), "?")
+			return press(t, loadedBreakdown(t, w, h, chromeRows(goldenTime(10, 0, 0), 50)), "?")
 		},
 	}
 	for name, open := range views {
 		for _, sz := range []struct{ w, h int }{{80, 24}, {60, 40}, {50, 24}, {40, 24}, {80, 15}, {60, 15}, {80, 9}} {
-			view := open(sz.w, sz.h).View()
+			view := frameOf(open(sz.w, sz.h))
 			lines := strings.Split(view, "\n")
 			for i := range lines {
 				lines[i] = strings.TrimRight(lines[i], " ")
@@ -171,7 +166,7 @@ func TestKeyListFits(t *testing.T) {
 				}
 			}
 		}
-		if view := open(30, 5).View(); !strings.Contains(view, "terminal too small") {
+		if view := frameOf(open(30, 5)); !strings.Contains(view, "terminal too small") {
 			t.Errorf("%s: the list drew over the too-small screen:\n%s", name, view)
 		}
 	}
@@ -191,7 +186,7 @@ func TestKeyListSuspendRow(t *testing.T) {
 func TestGoldenWatchKeyList(t *testing.T) {
 	pinSuspend(t, true)
 	m := NewModel("/fixture/sess.jsonl", "s", true, "", true)
-	checkGolden(t, "watch_keys_80x24", key(t, sized(t, m, 80, 24), "?").View())
+	checkGolden(t, "watch_keys_80x24", frameOf(press(t, sized(t, m, 80, 24), "?")))
 }
 
 func TestGoldenBreakdownKeyListColor(t *testing.T) {
@@ -199,5 +194,5 @@ func TestGoldenBreakdownKeyListColor(t *testing.T) {
 	pinSuspend(t, true)
 	m := NewBreakdownModel("/fixture/sess.jsonl", "s", false, "", true)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 15})
-	checkGolden(t, "breakdown_keys_80x15_color", pressKeys(t, updated.(BreakdownModel), "?").View())
+	checkGolden(t, "breakdown_keys_80x15_color", frameOf(press(t, updated.(BreakdownModel), "?")))
 }

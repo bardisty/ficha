@@ -20,9 +20,9 @@ func TestWatchFrameHeightIsStable(t *testing.T) {
 		m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
 		m = sized(t, m, w, h)
 		m = load(t, m, tallAnalysis(1))
-		plain := m.View()
+		plain := frameOf(m)
 		m.hint = &sessionHint{id: sessB, at: m.clock()}
-		hinted := m.View()
+		hinted := frameOf(m)
 		for name, v := range map[string]string{"plain": plain, "hinted": hinted} {
 			if got := strings.Count(v, "\n") + 1; got != h {
 				t.Errorf("%dx%d %s: %d rows, want %d", w, h, name, got, h)
@@ -67,8 +67,8 @@ func TestWatchFrameFitsNarrowTerminals(t *testing.T) {
 			}
 		}
 		for _, edge := range []string{"╗", "║", "╝"} {
-			if !strings.Contains(m.View(), edge+"\n") {
-				t.Errorf("width %d: the box lost its right edge %s:\n%s", w, edge, m.View())
+			if !strings.Contains(frameOf(m), edge+"\n") {
+				t.Errorf("width %d: the box lost its right edge %s:\n%s", w, edge, frameOf(m))
 			}
 		}
 	}
@@ -77,7 +77,7 @@ func TestWatchFrameFitsNarrowTerminals(t *testing.T) {
 func TestWatchCompactAndTooSmall(t *testing.T) {
 	m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
 	m = load(t, sized(t, m, 80, 12), tallAnalysis(1))
-	view := m.View()
+	view := frameOf(m)
 	if strings.Contains(view, "╔") {
 		t.Errorf("compact view kept the box:\n%s", view)
 	}
@@ -97,7 +97,7 @@ func TestWatchCompactAndTooSmall(t *testing.T) {
 		{20, 4, []string{"need 40 cols", "need 8 rows"}},
 	} {
 		m = sized(t, m, tc.w, tc.h)
-		v := m.View()
+		v := frameOf(m)
 		var lines []string
 		for _, line := range strings.Split(v, "\n") {
 			lines = append(lines, strings.TrimSpace(line))
@@ -119,7 +119,7 @@ func TestTooSmallKeepsItsTopLines(t *testing.T) {
 		var breakdown tea.Model = NewBreakdownModel("/p/s.jsonl", "s", true, "", false)
 		for name, m := range map[string]tea.Model{"watch": watch, "breakdown": breakdown} {
 			m, _ = m.Update(tea.WindowSizeMsg{Width: 30, Height: h})
-			lines := strings.Split(m.View(), "\n")
+			lines := strings.Split(frameOf(m), "\n")
 			if len(lines) > h || strings.TrimSpace(lines[0]) != "terminal too small" {
 				t.Errorf("%s 30x%d: got %q, want at most %d lines starting with terminal too small", name, h, lines, h)
 			}
@@ -150,7 +150,7 @@ func TestWatchHelpLineDropsWholeHints(t *testing.T) {
 	} {
 		m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
 		m = load(t, sized(t, m, tc.w, 30), tallAnalysis(1))
-		lines := strings.Split(m.View(), "\n")
+		lines := strings.Split(frameOf(m), "\n")
 		if got := strings.TrimSpace(lines[len(lines)-1]); got != tc.want {
 			t.Errorf("width %d: help line = %q, want %q", tc.w, got, tc.want)
 		}
@@ -195,7 +195,7 @@ func TestWatchCompactFrameFitsWithWarnings(t *testing.T) {
 		if rows := len(m.warningRows(panelWidthFor(w))); rows != maxWarningRows {
 			t.Fatalf("%dx%d: %d warning rows, want %d for this test", w, h, rows, maxWarningRows)
 		}
-		v := m.View()
+		v := frameOf(m)
 		if got := strings.Count(v, "\n") + 1; got != h {
 			t.Errorf("%dx%d: %d rows, want %d:\n%s", w, h, got, h, v)
 		}
@@ -244,8 +244,8 @@ func TestWatchTickOnlyWhileHighlighted(t *testing.T) {
 	}
 
 	m.loading = true
-	if !strings.Contains(m.View(), "last msg") && !strings.Contains(m.View(), "no messages") {
-		t.Errorf("background reload showed loading:\n%s", m.View())
+	if !strings.Contains(frameOf(m), "last msg") && !strings.Contains(frameOf(m), "no messages") {
+		t.Errorf("background reload showed loading:\n%s", frameOf(m))
 	}
 	m = load(t, m, tallAnalysis(2))
 	if !m.ticking {
@@ -305,7 +305,7 @@ func TestSpinnerRestartsAfterFailedLoad(t *testing.T) {
 	if _, cmd := m.Update(spinner.TickMsg{}); cmd != nil {
 		t.Fatal("spinner kept ticking with nothing loading")
 	}
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	updated, cmd := m.Update(keyMsg(t, "r"))
 	m = updated.(Model)
 	if !m.showLoading() {
 		t.Fatal("retry doesn't show loading")

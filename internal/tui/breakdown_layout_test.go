@@ -231,7 +231,7 @@ func TestBreakdownFrameTracksTableWidth(t *testing.T) {
 	}{{"agents", goldenBreakdownMessages()}, {"unknown model", unknown}} {
 		for _, width := range []int{60, 80, 86, 100, 120, 160} {
 			m := loadedBreakdown(t, width, 40, tc.msgs)
-			lines := strings.Split(m.View(), "\n")
+			lines := strings.Split(frameOf(m), "\n")
 			table := m.layout().width()
 			frame := max(table, defaultPanelWidth+bdIndent)
 			frame = min(frame, width)
@@ -368,7 +368,7 @@ func TestBreakdownRunTagKey_GivesWay(t *testing.T) {
 		if got := m.renderStatsLine(m.layout()); got != tc.want {
 			t.Errorf("width %d:\n got %q\nwant %q", tc.width, got, tc.want)
 		}
-		if !m.layout().runTags && strings.Contains(m.View(), " rc") {
+		if !m.layout().runTags && strings.Contains(frameOf(m), " rc") {
 			t.Errorf("width %d: tags dropped from AGENT but still drawn", tc.width)
 		}
 	}
@@ -386,7 +386,7 @@ func TestBreakdownRunTagKey_PrintableNames(t *testing.T) {
 	if got := m.renderStatsLine(m.layout()); !strings.HasSuffix(got, "│ rc = reviewchan[31mges, wf = wf_ac") {
 		t.Errorf("stats line: %q", got)
 	}
-	if rows := len(strings.Split(m.View(), "\n")); rows != 24 {
+	if rows := len(strings.Split(frameOf(m), "\n")); rows != 24 {
 		t.Errorf("frame is %d rows, want 24", rows)
 	}
 }

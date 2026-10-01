@@ -39,7 +39,7 @@ func loadedBreakdown(t *testing.T, width, height int, msgs []models.BreakdownMes
 func TestBreakdownView_FillsTerminalExactly(t *testing.T) {
 	for _, sz := range []struct{ w, h int }{{100, 40}, {80, 24}, {120, 10}, {60, 20}, {40, 15}, {39, 7}, {200, 60}} {
 		m := loadedBreakdown(t, sz.w, sz.h, chromeRows(goldenTime(10, 0, 0), 100))
-		lines := strings.Split(m.View(), "\n")
+		lines := strings.Split(frameOf(m), "\n")
 		if len(lines) != sz.h {
 			t.Errorf("%dx%d: frame is %d rows", sz.w, sz.h, len(lines))
 		}
@@ -57,11 +57,11 @@ func TestBreakdownView_FillsTerminalExactly(t *testing.T) {
 
 func TestBreakdownView_CompactAndTooSmall(t *testing.T) {
 	m := loadedBreakdown(t, 120, 10, chromeRows(goldenTime(10, 0, 0), 5))
-	if out := m.View(); strings.Contains(out, "╔") || !strings.Contains(out, "0a1b2c3d") {
+	if out := frameOf(m); strings.Contains(out, "╔") || !strings.Contains(out, "0a1b2c3d") {
 		t.Errorf("a 10-row terminal should get the unboxed header:\n%s", out)
 	}
 	m = loadedBreakdown(t, 120, 40, chromeRows(goldenTime(10, 0, 0), 5))
-	if out := m.View(); !strings.Contains(out, "╔") {
+	if out := frameOf(m); !strings.Contains(out, "╔") {
 		t.Errorf("a 40-row terminal should keep the boxed header:\n%s", out)
 	}
 	// The narrowest layout (#, TIME, MODEL, COST) is 39 columns; any less
@@ -71,7 +71,7 @@ func TestBreakdownView_CompactAndTooSmall(t *testing.T) {
 		need string
 	}{{38, 10, "need 39 cols"}, {25, 10, "need 39 cols"}, {80, 6, "need 7 rows"}} {
 		m = loadedBreakdown(t, sz.w, sz.h, chromeRows(goldenTime(10, 0, 0), 5))
-		out := m.View()
+		out := frameOf(m)
 		for _, want := range []string{"terminal too small", sz.need, "q to quit"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("%dx%d should say %q, got:\n%s", sz.w, sz.h, want, out)
@@ -79,7 +79,7 @@ func TestBreakdownView_CompactAndTooSmall(t *testing.T) {
 		}
 	}
 	m = loadedBreakdown(t, 39, 10, chromeRows(goldenTime(10, 0, 0), 5))
-	if out := m.View(); !strings.Contains(out, "$0.0500") {
+	if out := frameOf(m); !strings.Contains(out, "$0.0500") {
 		t.Errorf("at 39 columns every cost should show whole:\n%s", out)
 	}
 }
@@ -90,7 +90,7 @@ func TestBreakdownView_ShowsLoadError(t *testing.T) {
 		m := loadedBreakdown(t, 100, h, chromeRows(goldenTime(10, 0, 0), 5))
 		updated, _ := m.Update(breakdownErrorMsg{err: errors.New("boom")})
 		m = updated.(BreakdownModel)
-		if out := m.View(); !strings.Contains(out, "boom • r to retry") {
+		if out := frameOf(m); !strings.Contains(out, "boom • r to retry") {
 			t.Errorf("height %d: the error should be on screen:\n%s", h, out)
 		}
 	}
@@ -99,7 +99,7 @@ func TestBreakdownView_ShowsLoadError(t *testing.T) {
 	m = updated.(BreakdownModel)
 	updated, _ = m.Update(breakdownErrorMsg{err: errors.New("boom")})
 	m = updated.(BreakdownModel)
-	if out := m.View(); !strings.Contains(out, "boom") || strings.Contains(out, emptyStateText) {
+	if out := frameOf(m); !strings.Contains(out, "boom") || strings.Contains(out, emptyStateText) {
 		t.Errorf("a failed first load should show the error, not the empty state:\n%s", out)
 	}
 }
@@ -110,8 +110,7 @@ func TestBreakdownPosition_ScrollBeforeFirstLoad(t *testing.T) {
 	m := NewBreakdownModel("/fixture/sess.jsonl", "0a1b2c3d", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
 	m = updated.(BreakdownModel)
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
-	m = updated.(BreakdownModel)
+	m = press(t, m, "g")
 	updated, _ = m.Update(breakdownMsgsMsg{messages: chromeRows(goldenTime(10, 0, 0), 40), insights: &models.MessageInsights{}})
 	m = updated.(BreakdownModel)
 	if got := m.positionText(); strings.Contains(got, "new") {
@@ -150,9 +149,8 @@ func TestBreakdownPosition_CountsNewRowsWhileScrolledUp(t *testing.T) {
 	if got := m.positionText(); got != "rows 21-30 of 30" {
 		t.Errorf("following: %q", got)
 	}
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
-	m = updated.(BreakdownModel)
-	updated, _ = m.Update(breakdownMsgsMsg{messages: chromeRows(goldenTime(10, 0, 0), 35), insights: &models.MessageInsights{}})
+	m = press(t, m, "g")
+	updated, _ := m.Update(breakdownMsgsMsg{messages: chromeRows(goldenTime(10, 0, 0), 35), insights: &models.MessageInsights{}})
 	m = updated.(BreakdownModel)
 	if got, want := m.positionText(), "rows 1-10 of 35 • 5 new ↓ (G)"; got != want {
 		t.Errorf("scrolled up: %q, want %q", got, want)
@@ -160,8 +158,7 @@ func TestBreakdownPosition_CountsNewRowsWhileScrolledUp(t *testing.T) {
 	if rule := m.renderFooterRule(m.panelWidth()); !strings.Contains(rule, "[ rows 1-10 of 35 • 5 new ↓ (G) ]") {
 		t.Errorf("the footer rule should carry the position: %q", rule)
 	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
-	m = updated.(BreakdownModel)
+	m = press(t, m, "G")
 	if got := m.positionText(); got != "rows 26-35 of 35" {
 		t.Errorf("after G: %q", got)
 	}
@@ -176,13 +173,12 @@ func TestBreakdownPosition_CountsNewRowsWhileScrolledUp(t *testing.T) {
 // following its newest row.
 func TestBreakdownSessionSwitch_ResetsScroll(t *testing.T) {
 	m := loadedBreakdown(t, 100, 20, chromeRows(goldenTime(10, 0, 0), 50))
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
-	m = updated.(BreakdownModel)
+	m = press(t, m, "g")
 	if m.autoScroll || m.viewport.YOffset != 0 {
 		t.Fatalf("setup: want scrolled to top, manual")
 	}
 	m.followMode = true
-	updated, _ = m.Update(sessionActivityMsg{path: "/fixture/new.jsonl", id: "new", created: true})
+	updated, _ := m.Update(sessionActivityMsg{path: "/fixture/new.jsonl", id: "new", created: true})
 	m = updated.(BreakdownModel)
 	if !m.autoScroll {
 		t.Error("a switch should turn auto-scroll back on")
@@ -202,17 +198,17 @@ func TestBreakdownEmptyState(t *testing.T) {
 	m := NewBreakdownModel("/fixture/sess.jsonl", "0a1b2c3d", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(BreakdownModel)
-	if strings.Contains(m.View(), emptyStateText) {
+	if strings.Contains(frameOf(m), emptyStateText) {
 		t.Error("the empty state should wait for the first load")
 	}
 	updated, _ = m.Update(breakdownMsgsMsg{})
 	m = updated.(BreakdownModel)
-	if !strings.Contains(m.View(), emptyStateText) {
-		t.Errorf("an empty session should show the empty state:\n%s", m.View())
+	if !strings.Contains(frameOf(m), emptyStateText) {
+		t.Errorf("an empty session should show the empty state:\n%s", frameOf(m))
 	}
 	updated, _ = m.Update(breakdownMsgsMsg{messages: chromeRows(goldenTime(10, 0, 0), 1)})
 	m = updated.(BreakdownModel)
-	if strings.Contains(m.View(), emptyStateText) {
+	if strings.Contains(frameOf(m), emptyStateText) {
 		t.Error("the empty state should go once a row arrives")
 	}
 }
@@ -221,38 +217,26 @@ func TestBreakdownEmptyState(t *testing.T) {
 // bottom and can't move: on a short table, or after p lands on a last-page
 // row.
 func TestBreakdownDownKeyAtBottomResumesFollowing(t *testing.T) {
-	press := func(m BreakdownModel, keys ...tea.KeyMsg) BreakdownModel {
-		for _, k := range keys {
-			updated, _ := m.Update(k)
-			m = updated.(BreakdownModel)
-		}
-		return m
-	}
-	g := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")}
-	for name, k := range map[string]tea.KeyMsg{
-		"j":     {Type: tea.KeyRunes, Runes: []rune("j")},
-		"down":  {Type: tea.KeyDown},
-		"space": {Type: tea.KeySpace, Runes: []rune(" ")},
-	} {
+	for _, k := range []string{"j", "down", "space"} {
 		// Short table: g turns following off without moving anything
-		m := press(loadedBreakdown(t, 100, 30, chromeRows(goldenTime(10, 0, 0), 10)), g, k)
+		m := press(t, loadedBreakdown(t, 100, 30, chromeRows(goldenTime(10, 0, 0), 10)), "g", k)
 		if !m.autoScroll {
-			t.Errorf("%s at the bottom of a short table should resume following", name)
+			t.Errorf("%s at the bottom of a short table should resume following", k)
 		}
 		updated, _ := m.Update(breakdownMsgsMsg{messages: chromeRows(goldenTime(10, 0, 0), 60), insights: &models.MessageInsights{}})
 		if m = updated.(BreakdownModel); !m.viewport.AtBottom() {
-			t.Errorf("%s: new rows should keep the view at the bottom", name)
+			t.Errorf("%s: new rows should keep the view at the bottom", k)
 		}
 
 		// p on a last-page row clamps to the bottom with following off
 		rows := chromeRows(goldenTime(10, 0, 0), 40)
 		rows[39].Cost.TotalCost = 9
-		m = press(loadedBreakdown(t, 100, 20, rows), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+		m = press(t, loadedBreakdown(t, 100, 20, rows), "p")
 		if m.autoScroll || !m.viewport.AtBottom() {
 			t.Fatalf("setup: p should stop following at the bottom")
 		}
-		if m = press(m, k); !m.autoScroll {
-			t.Errorf("%s after p at the bottom should resume following", name)
+		if m = press(t, m, k); !m.autoScroll {
+			t.Errorf("%s after p at the bottom should resume following", k)
 		}
 	}
 }
@@ -264,9 +248,8 @@ func TestBreakdownFollowToggle(t *testing.T) {
 	if m = updated.(BreakdownModel); m.sessionPath != "/fixture/sess.jsonl" {
 		t.Fatalf("pinned breakdown switched to %s", m.sessionPath)
 	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
-	if m = updated.(BreakdownModel); !m.followMode || !strings.Contains(m.View(), "FOLLOWING") {
-		t.Fatalf("f should turn following on and show it:\n%s", m.View())
+	if m = press(t, m, "f"); !m.followMode || !strings.Contains(frameOf(m), "FOLLOWING") {
+		t.Fatalf("f should turn following on and show it:\n%s", frameOf(m))
 	}
 	updated, _ = m.Update(sessionActivityMsg{path: "/fixture/new.jsonl", id: "new", created: true})
 	if m = updated.(BreakdownModel); m.sessionPath != "/fixture/new.jsonl" {
@@ -280,7 +263,7 @@ func TestBreakdownWaitingForFirstSession(t *testing.T) {
 	m := NewWaitingBreakdownModel("/projects/-work-webapp", "~/work/webapp", true, false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(BreakdownModel)
-	out := m.View()
+	out := frameOf(m)
 	for _, want := range []string{"Waiting for a Claude Code session in ~/work/webapp", "webapp", "waiting for a session"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("waiting view lacks %q:\n%s", want, out)
@@ -290,10 +273,7 @@ func TestBreakdownWaitingForFirstSession(t *testing.T) {
 		t.Errorf("waiting isn't the empty state:\n%s", out)
 	}
 	// Keys that act on rows or a session are harmless with neither
-	for _, k := range []string{"p", "-", "r", "j", "g", "G"} {
-		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
-		m = updated.(BreakdownModel)
-	}
+	m = press(t, m, "p", "-", "r", "j", "g", "G")
 	updated, _ = m.Update(sessionActivityMsg{path: "/projects/-work-webapp/first.jsonl", id: "first", created: true})
 	if m = updated.(BreakdownModel); m.sessionPath != "/projects/-work-webapp/first.jsonl" || !m.loading {
 		t.Errorf("a waiting breakdown should open the first session, pinned or not (path %q)", m.sessionPath)
@@ -307,7 +287,7 @@ func TestBreakdownWaitingForFirstSession(t *testing.T) {
 // (a tmux pane started with a command) it would leave a blank screen.
 func TestBreakdownCtrlZSuspends(t *testing.T) {
 	m := loadedBreakdown(t, 100, 24, chromeRows(goldenTime(10, 0, 0), 5))
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlZ})
+	_, cmd := m.Update(keyMsg(t, "ctrl+z"))
 	if !canSuspend() {
 		if cmd != nil {
 			t.Error("ctrl+z suspended without job control")
@@ -324,12 +304,8 @@ func TestBreakdownCtrlZSuspends(t *testing.T) {
 // - goes back to the session open before the last switch and pins there, as
 // in watch. p stays peak and never changes session.
 func TestBreakdownGoBack(t *testing.T) {
-	press := func(m BreakdownModel, k string) BreakdownModel {
-		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
-		return updated.(BreakdownModel)
-	}
 	m := loadedBreakdown(t, 100, 24, chromeRows(goldenTime(10, 0, 0), 5))
-	if m = press(m, "-"); m.sessionPath != "/fixture/sess.jsonl" {
+	if m = press(t, m, "-"); m.sessionPath != "/fixture/sess.jsonl" {
 		t.Fatalf("- with no previous session switched to %s", m.sessionPath)
 	}
 
@@ -339,19 +315,19 @@ func TestBreakdownGoBack(t *testing.T) {
 	if got := m.renderNotifyRow(); !strings.Contains(got, "→ new session new (previous 0a1b2c3d: $0.2500) • - to go back") {
 		t.Errorf("switch notice = %q, want it to offer going back", got)
 	}
-	if m = press(m, "p"); m.sessionPath != "/fixture/new.jsonl" {
+	if m = press(t, m, "p"); m.sessionPath != "/fixture/new.jsonl" {
 		t.Fatalf("p switched sessions to %s", m.sessionPath)
 	}
 
-	m = press(m, "-")
+	m = press(t, m, "-")
 	if m.sessionPath != "/fixture/sess.jsonl" || m.followMode {
 		t.Fatalf("after -: session %s follow=%v, want /fixture/sess.jsonl pinned", m.sessionPath, m.followMode)
 	}
 	if got := m.renderNotifyRow(); !strings.Contains(got, "→ switched to 0a1b2c3d • - to go back") {
 		t.Errorf("go-back notice = %q", got)
 	}
-	if !strings.Contains(m.View(), "PINNED") {
-		t.Errorf("header doesn't say PINNED after going back:\n%s", m.View())
+	if !strings.Contains(frameOf(m), "PINNED") {
+		t.Errorf("header doesn't say PINNED after going back:\n%s", frameOf(m))
 	}
 }
 

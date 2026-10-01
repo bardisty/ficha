@@ -6,39 +6,33 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func keyType(t *testing.T, m Model, k tea.KeyType) (Model, tea.Cmd) {
-	t.Helper()
-	updated, cmd := m.Update(tea.KeyMsg{Type: k})
-	return updated.(Model), cmd
-}
-
 // Pager keys reach the viewport's keymap, and j/k still move by one line.
 func TestWatchPagerKeys(t *testing.T) {
 	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = load(t, sized(t, m, 80, 24), tallAnalysis(1))
 	page := m.viewport.Height
 
-	m = key(t, m, "j")
+	m = press(t, m, "j")
 	if m.viewport.YOffset != 1 {
 		t.Fatalf("j: YOffset = %d, want 1", m.viewport.YOffset)
 	}
-	m = key(t, m, "k")
-	m, _ = keyType(t, m, tea.KeySpace)
+	m = press(t, m, "k")
+	m = press(t, m, "space")
 	if m.viewport.YOffset != page {
 		t.Errorf("space: YOffset = %d, want a page (%d)", m.viewport.YOffset, page)
 	}
-	m = key(t, m, "b")
+	m = press(t, m, "b")
 	if m.viewport.YOffset != 0 {
 		t.Errorf("b: YOffset = %d, want 0", m.viewport.YOffset)
 	}
-	m, _ = keyType(t, m, tea.KeyCtrlD)
+	m = press(t, m, "ctrl+d")
 	if m.viewport.YOffset != page/2 {
 		t.Errorf("ctrl+d: YOffset = %d, want half a page (%d)", m.viewport.YOffset, page/2)
 	}
 
 	// f toggles follow rather than paging down
-	m = key(t, m, "g")
-	m = key(t, m, "f")
+	m = press(t, m, "g")
+	m = press(t, m, "f")
 	if m.viewport.YOffset != 0 || !m.followMode {
 		t.Errorf("f: YOffset = %d follow = %v, want 0 and following", m.viewport.YOffset, m.followMode)
 	}
@@ -48,7 +42,7 @@ func TestWatchPagerKeys(t *testing.T) {
 func TestWatchRepeatedKeyChunk(t *testing.T) {
 	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m = load(t, sized(t, m, 80, 24), tallAnalysis(1))
-	m = key(t, m, "jjjj")
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("jjjj")})
 	if m.viewport.YOffset != 4 {
 		t.Errorf("jjjj: YOffset = %d, want 4", m.viewport.YOffset)
 	}
@@ -58,7 +52,7 @@ func TestWatchRepeatedKeyChunk(t *testing.T) {
 // the stop would be discarded and the program would hang on a blank screen.
 func TestWatchCtrlZSuspends(t *testing.T) {
 	m := NewModel("/p/s.jsonl", "s", true, "", false)
-	_, cmd := keyType(t, m, tea.KeyCtrlZ)
+	_, cmd := m.Update(keyMsg(t, "ctrl+z"))
 	if !canSuspend() {
 		if cmd != nil {
 			t.Error("ctrl+z suspended without job control")

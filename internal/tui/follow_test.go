@@ -53,8 +53,8 @@ func TestSessionActivityFollowAndHint(t *testing.T) {
 			if switched := m.sessionID == sessB; switched != tt.wantSwitch {
 				t.Fatalf("switched = %v, want %v", switched, tt.wantSwitch)
 			}
-			if tt.wantHint != "" && !strings.Contains(m.View(), tt.wantHint) {
-				t.Errorf("notify row missing %q:\n%s", tt.wantHint, m.View())
+			if tt.wantHint != "" && !strings.Contains(frameOf(m), tt.wantHint) {
+				t.Errorf("notify row missing %q:\n%s", tt.wantHint, frameOf(m))
 			}
 		})
 	}
@@ -67,33 +67,33 @@ func TestSwitchNoticeAndGoBack(t *testing.T) {
 	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB, created: true})
 
 	want := "→ new session bbbbbbbb (previous aaaaaaaa: $30.05) • - to go back"
-	if !strings.Contains(m.View(), want) {
-		t.Fatalf("missing switch notice %q:\n%s", want, m.View())
+	if !strings.Contains(frameOf(m), want) {
+		t.Fatalf("missing switch notice %q:\n%s", want, frameOf(m))
 	}
 	m.now = func() time.Time { return time.Now().Add(10 * time.Minute) }
-	if !strings.Contains(m.View(), want) {
+	if !strings.Contains(frameOf(m), want) {
 		t.Error("switch notice expired without a keypress")
 	}
 
 	m = load(t, m, tallAnalysis(0.04))
-	m = key(t, m, "-")
+	m = press(t, m, "-")
 	if m.sessionID != sessA || m.followMode {
 		t.Fatalf("after -: session %s follow=%v, want %s pinned", m.sessionID, m.followMode, sessA)
 	}
-	if !strings.Contains(m.View(), "switched to aaaaaaaa (previous bbbbbbbb: $0.0400)") {
-		t.Errorf("go-back notice missing:\n%s", m.View())
+	if !strings.Contains(frameOf(m), "switched to aaaaaaaa (previous bbbbbbbb: $0.0400)") {
+		t.Errorf("go-back notice missing:\n%s", frameOf(m))
 	}
-	if !strings.Contains(m.View(), "PINNED") {
-		t.Errorf("header doesn't say PINNED after going back:\n%s", m.View())
+	if !strings.Contains(frameOf(m), "PINNED") {
+		t.Errorf("header doesn't say PINNED after going back:\n%s", frameOf(m))
 	}
 
-	m = key(t, m, "j")
+	m = press(t, m, "j")
 	if m.switched != nil {
 		t.Error("a keypress didn't clear the switch notice")
 	}
-	m = key(t, m, "f")
-	if !m.followMode || !strings.Contains(m.View(), "FOLLOWING") {
-		t.Errorf("f didn't resume following:\n%s", m.View())
+	m = press(t, m, "f")
+	if !m.followMode || !strings.Contains(frameOf(m), "FOLLOWING") {
+		t.Errorf("f didn't resume following:\n%s", frameOf(m))
 	}
 }
 
@@ -101,7 +101,7 @@ func TestSwitchNoticeAndGoBack(t *testing.T) {
 func TestPDoesNotGoBack(t *testing.T) {
 	m := followModel(t, true)
 	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB, created: true})
-	if m = key(t, m, "p"); m.sessionID != sessB || !m.followMode {
+	if m = press(t, m, "p"); m.sessionID != sessB || !m.followMode {
 		t.Fatalf("after p: session %s follow=%v, want %s still following", m.sessionID, m.followMode, sessB)
 	}
 }
@@ -109,16 +109,16 @@ func TestPDoesNotGoBack(t *testing.T) {
 // n switches to the session a hint names.
 func TestHintSwitchKey(t *testing.T) {
 	m := followModel(t, false)
-	m = key(t, m, "n")
+	m = press(t, m, "n")
 	if m.sessionID != sessA {
 		t.Fatal("n without a hint switched sessions")
 	}
 	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB, created: true})
 	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB})
-	if !strings.Contains(m.View(), "new session bbbbbbbb started") {
-		t.Errorf("a new session's first write turned it into mere activity:\n%s", m.View())
+	if !strings.Contains(frameOf(m), "new session bbbbbbbb started") {
+		t.Errorf("a new session's first write turned it into mere activity:\n%s", frameOf(m))
 	}
-	m = key(t, m, "n")
+	m = press(t, m, "n")
 	if m.sessionID != sessB || m.hint != nil {
 		t.Errorf("after n: session %s hint %v, want %s and no hint", m.sessionID, m.hint, sessB)
 	}
@@ -190,7 +190,7 @@ func TestWatchSessionFileRemoved(t *testing.T) {
 	if cmd == nil {
 		t.Error("removed file didn't re-arm the waiter (a re-create must still be seen)")
 	}
-	view := m.View()
+	view := frameOf(m)
 	if !strings.Contains(view, "! session file removed • r to retry") &&
 		!strings.Contains(view, "⚠ session file removed • r to retry") {
 		t.Errorf("notify row missing the removal:\n%s", view)
@@ -362,7 +362,7 @@ func TestMessageAge(t *testing.T) {
 func TestStaleActivityForCurrentSessionIgnored(t *testing.T) {
 	m := followModel(t, false)
 	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB})
-	m = key(t, m, "n")
+	m = press(t, m, "n")
 	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB})
 	if m.hint != nil {
 		t.Errorf("hint names the current session: %+v", m.hint)
@@ -377,10 +377,10 @@ func TestExpiredHintIgnoredByN(t *testing.T) {
 	m := followModel(t, false)
 	m = send(t, m, sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB})
 	m.now = func() time.Time { return time.Now().Add(idleAfter + time.Minute) }
-	if strings.Contains(m.View(), "n to switch") {
+	if strings.Contains(frameOf(m), "n to switch") {
 		t.Fatal("expired hint still shown")
 	}
-	m = key(t, m, "n")
+	m = press(t, m, "n")
 	if m.sessionID != sessA {
 		t.Error("n switched to a hint no longer on screen")
 	}
@@ -422,11 +422,6 @@ var followViews = []followView{
 	},
 }
 
-func press(m tea.Model, k string) tea.Model {
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
-	return m
-}
-
 var (
 	createdB  = sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB, created: true}
 	activityB = sessionActivityMsg{path: "/p/" + sessB + ".jsonl", id: sessB}
@@ -444,7 +439,7 @@ func TestPinnedViewsHintAndSwitchWithN(t *testing.T) {
 			if got, want := v.notify(m), "new session bbbbbbbb started • n to switch"; !strings.Contains(got, want) {
 				t.Fatalf("notify row = %q, want %q", got, want)
 			}
-			m = press(m, "n")
+			m = press(t, m, "n")
 			if v.id(m) != sessB || v.follow(m) {
 				t.Fatalf("after n: session %s following %v, want %s pinned", v.id(m), v.follow(m), sessB)
 			}
@@ -485,13 +480,13 @@ func TestFollowKeyOverHint(t *testing.T) {
 	for _, v := range followViews {
 		t.Run(v.name, func(t *testing.T) {
 			m, _ := v.open(t, false).Update(createdB)
-			m = press(m, "f")
+			m = press(t, m, "f")
 			if v.id(m) != sessB || !v.follow(m) {
 				t.Errorf("f over a new-session hint: session %s following %v, want %s following", v.id(m), v.follow(m), sessB)
 			}
 
 			m, _ = v.open(t, false).Update(activityB)
-			m = press(m, "f")
+			m = press(t, m, "f")
 			if v.id(m) != sessA || !v.follow(m) {
 				t.Errorf("f over an activity hint: session %s following %v, want %s following", v.id(m), v.follow(m), sessA)
 			}

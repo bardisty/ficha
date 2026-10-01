@@ -57,7 +57,7 @@ func TestBreakdownFooterShowsSkippedAgents(t *testing.T) {
 	})
 	m = updated.(BreakdownModel)
 
-	view := m.View()
+	view := frameOf(m)
 	if !strings.Contains(view, "⚠ 2 skipped agent(s), 3 skipped line(s), 4 estimated cost(s)") {
 		t.Errorf("breakdown footer missing the combined accounting segment:\n%s", view)
 	}
@@ -78,7 +78,7 @@ func TestWatchFooterShowsSkippedAgents(t *testing.T) {
 	}})
 	m = updated.(Model)
 
-	view := m.View()
+	view := frameOf(m)
 	if !strings.Contains(view, "⚠ 1 skipped agent(s), 2 skipped line(s), 3 estimated cost(s)") {
 		t.Errorf("watch footer missing the combined accounting segment:\n%s", view)
 	}
@@ -116,7 +116,7 @@ func TestWatchEmptySessionDisclosesSkippedLines(t *testing.T) {
 	if !m.isEmptySession() {
 		t.Fatal("expected an empty session (0 messages, 0 cost)")
 	}
-	view := m.View()
+	view := frameOf(m)
 	if !strings.Contains(view, "Awaiting first message") {
 		t.Errorf("expected the empty state body:\n%s", view)
 	}

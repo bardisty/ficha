@@ -182,7 +182,7 @@ func TestPollResultFromBeforeALoadIsDropped(t *testing.T) {
 			m, res := sendPoll(t, m)
 
 			growFile(t, sessionPath)
-			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+			m = press(t, m, "r")
 			if !h.loading(m) {
 				t.Fatal("r did not reload")
 			}

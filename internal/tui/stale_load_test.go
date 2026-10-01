@@ -81,7 +81,7 @@ func TestBreakdownSwitchClearsUnknownFootnote(t *testing.T) {
 	m.unknownModels = []string{"m9"}
 	m.err = errTestStale
 	m.loading = false
-	if !strings.Contains(m.View(), "fallback pricing") {
+	if !strings.Contains(frameOf(m), "fallback pricing") {
 		t.Fatal("precondition: old session should show the fallback-pricing footnote")
 	}
 
@@ -98,8 +98,8 @@ func TestBreakdownSwitchClearsUnknownFootnote(t *testing.T) {
 	if !m.loading {
 		t.Fatal("expected the new session to be loading")
 	}
-	if strings.Contains(m.View(), "fallback pricing") {
-		t.Errorf("fallback-pricing footnote persisted into the new session during loading:\n%s", m.View())
+	if strings.Contains(frameOf(m), "fallback pricing") {
+		t.Errorf("fallback-pricing footnote persisted into the new session during loading:\n%s", frameOf(m))
 	}
 }
 

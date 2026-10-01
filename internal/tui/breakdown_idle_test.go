@@ -51,12 +51,12 @@ func TestBreakdownClockAgesHeader(t *testing.T) {
 	clock := goldenTime(12, 0, 0)
 	m := loadedBreakdown(t, 100, 24, chromeRows(clock.Add(-2*time.Minute-10*time.Second), 3))
 	m.now = func() time.Time { return clock }
-	if !strings.Contains(m.View(), "last msg 10s ago") {
-		t.Fatalf("header before the tick:\n%s", m.View())
+	if !strings.Contains(frameOf(m), "last msg 10s ago") {
+		t.Fatalf("header before the tick:\n%s", frameOf(m))
 	}
 	clock = clock.Add(time.Second)
 	updated, _ := m.Update(clockMsg{gen: m.clockGen})
-	if v := updated.(BreakdownModel).View(); !strings.Contains(v, "last msg 11s ago") {
+	if v := frameOf(updated.(BreakdownModel)); !strings.Contains(v, "last msg 11s ago") {
 		t.Errorf("header after the tick:\n%s", v)
 	}
 }
@@ -82,7 +82,7 @@ func TestBreakdownSpinnerStopsWhenLoaded(t *testing.T) {
 		msg     tea.Msg
 		loading bool
 	}{
-		{"r", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}, false},
+		{"r", keyMsg(t, "r"), false},
 		{"resume", tea.ResumeMsg{}, false},
 		{"write", fileChangedMsg{}, false},
 		{"switch", sessionActivityMsg{path: "/nonexistent/t.jsonl", id: "t", created: true}, true},
@@ -97,8 +97,8 @@ func TestBreakdownSpinnerStopsWhenLoaded(t *testing.T) {
 		if batchHas(cmd, isTick) != tc.loading {
 			t.Errorf("%s: spinner restarted = %v, want %v", tc.name, !tc.loading, tc.loading)
 		}
-		if strings.Contains(got.View(), "loading...") != tc.loading {
-			t.Errorf("%s: header shows loading... = %v, want %v:\n%s", tc.name, !tc.loading, tc.loading, got.View())
+		if strings.Contains(frameOf(got), "loading...") != tc.loading {
+			t.Errorf("%s: header shows loading... = %v, want %v:\n%s", tc.name, !tc.loading, tc.loading, frameOf(got))
 		}
 	}
 }
@@ -109,10 +109,10 @@ func TestBreakdownEmptySessionReloadKeepsStatus(t *testing.T) {
 	m := NewBreakdownModel("/nonexistent/s.jsonl", "s", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	updated, _ = updated.Update(breakdownMsgsMsg{})
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	updated = press(t, updated, "r")
 	// A resize redraws the table area while the reload is in flight.
 	updated, _ = updated.Update(tea.WindowSizeMsg{Width: 90, Height: 24})
-	v := updated.View()
+	v := frameOf(updated)
 	if strings.Contains(v, "loading...") {
 		t.Errorf("reload of an empty session shows loading...:\n%s", v)
 	}
@@ -131,7 +131,7 @@ func TestBreakdownLayoutCacheFollowsInputs(t *testing.T) {
 			t.Errorf("%s: cached layout %+v, want %+v", step, m.table, m.layout())
 		}
 		// The COST heading ends where the costs under it do.
-		lines := strings.Split(m.View(), "\n")
+		lines := strings.Split(frameOf(m), "\n")
 		var header, row string
 		for i, l := range lines {
 			if strings.Contains(l, "COST") && i+2 < len(lines) {

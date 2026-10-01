@@ -410,7 +410,7 @@ func TestViewFitsNarrowTerminal(t *testing.T) {
 	m := NewModel("/test/path", "test-session", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 30})
 	m = updated.(Model)
-	for i, line := range strings.Split(m.View(), "\n") {
+	for i, line := range strings.Split(frameOf(m), "\n") {
 		if w := lipgloss.Width(line); w > width {
 			t.Errorf("watch view line %d wider than terminal: %d > %d (%q)", i, w, width, line)
 		}
@@ -419,7 +419,7 @@ func TestViewFitsNarrowTerminal(t *testing.T) {
 	b := NewBreakdownModel("/test/path", "test-session", true, "", false)
 	bUpdated, _ := b.Update(tea.WindowSizeMsg{Width: width, Height: 30})
 	b = bUpdated.(BreakdownModel)
-	for i, line := range strings.Split(b.View(), "\n") {
+	for i, line := range strings.Split(frameOf(b), "\n") {
 		if w := lipgloss.Width(line); w > width {
 			t.Errorf("breakdown view line %d wider than terminal: %d > %d (%q)", i, w, width, line)
 		}

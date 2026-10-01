@@ -41,7 +41,7 @@ func watchViewWithUnknownModel(t *testing.T, noColor bool) string {
 	updated, _ = m.Update(analysisMsg{analysis: a})
 	m = updated.(Model)
 	m.lastUpdated = goldenTime(11, 30, 0)
-	return m.View()
+	return frameOf(m)
 }
 
 func TestWatchMarksUnknownModel(t *testing.T) {
@@ -123,7 +123,7 @@ func breakdownViewWithUnknownModel(t *testing.T, noColor bool) string {
 	})
 	m = updated.(BreakdownModel)
 	m.lastUpdated = goldenTime(11, 30, 0)
-	return m.View()
+	return frameOf(m)
 }
 
 func TestBreakdownMarksUnknownModel(t *testing.T) {
