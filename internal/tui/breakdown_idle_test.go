@@ -7,7 +7,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/muesli/termenv"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -49,7 +48,6 @@ func TestBreakdownClockChain(t *testing.T) {
 
 // The clock is what moves the header's age between loads.
 func TestBreakdownClockAgesHeader(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	clock := goldenTime(12, 0, 0)
 	m := loadedBreakdown(t, 100, 24, chromeRows(clock.Add(-2*time.Minute-10*time.Second), 3))
 	m.now = func() time.Time { return clock }
@@ -127,7 +125,6 @@ func TestBreakdownEmptySessionReloadKeepsStatus(t *testing.T) {
 // the width, and each of those changes brings it up to date: a stale one
 // misaligns the columns.
 func TestBreakdownLayoutCacheFollowsInputs(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	check := func(step string, m BreakdownModel) {
 		t.Helper()
 		if m.table != m.layout() {

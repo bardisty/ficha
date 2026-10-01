@@ -8,7 +8,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -38,7 +37,6 @@ func loadedBreakdown(t *testing.T, width, height int, msgs []models.BreakdownMes
 // The frame is exactly as tall as the terminal at every size: a frame one
 // row too tall scrolls the header off, one too short leaves a dead row.
 func TestBreakdownView_FillsTerminalExactly(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	for _, sz := range []struct{ w, h int }{{100, 40}, {80, 24}, {120, 10}, {60, 20}, {40, 15}, {39, 7}, {200, 60}} {
 		m := loadedBreakdown(t, sz.w, sz.h, chromeRows(goldenTime(10, 0, 0), 100))
 		lines := strings.Split(m.View(), "\n")
@@ -360,7 +358,6 @@ func TestBreakdownGoBack(t *testing.T) {
 // The rows tableView draws are the whole table's lines at the viewport's
 // offset, day dividers included, wherever it's scrolled.
 func TestBreakdownTableViewMatchesTableAtEveryOffset(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	rows := chromeRows(goldenTime(22, 0, 0), 60)
 	// A day divider partway down.
 	for i := 30; i < len(rows); i++ {

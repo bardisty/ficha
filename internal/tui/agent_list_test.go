@@ -213,7 +213,6 @@ func TestAgentRowsKeepTotals(t *testing.T) {
 // The live dot ages out on a clock tick, without waiting for a reload, and
 // the agent folds away with it.
 func TestAgentDotAgesOutOnClockTick(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	clock := foldNow
 	m := NewModel("/p/s.jsonl", "s", true, "", false)
 	m.now = func() time.Time { return clock }
@@ -239,7 +238,6 @@ func goldenAgentList(t *testing.T, noColor bool) string {
 }
 
 func TestGoldenWatchAgentsFolded(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "watch_agents_folded", goldenAgentList(t, true))
 }
 
@@ -249,7 +247,6 @@ func TestGoldenWatchAgentsFoldedColor(t *testing.T) {
 }
 
 func TestGoldenWatchAgentsFoldedASCII(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	useASCII(t)
 	checkGolden(t, "watch_agents_folded_ascii", goldenAgentList(t, true))
 }
@@ -258,7 +255,6 @@ func TestGoldenWatchAgentsFoldedASCII(t *testing.T) {
 // status at full width too, not only on a narrow terminal, so the short
 // name beside it can't be the only run that reads as having one.
 func TestRunHeadingStatusesAllOrNone(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	for _, width := range []int{0, 100, 60} {
 		m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
 		m.now = func() time.Time { return foldNow }

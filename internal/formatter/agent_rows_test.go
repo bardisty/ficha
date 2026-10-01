@@ -50,7 +50,6 @@ func TestAgentBreakdownMsgsColumnKeepsCostAligned(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			if noColor {
-				forceProfile(t, termenv.Ascii)
 			} else {
 				forceProfile(t, termenv.ANSI256)
 			}
@@ -85,7 +84,6 @@ func TestSummaryTreeRowsMsgsColumnKeepsCostAligned(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			if noColor {
-				forceProfile(t, termenv.Ascii)
 			} else {
 				forceProfile(t, termenv.ANSI256)
 			}

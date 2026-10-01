@@ -9,13 +9,11 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/muesli/termenv"
 )
 
 // A waiting view says where it waits, and the first session to appear
 // replaces it, pinned or not.
 func TestWaitingModel(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	for _, follow := range []bool{true, false} {
 		m := NewWaitingModel("/cfg/projects/-w-webapp", "~/work/webapp", true, follow)
 		m = sized(t, m, 80, 24)
@@ -77,7 +75,6 @@ func TestSessionWatcherAdoptsNewProjectDir(t *testing.T) {
 // If the session watcher can't start, the waiting view says so and r
 // retries it, rather than offering a retry that does nothing.
 func TestWaitingWatcherFailureRetries(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewWaitingModel(t.TempDir()+"/-w-webapp", "~/work/webapp", true, true)
 	m = sized(t, m, 80, 24)
 	m = send(t, m, errorMsg{err: errors.New("too many open files")})

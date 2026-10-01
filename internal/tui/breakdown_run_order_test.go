@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/muesli/termenv"
 )
 
 // writeRunOrderSession writes a session whose two review-changes runs have
@@ -43,7 +42,6 @@ func writeRunOrderSession(t *testing.T) string {
 // Breakdown numbers a workflow's repeated runs by start, so the first run
 // is rc and the key names it first, whichever run ID sorts first.
 func TestBreakdownRunTagsFollowStart(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	m := NewBreakdownModel(writeRunOrderSession(t), "sess", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = updated.(BreakdownModel)

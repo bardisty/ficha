@@ -178,7 +178,6 @@ func TestSummaryTableSumAlignsUnderCost(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.noColor {
-				forceProfile(t, termenv.Ascii)
 			} else {
 				forceProfile(t, termenv.ANSI256)
 			}

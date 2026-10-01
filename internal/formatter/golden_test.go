@@ -335,7 +335,6 @@ func goldenGlobalAnalysis() *models.GlobalAnalysis {
 // --- golden tests: FormatSessionTable ---
 
 func TestGoldenSessionTableShow(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "session_table_show", FormatSessionTable(goldenShowAnalysis(), true, 0))
 }
 
@@ -345,7 +344,6 @@ func TestGoldenSessionTableShowColor(t *testing.T) {
 }
 
 func TestGoldenSessionTableSummary(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "session_table_summary", FormatSessionTable(goldenSummaryAnalysis(), true, 0))
 }
 
@@ -386,7 +384,6 @@ func goldenListResults() []models.SessionResult {
 var goldenListOptions = ListTableOptions{Now: time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC), Project: "~/src/app"}
 
 func TestGoldenSessionList(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "session_list", FormatSessionListTable(goldenListResults(), true, goldenListOptions))
 }
 
@@ -409,7 +406,6 @@ func goldenGlobalOptions(details bool) GlobalTableOptions {
 }
 
 func TestGoldenGlobalTable(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "global_table", FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(false)))
 }
 
@@ -419,7 +415,6 @@ func TestGoldenGlobalTableColor(t *testing.T) {
 }
 
 func TestGoldenGlobalTableDetails(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "global_table_details", FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(true)))
 }
 
@@ -511,14 +506,12 @@ func summaryDetailsAnalysis(t *testing.T, entries []models.SessionEntry) (*model
 }
 
 func TestGoldenSummaryDetails(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	entries := summaryDetailsFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
 	checkGolden(t, "summary_details", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, 0))
 }
 
 func TestGoldenSummaryDetailsExpandAgents(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	entries := summaryDetailsFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
 	checkGolden(t, "summary_details_expand", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0))
@@ -616,19 +609,16 @@ func goldenShowLongWorkflowAnalysis() *models.SessionAnalysis {
 // Piped, the label column grows to the widest heading, so the short run
 // keeps its "(running)".
 func TestGoldenSessionTableShowLongAndRunningWorkflows(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "session_table_show_long_running_workflows", FormatSessionTable(goldenShowLongWorkflowAnalysis(), true, 0))
 }
 
 // At 60 columns the column grows only as far as the cost still fits, and
 // the headings lose their statuses together.
 func TestGoldenSessionTableShowLongAndRunningWorkflowsNarrow(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "session_table_show_long_running_workflows_w60", FormatSessionTable(goldenShowLongWorkflowAnalysis(), true, 60))
 }
 
 func TestGoldenSessionTableShowWorkflows(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "session_table_show_workflows", FormatSessionTable(goldenShowWorkflowAnalysis(), true, 0))
 }
 
@@ -699,14 +689,12 @@ func summaryWorkflowFixture(t *testing.T) []models.SessionEntry {
 }
 
 func TestGoldenSummaryDetailsExpandWorkflows(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	entries := summaryWorkflowFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
 	checkGolden(t, "summary_details_expand_workflows", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0))
 }
 
 func TestGoldenSummaryDetailsExpandWorkflowsASCII(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	useASCII(t)
 	entries := summaryWorkflowFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
@@ -731,7 +719,6 @@ func useASCII(t *testing.T) {
 
 // --ascii --no-color: plain ASCII frames and symbols, no escapes.
 func TestGoldenSessionTableShowASCII(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	useASCII(t)
 	checkGolden(t, "session_table_show_ascii", FormatSessionTable(goldenShowAnalysis(), true, 0))
 }
@@ -744,7 +731,6 @@ func TestGoldenSessionTableShowASCIIColor(t *testing.T) {
 }
 
 func TestGoldenSummaryDetailsExpandASCII(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	useASCII(t)
 	analysis, results := summaryDetailsAnalysis(t, summaryDetailsFixture(t))
 	checkGolden(t, "summary_details_expand_ascii", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0))
@@ -768,14 +754,12 @@ func goldenMixedWidthAnalysis() *models.SessionAnalysis {
 }
 
 func TestGoldenSessionTableShowMixedWidths(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "session_table_show_mixed_widths", FormatSessionTable(goldenMixedWidthAnalysis(), true, 0))
 }
 
 // A workflow heading wider than the default label column widens it, and
 // the cost column moves right with it.
 func TestGoldenSessionTableShowLongWorkflow(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	a := goldenShowWorkflowAnalysis()
 	a.Workflows[0].Name = "dependency-upgrade-audit"
 	checkGolden(t, "session_table_show_long_workflow", FormatSessionTable(a, true, 0))

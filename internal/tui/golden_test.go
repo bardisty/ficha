@@ -237,7 +237,6 @@ func goldenWatchViewSized(t *testing.T, noColor bool, width, height int) string 
 }
 
 func TestGoldenWatchView(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "watch_view", goldenWatchView(t, true))
 }
 
@@ -249,28 +248,24 @@ func TestGoldenWatchViewColor(t *testing.T) {
 // At a common terminal size the first screen is the top of the body — the
 // total and the token rows — with the rest flagged in the footer rule.
 func TestGoldenWatchView80x24(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "watch_view_80x24", goldenWatchViewSized(t, true, 80, 24))
 }
 
 // A narrow terminal gets the whole body, fitted: each row sheds whole
 // pieces from the right, never half a word, and the costs stay on screen.
 func TestGoldenWatchView50(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "watch_view_50x70", goldenWatchViewSized(t, true, 50, 70))
 }
 
 // A short terminal gets compact chrome: a plain header line, no help row,
 // and the body's blank spacers dropped.
 func TestGoldenWatchViewCompact(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "watch_view_80x12", goldenWatchViewSized(t, true, 80, 12))
 }
 
 // The compact header on a session with no message yet, at the two narrowest
 // widths: the status shortens to "no msgs" and nothing is cut.
 func TestGoldenWatchCompactEmptyNarrow(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	for _, width := range []int{40, 41} {
 		m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", true, "", true)
 		m.project = "webapp"
@@ -372,14 +367,12 @@ func goldenBreakdownViewSized(t *testing.T, noColor bool, width, height int) str
 }
 
 func TestGoldenBreakdownView(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "breakdown_view", goldenBreakdownView(t, true))
 }
 
 // Half a 160-column screen: the row is too wide for every column, so IN gives
 // way whole rather than the right edge cutting C_RD in half.
 func TestGoldenBreakdownView79(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "breakdown_view_79", goldenBreakdownViewSized(t, true, 79, 24))
 }
 
@@ -397,7 +390,6 @@ func useASCII(t *testing.T) {
 
 // --ascii --no-color: plain ASCII frames, symbols and chart, no escapes.
 func TestGoldenWatchViewASCII(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	useASCII(t)
 	checkGolden(t, "watch_view_ascii", goldenWatchView(t, true))
 }
@@ -410,7 +402,6 @@ func TestGoldenWatchViewASCIIColor(t *testing.T) {
 }
 
 func TestGoldenBreakdownViewASCII(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	useASCII(t)
 	checkGolden(t, "breakdown_view_ascii", goldenBreakdownView(t, true))
 }
@@ -418,7 +409,6 @@ func TestGoldenBreakdownViewASCII(t *testing.T) {
 // breakdown's header panel says "loading..." while the first load is in
 // flight, and a reload keeps the last status up.
 func TestGoldenBreakdownHeaderLoading(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	header := func(m tea.Model) string {
 		return strings.Join(strings.Split(m.View(), "\n")[:3], "\n")
 	}
