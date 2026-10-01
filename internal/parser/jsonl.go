@@ -83,6 +83,12 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 			continue
 		}
 
+		// Most lines are records the parse has no use for. Telling that
+		// from one scan is far cheaper than decoding them to find out.
+		if droppable(line) {
+			continue
+		}
+
 		var msg models.JSONLMessage
 		if err := json.Unmarshal(line, &msg); err != nil {
 			// Track skipped lines instead of silently ignoring

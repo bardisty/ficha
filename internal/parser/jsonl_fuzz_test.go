@@ -7,25 +7,27 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 )
 
+// jsonlFuzzSeeds starts every fuzz test that takes transcript bytes.
+var jsonlFuzzSeeds = [][]byte{
+	[]byte(""),
+	[]byte("\n\n\n"),
+	[]byte(`{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":50}}}`),
+	[]byte(`{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":-5,"output_tokens":9223372036854775807}}}`),
+	[]byte(`{"type":"assistant","message":{"usage":{"input_tokens":1e309}}}`),
+	[]byte(`{"type":"user","message":"hello"}` + "\n" + `not json at all` + "\n" + `{"type":"assistant","message":{"id":"a"}}`),
+	[]byte(`{"type":"assistant","message":null}`),
+	[]byte("{\"type\":\"assistant\"\x00,\"message\":{}}"),
+	[]byte(`{"type":"assistant","message":{"id":"dup","usage":{}}}` + "\n" + `{"type":"assistant","message":{"id":"dup","usage":{}}}`),
+	[]byte(`{"a":` + string(bytes.Repeat([]byte("["), 1000)) + `}`),
+	[]byte("{\"type\":\"assistant\"}\r\n{\"type\":\"assistant\",\"message\":{}}\r\n"),
+	[]byte(`{"type":"assistant","message":{"id":"m1"}}`), // no trailing newline
+}
+
 // FuzzParseJSONL feeds raw bytes to ParseJSONLWithResult, which parses
 // externally-produced session files. The parser must never panic or error on
 // in-memory input, and its results must satisfy basic invariants.
 func FuzzParseJSONL(f *testing.F) {
-	seeds := [][]byte{
-		[]byte(""),
-		[]byte("\n\n\n"),
-		[]byte(`{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":50}}}`),
-		[]byte(`{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":-5,"output_tokens":9223372036854775807}}}`),
-		[]byte(`{"type":"assistant","message":{"usage":{"input_tokens":1e309}}}`),
-		[]byte(`{"type":"user","message":"hello"}` + "\n" + `not json at all` + "\n" + `{"type":"assistant","message":{"id":"a"}}`),
-		[]byte(`{"type":"assistant","message":null}`),
-		[]byte("{\"type\":\"assistant\"\x00,\"message\":{}}"),
-		[]byte(`{"type":"assistant","message":{"id":"dup","usage":{}}}` + "\n" + `{"type":"assistant","message":{"id":"dup","usage":{}}}`),
-		[]byte(`{"a":` + string(bytes.Repeat([]byte("["), 1000)) + `}`),
-		[]byte("{\"type\":\"assistant\"}\r\n{\"type\":\"assistant\",\"message\":{}}\r\n"),
-		[]byte(`{"type":"assistant","message":{"id":"m1"}}`), // no trailing newline
-	}
-	for _, s := range seeds {
+	for _, s := range jsonlFuzzSeeds {
 		f.Add(s)
 	}
 
