@@ -1268,14 +1268,15 @@ func TestAnalyzeMultipleSessions_UnreadableParentDisclosesAgents(t *testing.T) {
 	}
 
 	// Build entries the way `list` does, so the two surfaces can be compared.
-	entries, err := parser.DiscoverSessionsFromDisk(tmpDir, true)
+	entries, err := parser.DiscoverSessionsFromDisk(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var badEntry *models.SessionEntry
 	for i := range entries {
 		if entries[i].SessionID == "sess-bad" {
-			badEntry = &entries[i]
+			counted := parser.CountSessionMessages(entries[i])
+			badEntry = &counted
 		}
 	}
 	if badEntry == nil {

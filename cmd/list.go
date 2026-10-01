@@ -41,7 +41,7 @@ func runList(cfg *config) error {
 		return runListTable(cfg)
 	}
 
-	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, false)
+	sessions, projectDir, err := loadProjectSessionsWithDir(cfg)
 	if err != nil {
 		return err
 	}
@@ -131,10 +131,9 @@ func countedEntry(r models.SessionResult) models.SessionEntry {
 
 // runListTable prices every session the way summary --details does, cross-
 // session duplicates attributed once, so a session's cost here matches its
-// row there. The table shows no message counts, so it skips the
-// discovery-time scan.
+// row there.
 func runListTable(cfg *config) error {
-	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, false)
+	sessions, projectDir, err := loadProjectSessionsWithDir(cfg)
 	if err != nil {
 		return err
 	}

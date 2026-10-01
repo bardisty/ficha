@@ -43,11 +43,9 @@ func ParseSessionsIndex(path string) (*models.SessionsIndex, error) {
 }
 
 // DiscoverSessionsFromDisk scans the project directory for .jsonl session files
-// and builds SessionEntry records from file metadata. countMessages controls
-// whether each file is scanned for its message count. Every command passes
-// false and takes counts from its analysis, which parses the same files (see
-// buildDiskEntry).
-func DiscoverSessionsFromDisk(projectDir string, countMessages bool) ([]models.SessionEntry, error) {
+// and builds SessionEntry records from file metadata. It opens no transcript,
+// so the entries carry no message counts (see buildDiskEntry).
+func DiscoverSessionsFromDisk(projectDir string) ([]models.SessionEntry, error) {
 	entries, err := os.ReadDir(projectDir)
 	if err != nil {
 		return nil, err
@@ -67,7 +65,7 @@ func DiscoverSessionsFromDisk(projectDir string, countMessages bool) ([]models.S
 			continue // Skip files we can't stat
 		}
 
-		sessions = append(sessions, buildDiskEntry(projectDir, sessionID, fullPath, info.ModTime(), countMessages))
+		sessions = append(sessions, buildDiskEntry(projectDir, sessionID, fullPath, info.ModTime()))
 	}
 
 	return sessions, nil
@@ -82,92 +80,70 @@ func SessionFromFile(fullPath string) (models.SessionEntry, error) {
 	}
 	base := filepath.Base(fullPath)
 	sessionID := strings.TrimSuffix(base, filepath.Ext(base))
-	return buildDiskEntry(filepath.Dir(fullPath), sessionID, fullPath, info.ModTime(), false), nil
+	return buildDiskEntry(filepath.Dir(fullPath), sessionID, fullPath, info.ModTime()), nil
 }
 
-// CountSessionMessages returns entry with the counts and skip accounting of
-// the message-count scan (see buildDiskEntry). `list` takes a readable
-// session's counts from its analysis. It calls this for a session whose own
-// transcript can't be read, which has no analysis but whose agents still
-// count.
+// CountSessionMessages returns entry with message counts and skip accounting
+// from a parse of its transcript and each of its agents'. `list` takes a
+// readable session's counts from its analysis. It calls this for a session
+// whose own transcript can't be read, which has no analysis but whose agents
+// still count.
+//
+// The counts describe what the parse could read. A transcript that can't be
+// opened sets SkippedSessions and leaves its row at zero messages, which would
+// otherwise look like an empty session. An agent file that can't be opened
+// moves from AgentCount to SkippedAgents, so the two still add up to what is
+// on disk.
 func CountSessionMessages(entry models.SessionEntry) models.SessionEntry {
-	counted := buildDiskEntry(filepath.Dir(entry.FullPath), entry.SessionID, entry.FullPath, entry.Modified, true)
+	counted := buildDiskEntry(filepath.Dir(entry.FullPath), entry.SessionID, entry.FullPath, entry.Modified)
 	counted.Created = entry.Created
 	counted.ProjectPath = entry.ProjectPath
+
+	// countMessagesInFile returns a negative count on file access / I/O error.
+	if c, skips := countMessagesInFile(counted.FullPath); c >= 0 {
+		counted.MessageCount = c
+		counted.SkippedLines = skips.Count
+		if skips.Count > 0 {
+			counted.SkippedFiles = append(counted.SkippedFiles, skips)
+		}
+	} else {
+		counted.SkippedSessions = 1
+	}
+	for _, agentPath := range counted.AgentPaths {
+		c, skips := countMessagesInFile(agentPath)
+		if c < 0 {
+			counted.SkippedAgents++
+			counted.AgentCount--
+			continue
+		}
+		counted.AgentMessageCount += c
+		counted.SkippedLines += skips.Count
+		if skips.Count > 0 {
+			skips.AgentID = ExtractAgentID(agentPath)
+			counted.SkippedFiles = append(counted.SkippedFiles, skips)
+		}
+	}
+	// The total includes agent messages, as the analysis's does.
+	counted.MessageCount += counted.AgentMessageCount
 	return counted
 }
 
-// buildDiskEntry builds a SessionEntry for a session file on disk, discovering
-// its agent sub-sessions and (when countMessages is true) counting messages.
-//
-// Message counting fully scans every parent and agent file. That cost is wasted
-// on analysis paths, which re-parse the same files and recompute counts anyway,
-// so they pass countMessages=false and leave the counts zero. Agent discovery
-// is a cheap directory listing and always runs.
-//
-// The skip counters have three sources: unreadable agent directories (found by
-// discovery, which always runs), and — only when the scan runs — agent files
-// and the parent file that cannot be read. With countMessages=false the scan is
-// skipped, so only the directory count is populated; harmless, because the
-// analysis paths that pass false detect unreadable files themselves.
-//
-// AgentCount, like MessageCount, describes what the scan could read: an agent
-// file it could not open lands in SkippedAgents instead, so AgentCount +
-// SkippedAgents recovers what is on disk. Without the scan AgentCount is the
-// discovery count, which is the best the listing alone can know.
-func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time, countMessages bool) models.SessionEntry {
+// buildDiskEntry builds a SessionEntry for a session file on disk and
+// discovers its agent sub-sessions. That is a directory listing: no transcript
+// is opened, because a command that prints counts parses them in its analysis
+// and takes the counts from there. So the message counts stay zero, AgentCount is the number
+// of agent files listed, and SkippedAgents is the number of agent directories
+// that couldn't be listed.
+func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time) models.SessionEntry {
 	agentPaths, unreadableDirs := DiscoverAgentSessions(projectDir, sessionID)
-	skippedAgents := unreadableDirs
-
-	// Count parent + agent messages for display. countMessagesInFile returns a
-	// negative count on file access / I/O error.
-	parentMsgCount := 0
-	agentMsgCount := 0
-	skippedLines := 0
-	skippedSessions := 0
-	var skippedFiles []models.FileSkips
-	readableAgents := len(agentPaths)
-	if countMessages {
-		if c, skips := countMessagesInFile(fullPath); c >= 0 {
-			parentMsgCount = c
-			skippedLines += skips.Count
-			if skips.Count > 0 {
-				skippedFiles = append(skippedFiles, skips)
-			}
-		} else {
-			// The session's own transcript is unreadable: its row would show a
-			// zero message count that looks like an empty session.
-			skippedSessions = 1
-		}
-		for _, agentPath := range agentPaths {
-			c, skips := countMessagesInFile(agentPath)
-			if c < 0 {
-				skippedAgents++
-				readableAgents--
-				continue
-			}
-			agentMsgCount += c
-			skippedLines += skips.Count
-			if skips.Count > 0 {
-				skips.AgentID = ExtractAgentID(agentPath)
-				skippedFiles = append(skippedFiles, skips)
-			}
-		}
-	}
-
 	return models.SessionEntry{
-		SessionID:         sessionID,
-		FullPath:          fullPath,
-		MessageCount:      parentMsgCount + agentMsgCount, // Total for consistency
-		Created:           modTime,                        // Best approximation
-		Modified:          modTime,
-		AgentPaths:        agentPaths,
-		AgentCount:        readableAgents,
-		AgentMessageCount: agentMsgCount,
-		SkippedSessions:   skippedSessions,
-		SkippedAgents:     skippedAgents,
-		SkippedLines:      skippedLines,
-		SkippedFiles:      skippedFiles,
+		SessionID:     sessionID,
+		FullPath:      fullPath,
+		Created:       modTime, // Best approximation
+		Modified:      modTime,
+		AgentPaths:    agentPaths,
+		AgentCount:    len(agentPaths),
+		SkippedAgents: unreadableDirs,
 	}
 }
 
@@ -175,12 +151,10 @@ func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time, c
 // Index entries take precedence for metadata (Created time, etc.).
 // Index-only entries (present in the index but missed by the disk scan) are
 // kept only if their FullPath is the top-level {sessionId}.jsonl inside
-// projectDir and still exists; their message counts and agent info are
-// recomputed from disk because the index may be stale. countMessages is
-// forwarded to that rebuild so analysis paths skip the message-count scan
-// (see buildDiskEntry). Returns merged list and count of orphaned sessions
-// found on disk.
-func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.SessionEntry, projectDir string, countMessages bool) ([]models.SessionEntry, int) {
+// projectDir and still exists; they are rebuilt from disk as discovery builds
+// them, because the index's counts and agent info may be stale.
+// Returns merged list and count of orphaned sessions found on disk.
+func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.SessionEntry, projectDir string) ([]models.SessionEntry, int) {
 	// Build map from index for fast lookup
 	indexMap := make(map[string]models.SessionEntry)
 	if index != nil {
@@ -236,7 +210,7 @@ func MergeSessionSources(index *models.SessionsIndex, diskSessions []models.Sess
 		if err != nil || info.IsDir() {
 			continue
 		}
-		rebuilt := buildDiskEntry(projectDir, e.SessionID, fullPath, info.ModTime(), countMessages)
+		rebuilt := buildDiskEntry(projectDir, e.SessionID, fullPath, info.ModTime())
 		// Index metadata still takes precedence, as in the matched branch above
 		rebuilt.Created = e.Created
 		rebuilt.ProjectPath = e.ProjectPath

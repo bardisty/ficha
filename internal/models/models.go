@@ -428,13 +428,14 @@ type SessionEntry struct {
 	AgentPaths        []string `json:"agent_paths,omitempty"`
 	AgentCount        int      `json:"agent_count"`
 	AgentMessageCount int      `json:"agent_message_count"` // Messages from agents (for list display)
-	// Skip accounting for the discovery-time scan `list` performs. Zero on the
-	// analysis paths, which skip the scan and do their own accounting.
+	// Skip accounting for `list`. Discovery fills only SkippedAgents, with the
+	// agent directories it couldn't list. The rest comes from the session's
+	// analysis, or from parser.CountSessionMessages when it has none.
 	SkippedSessions int `json:"skipped_sessions,omitempty"` // 1 when this session's own transcript could not be read
 	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
 	SkippedLines    int `json:"skipped_lines,omitempty"`    // JSONL lines skipped (malformed or oversized), incl. agents
 	// SkippedFiles names the transcripts behind SkippedLines, the session's
-	// own first, for -v. The scan fills it from the same parse as the count,
+	// own first, for -v. It is filled from the same parse as the count,
 	// so the files always add up to SkippedLines.
 	SkippedFiles []FileSkips `json:"-"`
 }

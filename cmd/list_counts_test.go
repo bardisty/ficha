@@ -66,16 +66,15 @@ func makeUnreadable(t *testing.T, path string) {
 }
 
 // listEntries returns what `list -f json` and `-f csv` print counts from,
-// next to what the discovery scan counts for the same sessions.
+// next to what a scan of each of the same sessions counts.
 func listEntries(t *testing.T, proj string) (got, want []models.SessionEntry) {
 	t.Helper()
-	want, err := parser.DiscoverSessionsFromDisk(proj, true)
+	sessions, err := parser.DiscoverSessionsFromDisk(proj)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions, err := parser.DiscoverSessionsFromDisk(proj, false)
-	if err != nil {
-		t.Fatal(err)
+	for _, s := range sessions {
+		want = append(want, parser.CountSessionMessages(s))
 	}
 	_, results, err := analyzer.AnalyzeMultipleSessions(sessions)
 	if err != nil {

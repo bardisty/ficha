@@ -69,7 +69,7 @@ func completeSessionIDs(cfg *config) cobra.CompletionFunc {
 		// A note or warning from the lookup would land in the shell's
 		// candidate list.
 		cfg.stdout, cfg.stderr = io.Discard, io.Discard
-		sessions, err := loadProjectSessions(cfg, false)
+		sessions, err := loadProjectSessions(cfg)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
