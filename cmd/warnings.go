@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,16 +55,6 @@ func writeWarning(cfg *config, format string, args ...any) {
 
 func writeLabeled(cfg *config, label, format string, args ...any) {
 	fmt.Fprint(cfg.stderr, wrapStderr(cfg.stderr, label+fmt.Sprintf(format, args...)+"\n"))
-}
-
-// errorText is err's message, with the path a file error names marked so a
-// wrapped warning keeps it whole.
-func errorText(err error) string {
-	var pathErr *fs.PathError
-	if errors.As(err, &pathErr) {
-		return strings.Replace(err.Error(), pathErr.Path, render.NoBreak(pathErr.Path), 1)
-	}
-	return err.Error()
 }
 
 func writeReport(stdout, stderr io.Writer, warnings *bytes.Buffer, output string, warningsLast bool) {

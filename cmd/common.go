@@ -67,9 +67,10 @@ func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.Sessi
 	// Try to load index (may fail or be incomplete)
 	indexPath := paths.GetSessionsIndexPath(projDir)
 	index, indexErr := parser.ParseSessionsIndex(indexPath)
-	if indexErr != nil && !os.IsNotExist(indexErr) {
-		// Index exists but is malformed - warn but continue
-		writeWarning(cfg, "failed to parse sessions-index.json: %s", errorText(indexErr))
+	if indexErr != nil && !errors.Is(indexErr, fs.ErrNotExist) {
+		// The sessions on disk still load without the index. Only a file error
+		// carries the path, so it's added here and the error's own copy dropped.
+		writeWarning(cfg, "ignoring %s: %s", render.NoBreak(indexPath), unwrapPathError(indexErr))
 	}
 
 	// Merge sources
