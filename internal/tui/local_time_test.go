@@ -30,7 +30,7 @@ func breakdownViewWithInsights(t *testing.T, msgs []models.BreakdownMessage, ins
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = updated.(BreakdownModel)
 	updated, _ = m.Update(breakdownMsgsMsg{messages: msgs, insights: insights, totalCost: 0.3, minCost: 0.1, maxCost: 0.1})
-	return updated.(BreakdownModel).View()
+	return frameOf(updated.(BreakdownModel))
 }
 
 func crossMidnightMessages() []models.BreakdownMessage {
@@ -112,7 +112,7 @@ func TestWatchInsightTimesAreLocal(t *testing.T) {
 		updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 60})
 		m = updated.(Model)
 		updated, _ = m.Update(analysisMsg{analysis: goldenViewAnalysis()})
-		out := updated.(Model).View()
+		out := frameOf(updated.(Model))
 		// Fixture Last and Peak are 11:29:55 and 10:42:13 UTC (watch shows
 		// no First row)
 		for _, want := range []string{"04:29:55", "03:42:13"} {

@@ -218,7 +218,7 @@ func TestWatchQuitCompletesAfterMixedReloads(t *testing.T) {
 
 	quitDone := make(chan struct{})
 	go func() {
-		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+		m.Update(keyMsg(t, "q"))
 		close(quitDone)
 	}()
 	select {
@@ -252,7 +252,7 @@ func TestBreakdownQuitCompletesAfterMixedReloads(t *testing.T) {
 
 	quitDone := make(chan struct{})
 	go func() {
-		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+		m.Update(keyMsg(t, "q"))
 		close(quitDone)
 	}()
 	select {

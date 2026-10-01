@@ -233,7 +233,7 @@ func goldenWatchViewSized(t *testing.T, noColor bool, width, height int) string 
 	updated, _ = m.Update(analysisMsg{analysis: goldenViewAnalysis()})
 	m = updated.(Model)
 	m.lastUpdated = goldenTime(11, 30, 0)
-	return m.View()
+	return frameOf(m)
 }
 
 func TestGoldenWatchView(t *testing.T) {
@@ -274,7 +274,7 @@ func TestGoldenWatchCompactEmptyNarrow(t *testing.T) {
 		updated, _ = updated.Update(analysisMsg{analysis: &models.SessionAnalysis{}})
 		m = updated.(Model)
 		m.lastUpdated = goldenTime(11, 30, 0)
-		checkGolden(t, fmt.Sprintf("watch_empty_%dx14", width), m.View())
+		checkGolden(t, fmt.Sprintf("watch_empty_%dx14", width), frameOf(m))
 	}
 }
 
@@ -363,7 +363,7 @@ func goldenBreakdownViewSized(t *testing.T, noColor bool, width, height int) str
 	})
 	m = updated.(BreakdownModel)
 	m.lastUpdated = goldenTime(11, 30, 0)
-	return m.View()
+	return frameOf(m)
 }
 
 func TestGoldenBreakdownView(t *testing.T) {
@@ -410,7 +410,7 @@ func TestGoldenBreakdownViewASCII(t *testing.T) {
 // flight, and a reload keeps the last status up.
 func TestGoldenBreakdownHeaderLoading(t *testing.T) {
 	header := func(m tea.Model) string {
-		return strings.Join(strings.Split(m.View(), "\n")[:3], "\n")
+		return strings.Join(strings.Split(frameOf(m), "\n")[:3], "\n")
 	}
 	m := NewBreakdownModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", true, "", false)
 	m.now = func() time.Time { return goldenTime(11, 30, 0) }
@@ -419,6 +419,6 @@ func TestGoldenBreakdownHeaderLoading(t *testing.T) {
 	checkGolden(t, "breakdown_header_first_load", header(model))
 
 	model, _ = model.Update(breakdownMsgsMsg{messages: goldenBreakdownMessages(), insights: &models.MessageInsights{}})
-	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	model = press(t, model, "r")
 	checkGolden(t, "breakdown_header_reload", header(model))
 }

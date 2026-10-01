@@ -45,7 +45,7 @@ func TestWatchIgnoresSyntheticModel(t *testing.T) {
 	m = updated.(Model)
 	updated, _ = m.Update(msg)
 	m = updated.(Model)
-	out := stripANSI(m.View())
+	out := stripANSI(frameOf(m))
 
 	if strings.Contains(out, "fallback pricing") {
 		t.Errorf("watch footnote flags <synthetic>:\n%s", out)
@@ -75,7 +75,7 @@ func TestWatchAllSyntheticSessionHasNoCostByModel(t *testing.T) {
 	m = updated.(Model)
 	updated, _ = m.Update(msg)
 	m = updated.(Model)
-	if out := m.View(); strings.Contains(out, "COST BY MODEL") {
+	if out := frameOf(m); strings.Contains(out, "COST BY MODEL") {
 		t.Errorf("watch draws COST BY MODEL with no model under it:\n%s", out)
 	}
 }
@@ -97,7 +97,7 @@ func TestBreakdownIgnoresSyntheticModel(t *testing.T) {
 	m = updated.(BreakdownModel)
 	updated, _ = m.Update(msg)
 	m = updated.(BreakdownModel)
-	out := stripANSI(m.View())
+	out := stripANSI(frameOf(m))
 
 	if strings.Contains(out, "fallback pricing") {
 		t.Errorf("breakdown footnote flags <synthetic>:\n%s", out)

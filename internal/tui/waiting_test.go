@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // A waiting view says where it waits, and the first session to appear
@@ -17,7 +15,7 @@ func TestWaitingModel(t *testing.T) {
 	for _, follow := range []bool{true, false} {
 		m := NewWaitingModel("/cfg/projects/-w-webapp", "~/work/webapp", true, follow)
 		m = sized(t, m, 80, 24)
-		view := m.View()
+		view := frameOf(m)
 		for _, want := range []string{"webapp │ ● ", "waiting for a session", "Waiting for a Claude Code session in ~/work/webapp…"} {
 			if !strings.Contains(view, want) {
 				t.Errorf("follow=%v: waiting view missing %q:\n%s", follow, want, view)
@@ -25,7 +23,7 @@ func TestWaitingModel(t *testing.T) {
 		}
 
 		for _, k := range []string{"r", "j", "n", "-"} {
-			if m = key(t, m, k); !m.waiting() || m.err != nil || m.loading {
+			if m = press(t, m, k); !m.waiting() || m.err != nil || m.loading {
 				t.Fatalf("follow=%v: %q left the wait (waiting=%v err=%v loading=%v)", follow, k, m.waiting(), m.err, m.loading)
 			}
 		}
@@ -34,8 +32,8 @@ func TestWaitingModel(t *testing.T) {
 		if m.sessionID != sessA {
 			t.Fatalf("follow=%v: first session didn't replace the wait", follow)
 		}
-		if strings.Contains(m.View(), "- to go back") {
-			t.Errorf("follow=%v: offers going back to nothing:\n%s", follow, m.View())
+		if strings.Contains(frameOf(m), "- to go back") {
+			t.Errorf("follow=%v: offers going back to nothing:\n%s", follow, frameOf(m))
 		}
 	}
 }
@@ -78,10 +76,10 @@ func TestWaitingWatcherFailureRetries(t *testing.T) {
 	m := NewWaitingModel(t.TempDir()+"/-w-webapp", "~/work/webapp", true, true)
 	m = sized(t, m, 80, 24)
 	m = send(t, m, errorMsg{err: errors.New("too many open files")})
-	if !strings.Contains(m.View(), "too many open files") {
-		t.Fatalf("watcher failure not shown:\n%s", m.View())
+	if !strings.Contains(frameOf(m), "too many open files") {
+		t.Fatalf("watcher failure not shown:\n%s", frameOf(m))
 	}
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	updated, cmd := m.Update(keyMsg(t, "r"))
 	m = updated.(Model)
 	if cmd == nil || m.err != nil {
 		t.Fatal("r didn't retry the session watcher")

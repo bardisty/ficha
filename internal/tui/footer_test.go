@@ -140,12 +140,6 @@ func load(t *testing.T, m Model, a *models.SessionAnalysis) Model {
 	return updated.(Model)
 }
 
-func key(t *testing.T, m Model, k string) Model {
-	t.Helper()
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
-	return updated.(Model)
-}
-
 // watch opens at the top so the total is on the first screen, and a reload
 // or resize never moves the reader.
 func TestWatchOpensAtTopAndKeepsPosition(t *testing.T) {
@@ -156,31 +150,31 @@ func TestWatchOpensAtTopAndKeepsPosition(t *testing.T) {
 	if m.viewport.YOffset != 0 {
 		t.Fatalf("first load: YOffset = %d, want 0", m.viewport.YOffset)
 	}
-	if !strings.Contains(m.View(), "TOTAL ]") {
-		t.Fatalf("first screen lacks the total:\n%s", m.View())
+	if !strings.Contains(frameOf(m), "TOTAL ]") {
+		t.Fatalf("first screen lacks the total:\n%s", frameOf(m))
 	}
 
 	for i := 0; i < 5; i++ {
-		m = key(t, m, "j")
+		m = press(t, m, "j")
 	}
 	m = load(t, m, tallAnalysis(2))
 	if m.viewport.YOffset != 5 {
 		t.Errorf("after reload: YOffset = %d, want 5", m.viewport.YOffset)
 	}
 
-	m = key(t, m, "G")
+	m = press(t, m, "G")
 	m = load(t, m, tallAnalysis(3))
 	if !m.viewport.AtBottom() {
 		t.Errorf("reload at the bottom moved the view: YOffset = %d", m.viewport.YOffset)
 	}
-	m = key(t, m, "g")
+	m = press(t, m, "g")
 	m = load(t, m, tallAnalysis(4))
 	if m.viewport.YOffset != 0 {
 		t.Errorf("reload after g: YOffset = %d, want 0 (no snap to bottom)", m.viewport.YOffset)
 	}
 
 	for i := 0; i < 3; i++ {
-		m = key(t, m, "j")
+		m = press(t, m, "j")
 	}
 	m = sized(t, m, 100, 30)
 	if m.viewport.YOffset != 3 {
@@ -202,7 +196,7 @@ func TestWatchFooterRuleShowsOverflow(t *testing.T) {
 	m = load(t, m, tallAnalysis(1))
 
 	below := m.viewport.TotalLineCount() - m.viewport.Height
-	view := m.View()
+	view := frameOf(m)
 	if strings.Contains(view, "↑ ") {
 		t.Errorf("top of body shows an above-marker:\n%s", view)
 	}
@@ -210,21 +204,21 @@ func TestWatchFooterRuleShowsOverflow(t *testing.T) {
 		t.Errorf("missing %q:\n%s", want, view)
 	}
 
-	m = key(t, m, "j")
-	m = key(t, m, "j")
-	if want := "↑ 2 more  ↓ " + strconv.Itoa(below-2) + " more"; !strings.Contains(m.View(), want) {
-		t.Errorf("missing %q:\n%s", want, m.View())
+	m = press(t, m, "j")
+	m = press(t, m, "j")
+	if want := "↑ 2 more  ↓ " + strconv.Itoa(below-2) + " more"; !strings.Contains(frameOf(m), want) {
+		t.Errorf("missing %q:\n%s", want, frameOf(m))
 	}
 
-	m = key(t, m, "G")
-	if strings.Contains(m.View(), "↓ ") {
-		t.Errorf("bottom of body still shows a below-marker:\n%s", m.View())
+	m = press(t, m, "G")
+	if strings.Contains(frameOf(m), "↓ ") {
+		t.Errorf("bottom of body still shows a below-marker:\n%s", frameOf(m))
 	}
 
 	// A body that fits shows a plain rule.
 	m = sized(t, m, 80, 200)
-	if strings.Contains(m.View(), " more ") {
-		t.Errorf("fitting body shows an overflow marker:\n%s", m.View())
+	if strings.Contains(frameOf(m), " more ") {
+		t.Errorf("fitting body shows an overflow marker:\n%s", frameOf(m))
 	}
 }
 
@@ -241,7 +235,7 @@ func TestWatchWarningRows(t *testing.T) {
 		m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
 		m = sized(t, m, w, 24)
 		m = load(t, m, a)
-		view := m.View()
+		view := frameOf(m)
 
 		flat := strings.Join(strings.Fields(view), " ")
 		for _, want := range []string{"2 skipped line(s)", "* m9: fallback pricing, see ficha show"} {
