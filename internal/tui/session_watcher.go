@@ -26,10 +26,14 @@ type SessionWatcher struct {
 	// sigs holds each session file's size and mtime as last seen, so the
 	// poll can tell a write from nothing new.
 	sigs map[string]sessionSig
+	// leftAt holds a session's size and mtime as the view left it, until
+	// the file is seen to differ. The watch can still hand over a write the
+	// view made before leaving; a file that matches has nothing newer in it.
+	leftAt map[string]sessionSig
 	// switches counts SetCurrentSession calls, so observe can tell that one
 	// landed between its stat and its record.
 	switches  int
-	sessionMu sync.RWMutex // Protects currentSession, known, sigs and switches
+	sessionMu sync.RWMutex // Protects currentSession, known, sigs, leftAt and switches
 	watcher   *fsnotify.Watcher
 	done      chan struct{}
 	// restartCh signals waiters to restart (used when session changes)
@@ -63,6 +67,7 @@ func NewSessionWatcher(projectDir, currentSession string) *SessionWatcher {
 		currentSession: currentSession,
 		known:          make(map[string]bool),
 		sigs:           make(map[string]sessionSig),
+		leftAt:         make(map[string]sessionSig),
 		pollEvery:      subagentPollInterval,
 		done:           make(chan struct{}),
 		restartCh:      make(chan struct{}),
@@ -76,11 +81,13 @@ func (sw *SessionWatcher) SetCurrentSession(sessionID string) {
 	// Writes the session being left made since the poll last looked were the
 	// view's own; a silent watch reported none of them. Record them before
 	// it stops being current, under the same lock, so the next poll can't
-	// take them for news. A file that can't be stated keeps its last
+	// take them for news, and a watch event still queued for one of them
+	// can't either (see leftAt). A file that can't be stated keeps its last
 	// signature.
 	if left := sw.currentSession; left != "" && left != sessionID {
 		if sig, ok := statSig(filepath.Join(sw.projectDir, left+".jsonl")); ok {
 			sw.sigs[left] = sig
+			sw.leftAt[left] = sig
 		}
 	}
 	sw.currentSession = sessionID
@@ -404,6 +411,16 @@ func (sw *SessionWatcher) handleSessionFile(filePath string, op fsnotify.Op) ses
 	sw.known[sessionID] = true
 	if sessionID == sw.currentSession {
 		return sessionEvent{}
+	}
+	// An event for a session the view left may be for a write from before
+	// it left. The stat is under the lock so no switch can land between it
+	// and the comparison. Any write since the switch grew the file, so from
+	// the first mismatch on every event is news and the check is over.
+	if at, ok := sw.leftAt[sessionID]; ok {
+		if sig, ok := statSig(filePath); ok && sig.size == at.size && sig.mod.Equal(at.mod) {
+			return sessionEvent{}
+		}
+		delete(sw.leftAt, sessionID)
 	}
 	return sessionEvent{path: filePath, id: sessionID, created: created}
 }
