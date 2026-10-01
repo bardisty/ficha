@@ -1,9 +1,7 @@
 package analyzer
 
 import (
-	"runtime"
 	"sort"
-	"sync"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
@@ -31,34 +29,33 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 		}, nil
 	}
 
-	// Worker pool with GOMAXPROCS workers
-	numWorkers := runtime.GOMAXPROCS(0)
-	if numWorkers > len(projects) {
-		numWorkers = len(projects)
-	}
-
-	// Each worker writes its result to the project's own slot. The totals
-	// are summed afterwards in input order: float addition isn't
-	// associative, so summing as workers finish would change the last
-	// digits of the json totals from run to run.
-	jobs := make(chan int, len(projects))
+	// Every project's transcripts go in one queue. A queue per project would
+	// leave the largest project to one thread while the others sit idle.
+	sessions := make([][]models.SessionEntry, len(projects))
+	parses := make([]*sessionParses, len(projects))
+	projectJobs := make([][]parseJob, len(projects))
 	results := make([]projectResult, len(projects))
-	var wg sync.WaitGroup
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for idx := range jobs {
-				analysis, err := analyzeProject(projects[idx], window)
-				results[idx] = projectResult{analysis: analysis, err: err}
-			}
-		}()
+	forEachParallel(len(projects), func(idx int) {
+		sessions[idx], results[idx].err = discoverProjectSessions(projects[idx])
+		if len(sessions[idx]) > 0 {
+			parses[idx], projectJobs[idx] = planSessionParses(sessions[idx], window)
+		}
+	})
+	var jobs []parseJob
+	for _, pj := range projectJobs {
+		jobs = append(jobs, pj...)
 	}
-	for idx := range projects {
-		jobs <- idx
-	}
-	close(jobs)
-	wg.Wait()
+	runParseJobs(jobs)
+
+	// Each project's result goes to its own slot. The totals are summed
+	// afterwards in input order: float addition isn't associative, so summing
+	// as projects finish would change the last digits of the json totals from
+	// run to run.
+	forEachParallel(len(projects), func(idx int) {
+		if results[idx].err == nil {
+			results[idx].analysis, results[idx].err = analyzeProject(projects[idx], sessions[idx], parses[idx], window)
+		}
+	})
 
 	// Projects starts empty, not nil, so json has [] to iterate even when a
 	// window leaves nothing in it.
@@ -136,10 +133,10 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 	return global, nil
 }
 
-// analyzeProject analyzes a single project directory
-func analyzeProject(project models.ProjectInfo, window models.TimeWindow) (*models.ProjectAnalysis, error) {
-	// Discover sessions on disk. AnalyzeMultipleSessions recomputes message
-	// counts from its own parse below, so skip the discovery-time count scan.
+// discoverProjectSessions lists a project directory's sessions.
+func discoverProjectSessions(project models.ProjectInfo) ([]models.SessionEntry, error) {
+	// Discover sessions on disk. The analysis recomputes message counts from
+	// its own parse, so skip the discovery-time count scan.
 	diskSessions, err := parser.DiscoverSessionsFromDisk(project.FullPath, false)
 	if err != nil {
 		return nil, err
@@ -151,7 +148,12 @@ func analyzeProject(project models.ProjectInfo, window models.TimeWindow) (*mode
 
 	// Merge sources
 	sessions, _ := parser.MergeSessionSources(index, diskSessions, project.FullPath, false)
+	return sessions, nil
+}
 
+// analyzeProject builds a project's analysis from its sessions and their
+// parses.
+func analyzeProject(project models.ProjectInfo, sessions []models.SessionEntry, parses *sessionParses, window models.TimeWindow) (*models.ProjectAnalysis, error) {
 	if len(sessions) == 0 {
 		return &models.ProjectAnalysis{
 			ProjectInfo: project,
@@ -164,7 +166,7 @@ func analyzeProject(project models.ProjectInfo, window models.TimeWindow) (*mode
 	// fork-copied transcripts happens inside AnalyzeMultipleSessions, scoped
 	// per project: forks never land in another project's directory, and a
 	// project-local seen set keeps the parallel project workers lock-free.
-	aggregate, _, err := AnalyzeMultipleSessionsInWindow(sessions, window)
+	aggregate, _, err := analyzeSessionParses(sessions, window, parses)
 	if err != nil {
 		return nil, err
 	}

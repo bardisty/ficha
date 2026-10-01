@@ -48,9 +48,9 @@ func GetBreakdownMessages(sessionPath, sessionID string) (*BreakdownResult, erro
 // GetBreakdownMessagesWithCache is GetBreakdownMessages with an optional
 // agent-parse cache. The parent session is always re-parsed; unchanged agent
 // sub-sessions are served from the cache. A nil cache parses every agent.
+// The parent and the agents it has to parse are read in parallel.
 func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentParseCache) (*BreakdownResult, error) {
-	// Parse parent session messages
-	result, err := parser.ParseJSONLFileWithResult(sessionPath)
+	result, agents, err := parseSession(sessionPath, sessionID, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -78,22 +78,22 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		})
 	}
 
-	// Discover and process agent sub-sessions. An unreadable subagents/ or
+	// Process agent sub-sessions. An unreadable subagents/ or
 	// workflow-run directory hides agents entirely, so it counts as skipped
 	// just like an agent file that fails to parse.
 	projectDir := filepath.Dir(sessionPath)
-	agentPaths, skippedAgents := parser.DiscoverAgentSessions(projectDir, sessionID)
+	skippedAgents := agents.unreadableDirs
 	var workflows []models.WorkflowMeta
 	seenRuns := make(map[string]bool)
 	runStart := make(map[string]time.Time) // earliest message of any of the run's agents
 
-	for _, agentPath := range agentPaths {
-		agentAnalyses, agentSkipped, err := loadAgentMessages(agentPath, cache)
-		if err != nil {
+	for i, agentPath := range agents.paths {
+		if agents.parses[i].err != nil {
 			skippedAgents++
 			continue // Skip agents that fail to parse
 		}
-		skippedLines += agentSkipped.Count
+		agentAnalyses := agents.parses[i].messages
+		skippedLines += agents.parses[i].skips.Count
 
 		// Same key space as AgentAnalysis.AgentID, so a marker in the TUI can
 		// be cross-referenced against the machine outputs

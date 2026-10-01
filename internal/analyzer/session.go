@@ -54,7 +54,8 @@ func AnalyzeSession(sessionPath string, sessionID string, scope MessageScope) (*
 // AnalyzeSessionWithCache is AnalyzeSession with an optional agent-parse cache.
 // The parent session file is always re-parsed (it is the file being appended to
 // in live views); only agent sub-sessions are served from the cache when
-// unchanged. A nil cache parses every agent, matching AnalyzeSession.
+// unchanged. A nil cache parses every agent, matching AnalyzeSession. The
+// parent and the agents it has to parse are read in parallel.
 func AnalyzeSessionWithCache(sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache) (*models.SessionAnalysis, error) {
 	return analyzeSessionExcludingSeen(sessionPath, sessionID, scope, cache, nil)
 }
@@ -68,22 +69,24 @@ func AnalyzeSessionWithCache(sessionPath string, sessionID string, scope Message
 // files are never cloned by fork, so they stay file-local. A nil seen keeps
 // the session fully file-local.
 func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[parser.DedupKey]struct{}) (*models.SessionAnalysis, error) {
-	result, err := parser.ParseJSONLFileWithResult(sessionPath)
+	result, agents, err := parseSession(sessionPath, sessionID, cache)
 	if err != nil {
 		return nil, err
 	}
-	return analyzeParsedSession(result, sessionPath, sessionID, scope, cache, seen, models.TimeWindow{}), nil
+	return analyzeParsedSession(result, sessionPath, sessionID, scope, agents, seen, models.TimeWindow{}), nil
 }
 
-// analyzeParsedSession is analyzeSessionExcludingSeen after the parent parse.
-// AnalyzeMultipleSessions parses every parent before analyzing any of them
+// analyzeParsedSession is analyzeSessionExcludingSeen after the parse step:
+// result is the parent's parse and agents holds each agent file's.
+// AnalyzeMultipleSessions parses every file before analyzing any session
 // (processing order derives from the parsed timestamps), so it hands the
-// result in rather than parse twice.
+// parses in rather than parse twice. Agents are summed in discovery order
+// whatever order their parses finished in.
 //
 // A non-zero window counts only the messages timestamped inside it, parent
 // and agents alike, so a session that straddles a bound splits at it.
 // Agents with nothing inside it are left out.
-func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[parser.DedupKey]struct{}, window models.TimeWindow) *models.SessionAnalysis {
+func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessionID string, scope MessageScope, agents *sessionAgents, seen map[parser.DedupKey]struct{}, window models.TimeWindow) *models.SessionAnalysis {
 	messages := result.Messages
 	if seen != nil {
 		messages = parser.ExcludeSeenMessages(messages, seen)
@@ -123,21 +126,21 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 		analysis.ParentCostByModel[model] = cost
 	}
 
-	// Discover and analyze agent sub-sessions. An unreadable subagents/ or
+	// Analyze agent sub-sessions. An unreadable subagents/ or
 	// workflow-run directory hides agents we will never see, so it lands in
 	// SkippedAgents exactly as an unparseable agent file does — otherwise the
 	// missing spend looks like a session that simply had no agents.
 	projectDir := filepath.Dir(sessionPath)
-	agentPaths, unreadableAgentDirs := parser.DiscoverAgentSessions(projectDir, sessionID)
-	analysis.SkippedAgents = unreadableAgentDirs
+	agentPaths := agents.paths
+	analysis.SkippedAgents = agents.unreadableDirs
 
 	if len(agentPaths) > 0 {
 		analysis.HasAgents = true
 
 		// Each agent's messages, parallel to analysis.Agents until the sort.
 		var agentBlocks [][]models.MessageAnalysis
-		for _, agentPath := range agentPaths {
-			agentAnalysis, agentMessages, err := analyzeAgentWithCache(agentPath, cache, window)
+		for i, agentPath := range agentPaths {
+			agentAnalysis, agentMessages, err := analyzeAgentParse(agentPath, agents.parses[i], window)
 			if err != nil {
 				analysis.SkippedAgents++
 				continue // Skip agents that can't be parsed
@@ -249,19 +252,21 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 // AnalyzeAgent analyzes a single agent sub-session. There is no message-scope
 // knob: AgentAnalysis carries aggregates only, never the per-message list.
 func AnalyzeAgent(agentPath string) (*models.AgentAnalysis, error) {
-	analysis, _, err := analyzeAgentWithCache(agentPath, nil, models.TimeWindow{})
+	var parse agentParse
+	parse.messages, parse.skips, parse.err = loadAgentMessages(agentPath, nil)
+	analysis, _, err := analyzeAgentParse(agentPath, parse, models.TimeWindow{})
 	return analysis, err
 }
 
-// analyzeAgentWithCache builds an AgentAnalysis from an agent file, serving the
-// parse from cache when unchanged (nil cache always parses). The returned
-// messages back the caller's per-message list; they may alias the cache's
-// slice, so copy before mutating an element.
-func analyzeAgentWithCache(agentPath string, cache *AgentParseCache, window models.TimeWindow) (*models.AgentAnalysis, []models.MessageAnalysis, error) {
-	messageAnalyses, skips, err := loadAgentMessages(agentPath, cache)
-	if err != nil {
-		return nil, nil, err
+// analyzeAgentParse builds an AgentAnalysis from an agent file's parse, or
+// returns the error the parse ended in. The returned messages back the
+// caller's per-message list; they may alias a parse cache's slice, so copy
+// before mutating an element.
+func analyzeAgentParse(agentPath string, parse agentParse, window models.TimeWindow) (*models.AgentAnalysis, []models.MessageAnalysis, error) {
+	if parse.err != nil {
+		return nil, nil, parse.err
 	}
+	messageAnalyses, skips := parse.messages, parse.skips
 	if !window.IsZero() {
 		// A new slice: messageAnalyses may be the cache's own.
 		var inside []models.MessageAnalysis
@@ -480,11 +485,21 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 // With a Since bound, a session whose files were all last written a day or
 // more before it isn't parsed at all (see writtenBefore), so the skip
 // counters leave out that session's unreadable lines.
+//
+// The transcripts, agents' included, are parsed in parallel. The analysis of
+// those parses is serial and ordered, so the totals are the same on every run.
 func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window models.TimeWindow) (*models.SessionAnalysis, []models.SessionResult, error) {
 	if len(entries) == 0 {
 		return nil, nil, fmt.Errorf("no sessions to analyze")
 	}
+	parses, jobs := planSessionParses(entries, window)
+	runParseJobs(jobs)
+	return analyzeSessionParses(entries, window, parses)
+}
 
+// analyzeSessionParses is AnalyzeMultipleSessionsInWindow after the parse
+// step, for non-empty entries.
+func analyzeSessionParses(entries []models.SessionEntry, window models.TimeWindow, parses *sessionParses) (*models.SessionAnalysis, []models.SessionResult, error) {
 	aggregate := &models.SessionAnalysis{
 		SessionID:         "aggregate",
 		CostByModel:       make(map[string]models.CostBreakdown),
@@ -492,7 +507,7 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 		// Every entry resolves to the one project directory (all discovered under
 		// it); the aggregate names that project, matching what each per-session
 		// result derives from its own transcript path. SessionFile stays empty —
-		// the aggregate spans many files. entries is non-empty (checked above).
+		// the aggregate spans many files. The caller checked that entries is non-empty.
 		ProjectPath: filepath.Dir(entries[0].FullPath),
 	}
 
@@ -505,21 +520,17 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 	oldSessions := 0
 	outside := make([]bool, len(entries))
 	seen := make(map[parser.DedupKey]struct{})
-	var cutoff time.Time
-	if !window.Since.IsZero() {
-		cutoff = window.Since.Add(-windowSkipSlack)
-	}
 
-	// Parse every parent up front: processing order derives from each
+	// Every parent is parsed up front: processing order derives from each
 	// session's earliest message timestamp, which only the parse can provide.
 	// Parsed messages carry usage metadata, not content, so holding them all
 	// is cheap. A nil result failed to parse; its sort key falls back to the
 	// file mtime (position is moot — it consumes no dedup keys).
-	parsed := make([]*parser.ParseResult, len(entries))
+	parsed := parses.parsed
 	sortKeys := make([]time.Time, len(entries))
 	for i, entry := range entries {
 		sortKeys[i] = entry.Modified
-		if !cutoff.IsZero() && writtenBefore(entry, cutoff) {
+		if parses.old[i] {
 			// It can hold no message inside the window. Skipping it leaves
 			// its keys out of seen, which is safe: a fork's copies of its
 			// lines keep their timestamps, so the window drops them too.
@@ -527,12 +538,10 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 			oldSessions++
 			continue
 		}
-		result, err := parser.ParseJSONLFileWithResult(entry.FullPath)
-		if err != nil {
+		if parsed[i] == nil {
 			continue
 		}
-		parsed[i] = result
-		if ts := earliestMessageTime(result.Messages); !ts.IsZero() {
+		if ts := earliestMessageTime(parsed[i].Messages); !ts.IsZero() {
 			sortKeys[i] = ts
 		}
 	}
@@ -568,13 +577,12 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 			// their messages independently of the parent, and a zero
 			// SkippedAgents would present the excluded spend as a session
 			// that simply had no agents.
-			agentPaths, unreadableDirs := parser.DiscoverAgentSessions(filepath.Dir(entry.FullPath), entry.SessionID)
-			aggregate.SkippedAgents += len(agentPaths) + unreadableDirs
+			aggregate.SkippedAgents += len(parses.agents[idx].paths) + parses.agents[idx].unreadableDirs
 			skippedSessions++
 			results[idx] = models.SessionResult{Entry: entry, Analysis: nil}
 			continue
 		}
-		sessionAnalysis := analyzeParsedSession(parsed[idx], entry.FullPath, entry.SessionID, NoMessages, nil, seen, window)
+		sessionAnalysis := analyzeParsedSession(parsed[idx], entry.FullPath, entry.SessionID, NoMessages, parses.agents[idx], seen, window)
 		parsedSessions++
 		if !window.IsZero() && sessionAnalysis.MessageCount == 0 {
 			// Nothing inside the window, so it isn't in the report. What
@@ -678,15 +686,11 @@ const windowSkipSlack = 24 * time.Hour
 // than the write that added it, so such a session has no message at or after
 // t. A file it can't open or an agent directory it can't list makes it
 // false: the parse has to meet those to count them as skipped.
-func writtenBefore(entry models.SessionEntry, t time.Time) bool {
-	if !modifiedBefore(entry.FullPath, t) {
+func writtenBefore(entry models.SessionEntry, agents *sessionAgents, t time.Time) bool {
+	if agents.unreadableDirs > 0 || !modifiedBefore(entry.FullPath, t) {
 		return false
 	}
-	agentPaths, unreadableDirs := parser.DiscoverAgentSessions(filepath.Dir(entry.FullPath), entry.SessionID)
-	if unreadableDirs > 0 {
-		return false
-	}
-	for _, path := range agentPaths {
+	for _, path := range agents.paths {
 		if !modifiedBefore(path, t) {
 			return false
 		}
