@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // The frame fills the terminal exactly at every size, with or without a
@@ -110,9 +110,8 @@ func TestWatchCompactAndTooSmall(t *testing.T) {
 	}
 }
 
-// A terminal shorter than the message keeps its top lines, in both views:
-// Bubble Tea keeps a tall frame's bottom lines, which would scroll
-// "terminal too small" away.
+// A terminal shorter than the message keeps its top lines, in both views,
+// and the frame is no taller than the terminal.
 func TestTooSmallKeepsItsTopLines(t *testing.T) {
 	for _, h := range []int{3, 2, 1} {
 		var watch tea.Model = NewModel("/p/s.jsonl", "s", true, "", false)
@@ -199,8 +198,8 @@ func TestWatchCompactFrameFitsWithWarnings(t *testing.T) {
 		if got := strings.Count(v, "\n") + 1; got != h {
 			t.Errorf("%dx%d: %d rows, want %d:\n%s", w, h, got, h, v)
 		}
-		if m.viewport.Height < 1 {
-			t.Errorf("%dx%d: viewport has %d rows", w, h, m.viewport.Height)
+		if m.viewport.Height() < 1 {
+			t.Errorf("%dx%d: viewport has %d rows", w, h, m.viewport.Height())
 		}
 		if !strings.Contains(v, "q quit") {
 			t.Errorf("%dx%d: no help row:\n%s", w, h, v)

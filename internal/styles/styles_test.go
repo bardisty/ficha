@@ -1,18 +1,18 @@
 package styles
 
 import (
+	"image/color"
 	"math"
-	"strconv"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/muesli/termenv"
 )
 
 func TestGetAgentColor(t *testing.T) {
 	tests := []struct {
 		agentID  string
-		expected lipgloss.TerminalColor
+		expected color.Color
 	}{
 		{"", SecondaryColor},   // Empty returns secondary
 		{"1", AgentColors[0]},  // A1 = pink
@@ -50,7 +50,7 @@ func TestGetAgentColor(t *testing.T) {
 func TestGetModelColor(t *testing.T) {
 	tests := []struct {
 		modelName string
-		expected  lipgloss.TerminalColor
+		expected  color.Color
 	}{
 		{"Fable 5", FableColor},
 		{"claude-fable-5", FableColor},
@@ -80,7 +80,7 @@ func TestGetContextUsageColor(t *testing.T) {
 	tests := []struct {
 		name     string
 		pct      float64
-		expected lipgloss.TerminalColor
+		expected color.Color
 	}{
 		{"0% → green", 0, ContextLowColor},
 		{"64.9% → green", 64.9, ContextLowColor},
@@ -107,7 +107,7 @@ func TestGetCostGradientColor(t *testing.T) {
 		cost     float64
 		minCost  float64
 		maxCost  float64
-		expected lipgloss.TerminalColor
+		expected color.Color
 	}{
 		{"minimum cost (0%)", 0.01, 0.01, 0.10, NeutralColor},       // Neutral white
 		{"low cost (20%)", 0.028, 0.01, 0.10, NeutralColor},         // Neutral white (< 50%)
@@ -136,44 +136,34 @@ func TestGetCostGradientColor(t *testing.T) {
 // for text, and 3:1 for bars and separators, which aren't read letter by
 // letter.
 func TestLightPaletteContrast(t *testing.T) {
-	SetDark(false)
-	t.Cleanup(func() { SetDark(true) })
-
 	const text, graphic = 4.5, 3.0
 	tests := []struct {
 		name  string
-		color lipgloss.TerminalColor
+		color pair
 		min   float64
 	}{
-		{"Primary", PrimaryColor, text},
-		{"Secondary", SecondaryColor, text},
-		{"Success", SuccessColor, text},
-		{"Info", InfoColor, text},
-		{"Warning", WarningColor, text},
-		{"Accent", AccentColor, text},
-		{"Error", ErrorColor, text},
-		{"Orange", OrangeColor, text},
-		{"Blue", BlueColor, text},
-		{"Neutral", NeutralColor, text},
-		{"SoftText", SoftTextColor, text},
-		{"Note", NoteColor, text},
-		{"Highlight", HighlightColor, text},
-		{"Fable", FableColor, text},
-		{"ContextFree", ContextFreeColor, graphic},
-		{"Separator", SeparatorColor, graphic},
-	}
-	for i, c := range AgentColors {
-		tests = append(tests, struct {
-			name  string
-			color lipgloss.TerminalColor
-			min   float64
-		}{"Agent" + strconv.Itoa(i+1), c, text})
+		{"Primary", palette.primary, text},
+		{"Secondary", palette.secondary, text},
+		{"Success", palette.success, text},
+		{"Info", palette.info, text},
+		{"Warning", palette.warning, text},
+		{"Accent", palette.accent, text},
+		{"Error", palette.err, text},
+		{"Orange", palette.orange, text},
+		{"Blue", palette.blue, text},
+		{"Neutral", palette.neutral, text},
+		{"SoftText", palette.softText, text},
+		{"Note", palette.note, text},
+		{"Highlight", palette.highlight, text},
+		{"Fable", palette.fable, text},
+		{"AgentOlive", palette.agentOlive, text},
+		{"ContextFree", palette.contextFree, graphic},
+		{"Separator", palette.separator, graphic},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			index := string(tt.color.(lipgloss.Color))
-			if got := contrastOnWhite(t, index); got < tt.min {
-				t.Errorf("%s light value %s has contrast %.2f on white, want at least %.1f", tt.name, index, got, tt.min)
+			if got := contrastOnWhite(t, tt.color.light); got < tt.min {
+				t.Errorf("%s light value %d has contrast %.2f on white, want at least %.1f", tt.name, tt.color.light, got, tt.min)
 			}
 		})
 	}
@@ -188,8 +178,11 @@ func TestSetDarkRebuildsThePalette(t *testing.T) {
 		if Dark() != dark {
 			t.Errorf("Dark() = %v after SetDark(%v)", Dark(), dark)
 		}
-		want := palette.primary.on(dark)
-		for name, got := range map[string]lipgloss.TerminalColor{
+		want := lipgloss.Color("92")
+		if dark {
+			want = lipgloss.Color("99")
+		}
+		for name, got := range map[string]color.Color{
 			"PrimaryColor": PrimaryColor,
 			"OpusColor":    OpusColor,
 			"SpinnerStyle": SpinnerStyle.GetForeground(),
@@ -198,20 +191,48 @@ func TestSetDarkRebuildsThePalette(t *testing.T) {
 				t.Errorf("dark=%v: %s is %v, want %v", dark, name, got, want)
 			}
 		}
-		if got, want := AgentColors[2], palette.agentOlive.on(dark); got != want {
-			t.Errorf("dark=%v: AgentColors[2] is %v, want %v", dark, got, want)
+		olive := lipgloss.Color("58")
+		if dark {
+			olive = lipgloss.Color("221")
+		}
+		if got := AgentColors[2]; got != olive {
+			t.Errorf("dark=%v: AgentColors[2] is %v, want %v", dark, got, olive)
+		}
+	}
+}
+
+// On a 16-color terminal each color is the nearest basic one. The table the
+// output writer converts with would turn the yellows, the pink and the cyan
+// into reds and greens.
+func TestSetBasicKeepsEachColorsHue(t *testing.T) {
+	SetBasic(true)
+	t.Cleanup(func() { SetBasic(false) })
+	for name, c := range map[string]struct {
+		got  color.Color
+		want string
+	}{
+		"Warning (bright yellow)":   {WarningColor, "11"},
+		"Highlight (bright yellow)": {HighlightColor, "11"},
+		"Orange (bright yellow)":    {OrangeColor, "11"},
+		"Accent (bright magenta)":   {AccentColor, "13"},
+		"Info (bright cyan)":        {InfoColor, "14"},
+		"Success (bright green)":    {SuccessColor, "10"},
+		"Error (bright red)":        {ErrorColor, "9"},
+		"HeroCostStyle":             {HeroCostStyle.GetForeground(), "10"},
+	} {
+		if c.got != lipgloss.Color(c.want) {
+			t.Errorf("%s is %v, want basic color %s", name, c.got, c.want)
 		}
 	}
 }
 
 // contrastOnWhite returns the WCAG contrast ratio of an xterm-256 index
 // against white.
-func contrastOnWhite(t *testing.T, index string) float64 {
+func contrastOnWhite(t *testing.T, n uint8) float64 {
 	t.Helper()
-	n, err := strconv.Atoi(index)
-	if err != nil || n < 16 || n > 255 {
+	if n < 16 {
 		// 0-15 are the theme's own colors, so no ratio holds for them.
-		t.Fatalf("light value %q must be an xterm-256 index from 16 to 255", index)
+		t.Fatalf("light value %d must be an xterm-256 index from 16 to 255", n)
 	}
 	c := termenv.ConvertToRGB(termenv.ANSI256Color(n))
 	linear := func(v float64) float64 {

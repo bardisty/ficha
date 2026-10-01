@@ -7,11 +7,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
-	"github.com/muesli/termenv"
 )
 
 // globalAnalysisWithProjects builds a minimal GlobalAnalysis for table rendering.
@@ -85,11 +84,6 @@ func TestRenderProjectsTable_TopNZero(t *testing.T) {
 // (first=max, last=min): the caller re-sorts by name|sessions|activity, so
 // positional bounds invert and neutralize the gradient.
 func TestRenderProjectsTable_GradientIgnoresSortOrder(t *testing.T) {
-	r := lipgloss.DefaultRenderer()
-	origProfile := r.ColorProfile()
-	r.SetColorProfile(termenv.ANSI256)
-	defer r.SetColorProfile(origProfile)
-
 	costs := map[string]float64{"alpha": 1.0, "beta": 10.0, "zeta": 5.0}
 	// Name order: cheapest first, so positional bounds would give maxCost < minCost
 	byName := globalAnalysisWithProjects(costs, []string{"alpha", "beta", "zeta"})
@@ -133,10 +127,6 @@ func TestRenderProjectsTableWideNamesAlign(t *testing.T) {
 		{"color-details", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.noColor {
-			} else {
-				forceProfile(t, termenv.ANSI256)
-			}
 			out := projectsTable(analysis, tc.noColor, GlobalTableOptions{TopN: 10, Details: tc.showDetails})
 
 			var headerWidth int

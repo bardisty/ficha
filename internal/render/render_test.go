@@ -2,24 +2,15 @@ package render
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
-
-// TestMain pins a dark background. Left to detect, lipgloss would ask
-// whatever terminal the tests run in the first time a test renders a color.
-func TestMain(m *testing.M) {
-	lipgloss.SetHasDarkBackground(true)
-	os.Exit(m.Run())
-}
 
 func TestCost(t *testing.T) {
 	tests := []struct {
@@ -465,10 +456,6 @@ func TestContextBar(t *testing.T) {
 	}
 
 	// Color touches only the escapes, never the cells.
-	r := lipgloss.DefaultRenderer()
-	orig := r.ColorProfile()
-	r.SetColorProfile(termenv.ANSI256)
-	t.Cleanup(func() { r.SetColorProfile(orig) })
 	colored := ContextBar(90, 100, 20, false)
 	if !strings.Contains(colored, "\x1b[") {
 		t.Errorf("colored bar has no escapes: %q", colored)

@@ -3,14 +3,13 @@ package tui
 import (
 	"strings"
 	"testing"
-
-	"github.com/muesli/termenv"
 )
 
-// --no-color must emit no escape codes in the TUIs even when the terminal
-// supports color, including the watch chart and footer stats line.
+// --no-color must emit no escape codes in the TUIs, including the watch
+// chart and footer stats line. A view writes an escape for every styled
+// call, whatever the terminal, so one left in a no-color branch shows up
+// here.
 func TestNoColorTUIsEmitNoEscapes(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	for _, ascii := range []bool{false, true} {
 		if ascii {
 			useASCII(t)

@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/paths"
 	"github.com/bardisty/ficha/internal/tui"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // waitForFirstSession opens a live view in a waiting state when the project
@@ -27,7 +27,7 @@ func waitForFirstSession(cfg *config, open func(dir, projectPath string) tea.Mod
 		return false, nil
 	}
 	cfg.tracef("no session yet; waiting in %s", filepath.Base(dir))
-	return true, runTUI(cfg.stdout, open(dir, tildePath(projectPath)))
+	return true, runTUI(cfg, func() tea.Model { return open(dir, tildePath(projectPath)) })
 }
 
 // waitingWatch opens watch waiting for a first session.

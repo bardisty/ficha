@@ -1,6 +1,11 @@
 package cmd
 
-import "io"
+import (
+	"io"
+
+	"github.com/charmbracelet/colorprofile"
+	"github.com/muesli/termenv"
+)
 
 // config holds every flag value and output sink for a single command run.
 // newRootCmd builds one fresh config per invocation and binds all flags to it,
@@ -43,6 +48,13 @@ type config struct {
 	// SetOut/SetErr, so every command's output is capturable.
 	stdout io.Writer
 	stderr io.Writer
+
+	// What resolveColor decided for this run: the colors stdout takes, and
+	// stdout as termenv sees it, for pickPalette to ask about the background.
+	// terminal is nil when the run prints no color.
+	profile       colorprofile.Profile
+	terminal      *termenv.Output
+	palettePicked bool
 
 	// commandPath names the command as typed ("ficha watch", "ficha show
 	// --live") for messages that refer to it.

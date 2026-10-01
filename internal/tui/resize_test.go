@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/bardisty/ficha/internal/models"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // A pty can report 0 rows (bare `script`, some CI shells). The viewport's

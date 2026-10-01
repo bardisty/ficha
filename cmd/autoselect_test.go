@@ -65,6 +65,30 @@ func TestShowSkipsNewerSessionWithoutReplies(t *testing.T) {
 	}
 }
 
+// The note is the one styled line that goes to stderr. It follows stdout's
+// color: dim on a color terminal, plain when stdout is a pipe.
+func TestSkippedNoteTakesStdoutsColor(t *testing.T) {
+	emptyID := setupEmptyNewestSession(t)
+	note := "(skipped 1 newer session with no replies yet: " + emptyID[:8] + ")"
+
+	_, stderr, err := executeCLISplit(t, "show", projFlag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr, note) || strings.Contains(stderr, "\x1b[") {
+		t.Errorf("piped: want the plain note, got %q", stderr)
+	}
+
+	fakeTerminal(t)
+	_, stderr, err = executeCLISplit(t, "show", projFlag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "\x1b[38;5;245m" + note + "\x1b[m"; !strings.Contains(stderr, want) {
+		t.Errorf("on a terminal: want %q, got %q", want, stderr)
+	}
+}
+
 // Scripts get the newest session as before: only the table skips it.
 func TestShowJSONKeepsNewestSession(t *testing.T) {
 	emptyID := setupEmptyNewestSession(t)

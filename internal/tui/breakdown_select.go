@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sort"
 
-	keybind "github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	keybind "charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
@@ -14,26 +14,12 @@ import (
 
 // isDownKey reports whether msg is one of the viewport keymap's downward
 // scroll keys.
-func isDownKey(km viewport.KeyMap, msg tea.KeyMsg) bool {
+func isDownKey(km viewport.KeyMap, msg tea.KeyPressMsg) bool {
 	return keybind.Matches(msg, km.Down, km.PageDown, km.HalfPageDown)
 }
 
 // topCount is how many of the most expensive rows p cycles through.
 const topCount = 5
-
-// repeatedRune returns how many times a key chunk repeats one rune, or 0
-// when it isn't a repeat: a single key, a paste, or mixed text.
-func repeatedRune(msg tea.KeyMsg) int {
-	if msg.Type != tea.KeyRunes || msg.Paste || len(msg.Runes) < 2 {
-		return 0
-	}
-	for _, r := range msg.Runes[1:] {
-		if r != msg.Runes[0] {
-			return 0
-		}
-	}
-	return len(msg.Runes)
-}
 
 // byCost returns the positions in m.messages, most expensive first; ties go
 // to the earlier row.
@@ -73,10 +59,10 @@ func (m BreakdownModel) rowOrder() []int {
 // hold: in time order new rows land below, and at the top of a sorted view
 // a new most expensive row should show where the reader is looking.
 func (m BreakdownModel) sortAnchor() string {
-	if !m.sortByCost || !m.ready || m.viewport.YOffset == 0 || m.viewport.YOffset >= len(m.lineRows) {
+	if !m.sortByCost || !m.ready || m.viewport.YOffset() == 0 || m.viewport.YOffset() >= len(m.lineRows) {
 		return ""
 	}
-	index := m.lineRows[m.viewport.YOffset]
+	index := m.lineRows[m.viewport.YOffset()]
 	if index < 1 || index > len(m.messages) {
 		return ""
 	}
@@ -113,7 +99,7 @@ func (m *BreakdownModel) toggleSort() {
 		if len(m.messages) == 0 {
 			return
 		}
-		m.timeYOffset, m.timeFollow = m.viewport.YOffset, m.autoScroll
+		m.timeYOffset, m.timeFollow = m.viewport.YOffset(), m.autoScroll
 		m.setFollow(false)
 		m.sortByCost = true
 		m.refreshViewport()
@@ -159,7 +145,7 @@ func (m *BreakdownModel) selectNextTop() {
 	m.refreshViewport()
 	for line, index := range m.lineRows {
 		if index == msg.Index {
-			m.viewport.SetYOffset(line - m.viewport.Height/2)
+			m.viewport.SetYOffset(line - m.viewport.Height()/2)
 			break
 		}
 	}

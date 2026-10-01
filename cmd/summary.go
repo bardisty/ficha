@@ -61,6 +61,7 @@ func runSummary(cfg *config) error {
 	if err != nil {
 		return err
 	}
+	pickPalette(cfg)
 
 	// Analyze all sessions. The per-session results feed the --details view so
 	// the formatter doesn't re-parse every session.

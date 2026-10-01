@@ -2,18 +2,20 @@ package styles
 
 import (
 	"hash/fnv"
+	"image/color"
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+	"github.com/muesli/termenv"
 )
 
 // Glyphs. ficha draws with Unicode box-drawing characters and symbols by
 // default; SetASCII swaps in plain-ASCII stand-ins for terminals without
 // UTF-8 (--ascii). Glyphs are independent of color: --no-color keeps them.
 //
-// The choice is process-wide, like lipgloss's color profile, and is made once
-// at startup before anything renders. Every stand-in except Arrow, ScrollKeys
+// The choice is process-wide, like the palette's, and is made once at
+// startup before anything renders. Every stand-in except Arrow, ScrollKeys
 // and Ellipsis is as wide as its Unicode glyph, so fixed-width columns hold
 // in both sets; those three only appear inline, where width doesn't matter,
 // or in helpers that measure the ellipsis they append.
@@ -106,19 +108,27 @@ func ASCIIChart(s string) string {
 // bars and separators at 3:1. They're palette indexes rather than hex so the
 // ratio holds under both the 256-color and truecolor profiles.
 //
-// The background is detected once per process, by Bubble Tea's init asking
-// the terminal (OSC 11) before a TUI can take stdin. Inside tmux or screen,
-// which termenv doesn't ask, it goes by COLORFGBG. Anywhere else it can't
-// tell, including when stdout isn't a terminal and always on Windows, it
-// reads as dark, so the dark values are the fallback. cmd hands the answer
-// to SetDark every run.
+// Every run starts on the dark values. cmd switches to the light ones, with
+// SetDark, when the terminal says its background is light, and to the 16
+// basic colors, with SetBasic, on a terminal that has no more. It asks the
+// terminal only when a report or live view is about to draw in color, so
+// the dark values are also what anything drawn before that gets.
 type pair struct{ dark, light uint8 }
 
-func (p pair) on(dark bool) lipgloss.TerminalColor {
-	if dark {
-		return lipgloss.Color(strconv.Itoa(int(p.dark)))
+func (p pair) resolve() color.Color {
+	n := p.light
+	if darkPalette {
+		n = p.dark
 	}
-	return lipgloss.Color(strconv.Itoa(int(p.light)))
+	if basicPalette {
+		// Left to the writer that fits escapes to the terminal, the basic
+		// color would come from a fixed table that sends the palette's
+		// yellows to bright red. termenv picks the nearest of the 16,
+		// which keeps a yellow yellow.
+		nearest, _ := termenv.ANSI.Convert(termenv.ANSI256Color(n)).(termenv.ANSIColor)
+		n = uint8(nearest) //nolint:gosec // one of the 16 basic colors
+	}
+	return lipgloss.Color(strconv.Itoa(int(n)))
 }
 
 var palette = struct {
@@ -154,57 +164,57 @@ var palette = struct {
 	agentOlive: pair{dark: 221, light: 58},
 }
 
-// The palette as SetDark last resolved it.
+// The palette as SetDark and SetBasic last resolved it.
 var (
-	PrimaryColor   lipgloss.TerminalColor // Purple
-	SecondaryColor lipgloss.TerminalColor // Gray (dimmed but readable)
-	SuccessColor   lipgloss.TerminalColor // Green
-	InfoColor      lipgloss.TerminalColor // Cyan
-	WarningColor   lipgloss.TerminalColor // Yellow
-	AccentColor    lipgloss.TerminalColor // Pink
-	ErrorColor     lipgloss.TerminalColor // Red
-	OrangeColor    lipgloss.TerminalColor // Orange
-	BlueColor      lipgloss.TerminalColor // Blue
+	PrimaryColor   color.Color // Purple
+	SecondaryColor color.Color // Gray (dimmed but readable)
+	SuccessColor   color.Color // Green
+	InfoColor      color.Color // Cyan
+	WarningColor   color.Color // Yellow
+	AccentColor    color.Color // Pink
+	ErrorColor     color.Color // Red
+	OrangeColor    color.Color // Orange
+	BlueColor      color.Color // Blue
 
 	// NeutralColor sits near the default foreground, for values that
 	// shouldn't draw the eye.
-	NeutralColor lipgloss.TerminalColor
+	NeutralColor color.Color
 	// SoftTextColor is for text a step behind the figures it labels, such
 	// as breakdown's stats line.
-	SoftTextColor lipgloss.TerminalColor
+	SoftTextColor color.Color
 	// NoteColor is for explanatory notes under a value: less prominent than
 	// NeutralColor, more than SecondaryColor.
-	NoteColor lipgloss.TerminalColor
+	NoteColor color.Color
 	// SeparatorColor is for inline separators that should recede behind
 	// the text around them.
-	SeparatorColor lipgloss.TerminalColor
+	SeparatorColor color.Color
 
 	// HighlightColor is for recently changed values.
-	HighlightColor lipgloss.TerminalColor
+	HighlightColor color.Color
 
 	// Model colors, by tier.
-	FableColor  lipgloss.TerminalColor // Pink/Magenta - flagship tier
-	OpusColor   lipgloss.TerminalColor // Purple - premium tier
-	SonnetColor lipgloss.TerminalColor // Blue - mid tier
-	HaikuColor  lipgloss.TerminalColor // Cyan/Teal - lightweight tier
+	FableColor  color.Color // Pink/Magenta - flagship tier
+	OpusColor   color.Color // Purple - premium tier
+	SonnetColor color.Color // Blue - mid tier
+	HaikuColor  color.Color // Cyan/Teal - lightweight tier
 
 	// Token type colors.
-	OutputTokenColor     lipgloss.TerminalColor // Light blue
-	CacheWriteTokenColor lipgloss.TerminalColor // Warm orange - cost investment
-	CacheReadTokenColor  lipgloss.TerminalColor // Cyan - efficiency/savings
+	OutputTokenColor     color.Color // Light blue
+	CacheWriteTokenColor color.Color // Warm orange - cost investment
+	CacheReadTokenColor  color.Color // Cyan - efficiency/savings
 
 	// Context usage level colors (thresholds based on ~75-78% compaction trigger)
-	ContextLowColor      lipgloss.TerminalColor // Green - 0-65%
-	ContextHighColor     lipgloss.TerminalColor // Orange - 65-75% (approaching compaction)
-	ContextCriticalColor lipgloss.TerminalColor // Red - 75%+ (compaction territory)
-	ContextFreeColor     lipgloss.TerminalColor // free space in the context bar
+	ContextLowColor      color.Color // Green - 0-65%
+	ContextHighColor     color.Color // Orange - 65-75% (approaching compaction)
+	ContextCriticalColor color.Color // Red - 75%+ (compaction territory)
+	ContextFreeColor     color.Color // free space in the context bar
 
 	// AgentColors is the cycling palette that tells sub-agents apart:
 	// pink, orange, yellow, blue, cyan.
-	AgentColors []lipgloss.TerminalColor
+	AgentColors []color.Color
 )
 
-// The styles built from the palette, rebuilt by SetDark.
+// The styles built from the palette, rebuilt with it.
 var (
 	// HeaderStyle uses bold white for clean, minimal section headers
 	HeaderStyle lipgloss.Style
@@ -235,7 +245,7 @@ var (
 	DimStyle lipgloss.Style
 )
 
-var darkPalette bool
+var darkPalette, basicPalette bool
 
 // SetDark selects the dark palette (true) or the light one (false) and
 // rebuilds every color and style above from it. Like the glyph set, the
@@ -243,28 +253,42 @@ var darkPalette bool
 // keep a copy of a color or style from before the call.
 func SetDark(dark bool) {
 	darkPalette = dark
+	rebuild()
+}
 
-	PrimaryColor = palette.primary.on(dark)
-	SecondaryColor = palette.secondary.on(dark)
-	SuccessColor = palette.success.on(dark)
-	InfoColor = palette.info.on(dark)
-	WarningColor = palette.warning.on(dark)
-	AccentColor = palette.accent.on(dark)
-	ErrorColor = palette.err.on(dark)
-	OrangeColor = palette.orange.on(dark)
-	BlueColor = palette.blue.on(dark)
-	NeutralColor = palette.neutral.on(dark)
-	SoftTextColor = palette.softText.on(dark)
-	NoteColor = palette.note.on(dark)
-	SeparatorColor = palette.separator.on(dark)
-	HighlightColor = palette.highlight.on(dark)
+// Dark reports whether the dark palette is active.
+func Dark() bool { return darkPalette }
 
-	FableColor = palette.fable.on(dark)
+// SetBasic draws the palette in the 16 basic colors (true), for a terminal
+// that has no more, or in its xterm-256 indexes (false). It rebuilds what
+// SetDark does.
+func SetBasic(basic bool) {
+	basicPalette = basic
+	rebuild()
+}
+
+func rebuild() {
+	PrimaryColor = palette.primary.resolve()
+	SecondaryColor = palette.secondary.resolve()
+	SuccessColor = palette.success.resolve()
+	InfoColor = palette.info.resolve()
+	WarningColor = palette.warning.resolve()
+	AccentColor = palette.accent.resolve()
+	ErrorColor = palette.err.resolve()
+	OrangeColor = palette.orange.resolve()
+	BlueColor = palette.blue.resolve()
+	NeutralColor = palette.neutral.resolve()
+	SoftTextColor = palette.softText.resolve()
+	NoteColor = palette.note.resolve()
+	SeparatorColor = palette.separator.resolve()
+	HighlightColor = palette.highlight.resolve()
+
+	FableColor = palette.fable.resolve()
 	OpusColor, SonnetColor, HaikuColor = PrimaryColor, BlueColor, InfoColor
 	OutputTokenColor, CacheWriteTokenColor, CacheReadTokenColor = BlueColor, OrangeColor, InfoColor
 	ContextLowColor, ContextHighColor, ContextCriticalColor = SuccessColor, OrangeColor, ErrorColor
-	ContextFreeColor = palette.contextFree.on(dark)
-	AgentColors = []lipgloss.TerminalColor{AccentColor, OrangeColor, palette.agentOlive.on(dark), BlueColor, InfoColor}
+	ContextFreeColor = palette.contextFree.resolve()
+	AgentColors = []color.Color{AccentColor, OrangeColor, palette.agentOlive.resolve(), BlueColor, InfoColor}
 
 	HeaderStyle = lipgloss.NewStyle().Bold(true)
 	HeroCostStyle = lipgloss.NewStyle().Bold(true).Foreground(SuccessColor)
@@ -281,12 +305,9 @@ func SetDark(dark bool) {
 	DimStyle = lipgloss.NewStyle().Foreground(SecondaryColor)
 }
 
-// Dark reports whether the dark palette is active.
-func Dark() bool { return darkPalette }
-
 // GetContextUsageColor returns the appropriate color based on context usage percentage.
 // Thresholds aligned with Claude Code's ~75-78% auto-compaction trigger.
-func GetContextUsageColor(usagePct float64) lipgloss.TerminalColor {
+func GetContextUsageColor(usagePct float64) color.Color {
 	switch {
 	case usagePct >= 75:
 		return ContextCriticalColor // Red - compaction territory
@@ -303,7 +324,7 @@ func GetContextUsageColor(usagePct float64) lipgloss.TerminalColor {
 // distinct agents usually get distinct colors. The numeric path requires the
 // WHOLE string to be a number — a digit-prefixed hash like "3f2a" must hash,
 // not masquerade as ordinal 3.
-func GetAgentColor(agentID string) lipgloss.TerminalColor {
+func GetAgentColor(agentID string) color.Color {
 	if agentID == "" {
 		return SecondaryColor
 	}
@@ -318,7 +339,7 @@ func GetAgentColor(agentID string) lipgloss.TerminalColor {
 // GetModelColor returns the tier-appropriate color for a model name or ID.
 // Works with both display names ("Opus 4.5") and raw IDs ("claude-opus-4-6")
 // via case-insensitive substring matching.
-func GetModelColor(modelName string) lipgloss.TerminalColor {
+func GetModelColor(modelName string) color.Color {
 	switch {
 	case contains(modelName, "Fable"), contains(modelName, "Mythos"):
 		return FableColor
@@ -341,7 +362,7 @@ func contains(s, substr string) bool {
 // GetCostGradientColor returns a color based on cost position in the session's range
 // Neutral (cheap) -> Yellow -> Orange -> Red (expensive)
 // Only expensive items "heat up" - cheap items stay unobtrusive
-func GetCostGradientColor(cost, minCost, maxCost float64) lipgloss.TerminalColor {
+func GetCostGradientColor(cost, minCost, maxCost float64) color.Color {
 	// Handle edge cases
 	if maxCost <= minCost {
 		return NeutralColor // Single value - neutral white

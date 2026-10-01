@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
 	"github.com/bardisty/ficha/internal/models"
@@ -77,6 +78,8 @@ func runShow(cfg *config, args []string, live bool) error {
 		return runLiveMode(cfg, session, projectDir, followMode)
 	}
 
+	pickPalette(cfg)
+
 	// Analyze the session. Per-message data is retained only for --messages,
 	// which switches json/csv to per-message granularity; the table never renders
 	// the message list (insights are computed regardless), so it ignores the flag.
@@ -141,8 +144,9 @@ func sessionContext(a *models.SessionAnalysis) *models.ContextUsage {
 }
 
 func runLiveMode(cfg *config, session *models.SessionEntry, projectDir string, followMode bool) error {
-	model := tui.NewModel(session.FullPath, session.SessionID, cfg.noColor, projectDir, followMode)
-	return runTUI(cfg.stdout, model)
+	return runTUI(cfg, func() tea.Model {
+		return tui.NewModel(session.FullPath, session.SessionID, cfg.noColor, projectDir, followMode)
+	})
 }
 
 func formatOutput(cfg *config, analysis *models.SessionAnalysis, includeMessages bool) (string, error) {

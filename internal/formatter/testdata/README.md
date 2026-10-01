@@ -20,8 +20,11 @@ A golden diff you didn't intend means you regressed the layout.
 
 - Fixtures use fixed UTC timestamps; `TestMain` pins `time.Local = time.UTC`
   because `FormatSessionTable` renders `EndTime.Local()` in its footer.
-- Colored goldens force the lipgloss renderer to `termenv.ANSI256`; noColor
-  goldens force `termenv.Ascii`. Never rely on the ambient terminal profile.
+- A report formatted with `noColor` false carries its xterm-256 escapes
+  whatever the terminal, and one with `noColor` true carries none. The
+  `*_color` goldens are the first kind as formatted. `cmd` fits the escapes
+  to what stdout takes, which isn't in a golden. The palette is the dark one
+  unless a test calls `styles.SetDark(false)`.
 - The `summary_details*` goldens render from a temp-dir JSONL fixture run
   through `analyzer.AnalyzeMultipleSessions`, the same path `cmd/summary`
   uses. Their costs come from the live pricing catalog, so a pricing-table

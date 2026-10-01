@@ -89,6 +89,7 @@ func runGlobal(cfg *config) error {
 		}
 		return noDataError(projectsDir)
 	}
+	pickPalette(cfg)
 
 	// Analyze all projects (analyzeProject handles empty-session projects internally)
 	analysis, err := analyzer.AnalyzeAllProjectsInWindow(projects, window)

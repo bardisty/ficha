@@ -3,11 +3,12 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"image/color"
 	"io/fs"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
@@ -136,8 +137,8 @@ func (m Model) renderFooterLines(panelWidth int) []string {
 func (m Model) renderFooterRule(panelWidth int) string {
 	var marks []string
 	if m.ready {
-		above := m.viewport.YOffset
-		below := m.viewport.TotalLineCount() - m.viewport.YOffset - m.viewport.Height
+		above := m.viewport.YOffset()
+		below := m.viewport.TotalLineCount() - m.viewport.YOffset() - m.viewport.Height()
 		if above > 0 {
 			marks = append(marks, fmt.Sprintf("%s %d more", styles.MoreAbove, above))
 		}
@@ -357,7 +358,7 @@ func clipRows(rows []string, width int) []string {
 // watcher, then a hint about another session. The switch notice outranks the
 // watcher because it lasts only until the next key, and answers one.
 func (m Model) renderNotifyRow(width int) string {
-	style := func(c lipgloss.TerminalColor, s string) string {
+	style := func(c color.Color, s string) string {
 		if m.noColor {
 			return s
 		}

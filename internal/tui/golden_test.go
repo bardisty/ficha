@@ -9,9 +9,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
@@ -22,24 +20,13 @@ var update = flag.Bool("update", false, "rewrite .golden files with current rend
 // TestMain pins the process timezone: per-message times and the header clock
 // render in local time, so goldens would otherwise depend on the machine's TZ.
 //
-// It also pins a dark background, which the goldens are drawn for. Left to
-// detect, lipgloss would ask whatever terminal the tests run in.
+// The palette is dark unless a test calls styles.SetDark(false), and a view
+// built with color on always carries its xterm-256 escapes. A test of the
+// light palette must switch before it builds the view: the spinner and the
+// chart take their colors then, not when the frame is drawn.
 func TestMain(m *testing.M) {
 	time.Local = time.UTC
-	lipgloss.SetHasDarkBackground(true)
 	os.Exit(m.Run())
-}
-
-// forceProfile pins the lipgloss default renderer's color profile for the
-// duration of a test (see internal/formatter/golden_test.go). It must be set
-// BEFORE Update() runs: the sparkline chart is drawn during message handling,
-// not during View().
-func forceProfile(t *testing.T, p termenv.Profile) {
-	t.Helper()
-	r := lipgloss.DefaultRenderer()
-	orig := r.ColorProfile()
-	r.SetColorProfile(p)
-	t.Cleanup(func() { r.SetColorProfile(orig) })
 }
 
 // checkGolden compares got against testdata/<name>.golden byte-for-byte.
@@ -241,7 +228,6 @@ func TestGoldenWatchView(t *testing.T) {
 }
 
 func TestGoldenWatchViewColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	checkGolden(t, "watch_view_color", goldenWatchView(t, false))
 }
 
@@ -377,7 +363,6 @@ func TestGoldenBreakdownView79(t *testing.T) {
 }
 
 func TestGoldenBreakdownViewColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	checkGolden(t, "breakdown_view_color", goldenBreakdownView(t, false))
 }
 
@@ -396,7 +381,6 @@ func TestGoldenWatchViewASCII(t *testing.T) {
 
 // --ascii alone keeps color; the colored branches must draw ASCII glyphs too.
 func TestGoldenWatchViewASCIIColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	useASCII(t)
 	checkGolden(t, "watch_view_ascii_color", goldenWatchView(t, false))
 }

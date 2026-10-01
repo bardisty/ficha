@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // sessionIDDisplayLen is how many leading characters of a session ID the

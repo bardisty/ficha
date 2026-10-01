@@ -138,6 +138,7 @@ func runListTable(cfg *config) error {
 		return err
 	}
 	sortSessionsByModified(sessions)
+	pickPalette(cfg)
 
 	aggregate, results, err := analyzer.AnalyzeMultipleSessions(sessions)
 	if err != nil {

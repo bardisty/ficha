@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/bardisty/ficha/internal/models"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 var errTestStale = errors.New("stale-session load error")

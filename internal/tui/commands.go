@@ -4,8 +4,8 @@ import (
 	"os"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/bardisty/ficha/internal/analyzer"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/fsnotify/fsnotify"
 )
 

@@ -3,10 +3,9 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"io"
 	"runtime"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // Title stack sequences (xterm window ops). Terminals without a title
@@ -18,25 +17,64 @@ const (
 
 // tuiFPS caps how often the renderer wakes to compare frames, which it does
 // even when nothing changed. Bubble Tea's default of 60 costs an idle view
-// about 60% more CPU. At 20 a held j starts to lag.
+// about 50% more CPU. At 20 a held j starts to lag.
 const tuiFPS = 30
 
 // exitInterrupted is the shell's status for a process ended by SIGINT.
 const exitInterrupted = 130
 
-// runTUI runs a live view full-screen. watch sets the terminal title, and
-// bubbletea can't put the old one back, so the title is pushed before the
-// program starts and popped after it exits. w must be the terminal (callers
-// check with requireTerminal). Skipped on Windows, where the console may
-// not interpret escapes until bubbletea enables VT processing, so the
-// sequence could print as text.
-func runTUI(w io.Writer, model tea.Model) error {
+// The size a live view draws at on a terminal that reports none.
+const (
+	fallbackWidth  = 80
+	fallbackHeight = 24
+)
+
+// runTUI runs a live view full-screen. It takes the view unbuilt: a view
+// copies its spinner's and chart's colors when it's built, so the palette
+// has to be picked first.
+//
+// watch sets the terminal title, and Bubble Tea blanks it on exit, and while
+// the view is stopped, instead of putting the old one back. So the title is
+// pushed before the program starts and popped after it exits. cfg.stdout
+// must be the terminal (callers check with requireTerminal). Skipped on
+// Windows, where the console may not interpret escapes until Bubble Tea
+// enables VT processing, so the sequence could print as text.
+//
+// The program gets the run's color profile. Left to detect one, Bubble Tea
+// would not apply ficha's rules for CI or --no-color=false.
+//
+// A pty can report zero rows or columns: bare `script`, some CI shells, a
+// serial console. Bubble Tea draws into a buffer of the size reported, so
+// there it would draw nothing. sizeOrFallback gives it a size to draw at.
+func runTUI(cfg *config, build func() tea.Model) error {
+	model := liveView(cfg, build)
 	if runtime.GOOS != "windows" {
-		fmt.Fprint(w, pushTitle)
-		defer fmt.Fprint(w, popTitle)
+		fmt.Fprint(cfg.stdout, pushTitle)
+		defer fmt.Fprint(cfg.stdout, popTitle)
 	}
-	_, err := tea.NewProgram(model, tea.WithAltScreen(), tea.WithFPS(tuiFPS)).Run()
+	_, err := tea.NewProgram(model, tea.WithFPS(tuiFPS), tea.WithColorProfile(cfg.profile), tea.WithFilter(sizeOrFallback)).Run()
 	return tuiError(err)
+}
+
+// liveView picks the palette, then builds the view with it.
+func liveView(cfg *config, build func() tea.Model) tea.Model {
+	pickPalette(cfg)
+	return build()
+}
+
+// sizeOrFallback replaces a dimension the terminal reported as zero.
+func sizeOrFallback(_ tea.Model, msg tea.Msg) tea.Msg {
+	size, ok := msg.(tea.WindowSizeMsg)
+	if !ok {
+		return msg
+	}
+	if size.Width <= 0 {
+		size.Width = fallbackWidth
+	}
+	if size.Height <= 0 {
+		size.Height = fallbackHeight
+	}
+	return size
 }
 
 // tuiError maps how a live view ended to what ficha exits with. A SIGINT

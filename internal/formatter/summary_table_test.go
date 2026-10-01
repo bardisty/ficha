@@ -8,9 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 // sessionRow builds a one-session result whose parent primary model is modelID.
@@ -133,7 +132,6 @@ func TestSummaryTableAgentsColumnNeverShiftsRow(t *testing.T) {
 // Same defect class as TestSummaryTableModelColumnAlignsWithColor, for the
 // AGENTS column's overflow values.
 func TestSummaryTableAgentsColumnAlignsWithColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	aggregate := &models.SessionAnalysis{
 		SessionID: "aggregate", IsSummary: true, SessionCount: 3,
 		CostByModel: map[string]models.CostBreakdown{},
@@ -177,10 +175,6 @@ func TestSummaryTableSumAlignsUnderCost(t *testing.T) {
 		{"expand-agents-color", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.noColor {
-			} else {
-				forceProfile(t, termenv.ANSI256)
-			}
 			aggregate := &models.SessionAnalysis{
 				SessionID: "aggregate", IsSummary: true, SessionCount: 2,
 				CostByModel: map[string]models.CostBreakdown{},
@@ -261,7 +255,6 @@ func TestSummaryTableClampsUnknownModelID(t *testing.T) {
 // The color path formats the MODEL column independently of the no-color path;
 // both must clamp. lipgloss.Width discounts the ANSI escapes.
 func TestSummaryTableModelColumnAlignsWithColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	aggregate := &models.SessionAnalysis{
 		SessionID: "aggregate", IsSummary: true, SessionCount: 2,
 		CostByModel: map[string]models.CostBreakdown{},

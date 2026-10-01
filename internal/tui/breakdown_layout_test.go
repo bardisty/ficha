@@ -5,8 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -93,7 +92,6 @@ func TestWorkflowRunTags_NumbersCollisions(t *testing.T) {
 // put every column in the same place, so highlighting a new row never moves a
 // column.
 func TestBreakdownRow_HighlightKeepsColumns(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	msg := models.BreakdownMessage{
 		Index: 7, AgentID: "a641f79aa692e33b9", WorkflowID: "wf_1",
 		Timestamp: time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC), Model: "claude-opus-4-8",
@@ -338,12 +336,12 @@ func TestBreakdownRunTagKey_NamesVisibleTags(t *testing.T) {
 		t.Errorf("at the top: %q", got)
 	}
 	// Both on screen, each named once, in the order they appear.
-	m.viewport.Height = 40
+	m.viewport.SetHeight(40)
 	if got := m.renderStatsLine(m.layout()); !strings.HasSuffix(got, "│ rc = review-changes, ac = audit-codebase") {
 		t.Errorf("both visible: %q", got)
 	}
 	// No run on screen, no key.
-	m.viewport.Height = 10
+	m.viewport.SetHeight(10)
 	m.viewport.SetYOffset(10)
 	if got := m.renderStatsLine(m.layout()); strings.Contains(got, " = ") {
 		t.Errorf("no tag visible: %q", got)

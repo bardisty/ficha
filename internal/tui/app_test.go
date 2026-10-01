@@ -6,10 +6,9 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 func TestFormatDelta(t *testing.T) {
@@ -303,11 +302,6 @@ func assertPanelLinesAligned(t *testing.T, panel, label string) {
 func TestRenderHeaderPanelAlignment(t *testing.T) {
 	// Force color so the loading status includes the spinner, which is wider
 	// than the plain "loading..." string the old padding math measured
-	r := lipgloss.DefaultRenderer()
-	origProfile := r.ColorProfile()
-	r.SetColorProfile(termenv.ANSI256)
-	defer r.SetColorProfile(origProfile)
-
 	// Cover the whole clamped panel-width range (minPanelWidth..design width),
 	// both with and without a prev-session clause: the header content is widest
 	// there, and overflowing the frame would drift the right border.

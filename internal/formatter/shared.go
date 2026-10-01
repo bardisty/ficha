@@ -2,15 +2,16 @@ package formatter
 
 import (
 	"fmt"
+	"image/color"
 	"regexp"
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // sessionsWord returns "session" or "sessions" for a count, keeping every
@@ -338,7 +339,7 @@ func costRows(cost models.CostBreakdown, usage models.TokenUsage, notes, unit bo
 // renderUnifiedCostRow renders a single row with cost and token info
 // combined, the count followed by "tokens" when unit is set:
 // "  Label            $0.3710      53.9K tokens"
-func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor lipgloss.TerminalColor, unit bool, extra string, w costRowWidths, noColor bool) string {
+func renderUnifiedCostRow(label string, cost float64, tokens int64, labelColor color.Color, unit bool, extra string, w costRowWidths, noColor bool) string {
 	// Format label with optional color
 	var labelStr string
 	if !noColor && labelColor != nil {

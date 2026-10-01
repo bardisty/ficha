@@ -12,8 +12,6 @@ import (
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 var update = flag.Bool("update", false, "rewrite .golden files with current rendered output")
@@ -22,25 +20,13 @@ var update = flag.Bool("update", false, "rewrite .golden files with current rend
 // in local time, and carry their year only when it isn't the current one, so
 // goldens would otherwise depend on the machine's TZ and on the date.
 //
-// It also pins a dark background, which the goldens are drawn for. Left to
-// detect, lipgloss would ask whatever terminal the tests run in.
+// The palette is dark unless a test calls styles.SetDark(false), and colored
+// output always carries its xterm-256 escapes. Nothing here looks at a
+// terminal: cmd does, and cuts the escapes down to what stdout takes.
 func TestMain(m *testing.M) {
 	time.Local = time.UTC
-	lipgloss.SetHasDarkBackground(true)
 	now = func() time.Time { return time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC) }
 	os.Exit(m.Run())
-}
-
-// forceProfile pins the lipgloss default renderer's color profile for the
-// duration of a test. Colored goldens use ANSI256 so escape codes are emitted
-// even without a TTY; noColor goldens use Ascii so any stray styled call
-// degrades identically everywhere.
-func forceProfile(t *testing.T, p termenv.Profile) {
-	t.Helper()
-	r := lipgloss.DefaultRenderer()
-	orig := r.ColorProfile()
-	r.SetColorProfile(p)
-	t.Cleanup(func() { r.SetColorProfile(orig) })
 }
 
 // checkGolden compares got against testdata/<name>.golden byte-for-byte.
@@ -339,7 +325,6 @@ func TestGoldenSessionTableShow(t *testing.T) {
 }
 
 func TestGoldenSessionTableShowColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	checkGolden(t, "session_table_show_color", FormatSessionTable(goldenShowAnalysis(), false, 0))
 }
 
@@ -388,7 +373,6 @@ func TestGoldenSessionList(t *testing.T) {
 }
 
 func TestGoldenSessionListColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	checkGolden(t, "session_list_color", FormatSessionListTable(goldenListResults(), false, goldenListOptions))
 }
 
@@ -410,7 +394,6 @@ func TestGoldenGlobalTable(t *testing.T) {
 }
 
 func TestGoldenGlobalTableColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	checkGolden(t, "global_table_color", FormatGlobalTable(goldenGlobalAnalysis(), false, goldenGlobalOptions(false)))
 }
 
@@ -518,7 +501,6 @@ func TestGoldenSummaryDetailsExpandAgents(t *testing.T) {
 }
 
 func TestGoldenSummaryDetailsColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	entries := summaryDetailsFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
 	checkGolden(t, "summary_details_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, false, 0))
@@ -623,7 +605,6 @@ func TestGoldenSessionTableShowWorkflows(t *testing.T) {
 }
 
 func TestGoldenSessionTableShowWorkflowsColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	checkGolden(t, "session_table_show_workflows_color", FormatSessionTable(goldenShowWorkflowAnalysis(), false, 0))
 }
 
@@ -702,7 +683,6 @@ func TestGoldenSummaryDetailsExpandWorkflowsASCII(t *testing.T) {
 }
 
 func TestGoldenSummaryDetailsExpandWorkflowsColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	entries := summaryWorkflowFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
 	checkGolden(t, "summary_details_expand_workflows_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, true, 0))
@@ -725,7 +705,6 @@ func TestGoldenSessionTableShowASCII(t *testing.T) {
 
 // --ascii alone keeps color; the colored branches must draw ASCII glyphs too.
 func TestGoldenSessionTableShowASCIIColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	useASCII(t)
 	checkGolden(t, "session_table_show_ascii_color", FormatSessionTable(goldenShowAnalysis(), false, 0))
 }

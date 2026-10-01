@@ -7,9 +7,9 @@ import (
 	"syscall"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/styles"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Retry bounds for a session-file watcher that couldn't be created. The

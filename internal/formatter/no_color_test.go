@@ -3,15 +3,12 @@ package formatter
 import (
 	"strings"
 	"testing"
-
-	"github.com/muesli/termenv"
 )
 
-// --no-color must emit no escape codes even when the terminal supports
-// color: every surface renders under a forced 256-color profile, where any
-// styled call left in a no-color branch would show up. Both glyph sets.
+// --no-color must emit no escape codes. The formatter writes an escape for
+// every styled call, whatever the terminal, so one left in a no-color branch
+// shows up here. Both glyph sets.
 func TestNoColorEmitsNoEscapes(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	for _, ascii := range []bool{false, true} {
 		if ascii {
 			useASCII(t)

@@ -5,9 +5,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/bardisty/ficha/internal/models"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // bdMsg builds a message with a fixed timestamp (minutes offset) and optional
@@ -264,7 +263,7 @@ func TestBreakdownModel_DetectNewMessages_FirstLoad(t *testing.T) {
 func fadeReadyBreakdownModel() BreakdownModel {
 	m := NewBreakdownModel("/test/path", "test-session", true, "", false)
 	m.ready = true
-	m.viewport = viewport.New(80, 10)
+	m.viewport = newViewport(80, 10)
 	m.messages = []models.BreakdownMessage{bdMsg(1, 0, ""), bdMsg(2, 1, "")}
 	m.relayout()
 	m.viewport.SetContent("SENTINEL")
@@ -360,9 +359,8 @@ func TestBreakdownFade_NothingExpiredNoRedraw(t *testing.T) {
 }
 
 func TestBreakdownViewportDoesNotWrapRowsOnNarrowTerminal(t *testing.T) {
-	// Table rows are ~74 columns; on a narrower terminal the viewport
-	// soft-wraps overlong lines into extra rows, shifting the whole table.
-	// Content must be clipped before it reaches the viewport.
+	// Table rows are ~74 columns. On a narrower terminal each must still
+	// be one line in the viewport, clipped, or the whole table shifts.
 	m := NewBreakdownModel("/test/path", "test-session", true, "", false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 	m = updated.(BreakdownModel)

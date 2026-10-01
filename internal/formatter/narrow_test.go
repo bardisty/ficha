@@ -6,11 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/render"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
-	"github.com/muesli/termenv"
 )
 
 // narrowReports renders every show and summary fixture at a terminal width,
@@ -41,9 +40,6 @@ func narrowReports(t *testing.T, width int, noColor bool) map[string]string {
 // wider than the terminal, so none wraps.
 func TestReportsFitNarrowTerminals(t *testing.T) {
 	for _, noColor := range []bool{true, false} {
-		if !noColor {
-			forceProfile(t, termenv.ANSI256)
-		}
 		for width := 50; width <= 76; width++ {
 			for name, out := range narrowReports(t, width, noColor) {
 				for line := range strings.SplitSeq(out, "\n") {
@@ -212,9 +208,6 @@ func TestWorkflowStatusesAllOrNothing(t *testing.T) {
 // SUB-SESSIONS lines up: the parent, each heading and agent, the subtotal.
 func TestShowAgentCostsAlignAsLabelColumnGrows(t *testing.T) {
 	for _, noColor := range []bool{true, false} {
-		if !noColor {
-			forceProfile(t, termenv.ANSI256)
-		}
 		for _, width := range []int{0, 50, 55, 60, 65, 70, 76} {
 			out := FormatSessionTable(goldenShowLongWorkflowAnalysis(), noColor, width)
 			_, section, _ := strings.Cut(out, "AGENT SUB-SESSIONS")

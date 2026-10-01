@@ -3,8 +3,9 @@
 //
 // So cmd decides whether stdout and stderr are terminals and how wide stdout
 // is; the static reports never check. It turns --no-color and NO_COLOR into
-// the noColor every renderer takes, sets the --ascii glyph set in
-// internal/styles, and passes internal/formatter the width to fit. It also
+// the noColor every renderer takes, sets the --ascii glyph set and the light
+// or dark palette in internal/styles, passes internal/formatter the width to
+// fit, and cuts a table's color escapes down to what stdout can show. It also
 // resolves which project a command means, from -p, --project-dir or the
 // working directory, and when a session ID isn't in that project, names the
 // project that has it and the command to run. internal/paths does the

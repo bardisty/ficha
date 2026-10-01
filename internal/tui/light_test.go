@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/muesli/termenv"
 )
 
 // darkOnlyIndexes are the xterm-256 colors ficha draws only on a dark
@@ -20,7 +19,6 @@ var fgIndex = regexp.MustCompile(`38;5;(\d+)`)
 
 // On a light background both TUIs draw from the light palette.
 func TestLightBackgroundTUIs(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	styles.SetDark(false)
 	t.Cleanup(func() { styles.SetDark(true) })
 

@@ -6,10 +6,10 @@ import (
 	"time"
 	"unicode"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )
 

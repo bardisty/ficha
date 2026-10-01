@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/bardisty/ficha/internal/models"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 // almostEqual checks if two float64 values are within a given tolerance
@@ -649,12 +647,6 @@ func TestFormatSessionListTable(t *testing.T) {
 
 func TestFormatSessionTable_ANSICodes(t *testing.T) {
 	analysis := sampleAnalysis()
-
-	// Force lipgloss default renderer to use ANSI256 so it emits escape codes in non-TTY
-	r := lipgloss.DefaultRenderer()
-	origProfile := r.ColorProfile()
-	r.SetColorProfile(termenv.ANSI256)
-	defer r.SetColorProfile(origProfile)
 
 	// noColor=false → output contains ANSI escape codes
 	colored := FormatSessionTable(analysis, false, 0)
