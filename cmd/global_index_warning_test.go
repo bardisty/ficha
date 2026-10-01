@@ -223,7 +223,7 @@ func TestGlobalSessionsIndexWarningsStopAtTen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := strings.Join(all[:10], "") + "  ignoring 2 more sessions-index.json files. Run with -v to list them.\n"
+	want := strings.Join(all[:10], "") + "Warning: ignoring 2 more sessions-index.json files. Run with -v to list all 12.\n"
 	if stderr != want {
 		t.Errorf("without -v:\n got: %q\nwant: %q", stderr, want)
 	}
