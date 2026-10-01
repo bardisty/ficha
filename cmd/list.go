@@ -41,8 +41,7 @@ func runList(cfg *config) error {
 		return runListTable(cfg)
 	}
 
-	// list displays per-session message counts, so request the discovery-time scan.
-	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, true)
+	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, false)
 	if err != nil {
 		return err
 	}
@@ -50,8 +49,7 @@ func runList(cfg *config) error {
 	// Sort sessions by modified time (most recent first)
 	sortSessionsByModified(sessions)
 
-	// Priced the way the table is, so costs match summary -d. Counts stay
-	// the scan's, which match show's.
+	// Priced the way the table is, so costs match summary -d.
 	aggregate, results, err := analyzer.AnalyzeMultipleSessions(sessions)
 	if err != nil {
 		results = make([]models.SessionResult, len(sessions))
@@ -59,17 +57,19 @@ func runList(cfg *config) error {
 			results[i] = models.SessionResult{Entry: s}
 		}
 	}
+	for i := range results {
+		results[i].Entry = countedEntry(results[i])
+	}
 
-	// The counts come from the same parse `show` runs, so warn about the
-	// inputs it dropped — otherwise a session whose transcript could not be read
-	// is indistinguishable from one that holds no messages.
-	// The files -v names come from that scan as well, not from results: the
-	// analysis parses again, and a transcript still being written can gain or
-	// finish a line in between, which would list files that don't add up to
-	// the count.
+	// Warn about the inputs the parse dropped — otherwise a session whose
+	// transcript could not be read is indistinguishable from one that holds
+	// no messages. Counts, costs and the files -v names all come from one
+	// read of each transcript, so the files add up to the count even for a
+	// transcript still being written.
 	skips := skipWarning{counts: "message counts and costs"}
 	var details []models.SkipDetail
-	for _, s := range sessions {
+	for _, r := range results {
+		s := r.Entry
 		skips.sessions += s.SkippedSessions
 		skips.agents += s.SkippedAgents
 		skips.lines += s.SkippedLines
@@ -105,6 +105,28 @@ func runList(cfg *config) error {
 
 	printReport(cfg, &warnings, output)
 	return nil
+}
+
+// countedEntry returns r's entry with the message counts and skip accounting
+// json and csv print. They are show's counts for the session: its whole
+// transcript, the messages a fork copied included, where the analysis leaves
+// those out of its totals as already billed. Agents are never copied, so
+// their figures are the analysis's own.
+//
+// A session whose transcript can't be read has no analysis. Its agents still
+// count, so they are parsed here for it.
+func countedEntry(r models.SessionResult) models.SessionEntry {
+	if r.Analysis == nil {
+		return parser.CountSessionMessages(r.Entry)
+	}
+	entry := r.Entry
+	entry.MessageCount = r.Analysis.TranscriptMessages + r.Analysis.AgentMessageCount
+	entry.AgentCount = r.Analysis.AgentCount
+	entry.AgentMessageCount = r.Analysis.AgentMessageCount
+	entry.SkippedAgents = r.Analysis.SkippedAgents
+	entry.SkippedLines = r.Analysis.SkippedLines
+	entry.SkippedFiles = r.Analysis.SkippedFiles
+	return entry
 }
 
 // runListTable prices every session the way summary --details does, cross-

@@ -88,6 +88,7 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope Mes
 // Agents with nothing inside it are left out.
 func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessionID string, scope MessageScope, agents *sessionAgents, seen map[parser.DedupKey]struct{}, window models.TimeWindow) *models.SessionAnalysis {
 	messages := result.Messages
+	transcriptMessages := len(messages)
 	if seen != nil {
 		messages = parser.ExcludeSeenMessages(messages, seen)
 	}
@@ -116,6 +117,7 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 		analysis.SkippedFiles = append(analysis.SkippedFiles, fileSkips(sessionPath, "", result))
 	}
 	analysis.Title = result.Title
+	analysis.TranscriptMessages = transcriptMessages
 
 	// Store parent cost and message count before adding agent data
 	analysis.ParentCost = analysis.TotalCost

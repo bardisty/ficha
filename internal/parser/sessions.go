@@ -43,9 +43,9 @@ func ParseSessionsIndex(path string) (*models.SessionsIndex, error) {
 
 // DiscoverSessionsFromDisk scans the project directory for .jsonl session files
 // and builds SessionEntry records from file metadata. countMessages controls
-// whether each file is scanned for its message count: only `list` displays
-// discovery-time counts, so analysis paths pass false to skip the scan (they
-// recompute counts from their own parse — see buildDiskEntry).
+// whether each file is scanned for its message count. Every command passes
+// false and takes counts from its analysis, which parses the same files (see
+// buildDiskEntry).
 func DiscoverSessionsFromDisk(projectDir string, countMessages bool) ([]models.SessionEntry, error) {
 	entries, err := os.ReadDir(projectDir)
 	if err != nil {
@@ -82,6 +82,18 @@ func SessionFromFile(fullPath string) (models.SessionEntry, error) {
 	base := filepath.Base(fullPath)
 	sessionID := strings.TrimSuffix(base, filepath.Ext(base))
 	return buildDiskEntry(filepath.Dir(fullPath), sessionID, fullPath, info.ModTime(), false), nil
+}
+
+// CountSessionMessages returns entry with the counts and skip accounting of
+// the message-count scan (see buildDiskEntry). `list` takes a readable
+// session's counts from its analysis. It calls this for a session whose own
+// transcript can't be read, which has no analysis but whose agents still
+// count.
+func CountSessionMessages(entry models.SessionEntry) models.SessionEntry {
+	counted := buildDiskEntry(filepath.Dir(entry.FullPath), entry.SessionID, entry.FullPath, entry.Modified, true)
+	counted.Created = entry.Created
+	counted.ProjectPath = entry.ProjectPath
+	return counted
 }
 
 // buildDiskEntry builds a SessionEntry for a session file on disk, discovering

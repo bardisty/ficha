@@ -20,8 +20,7 @@ func appendBrokenLine(t *testing.T, path string) {
 	}
 }
 
-// list -v names the same files and lines in every format. json and csv take
-// their warning from the discovery scan, and the table from the analysis.
+// list -v names the same files and lines in every format.
 // Only stderr grows: stdout is the same with or without -v.
 func TestListVerboseNamesSkippedFilesInEveryFormat(t *testing.T) {
 	root := setupE2EFixture(t)
