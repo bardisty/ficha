@@ -131,9 +131,9 @@ func CountSessionMessages(entry models.SessionEntry) models.SessionEntry {
 // buildDiskEntry builds a SessionEntry for a session file on disk and
 // discovers its agent sub-sessions. That is a directory listing: no transcript
 // is opened, because a command that prints counts parses them in its analysis
-// and takes the counts from there. So the message counts stay zero, AgentCount is the number
-// of agent files listed, and SkippedAgents is the number of agent directories
-// that couldn't be listed.
+// and takes the counts from there. So the message counts stay zero, AgentCount
+// is the number of agent files listed, and SkippedAgents is the number of
+// agent directories that couldn't be listed.
 func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time) models.SessionEntry {
 	agentPaths, unreadableDirs := DiscoverAgentSessions(projectDir, sessionID)
 	return models.SessionEntry{
