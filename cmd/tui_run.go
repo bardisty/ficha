@@ -16,6 +16,11 @@ const (
 	popTitle  = "\x1b[23;0t"
 )
 
+// tuiFPS caps how often the renderer wakes to compare frames, which it does
+// even when nothing changed. Bubble Tea's default of 60 costs an idle view
+// about 60% more CPU. At 20 a held j starts to lag.
+const tuiFPS = 30
+
 // exitInterrupted is the shell's status for a process ended by SIGINT.
 const exitInterrupted = 130
 
@@ -30,7 +35,7 @@ func runTUI(w io.Writer, model tea.Model) error {
 		fmt.Fprint(w, pushTitle)
 		defer fmt.Fprint(w, popTitle)
 	}
-	_, err := tea.NewProgram(model, tea.WithAltScreen()).Run()
+	_, err := tea.NewProgram(model, tea.WithAltScreen(), tea.WithFPS(tuiFPS)).Run()
 	return tuiError(err)
 }
 
