@@ -484,9 +484,9 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 // Every session falling outside it isn't an error: the aggregate is then
 // empty.
 //
-// With a Since bound, a session whose files were all last written a day or
-// more before it isn't parsed at all (see writtenBefore), so the skip
-// counters leave out that session's unreadable lines.
+// With a Since bound, a session whose files all end too long before it to
+// hold a message inside it isn't parsed at all (see writtenBefore), so the
+// skip counters leave out that session's unreadable lines.
 //
 // The transcripts, agents' included, are parsed in parallel. The analysis of
 // those parses is serial and ordered, so the totals are the same on every run.
@@ -683,34 +683,56 @@ func analyzeSessionParses(entries []models.SessionEntry, window models.TimeWindo
 // when Claude Code wrote a transcript's timestamps.
 const windowSkipSlack = 24 * time.Hour
 
+// tailSkipSlack allows for a clock that stepped back while a transcript was
+// being written, which would leave an earlier line with a later timestamp
+// than the last ones.
+const tailSkipSlack = time.Hour
+
 // writtenBefore reports whether entry's transcript and all of its agent
-// files were last written before t. A line can't carry a timestamp later
-// than the write that added it, so such a session has no message at or after
-// t. A file it can't open or an agent directory it can't list makes it
-// false: the parse has to meet those to count them as skipped.
-func writtenBefore(entry models.SessionEntry, agents *sessionAgents, t time.Time) bool {
-	if agents.unreadableDirs > 0 || !modifiedBefore(entry.FullPath, t) {
+// files end too long before since to hold a message at or after it (see
+// endsBefore). A file it can't open or an agent directory it can't list
+// makes it false: the parse has to meet those to count them as skipped.
+func writtenBefore(entry models.SessionEntry, agents *sessionAgents, since time.Time) bool {
+	if agents.unreadableDirs > 0 || !endsBefore(entry.FullPath, since) {
 		return false
 	}
 	for _, path := range agents.paths {
-		if !modifiedBefore(path, t) {
+		if !endsBefore(path, since) {
 			return false
 		}
 	}
 	return true
 }
 
-// modifiedBefore reports whether path is a regular file that opens and was
-// last written before t. Anything else, such as a symlink to a directory,
-// fails the parse, and has to reach it to be counted.
-func modifiedBefore(path string, t time.Time) bool {
+// endsBefore reports whether path is a regular file that opens and whose
+// lines all predate since, judged without parsing it. Anything else, such as
+// a symlink to a directory, fails the parse, and has to reach it to be
+// counted.
+//
+// A line can't carry a timestamp later than the write that added it, so a
+// file last written windowSkipSlack before since has none inside the window.
+// That slack makes --since today take in everything written yesterday. A
+// file written inside the slack is judged by the newest timestamp in its
+// last lines instead. Those come from the clock that wrote every other line,
+// so the file system's clock doesn't matter to them, and transcripts are
+// only appended to, so no earlier line is later, short of a clock that
+// stepped back. A tail with no timestamp to go by leaves the file to the
+// parse.
+func endsBefore(path string, since time.Time) bool {
 	f, err := os.Open(path)
 	if err != nil {
 		return false
 	}
 	defer f.Close()
 	info, err := f.Stat()
-	return err == nil && info.Mode().IsRegular() && info.ModTime().Before(t)
+	if err != nil || !info.Mode().IsRegular() || !info.ModTime().Before(since) {
+		return false
+	}
+	if info.ModTime().Before(since.Add(-windowSkipSlack)) {
+		return true
+	}
+	newest, ok := parser.NewestTailTimestamp(f, info.Size())
+	return ok && newest.Before(since.Add(-tailSkipSlack))
 }
 
 // SkipDetails lists the sessions in results that contributed to the skip
