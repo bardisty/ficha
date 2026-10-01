@@ -20,8 +20,9 @@ from datetime import datetime, timedelta, timezone
 ap = argparse.ArgumentParser(description="Build the synthetic fixture to run ficha against.")
 ap.add_argument("root", help="directory to write config/ and work/ under")
 args = ap.parse_args()
-# "--" hands the parser anything as a path, and a directory named like a flag
-# is a typo far more often than a choice. "./-name" still gets one.
+# argparse takes "-1" as a path on its own, and any flag after "--". A
+# directory named like one is a typo far more often than a choice, and
+# "./-name" still makes it.
 if args.root.startswith("-"):
     ap.error("root %r looks like a flag; write ./%s for a directory of that name" % (args.root, args.root))
 

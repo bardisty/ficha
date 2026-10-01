@@ -15,12 +15,12 @@ Usage: mkhistory.py <root> [sessions] [--skew]
   with it when a change touches how lines are read or how the work is spread
   over threads.
 
-  --skew also writes eight short sessions over the last two days whose
-  transcript, or whose one agent's, ends on a tool result of 64 KB or more.
-  --since reads the end of a file from the day before its window to see when
-  the file stops, and an end like that holds no whole line to tell it, so the
-  file is parsed in full. Whatever the hour or the timezone, --since today
-  meets a few of them.
+  --skew also writes eight short sessions over the last two days, each ending
+  on a tool result of 64 KB or more, in its transcript or in its one agent's.
+  --since reads the last 64 KB of a file written in the day before its window
+  for the newest timestamp there. An end like that holds no whole line to
+  carry one, so the file is parsed in full. Whatever the hour or the timezone,
+  --since today meets a few of them, so time it with --skew as well.
 
 Every file's mtime lands just after its newest line, as it would on a real
 disk. --since skips a file last written before the window, so a file whose
@@ -40,8 +40,9 @@ ap.add_argument("sessions", nargs="?", type=int, default=300, help="how many ses
 ap.add_argument("--skew", action="store_true",
                 help="shape it like a real history: 40 projects with half the sessions in one, and a few very long lines")
 args = ap.parse_args()
-# "--" hands the parser anything as a path, and a directory named like a flag
-# is a typo far more often than a choice. "./-name" still gets one.
+# argparse takes "-1" as a path on its own, and any flag after "--". A
+# directory named like one is a typo far more often than a choice, and
+# "./-name" still makes it.
 if args.root.startswith("-"):
     ap.error("root %r looks like a flag; write ./%s for a directory of that name" % (args.root, args.root))
 
@@ -171,18 +172,16 @@ if args.skew:
         write(os.path.join(project_dirs[0], sid + ".jsonl"),
               convo(end, turns, rng.choice(MODELS), sid, cwd_of(project_dirs[0])))
 
-    # Sessions cut off while a long tool result was the last thing written, in
-    # the parent's transcript or in its agent's. Such a line fills the 64 KB
-    # ficha reads from the end of a file, so no whole line is left there to
-    # date it.
+    # Sessions whose newest line, in the transcript or in its agent's, is
+    # longer than the 64 KB tail ficha dates a file by.
     #
     # ficha reads that end only for a file written in the 24 hours before the
     # window. For --since today those hours are the local yesterday, which
     # lies somewhere in the last 48 hours, so one session every 6 hours puts
     # at least three there.
     #
-    # They draw their random numbers after everything above, which leaves
-    # every other file as it is without them.
+    # Last, so the rng gives everything above the same numbers whether or not
+    # these are written.
     for i in range(8):
         pdir = project_dirs[i]
         sid, cwd = str(uuid.UUID(int=rng.getrandbits(128))), cwd_of(pdir)
