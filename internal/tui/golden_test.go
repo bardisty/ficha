@@ -2,6 +2,7 @@ package tui
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -264,6 +265,22 @@ func TestGoldenWatchView50(t *testing.T) {
 func TestGoldenWatchViewCompact(t *testing.T) {
 	forceProfile(t, termenv.Ascii)
 	checkGolden(t, "watch_view_80x12", goldenWatchViewSized(t, true, 80, 12))
+}
+
+// The compact header on a session with no message yet, at the two narrowest
+// widths: the status shortens to "no msgs" and nothing is cut.
+func TestGoldenWatchCompactEmptyNarrow(t *testing.T) {
+	forceProfile(t, termenv.Ascii)
+	for _, width := range []int{40, 41} {
+		m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", true, "", true)
+		m.project = "webapp"
+		m.now = func() time.Time { return goldenTime(11, 30, 12) }
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 14})
+		updated, _ = updated.Update(analysisMsg{analysis: &models.SessionAnalysis{}})
+		m = updated.(Model)
+		m.lastUpdated = goldenTime(11, 30, 0)
+		checkGolden(t, fmt.Sprintf("watch_empty_%dx14", width), m.View())
+	}
 }
 
 func goldenBreakdownMessages() []models.BreakdownMessage {
