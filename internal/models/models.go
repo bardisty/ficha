@@ -324,6 +324,7 @@ type SessionAnalysis struct {
 	Workflows          []WorkflowMeta           `json:"workflows,omitempty"`        // Workflow runs with agents in this session
 	WorkflowCount      int                      `json:"workflow_count,omitempty"`   // Distinct workflow runs
 	ParentMessageCount int                      `json:"parent_message_count"`       // Messages from parent session only
+	TranscriptMessages int                      `json:"-"`                          // Parent messages before any are left out as copies of an earlier session's; a fork's count in `list` takes in what it copied
 	AgentMessageCount  int                      `json:"agent_message_count"`        // Messages from all agents
 	SkippedAgents      int                      `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read (parse failure, or an unreadable agent directory)
 	SkippedSessions    int                      `json:"skipped_sessions,omitempty"` // Sessions that failed to parse (for aggregates)

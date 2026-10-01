@@ -39,9 +39,9 @@ func loadProjectSessions(cfg *config, countMessages bool) ([]models.SessionEntry
 // loadProjectSessionsWithDir loads all sessions and returns the project directory path.
 // Used by live-view commands that need to watch the project directory for new sessions.
 //
-// countMessages gates the discovery-time message-count scan: only `list`
-// displays those counts, so every analysis path passes false and lets the
-// analyzer recompute counts from its own parse (avoids scanning each file twice).
+// countMessages gates the discovery-time message-count scan. Every command
+// passes false and takes counts from the analyzer's own parse, so each file
+// is read once.
 func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.SessionEntry, string, error) {
 	project, err := resolveProjectDirectory(cfg)
 	if err != nil {
