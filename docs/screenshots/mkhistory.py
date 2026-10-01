@@ -16,8 +16,9 @@ Usage: mkhistory.py <root> [sessions] [--skew]
   over threads.
 
   One session in 40 ends in the last three hours. --skew gives each of those
-  a project of its own, so from 03:00 local time --since today reads at least
-  eight projects. Earlier than that, some of them ended yesterday.
+  a project of its own, so from 03:00 local time --since today reads one
+  project per 40 sessions, eight with the default 300. Before 03:00, the ones
+  that ended before midnight are yesterday's.
 
   --skew also writes eight short sessions over the last two days, each ending
   on a tool result of 64 KB or more, in its transcript or in its one agent's.
@@ -148,9 +149,9 @@ for s in range(n_sessions):
         else:
             pdir, others = project_dirs[1 + others % (len(project_dirs) - 1)], others + 1
         if recent:
-            # A project each, so --since today has several to read. Chosen
-            # after the draw above, so every other session keeps its project
-            # and its numbers.
+            # A project each, so --since today has several to read. The draw
+            # above still runs for these, so changing which sessions are
+            # recent moves no other session.
             pdir = project_dirs[s // 40 % len(project_dirs)]
     else:
         pdir = rng.choice(project_dirs)
