@@ -12,7 +12,7 @@ import (
 func TestGetAgentColor(t *testing.T) {
 	tests := []struct {
 		agentID  string
-		expected lipgloss.AdaptiveColor
+		expected lipgloss.TerminalColor
 	}{
 		{"", SecondaryColor},   // Empty returns secondary
 		{"1", AgentColors[0]},  // A1 = pink
@@ -50,7 +50,7 @@ func TestGetAgentColor(t *testing.T) {
 func TestGetModelColor(t *testing.T) {
 	tests := []struct {
 		modelName string
-		expected  lipgloss.AdaptiveColor
+		expected  lipgloss.TerminalColor
 	}{
 		{"Fable 5", FableColor},
 		{"claude-fable-5", FableColor},
@@ -80,7 +80,7 @@ func TestGetContextUsageColor(t *testing.T) {
 	tests := []struct {
 		name     string
 		pct      float64
-		expected lipgloss.AdaptiveColor
+		expected lipgloss.TerminalColor
 	}{
 		{"0% → green", 0, ContextLowColor},
 		{"64.9% → green", 64.9, ContextLowColor},
@@ -107,7 +107,7 @@ func TestGetCostGradientColor(t *testing.T) {
 		cost     float64
 		minCost  float64
 		maxCost  float64
-		expected lipgloss.AdaptiveColor
+		expected lipgloss.TerminalColor
 	}{
 		{"minimum cost (0%)", 0.01, 0.01, 0.10, NeutralColor},       // Neutral white
 		{"low cost (20%)", 0.028, 0.01, 0.10, NeutralColor},         // Neutral white (< 50%)
@@ -136,10 +136,13 @@ func TestGetCostGradientColor(t *testing.T) {
 // for text, and 3:1 for bars and separators, which aren't read letter by
 // letter.
 func TestLightPaletteContrast(t *testing.T) {
+	SetDark(false)
+	t.Cleanup(func() { SetDark(true) })
+
 	const text, graphic = 4.5, 3.0
 	tests := []struct {
 		name  string
-		color lipgloss.AdaptiveColor
+		color lipgloss.TerminalColor
 		min   float64
 	}{
 		{"Primary", PrimaryColor, text},
@@ -162,16 +165,42 @@ func TestLightPaletteContrast(t *testing.T) {
 	for i, c := range AgentColors {
 		tests = append(tests, struct {
 			name  string
-			color lipgloss.AdaptiveColor
+			color lipgloss.TerminalColor
 			min   float64
 		}{"Agent" + strconv.Itoa(i+1), c, text})
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := contrastOnWhite(t, tt.color.Light); got < tt.min {
-				t.Errorf("%s light value %s has contrast %.2f on white, want at least %.1f", tt.name, tt.color.Light, got, tt.min)
+			index := string(tt.color.(lipgloss.Color))
+			if got := contrastOnWhite(t, index); got < tt.min {
+				t.Errorf("%s light value %s has contrast %.2f on white, want at least %.1f", tt.name, index, got, tt.min)
 			}
 		})
+	}
+}
+
+// SetDark swaps every color, the ones built from another included, and the
+// styles drawn with them.
+func TestSetDarkRebuildsThePalette(t *testing.T) {
+	t.Cleanup(func() { SetDark(true) })
+	for _, dark := range []bool{false, true} {
+		SetDark(dark)
+		if Dark() != dark {
+			t.Errorf("Dark() = %v after SetDark(%v)", Dark(), dark)
+		}
+		want := palette.primary.on(dark)
+		for name, got := range map[string]lipgloss.TerminalColor{
+			"PrimaryColor": PrimaryColor,
+			"OpusColor":    OpusColor,
+			"SpinnerStyle": SpinnerStyle.GetForeground(),
+		} {
+			if got != want {
+				t.Errorf("dark=%v: %s is %v, want %v", dark, name, got, want)
+			}
+		}
+		if got, want := AgentColors[2], palette.agentOlive.on(dark); got != want {
+			t.Errorf("dark=%v: AgentColors[2] is %v, want %v", dark, got, want)
+		}
 	}
 }
 

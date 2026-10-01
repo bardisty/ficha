@@ -157,19 +157,19 @@ func keyList(view string, keys []Key, width, rows int, noColor bool) []string {
 	var entries []string
 	for _, k := range shown {
 		pad := strings.Repeat(" ", keyWidth-lipgloss.Width(k.Keys))
-		entries = append(entries, "  "+style(sectionHeaderStyle, k.Keys)+pad+"  "+k.Does)
+		entries = append(entries, "  "+style(styles.SectionHeaderStyle, k.Keys)+pad+"  "+k.Does)
 	}
 
 	var lines []string
 	switch {
 	case len(entries) < rows:
-		lines = append([]string{"  " + style(headerStyle, "Keys")}, entries...)
+		lines = append([]string{"  " + style(styles.HeaderStyle, "Keys")}, entries...)
 	case len(entries) <= rows:
 		lines = entries
 	default:
 		keep := max(rows-1, 0)
 		more := fmt.Sprintf("  %s %d more in ficha %s --help", styles.Ellipsis, len(entries)-keep, view)
-		lines = append(entries[:keep:keep], style(dimStyle, more))
+		lines = append(entries[:keep:keep], style(styles.DimStyle, more))
 	}
 	for len(lines) < rows {
 		lines = append(lines, "")

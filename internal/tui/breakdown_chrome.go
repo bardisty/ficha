@@ -178,14 +178,14 @@ func (m BreakdownModel) renderWaiting() string {
 	if m.noColor {
 		return "  " + text
 	}
-	return "  " + dimStyle.Render(text)
+	return "  " + styles.DimStyle.Render(text)
 }
 
 func (m BreakdownModel) renderEmptyState() string {
 	if m.noColor {
 		return "  " + emptyStateText
 	}
-	return "  " + dimStyle.Render(emptyStateText)
+	return "  " + styles.DimStyle.Render(emptyStateText)
 }
 
 // visibleRows returns the display Index of the first and last message rows
@@ -269,12 +269,12 @@ func (m BreakdownModel) renderFooterRule(panelWidth int) string {
 		if m.noColor {
 			return "  " + rule
 		}
-		return "  " + panelBorderStyle.Render(rule)
+		return "  " + styles.PanelBorderStyle.Render(rule)
 	}
 	left := strings.Repeat(styles.BoxHorizontal, lead)
 	right := strings.Repeat(styles.BoxHorizontal, panelWidth-lead-lipgloss.Width(bracketed))
 	if m.noColor {
 		return "  " + left + bracketed + right
 	}
-	return "  " + panelBorderStyle.Render(left) + "[ " + footerStyle.Render(mark) + " ]" + panelBorderStyle.Render(right)
+	return "  " + styles.PanelBorderStyle.Render(left) + "[ " + styles.FooterStyle.Render(mark) + " ]" + styles.PanelBorderStyle.Render(right)
 }

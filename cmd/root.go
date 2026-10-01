@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bardisty/ficha/internal/styles"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 )
@@ -66,9 +67,11 @@ Exit status:
 				cfg.noColor = true
 			}
 			applyColorOverride(cmd, cfg)
-			// Glyphs are process-wide; set them every run (true or false) so
-			// an in-process caller's earlier --ascii can't leak into this one.
+			// Glyphs and the palette are process-wide; set them every run so
+			// an in-process caller's earlier --ascii or background can't leak
+			// into this one.
 			styles.SetASCII(cfg.ascii)
+			styles.SetDark(lipgloss.DefaultRenderer().HasDarkBackground())
 
 			if cmd.Annotations[noGlobalFlagsAnnotation] != "" {
 				return noGlobalFlags(cmd)

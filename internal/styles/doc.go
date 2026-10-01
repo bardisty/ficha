@@ -4,11 +4,12 @@
 // --ascii).
 //
 // Every lipgloss style lives here, including the few only the live views use.
-// internal/tui/styles.go gives them short local names and adds the live
-// views' spinner, marker and footnote helpers.
+// internal/tui/styles.go adds the live views' spinner, marker and footnote
+// helpers.
 //
-// The light-or-dark choice and the glyph set are process-wide. The terminal
-// background is detected once, before anything renders, and cmd picks the
-// glyph set at startup. Color on or off isn't stored here: callers pass
-// noColor down and skip the styles.
+// The light-or-dark choice and the glyph set are process-wide. cmd sets both
+// at startup, with SetDark and SetASCII, before anything renders. SetDark
+// rebuilds the colors and styles, so callers read them from this package
+// each time and keep no copies. Color on or off isn't stored here: callers
+// pass noColor down and skip the styles.
 package styles

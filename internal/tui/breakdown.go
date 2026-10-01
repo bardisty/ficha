@@ -876,7 +876,7 @@ func (m BreakdownModel) fitRunTagKey(line, sep string) string {
 	for n := len(entries); n > 0; n-- {
 		key := strings.Join(entries[:n], ", ")
 		if !m.noColor {
-			key = dimStyle.Render(key)
+			key = styles.DimStyle.Render(key)
 		}
 		if m.width <= 0 || lipgloss.Width(line+sep+key) <= m.width {
 			return sep + key
@@ -1152,7 +1152,7 @@ func (m BreakdownModel) peakAgentMarker() string {
 func (m BreakdownModel) renderTableHeader(layout breakdownLayout) string {
 	header := layout.header()
 	if !m.noColor {
-		return headerStyle.Render(header)
+		return styles.HeaderStyle.Render(header)
 	}
 	return header
 }
@@ -1162,7 +1162,7 @@ func (m BreakdownModel) renderTableHeader(layout breakdownLayout) string {
 func (m BreakdownModel) renderTableSeparator(panelWidth int) string {
 	sep := "  " + strings.Repeat(styles.LineHorizontal, panelWidth)
 	if !m.noColor {
-		return tableBorderStyle.Render(sep)
+		return styles.BorderStyle.Render(sep)
 	}
 	return sep
 }
@@ -1229,7 +1229,7 @@ func (m BreakdownModel) renderDayMarker(t time.Time) string {
 	if m.noColor {
 		return "  " + marker
 	}
-	return "  " + dimStyle.Render(marker)
+	return "  " + styles.DimStyle.Render(marker)
 }
 
 // agentMarker is the AGENT cell's ID part: the same [A<id>] marker watch,
@@ -1326,12 +1326,12 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, layou
 	agent := c.agent
 	if marker != "" {
 		pad := c.agent[len(marker):]
-		agent = lipgloss.NewStyle().Foreground(styles.GetAgentColor(msg.AgentID)).Render(marker) + dimStyle.Render(pad)
+		agent = lipgloss.NewStyle().Foreground(styles.GetAgentColor(msg.AgentID)).Render(marker) + styles.DimStyle.Render(pad)
 	}
 	costColor := styles.GetCostGradientColor(msg.Cost.TotalCost, m.minCost, m.maxCost)
 	return layout.join(breakdownCells{
-		index:      dimStyle.Render(c.index),
-		time:       dimStyle.Render(c.time),
+		index:      styles.DimStyle.Render(c.index),
+		time:       styles.DimStyle.Render(c.time),
 		agent:      agent,
 		model:      lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName)).Render(c.model),
 		cost:       render.CostColored(msg.Cost.TotalCost, costColor, bdCostWidth),

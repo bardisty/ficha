@@ -92,7 +92,7 @@ func renderCostChart(costs []float64, width int, noColor bool) string {
 		if noColor {
 			sb.WriteString(indent + l + "\n")
 		} else {
-			sb.WriteString(indent + dimStyle.Render(l) + "\n")
+			sb.WriteString(indent + styles.DimStyle.Render(l) + "\n")
 		}
 	}
 	return sb.String()

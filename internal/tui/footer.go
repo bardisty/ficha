@@ -154,7 +154,7 @@ func (m Model) renderFooterRule(panelWidth int) string {
 		if m.noColor {
 			return "  " + rule
 		}
-		return "  " + panelBorderStyle.Render(rule)
+		return "  " + styles.PanelBorderStyle.Render(rule)
 	}
 
 	left := strings.Repeat(styles.BoxHorizontal, lead)
@@ -162,7 +162,7 @@ func (m Model) renderFooterRule(panelWidth int) string {
 	if m.noColor {
 		return "  " + left + bracketed + right
 	}
-	return "  " + panelBorderStyle.Render(left) + "[ " + footerStyle.Render(mark) + " ]" + panelBorderStyle.Render(right)
+	return "  " + styles.PanelBorderStyle.Render(left) + "[ " + styles.FooterStyle.Render(mark) + " ]" + styles.PanelBorderStyle.Render(right)
 }
 
 // renderStatsLine renders the pinned one-line summary:
@@ -181,7 +181,7 @@ func (m Model) renderStatsLine(width int) string {
 	segs := m.statsSegments(false)
 	sep := " " + styles.BoxVerticalSep + " "
 	if !m.noColor {
-		sep = footerStyle.Render(sep)
+		sep = styles.FooterStyle.Render(sep)
 	}
 	line = strings.Join(segs, sep)
 	for len(segs) > 1 && lipgloss.Width(line) > width {
@@ -195,7 +195,7 @@ func (m Model) renderStatsLine(width int) string {
 func (m Model) statsLine(label bool) string {
 	sep := " " + styles.BoxVerticalSep + " "
 	if !m.noColor {
-		sep = footerStyle.Render(sep)
+		sep = styles.FooterStyle.Render(sep)
 	}
 	return strings.Join(m.statsSegments(label), sep)
 }
@@ -216,13 +216,13 @@ func (m Model) statsSegments(label bool) []string {
 	var segs []string
 
 	total := render.Cost(a.TotalCost.TotalCost)
-	totalStyle := heroCostStyle
+	totalStyle := styles.HeroCostStyle
 	if m.isHighlighted("total") {
-		totalStyle = highlightStyle
+		totalStyle = styles.HighlightStyle
 	}
 	totalSeg := style(totalStyle, total)
 	if label {
-		totalSeg += style(footerStyle, " API est.")
+		totalSeg += style(styles.FooterStyle, " API est.")
 	}
 	segs = append(segs, totalSeg)
 
@@ -230,7 +230,7 @@ func (m Model) statsSegments(label bool) []string {
 		modelPricing := pricing.GetModelPricing(a.LastMessageModel)
 		pct := pricing.GetContextPercentage(modelPricing, contextSize)
 		ctxStyle := lipgloss.NewStyle().Foreground(styles.GetContextUsageColor(pct))
-		segs = append(segs, style(footerStyle, "ctx ")+style(ctxStyle, fmt.Sprintf("%.0f%%", pct)))
+		segs = append(segs, style(styles.FooterStyle, "ctx ")+style(ctxStyle, fmt.Sprintf("%.0f%%", pct)))
 	}
 
 	// Stale data gives the rate when it went stale, until that is a whole
@@ -243,19 +243,19 @@ func (m Model) statsSegments(label bool) []string {
 	if perHour, ok := rollingRate(a.Messages, now, rateWindow); ok && known {
 		rateStr = render.Cost(perHour) + "/h"
 	}
-	segs = append(segs, style(footerStyle, fmt.Sprintf("%s (%s)", rateStr, windowLabel(rateWindow))))
+	segs = append(segs, style(styles.FooterStyle, fmt.Sprintf("%s (%s)", rateStr, windowLabel(rateWindow))))
 
 	msgs := fmt.Sprintf("%d msgs", a.MessageCount)
 	if a.MessageCount == 1 {
 		msgs = "1 msg"
 	}
-	msgStyle := footerStyle
+	msgStyle := styles.FooterStyle
 	if m.isHighlighted("messages") {
-		msgStyle = highlightStyle
+		msgStyle = styles.HighlightStyle
 	}
 	segs = append(segs, style(msgStyle, msgs))
 
-	return append(segs, style(footerStyle, render.Duration(a.Duration.Duration())))
+	return append(segs, style(styles.FooterStyle, render.Duration(a.Duration.Duration())))
 }
 
 // warningRows returns the accounting warnings fitted to width in at most

@@ -4,6 +4,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/bardisty/ficha/internal/styles"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -23,6 +24,9 @@ func TestColorOverrideReadsBackgroundUnderCI(t *testing.T) {
 	if dark, want := r.HasDarkBackground(), runtime.GOOS == "windows"; dark != want {
 		t.Errorf("COLORFGBG=0;15 on %s: dark background %v, want %v", runtime.GOOS, dark, want)
 	}
+	if styles.Dark() != r.HasDarkBackground() {
+		t.Errorf("the palette is dark=%v on a background that is dark=%v", styles.Dark(), r.HasDarkBackground())
+	}
 
 	t.Setenv("COLORFGBG", "15;0")
 	showOut(t, "--no-color=false")
@@ -41,7 +45,7 @@ func TestColorOverrideReadsBackgroundUnderCI(t *testing.T) {
 	t.Setenv("COLORFGBG", "0;15")
 	showOut(t, "--no-color=false")
 	showOut(t)
-	if !r.HasDarkBackground() {
+	if !r.HasDarkBackground() || !styles.Dark() {
 		t.Error("a run after an override must not inherit its light background")
 	}
 }

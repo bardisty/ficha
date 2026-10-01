@@ -135,7 +135,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	if noColor {
 		sb.WriteString(header + "\n" + rule + "\n")
 	} else {
-		sb.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(rule) + "\n")
+		sb.WriteString(styles.HeaderStyle.Render(header) + "\n" + styles.DimStyle.Render(rule) + "\n")
 	}
 
 	var minCost, maxCost float64
@@ -169,7 +169,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 				fmt.Sprintf("%*s", costWidth, "-"),
 				truncateRight(title, titleCol))
 			if !noColor {
-				row = dimStyle.Render(row)
+				row = styles.DimStyle.Render(row)
 			}
 			sb.WriteString(row + "\n")
 			continue
@@ -195,10 +195,10 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		costColor := styles.GetCostGradientColor(a.TotalCost.TotalCost, minCost, maxCost)
 		sb.WriteString(join(
 			id,
-			dimStyle.Render(when),
-			dimStyle.Render(duration),
+			styles.DimStyle.Render(when),
+			styles.DimStyle.Render(duration),
 			lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName)).Render(model),
-			dimStyle.Render(agents),
+			styles.DimStyle.Render(agents),
 			render.CostColored(a.TotalCost.TotalCost, costColor, costWidth),
 			title,
 		) + "\n")
@@ -208,7 +208,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	if noColor {
 		sb.WriteString(strings.Repeat(styles.LineHorizontal, width))
 	} else {
-		sb.WriteString(dimStyle.Render(strings.Repeat(styles.LineHorizontal, width)))
+		sb.WriteString(styles.DimStyle.Render(strings.Repeat(styles.LineHorizontal, width)))
 	}
 	return trimLineEnds(sb.String())
 }

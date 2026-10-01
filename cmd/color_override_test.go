@@ -4,6 +4,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 // fakeTerminal makes ficha treat stdout as a terminal, which a test buffer
@@ -14,9 +16,11 @@ func fakeTerminal(t *testing.T) {
 	stdoutIsTerminal = func(io.Writer) bool { return true }
 	t.Cleanup(func() {
 		stdoutIsTerminal = orig
-		// An override's profile must not outlive the test that made it.
+		// An override's profile and palette must not outlive the test that
+		// made them.
 		restoreColorProfile()
 		restoreColorProfile = func() {}
+		styles.SetDark(true)
 	})
 	// termenv picks a terminal's profile from TERM; pin one with color.
 	t.Setenv("TERM", "xterm-256color")

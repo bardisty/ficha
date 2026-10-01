@@ -27,7 +27,7 @@ internal/pricing    the model catalog
 internal/models     the types the rest pass around, and most of the json encoding
 ```
 
-`go doc ./internal/tui` and the like print more on each. Two splits are easy to miss. `internal/styles` holds every color and lipgloss style, even the ones only the live views use. `internal/tui/styles.go` just gives them short local names and adds the live views' spinner and footnote helpers. And the static reports never look at the terminal. `cmd` checks it and passes `internal/formatter` a width and a `noColor` flag.
+`go doc ./internal/tui` and the like print more on each. Two splits are easy to miss. `internal/styles` holds every color and lipgloss style, even the ones only the live views use. `internal/tui/styles.go` only adds the live views' spinner and footnote helpers. Read colors and styles from `internal/styles` at the point of use: `cmd` picks the light or dark palette each run, and a copy kept in a package variable would miss it. And the static reports never look at the terminal. `cmd` checks it and passes `internal/formatter` a width and a `noColor` flag.
 
 ## The gate
 
