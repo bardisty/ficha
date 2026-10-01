@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/bardisty/ficha/internal/models"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // The footer is one line and already carries the fallback-pricing footnote, so

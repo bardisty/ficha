@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/muesli/termenv"
-
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
 )
@@ -242,7 +240,6 @@ func TestGoldenWatchAgentsFolded(t *testing.T) {
 }
 
 func TestGoldenWatchAgentsFoldedColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	checkGolden(t, "watch_agents_folded_color", goldenAgentList(t, false))
 }
 

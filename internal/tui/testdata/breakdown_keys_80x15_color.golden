@@ -1,15 +1,15 @@
-  [1mKeys[0m                                                                         
-  [38;5;43mq, ctrl+c[0m           quit                                                     
-  [38;5;43m?[0m                   key list on/off; esc closes                              
-  [38;5;43mj/k, up/down[0m        scroll a line                                            
-  [38;5;43mspace/b, pgdn/pgup[0m  scroll a page                                            
-  [38;5;43md/u, ctrl+d/u[0m       scroll half a page                                       
-  [38;5;43mg/G, home/end[0m       go to the top or bottom                                  
-  [38;5;43mp[0m                   go to the next costliest row                             
-  [38;5;43ms[0m                   sort by cost on/off                                      
-  [38;5;43mf[0m                   follow new sessions on/off                               
-  [38;5;43mn[0m                   switch to the newer session                              
-  [38;5;43m-[0m                   back to the previous session                             
-  [38;5;43mr[0m                   reload or retry                                          
-  [38;5;43mctrl+z[0m              suspend                                                  
-  [38;5;245mq quit • j/k scroll • space/b page • g/G top/bottom • p/s peak/sort • ? close[0m
+  [1mKeys[m                                                                         
+  [38;5;43mq, ctrl+c[m           quit                                                     
+  [38;5;43m?[m                   key list on/off; esc closes                              
+  [38;5;43mj/k, up/down[m        scroll a line                                            
+  [38;5;43mspace/b, pgdn/pgup[m  scroll a page                                            
+  [38;5;43md/u, ctrl+d/u[m       scroll half a page                                       
+  [38;5;43mg/G, home/end[m       go to the top or bottom                                  
+  [38;5;43mp[m                   go to the next costliest row                             
+  [38;5;43ms[m                   sort by cost on/off                                      
+  [38;5;43mf[m                   follow new sessions on/off                               
+  [38;5;43mn[m                   switch to the newer session                              
+  [38;5;43m-[m                   back to the previous session                             
+  [38;5;43mr[m                   reload or retry                                          
+  [38;5;43mctrl+z[m              suspend                                                  
+  [38;5;245mq quit • j/k scroll • space/b page • g/G top/bottom • p/s peak/sort • ? close[m

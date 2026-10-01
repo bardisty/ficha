@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 )
 
@@ -59,19 +57,14 @@ Exit status:
 				cfg.commandPath += " --live"
 			}
 
-			// NO_COLOR (no-color.org), or CLICOLOR=0 without CLICOLOR_FORCE,
-			// means the same as --no-color. lipgloss already drops escapes for
-			// them, but ficha's own no-color text fallbacks key off noColor.
-			// An explicit --no-color=false still wins, as no-color.org asks.
-			if termenv.EnvNoColor() && !cmd.Flags().Changed("no-color") {
-				cfg.noColor = true
-			}
-			applyColorOverride(cmd, cfg)
+			resolveColor(cmd, cfg)
 			// Glyphs and the palette are process-wide; set them every run so
 			// an in-process caller's earlier --ascii or background can't leak
-			// into this one.
+			// into this one. The palette starts dark, and pickPalette changes
+			// it once a report is about to draw in color.
 			styles.SetASCII(cfg.ascii)
-			styles.SetDark(lipgloss.DefaultRenderer().HasDarkBackground())
+			styles.SetBasic(false)
+			styles.SetDark(true)
 
 			if cmd.Annotations[noGlobalFlagsAnnotation] != "" {
 				return noGlobalFlags(cmd)

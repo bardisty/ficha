@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/NimbleMarkets/ntcharts/sparkline"
+	"charm.land/lipgloss/v2"
+	"github.com/NimbleMarkets/ntcharts/v2/sparkline"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Chart display constants for summary sparkline

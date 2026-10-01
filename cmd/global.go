@@ -138,6 +138,7 @@ func runGlobal(cfg *config) error {
 			return fmt.Errorf("formatting output: %w", err)
 		}
 	default:
+		pickPalette(cfg)
 		output = formatter.FormatGlobalTable(analysis, cfg.noColor, formatter.GlobalTableOptions{
 			TopN:    cfg.globalTopN,
 			Details: cfg.globalDetails,

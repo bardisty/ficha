@@ -2,13 +2,16 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Panel sizing: panels, separators, and section headers are designed for
@@ -40,11 +43,20 @@ func viewportHeight(termHeight, headerHeight, footerHeight int) int {
 	return max(termHeight-headerHeight-footerHeight, 1)
 }
 
+// newViewport returns a live view's scrolling body. Its sideways step is
+// zero: the body is clipped to the terminal before it gets here, so the
+// keymap's h, l and arrow bindings have nothing to scroll to.
+func newViewport(width, height int) viewport.Model {
+	vp := viewport.New(viewport.WithWidth(width), viewport.WithHeight(height))
+	vp.SetHorizontalStep(0)
+	return vp
+}
+
 // clipToWidth truncates every line of rendered output to the terminal width
 // (ANSI-aware) so overlong lines degrade by clipping instead of wrapping.
-// Applied to viewport content — the viewport soft-wraps overlong lines, which
-// inflates line counts — and to the final frame, where terminal hard-wrap
-// would desynchronize the fixed header/footer layout.
+// Applied to viewport content, so a row ends where the terminal does and
+// the viewport has nothing to cut, and to the final frame, where terminal
+// hard-wrap would desynchronize the fixed header/footer layout.
 func clipToWidth(frame string, termWidth int) string {
 	if termWidth <= 0 {
 		return frame
@@ -52,8 +64,17 @@ func clipToWidth(frame string, termWidth int) string {
 	return lipgloss.NewStyle().MaxWidth(termWidth).Render(frame)
 }
 
-// View renders the TUI
-func (m Model) View() string {
+// View hands Bubble Tea the frame to draw on the alternate screen, and
+// watch's terminal title, which it writes when the title changes.
+func (m Model) View() tea.View {
+	v := tea.NewView(m.frame())
+	v.AltScreen = true
+	v.WindowTitle = m.windowTitle
+	return v
+}
+
+// frame renders the TUI
+func (m Model) frame() string {
 	if m.tooSmall() {
 		return renderTooSmall(m.width, m.height, minTermWidth, minTermHeight)
 	}
@@ -95,8 +116,8 @@ func (m Model) View() string {
 // renderTooSmall replaces a view's frame when no layout fits, naming the
 // minimum the terminal misses. The lines stay short, and each leads with what
 // matters, so the message survives clipping at 20 columns. A terminal
-// shorter than the message keeps its top lines: Bubble Tea would keep the
-// bottom ones and scroll "terminal too small" away.
+// shorter than the message keeps its top lines, so a frame is never taller
+// than the terminal, here as in every other layout.
 func renderTooSmall(width, height, minWidth, minHeight int) string {
 	lines := []string{"terminal too small"}
 	// A zero size isn't known yet; it isn't the one that's short.
@@ -746,7 +767,7 @@ const deltaColumnEnd = costRowLead + tokenCountWidth + len(tokenWord) + ttlColum
 // whole row sheds whole pieces: the word "tokens", then the TTL column,
 // whose TTL moves into the label ("Cache write 5m") so the two cache-write
 // rows stay apart, then the count's padding.
-func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, costField, tokenField string, labelColor lipgloss.TerminalColor, ttl string) string {
+func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, costField, tokenField string, labelColor color.Color, ttl string) string {
 	costHighlighted := m.isHighlighted(costField)
 	tokenChanged := m.recentlyChanged(tokenField)
 	tokenHighlighted := m.isHighlighted(tokenField)

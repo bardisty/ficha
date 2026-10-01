@@ -4,9 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // pinSuspend fixes what canSuspend reports for one test, so the ? list's
@@ -39,9 +38,9 @@ func TestWatchKeyListToggles(t *testing.T) {
 	if m.keysOpen {
 		t.Fatal("esc didn't close the key list")
 	}
-	if m.viewport.YOffset != 3 || !m.followMode || m.switched == nil {
+	if m.viewport.YOffset() != 3 || !m.followMode || m.switched == nil {
 		t.Errorf("opening and closing the list changed the view: YOffset %d, follow %v, notice %v",
-			m.viewport.YOffset, m.followMode, m.switched != nil)
+			m.viewport.YOffset(), m.followMode, m.switched != nil)
 	}
 }
 
@@ -56,8 +55,8 @@ func TestWatchKeyListOtherKeysCloseAndAct(t *testing.T) {
 		t.Errorf("f with the list open: open %v, follow %v; want closed and pinned", m.keysOpen, m.followMode)
 	}
 	m = press(t, m, "?", "j")
-	if m.keysOpen || m.viewport.YOffset != 1 {
-		t.Errorf("j with the list open: open %v, YOffset %d; want closed and 1", m.keysOpen, m.viewport.YOffset)
+	if m.keysOpen || m.viewport.YOffset() != 1 {
+		t.Errorf("j with the list open: open %v, YOffset %d; want closed and 1", m.keysOpen, m.viewport.YOffset())
 	}
 	updated, cmd := press(t, m, "?").Update(keyMsg(t, "q"))
 	if cmd == nil {
@@ -190,7 +189,6 @@ func TestGoldenWatchKeyList(t *testing.T) {
 }
 
 func TestGoldenBreakdownKeyListColor(t *testing.T) {
-	forceProfile(t, termenv.ANSI256)
 	pinSuspend(t, true)
 	m := NewBreakdownModel("/fixture/sess.jsonl", "s", false, "", true)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 15})

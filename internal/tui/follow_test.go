@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -220,18 +220,34 @@ func TestDescribeErr(t *testing.T) {
 	}
 }
 
-// The window title carries the project and total, and is only re-sent when
-// it changes.
+// The window title carries the project and total once a session has loaded,
+// and breakdown sets none.
 func TestWatchWindowTitle(t *testing.T) {
 	m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", true)
 	m.project = "webapp"
 	m = sized(t, m, 80, 24)
-	m = load(t, m, tallAnalysis(30.05))
-	if want := "ficha • webapp • $30.05"; m.windowTitle != want {
-		t.Errorf("title = %q, want %q", m.windowTitle, want)
+	if got := m.View().WindowTitle; got != "" {
+		t.Errorf("title before the first load = %q, want none", got)
 	}
-	if cmd := m.titleCmd(); cmd != nil {
-		t.Error("unchanged title re-sent")
+	m = load(t, m, tallAnalysis(30.05))
+	if got, want := m.View().WindowTitle, "ficha • webapp • $30.05"; got != want {
+		t.Errorf("title = %q, want %q", got, want)
+	}
+	if got := NewBreakdownModel("/p/"+sessA+".jsonl", sessA, true, "", true).View().WindowTitle; got != "" {
+		t.Errorf("breakdown title = %q, want none", got)
+	}
+}
+
+// Both views draw on the alternate screen, so quitting gives the terminal
+// back as it was.
+func TestViewsUseTheAlternateScreen(t *testing.T) {
+	for name, m := range map[string]tea.Model{
+		"watch":     NewModel("/p/s.jsonl", "s", true, "", false),
+		"breakdown": NewBreakdownModel("/p/s.jsonl", "s", true, "", false),
+	} {
+		if !m.View().AltScreen {
+			t.Errorf("%s doesn't ask for the alternate screen", name)
+		}
 	}
 }
 

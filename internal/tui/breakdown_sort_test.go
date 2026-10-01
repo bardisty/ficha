@@ -35,8 +35,8 @@ func TestBreakdownSort_OrdersByCost(t *testing.T) {
 			t.Errorf("no day dividers in cost order: %q", l)
 		}
 	}
-	if m.viewport.YOffset != 0 {
-		t.Errorf("sorting should open at the top, got offset %d", m.viewport.YOffset)
+	if m.viewport.YOffset() != 0 {
+		t.Errorf("sorting should open at the top, got offset %d", m.viewport.YOffset())
 	}
 	if rule := m.renderFooterRule(m.panelWidth()); !strings.Contains(rule, "[ sorted by cost (s) • rank 1-14 of 40 ]") {
 		t.Errorf("footer rule: %q", rule)
@@ -63,10 +63,10 @@ func TestBreakdownSort_PausesFollowing(t *testing.T) {
 		Cost: models.CostBreakdown{TotalCost: 1},
 	})
 	m := press(t, loadedBreakdown(t, 100, 24, sortRows(40)), "s", "j", "j")
-	top := m.lineRows[m.viewport.YOffset]
+	top := m.lineRows[m.viewport.YOffset()]
 	updated, _ := m.Update(breakdownMsgsMsg{messages: withPeak, insights: &models.MessageInsights{}})
 	m = updated.(BreakdownModel)
-	if got := m.lineRows[m.viewport.YOffset]; got != top || m.autoScroll {
+	if got := m.lineRows[m.viewport.YOffset()]; got != top || m.autoScroll {
 		t.Errorf("a new row above moved the sorted view: top row #%d, want #%d; following %v", got, top, m.autoScroll)
 	}
 	if rule := m.renderFooterRule(m.panelWidth()); !strings.Contains(rule, "[ sorted by cost (s) • rank 4-17 of 41 ]") {
@@ -81,8 +81,8 @@ func TestBreakdownSort_PausesFollowing(t *testing.T) {
 
 	m = press(t, loadedBreakdown(t, 100, 24, sortRows(40)), "s")
 	updated, _ = m.Update(breakdownMsgsMsg{messages: withPeak, insights: &models.MessageInsights{}})
-	if m = updated.(BreakdownModel); m.viewport.YOffset != 0 || m.lineRows[0] != 41 {
-		t.Errorf("at the top, the new peak should show first: offset %d, top row #%d", m.viewport.YOffset, m.lineRows[0])
+	if m = updated.(BreakdownModel); m.viewport.YOffset() != 0 || m.lineRows[0] != 41 {
+		t.Errorf("at the top, the new peak should show first: offset %d, top row #%d", m.viewport.YOffset(), m.lineRows[0])
 	}
 }
 
@@ -97,10 +97,10 @@ func TestBreakdownSort_RestoresTimeOrder(t *testing.T) {
 	}
 
 	m = press(t, loadedBreakdown(t, 100, 24, sortRows(40)), "g", "j", "j", "j")
-	offset := m.viewport.YOffset
+	offset := m.viewport.YOffset()
 	m = press(t, m, "s", "j", "s")
-	if m.viewport.YOffset != offset || m.autoScroll {
-		t.Errorf("scrolled up before s: offset %d, want %d; following %v", m.viewport.YOffset, offset, m.autoScroll)
+	if m.viewport.YOffset() != offset || m.autoScroll {
+		t.Errorf("scrolled up before s: offset %d, want %d; following %v", m.viewport.YOffset(), offset, m.autoScroll)
 	}
 	if !strings.Contains(tableContent(m), "── ") {
 		t.Error("time order should draw its day dividers again")
@@ -110,8 +110,8 @@ func TestBreakdownSort_RestoresTimeOrder(t *testing.T) {
 // p still walks the most expensive rows; sorted, the peak is the top row.
 func TestBreakdownSort_PeakIsAtTheTop(t *testing.T) {
 	m := press(t, loadedBreakdown(t, 100, 24, sortRows(40)), "s", "G", "p")
-	if m.viewport.YOffset != 0 || m.selectedKey != breakdownMsgKey(m.messages[5]) {
-		t.Errorf("p in cost order: offset %d, selected %q", m.viewport.YOffset, m.selectedKey)
+	if m.viewport.YOffset() != 0 || m.selectedKey != breakdownMsgKey(m.messages[5]) {
+		t.Errorf("p in cost order: offset %d, selected %q", m.viewport.YOffset(), m.selectedKey)
 	}
 	if !strings.Contains(m.renderNotifyRow(), "top 1 of 5: #6") {
 		t.Errorf("notify row: %q", m.renderNotifyRow())

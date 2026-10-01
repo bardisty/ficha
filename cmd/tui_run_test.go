@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // interruptModel sends itself tea.Interrupt, the message Bubble Tea turns a
@@ -14,7 +14,7 @@ type interruptModel struct{}
 
 func (interruptModel) Init() tea.Cmd                         { return tea.Interrupt }
 func (m interruptModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
-func (interruptModel) View() string                          { return "" }
+func (interruptModel) View() tea.View                        { return tea.NewView("") }
 
 func TestInterruptedTUIExits130Quietly(t *testing.T) {
 	_, runErr := tea.NewProgram(interruptModel{}, tea.WithInput(nil), tea.WithOutput(io.Discard)).Run()

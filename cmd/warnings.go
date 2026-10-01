@@ -11,6 +11,7 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/render"
+	"github.com/charmbracelet/colorprofile"
 )
 
 // printReport writes a static report and the warnings gathered while building
@@ -21,12 +22,23 @@ import (
 //
 // Every output ends in exactly one newline, which writeReport adds. csv
 // arrives with its own, because csv.Writer ends the last record too.
+//
+// The formatter writes a colored table's escapes without knowing what stdout
+// is. The writers here fit them to the run's profile: none at all on a pipe
+// or under CI, the 16 basic colors where that's the terminal's limit. The
+// one styled note among the warnings takes stdout's profile too. json, csv
+// and --no-color carry no styling, and go out untouched.
 func printReport(cfg *config, warnings *bytes.Buffer, output string) {
 	if cfg.format == "csv" {
 		output = strings.TrimSuffix(output, "\n")
 	}
 	warnings = bytes.NewBufferString(wrapStderr(cfg.stderr, warnings.String()))
-	writeReport(cfg.stdout, cfg.stderr, warnings, output, isTerminal(cfg.stderr))
+	stdout, stderr := cfg.stdout, cfg.stderr
+	if cfg.format == "table" && !cfg.noColor {
+		stdout = &colorprofile.Writer{Forward: stdout, Profile: cfg.profile}
+		stderr = &colorprofile.Writer{Forward: stderr, Profile: cfg.profile}
+	}
+	writeReport(stdout, stderr, warnings, output, isTerminal(cfg.stderr))
 }
 
 // stderrWidth is terminalWidth, swappable because tests can't give ficha a

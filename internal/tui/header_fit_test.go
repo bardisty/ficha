@@ -7,18 +7,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
 )
 
 // At every width watch draws, boxed or compact, the header ends in a whole
 // status: a narrow one swaps a phrase for a shorter one and never cuts a
 // word. The wide form comes back as soon as it fits.
 func TestHeaderStatusIsNeverCutMidWord(t *testing.T) {
-	forceProfile(t, termenv.Ascii)
 	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
 	// The view's own spinner: its frames are two columns, a dot and a space.
-	dots := newSpinner(false).View()
+	// The spinner forms below draw in color. Escapes take no columns, so the
+	// test reads the text without them.
+	dots := stripANSI(newSpinner(false).View())
 	forms := []struct {
 		name string
 		edit func(*liveHeaderParams)
@@ -50,9 +50,9 @@ func TestHeaderStatusIsNeverCutMidWord(t *testing.T) {
 				panel := panelWidthFor(termWidth)
 				p.width = panel
 
-				box := strings.Split(renderLiveHeaderPanel(p), "\n")[1]
+				box := stripANSI(strings.Split(renderLiveHeaderPanel(p), "\n")[1])
 				lines := map[string]string{
-					"compact": "  " + fitStatusHeader(p, panel-2),
+					"compact": "  " + stripANSI(fitStatusHeader(p, panel-2)),
 					"boxed":   strings.TrimSuffix(strings.TrimRight(box, " "), "║"),
 				}
 				for kind, line := range lines {

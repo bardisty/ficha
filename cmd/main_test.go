@@ -2,27 +2,34 @@ package cmd
 
 import (
 	"os"
+	"strings"
 	"testing"
-
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
-// TestMain pins the color state a developer's shell and terminal would
-// otherwise decide. NO_COLOR turns ficha's color off, and CLICOLOR_FORCE, or
-// running `go test` with no package argument so stdout is the terminal, makes
-// lipgloss emit escapes into output the e2e tests expect plain. Tests that
-// need color force a profile, and tests that need NO_COLOR set it with
-// t.Setenv.
+// TestMain clears the color variables a developer's shell may set. NO_COLOR
+// turns ficha's color off, and CLICOLOR_FORCE colors output the e2e tests
+// expect plain. A test that needs one sets it with t.Setenv, and a test that
+// needs color fakes a terminal: the buffer a test captures stdout in is a
+// pipe to ficha, so its output is plain.
 //
-// The dark background matches the other packages' TestMains. Bubble Tea
-// still asks the terminal for its background during package init, which
-// nothing here can prevent.
+// With ptyArgsEnv set, the binary runs ficha with those arguments and no
+// tests. The pty tests start it that way, to have a real ficha process on a
+// terminal of their own.
 func TestMain(m *testing.M) {
+	if args, ok := os.LookupEnv(ptyArgsEnv); ok {
+		os.Args = append([]string{"ficha"}, strings.Split(args, ptyArgsSep)...)
+		Execute()
+		return
+	}
 	for _, v := range []string{"NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE"} {
 		_ = os.Unsetenv(v)
 	}
-	lipgloss.SetColorProfile(termenv.Ascii)
-	lipgloss.SetHasDarkBackground(true)
 	os.Exit(m.Run())
 }
+
+// ptyArgsEnv carries ficha's arguments to the test binary, joined with
+// ptyArgsSep.
+const (
+	ptyArgsEnv = "FICHA_TEST_PTY_ARGS"
+	ptyArgsSep = "\x1f"
+)

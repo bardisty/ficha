@@ -5,9 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 var ansiRe = regexp.MustCompile("\x1b\\[[0-9;]*m")
@@ -49,10 +48,6 @@ func TestAgentBreakdownMsgsColumnKeepsCostAligned(t *testing.T) {
 			name = "no-color"
 		}
 		t.Run(name, func(t *testing.T) {
-			if noColor {
-			} else {
-				forceProfile(t, termenv.ANSI256)
-			}
 			out := formatAgentBreakdownContent(agentBreakdownAnalysis(), 76, noColor)
 
 			var costCols []int
@@ -83,10 +78,6 @@ func TestSummaryTreeRowsMsgsColumnKeepsCostAligned(t *testing.T) {
 			name = "no-color"
 		}
 		t.Run(name, func(t *testing.T) {
-			if noColor {
-			} else {
-				forceProfile(t, termenv.ANSI256)
-			}
 			r := sessionRow("aaaa1111", "claude-opus-4-8", 10, 3.00)
 			r.Analysis.HasAgents = true
 			r.Analysis.AgentCount = 2

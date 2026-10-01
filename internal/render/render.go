@@ -9,16 +9,17 @@ package render
 
 import (
 	"fmt"
+	"image/color"
 	"math"
 	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Cost formats a dollar amount for human output: two decimals from $1 up
@@ -565,8 +566,8 @@ func CostStyledBoldGreen(cost float64, width int, highlighted, noColor bool) str
 // CostColored renders a CostCell in an arbitrary foreground color, for columns
 // that color each value by its own magnitude (the per-message breakdown, the
 // global and summary tables).
-func CostColored(cost float64, color lipgloss.TerminalColor, width int) string {
-	return costStyledCell(cost, width, false, false, lipgloss.NewStyle().Foreground(color))
+func CostColored(cost float64, fg color.Color, width int) string {
+	return costStyledCell(cost, width, false, false, lipgloss.NewStyle().Foreground(fg))
 }
 
 func costStyledCell(cost float64, width int, highlighted, noColor bool, style lipgloss.Style) string {

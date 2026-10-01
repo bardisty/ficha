@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -49,7 +49,7 @@ func TestBreakdownView_FillsTerminalExactly(t *testing.T) {
 			}
 		}
 		// The rows the table shows are the rows the viewport was given.
-		if got, want := m.viewport.Height, sz.h-m.headerRows()-breakdownFooterRows; got != want {
+		if got, want := m.viewport.Height(), sz.h-m.headerRows()-breakdownFooterRows; got != want {
 			t.Errorf("%dx%d: viewport has %d rows, want %d", sz.w, sz.h, got, want)
 		}
 	}
@@ -128,8 +128,8 @@ func TestBreakdownPosition_SkipsDayDividers(t *testing.T) {
 	// 20 rows, the day changing after row 10: the divider is content line 10.
 	msgs := chromeRows(time.Date(2026, 1, 15, 23, 50, 0, 0, time.UTC), 20)
 	m := loadedBreakdown(t, 100, 20, msgs) // 10 viewport rows
-	if m.viewport.Height != 10 {
-		t.Fatalf("viewport height = %d, want 10", m.viewport.Height)
+	if m.viewport.Height() != 10 {
+		t.Fatalf("viewport height = %d, want 10", m.viewport.Height())
 	}
 	m.setFollow(false)
 	m.viewport.SetYOffset(10) // the divider is the top line
@@ -174,7 +174,7 @@ func TestBreakdownPosition_CountsNewRowsWhileScrolledUp(t *testing.T) {
 func TestBreakdownSessionSwitch_ResetsScroll(t *testing.T) {
 	m := loadedBreakdown(t, 100, 20, chromeRows(goldenTime(10, 0, 0), 50))
 	m = press(t, m, "g")
-	if m.autoScroll || m.viewport.YOffset != 0 {
+	if m.autoScroll || m.viewport.YOffset() != 0 {
 		t.Fatalf("setup: want scrolled to top, manual")
 	}
 	m.followMode = true
@@ -186,7 +186,7 @@ func TestBreakdownSessionSwitch_ResetsScroll(t *testing.T) {
 	updated, _ = m.Update(breakdownMsgsMsg{messages: chromeRows(goldenTime(11, 0, 0), 31), sessionPath: "/fixture/new.jsonl", insights: &models.MessageInsights{}})
 	m = updated.(BreakdownModel)
 	if !m.viewport.AtBottom() {
-		t.Errorf("the new session should open at its newest row (offset %d)", m.viewport.YOffset)
+		t.Errorf("the new session should open at its newest row (offset %d)", m.viewport.YOffset())
 	}
 	if got := m.positionText(); strings.Contains(got, "new") {
 		t.Errorf("the old session's pause must not count the new session's rows as new: %q", got)
@@ -344,12 +344,12 @@ func TestBreakdownTableViewMatchesTableAtEveryOffset(t *testing.T) {
 	if len(all) != len(rows)+1 {
 		t.Fatalf("table has %d lines, want %d rows and a divider", len(all), len(rows)+1)
 	}
-	for _, offset := range []int{0, 1, 25, 29, 30, len(all) - m.viewport.Height} {
+	for _, offset := range []int{0, 1, 25, 29, 30, len(all) - m.viewport.Height()} {
 		m.viewport.SetYOffset(offset)
 		got := strings.Split(m.tableView(), "\n")
-		want := all[offset:min(offset+m.viewport.Height, len(all))]
-		if len(got) != m.viewport.Height {
-			t.Fatalf("offset %d: %d lines, want the viewport's %d", offset, len(got), m.viewport.Height)
+		want := all[offset:min(offset+m.viewport.Height(), len(all))]
+		if len(got) != m.viewport.Height() {
+			t.Fatalf("offset %d: %d lines, want the viewport's %d", offset, len(got), m.viewport.Height())
 		}
 		for i, line := range want {
 			if strings.TrimRight(got[i], " ") != strings.TrimRight(line, " ") {

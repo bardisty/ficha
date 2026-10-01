@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,16 +13,16 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/paths"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -241,19 +242,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		// A slow link can deliver a held key as one chunk ("jjjj"), which
-		// matches no binding; replay it one key at a time.
-		if n := repeatedRune(msg); n > 1 {
-			var model tea.Model = m
-			var cmds []tea.Cmd
-			for range n {
-				var cmd tea.Cmd
-				model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: msg.Runes[:1]})
-				cmds = append(cmds, cmd)
-			}
-			return model, tea.Batch(cmds...)
-		}
+	case tea.KeyPressMsg:
 		var done bool
 		if m.keysOpen, done = toggleKeyList(m.keysOpen, msg); done {
 			return m, nil
@@ -324,12 +313,12 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// The viewport's own keymap: arrows, j/k, PgUp/PgDn, space/b,
 			// d/u and ctrl+d/u. Scrolling off the bottom stops auto-scroll;
 			// reaching it again resumes.
-			before := m.viewport.YOffset
+			before := m.viewport.YOffset()
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			// A downward key at the bottom moves nothing but still means
 			// "take me to the newest", so it resumes following too.
-			if m.viewport.YOffset != before || (m.viewport.AtBottom() && isDownKey(m.viewport.KeyMap, msg)) {
+			if m.viewport.YOffset() != before || (m.viewport.AtBottom() && isDownKey(m.viewport.KeyMap, msg)) {
 				m.setFollow(m.viewport.AtBottom())
 			}
 			return m, cmd
@@ -352,17 +341,16 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// viewport gets exactly the rows View leaves it.
 		vpHeight := viewportHeight(msg.Height, m.headerRows(), breakdownFooterRows)
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width, vpHeight)
+			m.viewport = newViewport(msg.Width, vpHeight)
 			m.ready = true
 		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = vpHeight
+			m.viewport.SetWidth(msg.Width)
+			m.viewport.SetHeight(vpHeight)
 		}
-		m.viewport.YPosition = m.headerRows()
 		m.refreshViewport()
 		// A taller viewport can leave the old offset past the end of the
 		// content; re-setting it clamps it.
-		m.viewport.SetYOffset(m.viewport.YOffset)
+		m.viewport.SetYOffset(m.viewport.YOffset())
 
 	case spinner.TickMsg:
 		// Let the spinner stop once nothing shows it; spinnerCmd restarts it.
@@ -758,9 +746,16 @@ func (m *BreakdownModel) isNewMessage(msg models.BreakdownMessage) bool {
 	return time.Since(addedAt) < highlightDuration
 }
 
-// View renders the breakdown TUI. Its row count must match headerRows and
+// View hands Bubble Tea the frame to draw on the alternate screen.
+func (m BreakdownModel) View() tea.View {
+	v := tea.NewView(m.frame())
+	v.AltScreen = true
+	return v
+}
+
+// frame renders the breakdown TUI. Its row count must match headerRows and
 // breakdownFooterRows exactly, or the frame outgrows the terminal.
-func (m BreakdownModel) View() string {
+func (m BreakdownModel) frame() string {
 	if m.tooSmall() {
 		return renderTooSmall(m.width, m.height, m.minWidth(), tooSmallHeight)
 	}
@@ -895,8 +890,8 @@ func (m BreakdownModel) runTagKey() []string {
 	}
 	var entries []string
 	seen := make(map[string]bool)
-	top := m.viewport.YOffset
-	for _, index := range m.lineRows[min(top, len(m.lineRows)):min(top+m.viewport.Height, len(m.lineRows))] {
+	top := m.viewport.YOffset()
+	for _, index := range m.lineRows[min(top, len(m.lineRows)):min(top+m.viewport.Height(), len(m.lineRows))] {
 		if index < 1 || index > len(m.messages) {
 			continue
 		}
@@ -1039,11 +1034,11 @@ func (m BreakdownModel) renderCompactInsights() string {
 	if m.insights == nil || (m.insights.HighestCost == nil && !m.insights.HasTrend()) {
 		return ""
 	}
-	style := func(text string, color lipgloss.TerminalColor) string {
+	style := func(text string, fg color.Color) string {
 		if m.noColor || text == "" {
 			return text
 		}
-		return lipgloss.NewStyle().Foreground(color).Render(text)
+		return lipgloss.NewStyle().Foreground(fg).Render(text)
 	}
 
 	// The Peak, from most detail to least. The row number and cost find the
@@ -1208,8 +1203,8 @@ func (m BreakdownModel) tableView() string {
 	if len(m.lineRows) == 0 {
 		return m.viewport.View()
 	}
-	top := m.viewport.YOffset
-	end := min(top+m.viewport.Height, len(m.lineRows))
+	top := m.viewport.YOffset()
+	end := min(top+m.viewport.Height(), len(m.lineRows))
 	rows := make([]string, 0, max(end-top, 0))
 	for i := top; i < end; i++ {
 		rows = append(rows, m.renderLine(i))

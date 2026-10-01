@@ -117,6 +117,7 @@ func runSummary(cfg *config) error {
 			return fmt.Errorf("formatting output: %w", err)
 		}
 	default:
+		pickPalette(cfg)
 		if cfg.showDetails {
 			// The header names the project; the storage directory is only
 			// for debugging.

@@ -9,17 +9,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/NimbleMarkets/ntcharts/sparkline"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/NimbleMarkets/ntcharts/v2/sparkline"
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/paths"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -106,7 +106,7 @@ type Model struct {
 	switched        *switchNotice   // Shown until the next keypress
 	keysOpen        bool            // The ? key list covers the frame
 	hint            *sessionHint    // Another session's activity, not followed
-	windowTitle     string          // Last title sent, to send only changes
+	windowTitle     string          // Terminal title, once a session has loaded
 
 	// waitingIn is the directory a waiting model (no session yet) waits for
 	// Claude Code to start in; see NewWaitingModel.
@@ -239,20 +239,7 @@ func projectName(projectDir string) string {
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		// Repeats that arrive in one input chunk (a held key over a slow
-		// link) come as one message, "jjjj"; take them one at a time.
-		if runes := msg.Runes; msg.Type == tea.KeyRunes && !msg.Paste && len(runes) > 1 && strings.Count(string(runes), string(runes[0])) == len(runes) {
-			var cmds []tea.Cmd
-			var model tea.Model = m
-			for range runes {
-				var cmd tea.Cmd
-				model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: runes[:1]})
-				cmds = append(cmds, cmd)
-			}
-			return model, tea.Batch(cmds...)
-		}
-
+	case tea.KeyPressMsg:
 		var done bool
 		if m.keysOpen, done = toggleKeyList(m.keysOpen, msg); done {
 			return m, nil
@@ -334,11 +321,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width, 1)
-			m.viewport.YPosition = watchHeaderHeight
+			m.viewport = newViewport(msg.Width, 1)
 			m.ready = true
 		}
-		m.viewport.Width = msg.Width
+		m.viewport.SetWidth(msg.Width)
 		m.layoutViewport()
 
 		// Re-window the cost chart to the new width. A plain Resize would keep the
@@ -420,7 +406,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// still blocked on the watcher
 		// Call before return: the arm must mutate the m the caller receives
 		armCmd := m.armFileWaiter()
-		return m, tea.Batch(armCmd, m.titleCmd(), tick, clock)
+		m.setTitle()
+		return m, tea.Batch(armCmd, tick, clock)
 
 	case errorMsg:
 		if msg.sessionPath != "" && msg.sessionPath != m.sessionPath {
@@ -709,22 +696,17 @@ func lastActivity(a *models.SessionAnalysis, modTime time.Time) (t time.Time, fr
 	return t, false
 }
 
-// titleCmd sets the terminal title to "ficha · webapp · $30.05" when it
-// changed, so a tab bar tells several watch panes apart.
-func (m *Model) titleCmd() tea.Cmd {
+// setTitle makes the terminal title "ficha · webapp · $30.05", so a tab bar
+// tells several watch panes apart. View carries it to Bubble Tea.
+func (m *Model) setTitle() {
 	if m.analysis == nil {
-		return nil
+		return
 	}
 	name := m.project
 	if name == "" {
 		name = render.TruncateID(m.sessionID, sessionIDDisplayLen)
 	}
-	title := "ficha " + styles.Bullet + " " + name + " " + styles.Bullet + " " + render.Cost(m.analysis.TotalCost.TotalCost)
-	if title == m.windowTitle {
-		return nil
-	}
-	m.windowTitle = title
-	return tea.SetWindowTitle(title)
+	m.windowTitle = "ficha " + styles.Bullet + " " + name + " " + styles.Bullet + " " + render.Cost(m.analysis.TotalCost.TotalCost)
 }
 
 // layoutViewport sizes the viewport to the rows the header and footer leave.
@@ -734,7 +716,7 @@ func (m *Model) layoutViewport() {
 	if !m.ready {
 		return
 	}
-	m.viewport.Height = viewportHeight(m.height, m.headerHeight(), m.footerHeight())
+	m.viewport.SetHeight(viewportHeight(m.height, m.headerHeight(), m.footerHeight()))
 }
 
 // refreshContent re-renders the body into the viewport and keeps the scroll
@@ -751,7 +733,7 @@ func (m *Model) refreshContent() {
 		body = dropBlankLines(body)
 	}
 	m.viewport.SetContent(body)
-	m.viewport.SetYOffset(m.viewport.YOffset)
+	m.viewport.SetYOffset(m.viewport.YOffset())
 }
 
 // trimBlankEdges drops whitespace-only lines from both ends of s. Rendered

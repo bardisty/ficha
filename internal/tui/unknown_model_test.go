@@ -5,10 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 // unknownModelID is not in the catalog, so it is priced from the fallback table.
@@ -48,13 +47,11 @@ func TestWatchMarksUnknownModel(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		noColor bool
-		profile termenv.Profile
 	}{
-		{"no-color", true, termenv.Ascii},
-		{"color", false, termenv.ANSI256},
+		{"no-color", true},
+		{"color", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			forceProfile(t, tc.profile)
 			out := stripANSI(watchViewWithUnknownModel(t, tc.noColor))
 
 			// The unknown model's row carries the marker; the catalog model's does not.
@@ -130,13 +127,11 @@ func TestBreakdownMarksUnknownModel(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		noColor bool
-		profile termenv.Profile
 	}{
-		{"no-color", true, termenv.Ascii},
-		{"color", false, termenv.ANSI256},
+		{"no-color", true},
+		{"color", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			forceProfile(t, tc.profile)
 			out := stripANSI(breakdownViewWithUnknownModel(t, tc.noColor))
 
 			markedRow, plainRow := findRow(t, out, unknownModelPrefix), findRow(t, out, "Opus 4.8")

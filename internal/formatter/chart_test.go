@@ -4,8 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
 )
 
 // chartFixture returns n costs, oldest first, with one expensive session
@@ -25,10 +24,6 @@ func chartFixture(n int) []float64 {
 // early peak.
 func TestRenderCostChartTruncationDisclosed(t *testing.T) {
 	for _, noColor := range []bool{true, false} {
-		if noColor {
-		} else {
-			forceProfile(t, termenv.ANSI256)
-		}
 		got := renderCostChart(chartFixture(80), 76, noColor)
 		if !strings.Contains(got, "last 68 of 80 sessions with a cost, oldest") {
 			t.Errorf("noColor=%v: count label must disclose truncation, got:\n%s", noColor, got)

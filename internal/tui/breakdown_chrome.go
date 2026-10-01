@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
@@ -191,8 +191,8 @@ func (m BreakdownModel) renderEmptyState() string {
 // visibleRows returns the display Index of the first and last message rows
 // in the viewport, skipping day dividers, or 0, 0 when none is visible.
 func (m BreakdownModel) visibleRows() (first, last int) {
-	top := m.viewport.YOffset
-	bottom := min(top+m.viewport.Height, len(m.lineRows)) - 1
+	top := m.viewport.YOffset()
+	bottom := min(top+m.viewport.Height(), len(m.lineRows)) - 1
 	for i := top; i <= bottom; i++ {
 		if m.lineRows[i] > 0 {
 			first = m.lineRows[i]
@@ -218,7 +218,7 @@ func (m BreakdownModel) positionText() string {
 	if m.sortByCost {
 		return m.sortedPositionText()
 	}
-	if !m.ready || m.viewport.TotalLineCount() <= m.viewport.Height {
+	if !m.ready || m.viewport.TotalLineCount() <= m.viewport.Height() {
 		return ""
 	}
 	first, last := m.visibleRows()
@@ -242,9 +242,9 @@ func (m BreakdownModel) positionText() string {
 // reader to them.
 func (m BreakdownModel) sortedPositionText() string {
 	text := sortedLabel
-	if m.ready && m.viewport.TotalLineCount() > m.viewport.Height {
-		first := m.viewport.YOffset + 1
-		last := min(m.viewport.YOffset+m.viewport.Height, m.viewport.TotalLineCount())
+	if m.ready && m.viewport.TotalLineCount() > m.viewport.Height() {
+		first := m.viewport.YOffset() + 1
+		last := min(m.viewport.YOffset()+m.viewport.Height(), m.viewport.TotalLineCount())
 		text += fmt.Sprintf(" %s rank %d-%d of %d", styles.Bullet, first, last, len(m.messages))
 	}
 	return text

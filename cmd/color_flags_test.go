@@ -3,31 +3,18 @@ package cmd
 import (
 	"strings"
 	"testing"
-
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
-
-// forceColor makes lipgloss emit escapes even though tests have no TTY, so
-// a test can tell whether ficha itself turned color off.
-func forceColor(t *testing.T) {
-	t.Helper()
-	r := lipgloss.DefaultRenderer()
-	orig := r.ColorProfile()
-	r.SetColorProfile(termenv.ANSI256)
-	t.Cleanup(func() { r.SetColorProfile(orig) })
-}
 
 func TestNoColorEnvMatchesFlag(t *testing.T) {
 	setupE2EFixture(t)
-	forceColor(t)
+	fakeTerminal(t)
 
 	colored, _, err := executeCLISplit(t, "show", projFlag, e2eAlphaID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(colored, "\x1b[") {
-		t.Fatal("forced color profile should produce escapes without NO_COLOR")
+		t.Fatal("a color terminal should get escapes without NO_COLOR")
 	}
 
 	flag, _, err := executeCLISplit(t, "show", projFlag, e2eAlphaID, "--no-color")
@@ -55,7 +42,7 @@ func TestNoColorEnvMatchesFlag(t *testing.T) {
 // NO_COLOR set to the empty string doesn't count (no-color.org).
 func TestEmptyNoColorEnvKeepsColor(t *testing.T) {
 	setupE2EFixture(t)
-	forceColor(t)
+	fakeTerminal(t)
 	t.Setenv("NO_COLOR", "")
 	out, _, err := executeCLISplit(t, "show", projFlag, e2eAlphaID)
 	if err != nil {
@@ -68,7 +55,7 @@ func TestEmptyNoColorEnvKeepsColor(t *testing.T) {
 
 func TestASCIIFlag(t *testing.T) {
 	setupE2EFixture(t)
-	forceColor(t)
+	fakeTerminal(t)
 
 	out, _, err := executeCLISplit(t, "show", projFlag, e2eAlphaID, "--ascii")
 	if err != nil {
@@ -100,7 +87,7 @@ func TestASCIIFlag(t *testing.T) {
 
 func TestASCIIWithNoColor(t *testing.T) {
 	setupE2EFixture(t)
-	forceColor(t)
+	fakeTerminal(t)
 	out, _, err := executeCLISplit(t, "summary", projFlag, "-d", "--expand-agents", "--ascii", "--no-color")
 	if err != nil {
 		t.Fatal(err)

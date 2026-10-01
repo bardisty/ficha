@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"github.com/bardisty/ficha/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -68,6 +69,7 @@ func runBreakdown(cfg *config, args []string) error {
 	}
 
 	// Run the breakdown TUI
-	model := tui.NewBreakdownModel(session.FullPath, session.SessionID, cfg.noColor, projectDir, followMode)
-	return runTUI(cfg.stdout, model)
+	return runTUI(cfg, func() tea.Model {
+		return tui.NewBreakdownModel(session.FullPath, session.SessionID, cfg.noColor, projectDir, followMode)
+	})
 }

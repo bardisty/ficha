@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
 	"github.com/bardisty/ficha/internal/models"
@@ -90,6 +91,8 @@ func runShow(cfg *config, args []string, live bool) error {
 		return fmt.Errorf("analyzing session: %w", err)
 	}
 
+	// The note about skipped sessions below is styled, like the table.
+	pickPalette(cfg)
 	var warnings bytes.Buffer
 	// Only the table skips a reply-less newest session. Scripts asking for
 	// json or csv get the newest session, as they always have, and can see
@@ -141,8 +144,9 @@ func sessionContext(a *models.SessionAnalysis) *models.ContextUsage {
 }
 
 func runLiveMode(cfg *config, session *models.SessionEntry, projectDir string, followMode bool) error {
-	model := tui.NewModel(session.FullPath, session.SessionID, cfg.noColor, projectDir, followMode)
-	return runTUI(cfg.stdout, model)
+	return runTUI(cfg, func() tea.Model {
+		return tui.NewModel(session.FullPath, session.SessionID, cfg.noColor, projectDir, followMode)
+	})
 }
 
 func formatOutput(cfg *config, analysis *models.SessionAnalysis, includeMessages bool) (string, error) {

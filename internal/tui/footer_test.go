@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
@@ -147,8 +147,8 @@ func TestWatchOpensAtTopAndKeepsPosition(t *testing.T) {
 	m = sized(t, m, 80, 24)
 	m = load(t, m, tallAnalysis(1))
 
-	if m.viewport.YOffset != 0 {
-		t.Fatalf("first load: YOffset = %d, want 0", m.viewport.YOffset)
+	if m.viewport.YOffset() != 0 {
+		t.Fatalf("first load: YOffset = %d, want 0", m.viewport.YOffset())
 	}
 	if !strings.Contains(frameOf(m), "TOTAL ]") {
 		t.Fatalf("first screen lacks the total:\n%s", frameOf(m))
@@ -158,34 +158,34 @@ func TestWatchOpensAtTopAndKeepsPosition(t *testing.T) {
 		m = press(t, m, "j")
 	}
 	m = load(t, m, tallAnalysis(2))
-	if m.viewport.YOffset != 5 {
-		t.Errorf("after reload: YOffset = %d, want 5", m.viewport.YOffset)
+	if m.viewport.YOffset() != 5 {
+		t.Errorf("after reload: YOffset = %d, want 5", m.viewport.YOffset())
 	}
 
 	m = press(t, m, "G")
 	m = load(t, m, tallAnalysis(3))
 	if !m.viewport.AtBottom() {
-		t.Errorf("reload at the bottom moved the view: YOffset = %d", m.viewport.YOffset)
+		t.Errorf("reload at the bottom moved the view: YOffset = %d", m.viewport.YOffset())
 	}
 	m = press(t, m, "g")
 	m = load(t, m, tallAnalysis(4))
-	if m.viewport.YOffset != 0 {
-		t.Errorf("reload after g: YOffset = %d, want 0 (no snap to bottom)", m.viewport.YOffset)
+	if m.viewport.YOffset() != 0 {
+		t.Errorf("reload after g: YOffset = %d, want 0 (no snap to bottom)", m.viewport.YOffset())
 	}
 
 	for i := 0; i < 3; i++ {
 		m = press(t, m, "j")
 	}
 	m = sized(t, m, 100, 30)
-	if m.viewport.YOffset != 3 {
-		t.Errorf("after resize: YOffset = %d, want 3", m.viewport.YOffset)
+	if m.viewport.YOffset() != 3 {
+		t.Errorf("after resize: YOffset = %d, want 3", m.viewport.YOffset())
 	}
 
 	// A window tall enough to show everything clamps the offset rather than
 	// leaving blank rows below the body.
 	m = sized(t, m, 100, 200)
-	if m.viewport.PastBottom() || m.viewport.YOffset != 0 {
-		t.Errorf("tall resize: YOffset = %d, want 0", m.viewport.YOffset)
+	if m.viewport.PastBottom() || m.viewport.YOffset() != 0 {
+		t.Errorf("tall resize: YOffset = %d, want 0", m.viewport.YOffset())
 	}
 }
 
@@ -195,7 +195,7 @@ func TestWatchFooterRuleShowsOverflow(t *testing.T) {
 	m = sized(t, m, 80, 24)
 	m = load(t, m, tallAnalysis(1))
 
-	below := m.viewport.TotalLineCount() - m.viewport.Height
+	below := m.viewport.TotalLineCount() - m.viewport.Height()
 	view := frameOf(m)
 	if strings.Contains(view, "↑ ") {
 		t.Errorf("top of body shows an above-marker:\n%s", view)

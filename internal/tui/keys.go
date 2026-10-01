@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/styles"
 )
@@ -182,7 +182,7 @@ func keyList(view string, keys []Key, width, rows int, noColor bool) []string {
 // and esc do nothing else, and done says so. Every other key goes on to do
 // what it always does, so a key read off the list works the first time.
 // ctrl+z leaves the list open, to come back to after the resume.
-func toggleKeyList(open bool, msg tea.KeyMsg) (nowOpen, done bool) {
+func toggleKeyList(open bool, msg tea.KeyPressMsg) (nowOpen, done bool) {
 	switch s := msg.String(); {
 	case !open:
 		return s == "?", s == "?"

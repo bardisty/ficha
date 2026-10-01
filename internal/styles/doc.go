@@ -7,9 +7,10 @@
 // internal/tui/styles.go adds the live views' spinner, marker and footnote
 // helpers.
 //
-// The light-or-dark choice and the glyph set are process-wide. cmd sets both
-// at startup, with SetDark and SetASCII, before anything renders. SetDark
-// rebuilds the colors and styles, so callers read them from this package
-// each time and keep no copies. Color on or off isn't stored here: callers
-// pass noColor down and skip the styles.
+// The glyph set and the palette are process-wide. cmd picks the glyph set at
+// startup, with SetASCII, and the palette right before a report or live view
+// draws in color, with SetDark and SetBasic. Those two rebuild the colors
+// and styles, so callers read them from this package each time and keep no
+// copies. Color on or off isn't stored here: callers pass noColor down and
+// skip the styles.
 package styles
