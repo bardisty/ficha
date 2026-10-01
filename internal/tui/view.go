@@ -46,9 +46,14 @@ func viewportHeight(termHeight, headerHeight, footerHeight int) int {
 // newViewport returns a live view's scrolling body. Its sideways step is
 // zero: the body is clipped to the terminal before it gets here, so the
 // keymap's h, l and arrow bindings have nothing to scroll to.
+//
+// Space pages down with shift held too. Bubble Tea asks the terminal to
+// report modified keys apart from plain ones, and a terminal that does
+// sends shift+space as a key of its own, which the keymap doesn't bind.
 func newViewport(width, height int) viewport.Model {
 	vp := viewport.New(viewport.WithWidth(width), viewport.WithHeight(height))
 	vp.SetHorizontalStep(0)
+	vp.KeyMap.PageDown.SetKeys(append(vp.KeyMap.PageDown.Keys(), "shift+space")...)
 	return vp
 }
 

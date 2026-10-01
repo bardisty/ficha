@@ -25,6 +25,8 @@ func keyMsg(t *testing.T, name string) tea.Msg {
 		k = tea.Key{Code: tea.KeyRight}
 	case "space":
 		k = tea.Key{Code: tea.KeySpace, Text: " "}
+	case "shift+space":
+		k = tea.Key{Code: tea.KeySpace, Mod: tea.ModShift}
 	case "ctrl+z", "ctrl+d":
 		k = tea.Key{Code: rune(name[len(name)-1]), Mod: tea.ModCtrl}
 	default:

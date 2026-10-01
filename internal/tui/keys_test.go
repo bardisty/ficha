@@ -26,6 +26,11 @@ func TestWatchPagerKeys(t *testing.T) {
 	if m.viewport.YOffset() != page {
 		t.Errorf("space: YOffset = %d, want a page (%d)", m.viewport.YOffset(), page)
 	}
+	// A terminal that reports modifiers sends shift+space as its own key.
+	m = press(t, m, "b", "shift+space")
+	if m.viewport.YOffset() != page {
+		t.Errorf("shift+space: YOffset = %d, want a page (%d)", m.viewport.YOffset(), page)
+	}
 	m = press(t, m, "b")
 	if m.viewport.YOffset() != 0 {
 		t.Errorf("b: YOffset = %d, want 0", m.viewport.YOffset())
@@ -118,12 +123,15 @@ func (keyRecorder) View() tea.View { return tea.NewView("") }
 // The views match keys by what msg.String() returns, and the other tests
 // build their key presses by hand. This one feeds a terminal's bytes through
 // Bubble Tea's own decoder, so the names the views match are the names a
-// real key arrives with. A held key arrives as one press per character.
+// real key arrives with: as plain bytes, and in the forms a terminal uses
+// once Bubble Tea has asked it to report modified keys apart. A held key
+// arrives as one press per character.
 func TestKeyNamesFromTerminalInput(t *testing.T) {
 	input := []struct{ bytes, want string }{
 		{"j", "j"}, {"j", "j"}, {"j", "j"},
 		{"G", "G"}, {"?", "?"}, {"-", "-"},
-		{" ", "space"},
+		{" ", "space"}, {"\x1b[27;2;32~", "shift+space"}, {"\x1b[32;2u", "shift+space"},
+		{"\x1b[27;5;99~", "ctrl+c"}, {"\x1b[99;5u", "ctrl+c"}, {"\x1b[27u", "esc"},
 		{"\x03", "ctrl+c"}, {"\x1a", "ctrl+z"}, {"\x04", "ctrl+d"}, {"\x15", "ctrl+u"},
 		{"\x1b[A", "up"}, {"\x1b[B", "down"}, {"\x1b[C", "right"}, {"\x1b[D", "left"},
 		{"\x1b[H", "home"}, {"\x1b[F", "end"},
