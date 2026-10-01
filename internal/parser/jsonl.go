@@ -17,7 +17,8 @@ const (
 	maxSkippedLineNumbers = 100
 
 	// readerBufSize is the bufio.Reader buffer size (64KB). Longer lines are
-	// accumulated chunk by chunk, so this only sets the read granularity.
+	// assembled chunk by chunk in lineReader's buffer, so this only sets the
+	// read granularity.
 	readerBufSize = 64 * 1024
 
 	// maxLineBytes caps how many bytes of a single JSONL line are held in
@@ -60,11 +61,11 @@ func ParseJSONL(r io.Reader) ([]models.JSONLMessage, error) {
 // ParseJSONLWithResult parses JSONL content and returns detailed results including skipped lines
 func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 	result := &ParseResult{}
-	reader := bufio.NewReaderSize(r, readerBufSize)
+	reader := newLineReader(r)
 
 	lineNum := 0
 	for {
-		line, oversized, err := readLine(reader, maxLineBytes)
+		line, oversized, err := reader.next(maxLineBytes)
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -109,15 +110,36 @@ func (r *ParseResult) skip(lineNum int, reason string) {
 	}
 }
 
-// readLine reads the next line from r, without the trailing newline. A line
-// longer than maxLen is discarded through to its newline and reported with
-// oversized=true so the caller can count it and continue with the next line
-// (bufio.Scanner cannot do this: ErrTooLong aborts the whole scan).
-// err is io.EOF only when no line remains.
-func readLine(r *bufio.Reader, maxLen int) (line []byte, oversized bool, err error) {
-	var buf []byte
+// lineReader reads a transcript line by line through one buffer it keeps for
+// the whole parse. Real transcripts hold many lines far longer than the
+// reader's buffer, and a fresh slice for each one keeps the garbage collector
+// busier than the parse itself.
+type lineReader struct {
+	r *bufio.Reader
+	// buf assembles a line that spans several reads. It grows to the longest
+	// such line seen and never past maxLen plus a line ending.
+	buf []byte
+}
+
+func newLineReader(r io.Reader) *lineReader {
+	return &lineReader{r: bufio.NewReaderSize(r, readerBufSize)}
+}
+
+// next reads the next line, without the trailing newline. A line longer than
+// maxLen is discarded through to its newline and reported with oversized=true
+// so the caller can count it and continue with the next line (bufio.Scanner
+// cannot do this: ErrTooLong aborts the whole scan). err is io.EOF only when
+// no line remains.
+//
+// The returned line aliases either the bufio.Reader's buffer or lr.buf, so it
+// is valid only until the next call. Callers decode it with json.Unmarshal,
+// which copies every string it stores, and must not keep the slice or a
+// subslice of it: a json.RawMessage or []byte field in the decoded type would
+// do exactly that.
+func (lr *lineReader) next(maxLen int) (line []byte, oversized bool, err error) {
+	buf := lr.buf[:0]
 	for {
-		chunk, err := r.ReadSlice('\n')
+		chunk, err := lr.r.ReadSlice('\n')
 		// Measure the cap against content only. The final chunk (err == nil)
 		// still carries the '\n' (and any preceding '\r'); counting it would
 		// classify identical content as oversized-or-not depending purely on
@@ -127,33 +149,49 @@ func readLine(r *bufio.Reader, maxLen int) (line []byte, oversized bool, err err
 		if err == nil {
 			chunkLen = len(trimLineEnding(chunk))
 		}
-		if !oversized && len(buf)+chunkLen > maxLen {
+		if len(buf)+chunkLen > maxLen {
+			// Checked before the chunk is stored, so an oversized line never
+			// grows buf past the cap on the way to being found out.
 			oversized = true
-			buf = nil
-		}
-		if !oversized {
-			buf = append(buf, chunk...)
 		}
 		switch {
-		case err == nil: // reached the newline
-			if oversized {
-				return nil, true, nil
-			}
-			return trimLineEnding(buf), false, nil
-		case errors.Is(err, bufio.ErrBufferFull): // line continues past the buffer
-			continue
-		case errors.Is(err, io.EOF):
+		case err == nil || errors.Is(err, io.EOF): // the newline, or a final line without one
 			if oversized {
 				return nil, true, nil
 			}
 			if len(buf) == 0 {
-				return nil, false, io.EOF
+				if len(chunk) == 0 {
+					return nil, false, io.EOF
+				}
+				// The whole line sits in the reader's buffer
+				return trimLineEnding(chunk), false, nil
 			}
-			return trimLineEnding(buf), false, nil // final line without newline
+			lr.buf = appendChunk(buf, chunk, maxLen)
+			return trimLineEnding(lr.buf), false, nil
+		case errors.Is(err, bufio.ErrBufferFull): // line continues past the buffer
+			if !oversized {
+				buf = appendChunk(buf, chunk, maxLen)
+				lr.buf = buf
+			}
 		default:
 			return nil, false, err
 		}
 	}
+}
+
+// appendChunk appends chunk to buf, doubling buf when it is full but never
+// past what a line of maxLen bytes and its "\r\n" need. append alone grows a
+// large slice by a quarter at a time, and so overshoots the cap by as much.
+func appendChunk(buf, chunk []byte, maxLen int) []byte {
+	need := len(buf) + len(chunk)
+	if need > cap(buf) {
+		grown := max(2*cap(buf), need)
+		if limit := maxLen + len("\r\n"); need <= limit {
+			grown = min(grown, limit)
+		}
+		buf = append(make([]byte, 0, grown), buf...)
+	}
+	return append(buf, chunk...)
 }
 
 // trimLineEnding strips a trailing "\n" or "\r\n".

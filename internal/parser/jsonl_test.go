@@ -174,7 +174,7 @@ func TestParseJSONLWithResult_LargeLineWithinCap(t *testing.T) {
 	}
 }
 
-// readLine is exercised directly with a small cap so the skip-and-continue
+// lineReader.next is exercised directly with a small cap so the skip-and-continue
 // logic gets thorough coverage without allocating >50MB per case.
 func TestReadLine(t *testing.T) {
 	const maxLen = 16
@@ -272,9 +272,11 @@ func TestReadLine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Small reader buffer forces the ErrBufferFull accumulation path
-			reader := bufio.NewReaderSize(strings.NewReader(tt.input), 16)
+			// One lineReader for the whole input, as a parse uses it, so
+			// each line is read through the buffer the last one left behind
+			reader := &lineReader{r: bufio.NewReaderSize(strings.NewReader(tt.input), 16)}
 			for i := range tt.lines {
-				line, oversized, err := readLine(reader, maxLen)
+				line, oversized, err := reader.next(maxLen)
 				if err != nil {
 					t.Fatalf("line %d: unexpected error: %v", i+1, err)
 				}
@@ -285,7 +287,7 @@ func TestReadLine(t *testing.T) {
 					t.Errorf("line %d: got %q, want %q", i+1, string(line), tt.lines[i])
 				}
 			}
-			if _, _, err := readLine(reader, maxLen); err != io.EOF {
+			if _, _, err := reader.next(maxLen); err != io.EOF {
 				t.Errorf("expected io.EOF after last line, got %v", err)
 			}
 		})
