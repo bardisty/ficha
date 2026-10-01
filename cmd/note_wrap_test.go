@@ -17,7 +17,8 @@ func withStderrWidth(t *testing.T, width int) {
 }
 
 // noteLines returns stderr's lines from the first "Note: " line through its
-// continuations, which are indented past the label.
+// continuations, which are indented past the label, or are a path too long
+// for that and so start at the left edge.
 func noteLines(t *testing.T, stderr string) []string {
 	t.Helper()
 	lines := strings.Split(strings.TrimSuffix(stderr, "\n"), "\n")
@@ -26,7 +27,7 @@ func noteLines(t *testing.T, stderr string) []string {
 			continue
 		}
 		j := i + 1
-		for j < len(lines) && strings.HasPrefix(lines[j], "      ") {
+		for j < len(lines) && (strings.HasPrefix(lines[j], "      ") || filepath.IsAbs(strings.TrimRight(lines[j], ",.)"))) {
 			j++
 		}
 		return lines[i:j]

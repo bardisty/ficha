@@ -50,9 +50,9 @@ Examples:
 func runShow(cfg *config, args []string, live bool) error {
 	switch {
 	case cfg.messages && live:
-		fmt.Fprintln(cfg.stderr, "Warning: --messages has no effect in live mode")
+		writeWarning(cfg, "--messages has no effect in live mode")
 	case cfg.messages && cfg.format == "table":
-		fmt.Fprintln(cfg.stderr, "Warning: --messages has no effect on table output (use -f json or -f csv)")
+		writeWarning(cfg, "--messages has no effect on table output (use -f json or -f csv)")
 	}
 
 	session, projectDir, explicitSessionID, err := selectSession(cfg, args)

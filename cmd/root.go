@@ -96,7 +96,7 @@ Exit status:
 			// --no-follow is registered on show and the root, where it only
 			// means something with --live.
 			if cfg.noFollow && !isTUI {
-				fmt.Fprintln(cfg.stderr, "Warning: --no-follow has no effect outside live/watch/breakdown mode")
+				writeWarning(cfg, "--no-follow has no effect outside live/watch/breakdown mode")
 			}
 			return nil
 		},

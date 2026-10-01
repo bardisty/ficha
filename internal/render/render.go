@@ -581,14 +581,43 @@ func costStyledCell(cost float64, width int, highlighted, noColor bool, style li
 	return left + value + right
 }
 
+// noBreak marks a path for WrapHanging: one before the path, and one in
+// place of each space in it. No path on any OS can hold a NUL, so taking
+// the marks out again restores the path exactly.
+const noBreak = "\x00"
+
+// NoBreak marks a path so WrapHanging keeps it on one line, spaces and all.
+// The caller knows which part of its message is the path. Finding one in
+// finished text would be a guess, since a path with spaces looks like words.
+// Text holding a marked path must pass through WrapHanging before it is
+// printed, which takes the marks out.
+func NoBreak(path string) string {
+	return noBreak + strings.ReplaceAll(path, " ", noBreak)
+}
+
+// unmark returns word as it prints, and whether it holds a marked path.
+func unmark(word string) (string, bool) {
+	start := strings.Index(word, noBreak)
+	if start < 0 {
+		return word, false
+	}
+	return word[:start] + strings.ReplaceAll(word[start+len(noBreak):], noBreak, " "), true
+}
+
 // WrapHanging wraps each line of text to width display columns, breaking
 // only between words. A continuation line is indented to where the line's
 // text starts, past its leading spaces and a "Warning: " or "Note: " label,
 // so a wrapped warning or note reads as one block. A word longer than the
 // room left keeps a line of its own, or stays beside the label, rather than
-// being cut: a URL, path or model ID must survive intact to be copied. A
-// space inside a path is still a place to break, and a line that wraps
-// loses its runs of spaces. Lines that already fit come back unchanged.
+// being cut: a URL, path or model ID must survive intact to be copied.
+//
+// For the same reason a path marked with NoBreak counts as one word, however
+// many spaces it holds. When it doesn't fit under the indent it starts at
+// the left edge instead, where it has the whole width, and where the rest of
+// a path longer than that lines up with it once the terminal wraps it.
+//
+// A run of spaces between two words on one line is kept as it is. Lines that
+// already fit come back unchanged, and a width of 0 or less wraps nothing.
 func WrapHanging(text string, width int) string {
 	lines := strings.SplitAfter(text, "\n")
 	var sb strings.Builder
@@ -603,11 +632,16 @@ func WrapHanging(text string, width int) string {
 }
 
 func wrapHangingLine(line string, width int) string {
-	if lipgloss.Width(line) <= width {
-		return line
+	words := strings.Split(line, " ")
+	for i, word := range words {
+		words[i], _ = unmark(word)
+	}
+	if plain := strings.Join(words, " "); width <= 0 || lipgloss.Width(plain) <= width {
+		return plain
 	}
 	text := strings.TrimLeft(line, " ")
-	hang := len(line) - len(text)
+	lead := line[:len(line)-len(text)]
+	hang := len(lead)
 	for _, label := range []string{"Warning: ", "Note: "} {
 		if strings.HasPrefix(text, label) {
 			hang += len(label)
@@ -615,18 +649,33 @@ func wrapHangingLine(line string, width int) string {
 	}
 	indent := strings.Repeat(" ", hang)
 	var sb strings.Builder
-	col := 0
-	for i, word := range strings.Fields(text) {
+	sb.WriteString(lead)
+	col := len(lead)
+	for first := true; ; first = false {
+		rest := strings.TrimLeft(text, " ")
+		gap := text[:len(text)-len(rest)]
+		if rest == "" {
+			break
+		}
+		end := strings.IndexByte(rest, ' ')
+		if end < 0 {
+			end = len(rest)
+		}
+		word, marked := unmark(rest[:end])
+		text = rest[end:]
 		w := lipgloss.Width(word)
 		switch {
-		case i == 0:
-			sb.WriteString(line[:len(line)-len(text)] + word)
-			col = len(line) - len(text) + w
+		case first:
+			sb.WriteString(word)
+			col += w
 		// Right after the label, a break would put the word at the same
 		// column on the next line, leaving the label alone for nothing.
-		case col+1+w <= width, col+1 == hang:
-			sb.WriteString(" " + word)
-			col += 1 + w
+		case col+len(gap)+w <= width, col+1 == hang:
+			sb.WriteString(gap + word)
+			col += len(gap) + w
+		case marked && hang+w > width:
+			sb.WriteString("\n" + word)
+			col = w
 		default:
 			sb.WriteString("\n" + indent + word)
 			col = hang + w

@@ -783,3 +783,91 @@ func TestWrapHangingNote(t *testing.T) {
 		t.Errorf("overlong first word at 30:\ngot:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// A path the caller marks stays on one line with its spaces, so it can be
+// copied out of the terminal whole.
+func TestWrapHangingKeepsMarkedPathWhole(t *testing.T) {
+	path := "~/My Projects/webapp"
+	in := "Note: session cccccccc is in " + NoBreak(path) + ".\n"
+	// 32 columns end the first line inside the path, 44 right after "~/My"
+	// and its space, 49 one short of the whole note
+	for _, width := range []int{32, 44, 49} {
+		want := "Note: session cccccccc is in\n" +
+			"      ~/My Projects/webapp.\n"
+		if got := WrapHanging(in, width); got != want {
+			t.Errorf("at %d:\ngot:\n%s\nwant:\n%s", width, got, want)
+		}
+	}
+	plain := "Note: session cccccccc is in " + path + ".\n"
+	for _, width := range []int{50, 0, -1} {
+		if got := WrapHanging(in, width); got != plain {
+			t.Errorf("at %d the note fits or isn't wrapped, got %q", width, got)
+		}
+	}
+
+	// Unmarked, the same path is words like any others
+	if got := WrapHanging(plain, 44); !strings.Contains(got, "~/My\n") {
+		t.Errorf("an unmarked path didn't break at its space at 44:\n%s", got)
+	}
+}
+
+func TestWrapHangingKeepsRunsOfSpaces(t *testing.T) {
+	path := "/srv/two  spaces/and   three"
+	in := "Warning: failed to parse sessions-index.json: open " + NoBreak(path) + ": permission denied\n"
+	want := "Warning: failed to parse\n" +
+		"         sessions-index.json: open\n" +
+		"         " + path + ":\n" +
+		"         permission denied\n"
+	if got := WrapHanging(in, 38); got != want {
+		t.Errorf("marked path with runs of spaces at 38:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+
+	// Outside a path, a run between two words that share a line survives
+	in = "  col one    col two    col three and then enough words to wrap\n"
+	want = "  col one    col two    col three\n" +
+		"  and then enough words to wrap\n"
+	if got := WrapHanging(in, 34); got != want {
+		t.Errorf("runs of spaces at 34:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// A marked path too long for the room under the indent starts at the left
+// edge. There it may fit after all. If it still doesn't, it runs off the edge
+// on a line of its own: a path the terminal wraps can still be copied, and
+// one broken in two with an indent in between can't.
+func TestWrapHangingMarkedPathLongerThanWidth(t *testing.T) {
+	short := "/srv/My Config/projects/-srv-webapp/sessions-index.json"
+	in := "Warning: failed to parse sessions-index.json: open " + NoBreak(short) + ": permission denied\n"
+	want := "Warning: failed to parse sessions-index.json: open\n" +
+		short + ":\n" +
+		"         permission denied\n"
+	// The path and its colon are 56 columns: they fit in 60, but not after
+	// the 9 columns of indent
+	if got := WrapHanging(in, 60); got != want {
+		t.Errorf("at 60:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+	// With room for both, the path hangs like any other word
+	want = "Warning: failed to parse sessions-index.json: open\n" +
+		"         " + short + ": permission\n" +
+		"         denied\n"
+	if got := WrapHanging(in, 77); got != want {
+		t.Errorf("at 77:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+
+	path := "/Users/dev/Library/Application Support/Claude Config/projects/-Users-dev-My-Projects-webapp/"
+	in = "Note: any agents this session ran aren't counted. ficha looks for them in " + NoBreak(path) + ", which isn't there.\n"
+	want = "Note: any agents this session ran aren't\n" +
+		"      counted. ficha looks for them in\n" +
+		path + ",\n" +
+		"      which isn't there.\n"
+	if got := WrapHanging(in, 40); got != want {
+		t.Errorf("at 40:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+
+	// A line that is only an indented path, as -v lists skipped files, keeps
+	// its place under the line above it
+	in = "    " + NoBreak(path) + "\n"
+	if got, want := WrapHanging(in, 40), "    "+path+"\n"; got != want {
+		t.Errorf("a path on its own line at 40:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}

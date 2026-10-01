@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,18 +37,36 @@ var stderrWidth = terminalWidth
 
 // wrapStderr wraps notes and warnings between words to the width of the
 // terminal stderr is on, each continuation under the text after its label.
-// Redirected, each stays one line for logs and scripts.
+// Redirected, each stays one line for logs and scripts. Everything bound for
+// stderr that may hold a path marked with render.NoBreak comes through here,
+// wrapped or not, since this is where the path's spaces are put back.
 func wrapStderr(stderr io.Writer, text string) string {
-	if width := stderrWidth(stderr); width > 0 {
-		return render.WrapHanging(text, width)
-	}
-	return text
+	return render.WrapHanging(text, stderrWidth(stderr))
 }
 
 // writeNote writes "Note: " and the formatted text to stderr as one line,
-// wrapped like the warnings.
+// wrapped like the report's warnings.
 func writeNote(cfg *config, format string, args ...any) {
-	fmt.Fprint(cfg.stderr, wrapStderr(cfg.stderr, "Note: "+fmt.Sprintf(format, args...)+"\n"))
+	writeLabeled(cfg, "Note: ", format, args...)
+}
+
+// writeWarning is writeNote for a warning printed outside a report.
+func writeWarning(cfg *config, format string, args ...any) {
+	writeLabeled(cfg, "Warning: ", format, args...)
+}
+
+func writeLabeled(cfg *config, label, format string, args ...any) {
+	fmt.Fprint(cfg.stderr, wrapStderr(cfg.stderr, label+fmt.Sprintf(format, args...)+"\n"))
+}
+
+// errorText is err's message, with the path a file error names marked so a
+// wrapped warning keeps it whole.
+func errorText(err error) string {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return strings.Replace(err.Error(), pathErr.Path, render.NoBreak(pathErr.Path), 1)
+	}
+	return err.Error()
 }
 
 func writeReport(stdout, stderr io.Writer, warnings *bytes.Buffer, output string, warningsLast bool) {
@@ -124,7 +144,7 @@ func (s skipWarning) write(w io.Writer, verbose bool) {
 		if d.Agents > 0 {
 			parts = append(parts, plural(d.Agents, "agent"))
 		}
-		fmt.Fprintf(w, "  %s: %s\n", d.label, strings.Join(parts, ", "))
+		fmt.Fprintf(w, "  %s: %s\n", render.NoBreak(d.label), strings.Join(parts, ", "))
 		listed = writeSkippedFiles(w, "    ", d.SessionID, d.Files, listed)
 		total += len(d.Files)
 	}
@@ -144,7 +164,7 @@ func writeSkippedFiles(w io.Writer, indent, sessionID string, files []models.Fil
 		if f.AgentID != "" {
 			label = "agent " + f.AgentID
 		}
-		fmt.Fprintf(w, "%s%s: %s\n%s  %s\n", indent, label, describeSkippedLines(f), indent, f.Path)
+		fmt.Fprintf(w, "%s%s: %s\n%s  %s\n", indent, label, describeSkippedLines(f), indent, render.NoBreak(f.Path))
 		listed++
 	}
 	return listed
