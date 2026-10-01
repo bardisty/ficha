@@ -60,8 +60,8 @@ type sessionListRecord struct {
 	SkippedLines      int                   `json:"skipped_lines,omitempty"`
 }
 
-// FormatSessionListJSON formats `list` output. Counts and skip counters come
-// from each entry's discovery scan, so they match show's; costs and the rest
+// FormatSessionListJSON formats `list` output. Counts and skip counters are
+// each entry's, as the caller filled them to match show's; costs and the rest
 // come from the analysis, which prices cross-session duplicates once, so a
 // session's cost matches its summary -d row.
 func FormatSessionListJSON(results []models.SessionResult, originalPath string, pretty bool) (string, error) {

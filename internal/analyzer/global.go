@@ -135,9 +135,7 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 
 // discoverProjectSessions lists a project directory's sessions.
 func discoverProjectSessions(project models.ProjectInfo) ([]models.SessionEntry, error) {
-	// Discover sessions on disk. The analysis recomputes message counts from
-	// its own parse, so skip the discovery-time count scan.
-	diskSessions, err := parser.DiscoverSessionsFromDisk(project.FullPath, false)
+	diskSessions, err := parser.DiscoverSessionsFromDisk(project.FullPath)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +145,7 @@ func discoverProjectSessions(project models.ProjectInfo) ([]models.SessionEntry,
 	index, _ := parser.ParseSessionsIndex(indexPath) // Ignore error - index may not exist
 
 	// Merge sources
-	sessions, _ := parser.MergeSessionSources(index, diskSessions, project.FullPath, false)
+	sessions, _ := parser.MergeSessionSources(index, diskSessions, project.FullPath)
 	return sessions, nil
 }
 

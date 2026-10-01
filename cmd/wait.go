@@ -83,7 +83,7 @@ func waitingProject(cfg *config) (dir, projectPath string, ok bool) {
 	}
 	dir = filepath.Join(projectsDir, paths.PathToProjectDir(canonical))
 	if isDir(dir) {
-		sessions, err := parser.DiscoverSessionsFromDisk(dir, false)
+		sessions, err := parser.DiscoverSessionsFromDisk(dir)
 		return dir, canonical, err == nil && len(sessions) == 0
 	}
 	all, err := parser.DiscoverAllProjects()

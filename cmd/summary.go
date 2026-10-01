@@ -57,9 +57,7 @@ func runSummary(cfg *config) error {
 		return err
 	}
 
-	// Summary analyzes every session, recomputing counts, so skip the
-	// discovery-time message-count scan.
-	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, false)
+	sessions, projectDir, err := loadProjectSessionsWithDir(cfg)
 	if err != nil {
 		return err
 	}

@@ -43,7 +43,7 @@ func TestDiscoverSessionsFromDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
+	sessions, err := DiscoverSessionsFromDisk(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,18 +64,22 @@ func TestDiscoverSessionsFromDisk(t *testing.T) {
 		}
 	}
 
-	// Check that message count was calculated
+	// Discovery opens no transcript; the scan counts each one's messages
 	for _, s := range sessions {
+		if s.MessageCount != 0 {
+			t.Errorf("discovery counted %d messages for session %s, want 0", s.MessageCount, s.SessionID)
+		}
+		s = CountSessionMessages(s)
 		if s.MessageCount != 1 {
 			t.Errorf("expected message count 1, got %d for session %s", s.MessageCount, s.SessionID)
 		}
 	}
 }
 
-// TestDiscoverSessionsFromDisk_SkipsCounting verifies that countMessages=false
-// leaves message counts at zero while still discovering agent sub-sessions.
-// Analysis paths rely on this: they recompute counts from their own parse, so
-// the discovery-time file scan would be wasted work.
+// TestDiscoverSessionsFromDisk_SkipsCounting verifies that discovery leaves
+// message counts at zero while still discovering agent sub-sessions. Every
+// command relies on this: it takes counts from its own parse, so a scan
+// during discovery would read each file twice.
 func TestDiscoverSessionsFromDisk_SkipsCounting(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -93,7 +97,7 @@ func TestDiscoverSessionsFromDisk_SkipsCounting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessions, err := DiscoverSessionsFromDisk(tmpDir, false)
+	sessions, err := DiscoverSessionsFromDisk(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,25 +106,22 @@ func TestDiscoverSessionsFromDisk_SkipsCounting(t *testing.T) {
 	}
 
 	s := sessions[0]
-	// Counting skipped
+	// Discovery opens no transcript
 	if s.MessageCount != 0 {
-		t.Errorf("MessageCount: got %d, want 0 when counting disabled", s.MessageCount)
+		t.Errorf("MessageCount: got %d, want 0 without the scan", s.MessageCount)
 	}
 	if s.AgentMessageCount != 0 {
-		t.Errorf("AgentMessageCount: got %d, want 0 when counting disabled", s.AgentMessageCount)
+		t.Errorf("AgentMessageCount: got %d, want 0 without the scan", s.AgentMessageCount)
 	}
 	// Agent discovery still ran (cheap directory listing, always performed)
 	if s.AgentCount != 1 || len(s.AgentPaths) != 1 {
 		t.Errorf("agent discovery: got AgentCount=%d AgentPaths=%v, want 1 agent", s.AgentCount, s.AgentPaths)
 	}
 
-	// Counting enabled must still work (parent + agent = 2)
-	counted, err := DiscoverSessionsFromDisk(tmpDir, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if counted[0].MessageCount != 2 {
-		t.Errorf("MessageCount with counting: got %d, want 2", counted[0].MessageCount)
+	// The scan counts them (parent + agent = 2)
+	counted := CountSessionMessages(s)
+	if counted.MessageCount != 2 || counted.AgentMessageCount != 1 {
+		t.Errorf("scanned: got MessageCount=%d AgentMessageCount=%d, want 2 and 1", counted.MessageCount, counted.AgentMessageCount)
 	}
 }
 
@@ -131,7 +132,7 @@ func TestDiscoverEmptyDirectory(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
+	sessions, err := DiscoverSessionsFromDisk(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +158,7 @@ func TestMergeSessionSources(t *testing.T) {
 		{SessionID: "session-3", FullPath: "/path/session-3.jsonl", Modified: t1, MessageCount: 3}, // Orphan
 	}
 
-	merged, orphanCount := MergeSessionSources(index, diskSessions, "/path", true)
+	merged, orphanCount := MergeSessionSources(index, diskSessions, "/path")
 
 	if orphanCount != 1 {
 		t.Errorf("expected 1 orphan, got %d", orphanCount)
@@ -184,7 +185,7 @@ func TestMergeOrphanDetection(t *testing.T) {
 		{SessionID: "orphan-3"},
 	}
 
-	merged, orphanCount := MergeSessionSources(nil, diskSessions, "/path", true)
+	merged, orphanCount := MergeSessionSources(nil, diskSessions, "/path")
 
 	if orphanCount != 3 {
 		t.Errorf("expected 3 orphans, got %d", orphanCount)
@@ -209,7 +210,7 @@ func TestMergeIndexOnly(t *testing.T) {
 	// No files on disk
 	diskSessions := []models.SessionEntry{}
 
-	merged, orphanCount := MergeSessionSources(index, diskSessions, "/path", true)
+	merged, orphanCount := MergeSessionSources(index, diskSessions, "/path")
 
 	if orphanCount != 0 {
 		t.Errorf("expected 0 orphans (only index entries), got %d", orphanCount)
@@ -571,7 +572,7 @@ func TestMergeGhostSessionsFiltered(t *testing.T) {
 		{SessionID: "real-session", FullPath: realPath, Modified: t1, MessageCount: 1},
 	}
 
-	merged, orphanCount := MergeSessionSources(index, diskSessions, tmpDir, true)
+	merged, orphanCount := MergeSessionSources(index, diskSessions, tmpDir)
 
 	if orphanCount != 0 {
 		t.Errorf("expected 0 orphans, got %d", orphanCount)
@@ -600,7 +601,7 @@ func TestMergeFullPathFromDisk(t *testing.T) {
 		{SessionID: "session-1", FullPath: "/new/path/session-1.jsonl", Modified: t1, MessageCount: 5},
 	}
 
-	merged, _ := MergeSessionSources(index, diskSessions, "/new/path", true)
+	merged, _ := MergeSessionSources(index, diskSessions, "/new/path")
 
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged session, got %d", len(merged))
@@ -675,7 +676,7 @@ func TestMergeIndexOnly_RebuildsFromDisk(t *testing.T) {
 	}
 
 	// Disk scan missed the session (e.g. created after the scan)
-	merged, orphanCount := MergeSessionSources(index, nil, tmpDir, true)
+	merged, orphanCount := MergeSessionSources(index, nil, tmpDir)
 
 	if orphanCount != 0 {
 		t.Errorf("expected 0 orphans, got %d", orphanCount)
@@ -683,7 +684,12 @@ func TestMergeIndexOnly_RebuildsFromDisk(t *testing.T) {
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged session, got %d", len(merged))
 	}
-	e := merged[0]
+	// The merge rebuilds the entry as discovery would: the agent found, the
+	// index's stale count gone
+	if r := merged[0]; r.MessageCount != 0 || r.AgentCount != 1 || len(r.AgentPaths) != 1 {
+		t.Errorf("rebuilt entry: MessageCount=%d AgentCount=%d AgentPaths=%v, want 0, 1 and one path", r.MessageCount, r.AgentCount, r.AgentPaths)
+	}
+	e := CountSessionMessages(merged[0])
 	if e.MessageCount != 3 {
 		t.Errorf("MessageCount: got %d, want 3 (2 parent + 1 agent, recounted from disk)", e.MessageCount)
 	}
@@ -701,9 +707,9 @@ func TestMergeIndexOnly_RebuildsFromDisk(t *testing.T) {
 	}
 }
 
-// TestMergeIndexOnly_SkipsCounting verifies countMessages=false is forwarded to
-// the index-only rebuild: agents are still discovered, but the message-count
-// scan is skipped (analysis paths recompute counts themselves).
+// TestMergeIndexOnly_SkipsCounting verifies the index-only rebuild is
+// discovery's: agents are still discovered, and no transcript is scanned for
+// counts (each command takes them from its own parse).
 func TestMergeIndexOnly_SkipsCounting(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -732,18 +738,18 @@ func TestMergeIndexOnly_SkipsCounting(t *testing.T) {
 		},
 	}
 
-	merged, _ := MergeSessionSources(index, nil, tmpDir, false)
+	merged, _ := MergeSessionSources(index, nil, tmpDir)
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged session, got %d", len(merged))
 	}
 	e := merged[0]
-	// Counting skipped: the stale index count (99) must not survive, and no
-	// fresh count is computed either
+	// The stale index count (99) must not survive, and no fresh count is
+	// computed either
 	if e.MessageCount != 0 {
-		t.Errorf("MessageCount: got %d, want 0 when counting disabled", e.MessageCount)
+		t.Errorf("MessageCount: got %d, want 0 without the scan", e.MessageCount)
 	}
 	if e.AgentMessageCount != 0 {
-		t.Errorf("AgentMessageCount: got %d, want 0 when counting disabled", e.AgentMessageCount)
+		t.Errorf("AgentMessageCount: got %d, want 0 without the scan", e.AgentMessageCount)
 	}
 	// Agent discovery still runs
 	if e.AgentCount != 1 || len(e.AgentPaths) != 1 {
@@ -768,7 +774,7 @@ func TestMergeIndexOnly_OutsideProjectDirDropped(t *testing.T) {
 		},
 	}
 
-	merged, _ := MergeSessionSources(index, nil, projectDir, true)
+	merged, _ := MergeSessionSources(index, nil, projectDir)
 	if len(merged) != 0 {
 		t.Errorf("expected entry outside projectDir to be dropped, got %d entries", len(merged))
 	}
@@ -786,7 +792,7 @@ func TestMergeIndexOnly_AliasedStemDropped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	disk, err := DiscoverSessionsFromDisk(projectDir, true)
+	disk, err := DiscoverSessionsFromDisk(projectDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -796,7 +802,7 @@ func TestMergeIndexOnly_AliasedStemDropped(t *testing.T) {
 		},
 	}
 
-	merged, _ := MergeSessionSources(index, disk, projectDir, true)
+	merged, _ := MergeSessionSources(index, disk, projectDir)
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged session, got %d", len(merged))
 	}
@@ -824,7 +830,7 @@ func TestMergeIndexOnly_NestedAgentPathDropped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	disk, err := DiscoverSessionsFromDisk(projectDir, true)
+	disk, err := DiscoverSessionsFromDisk(projectDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -834,7 +840,7 @@ func TestMergeIndexOnly_NestedAgentPathDropped(t *testing.T) {
 		},
 	}
 
-	merged, _ := MergeSessionSources(index, disk, projectDir, true)
+	merged, _ := MergeSessionSources(index, disk, projectDir)
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged session, got %d", len(merged))
 	}
@@ -885,7 +891,7 @@ func TestMergeDuplicateSessionIDsInIndex(t *testing.T) {
 	diskSessions := []models.SessionEntry{
 		{SessionID: "dup-id", FullPath: "/path/first.jsonl", Modified: t1, MessageCount: 5},
 	}
-	merged, _ := MergeSessionSources(index, diskSessions, "/path", true)
+	merged, _ := MergeSessionSources(index, diskSessions, "/path")
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged session, got %d", len(merged))
 	}
@@ -893,7 +899,7 @@ func TestMergeDuplicateSessionIDsInIndex(t *testing.T) {
 
 func TestMergeBothNilAndEmpty(t *testing.T) {
 	// nil index + nil disk
-	merged1, orphans1 := MergeSessionSources(nil, nil, "/path", true)
+	merged1, orphans1 := MergeSessionSources(nil, nil, "/path")
 	if len(merged1) != 0 {
 		t.Errorf("nil+nil: expected 0 merged, got %d", len(merged1))
 	}
@@ -902,7 +908,7 @@ func TestMergeBothNilAndEmpty(t *testing.T) {
 	}
 
 	// nil index + empty disk
-	merged2, orphans2 := MergeSessionSources(nil, []models.SessionEntry{}, "/path", true)
+	merged2, orphans2 := MergeSessionSources(nil, []models.SessionEntry{}, "/path")
 	if len(merged2) != 0 {
 		t.Errorf("nil+empty: expected 0 merged, got %d", len(merged2))
 	}
@@ -1370,10 +1376,10 @@ func TestCountMessagesInFile_MatchesAnalysisParse(t *testing.T) {
 	}
 }
 
-// buildDiskEntry surfaces both skip sources `list` can see: an unreadable agent
-// directory (found by discovery) and an unreadable agent file (found by the
-// message-count scan).
-func TestDiscoverSessionsFromDisk_SkippedAccounting(t *testing.T) {
+// CountSessionMessages surfaces both skip sources `list` can see: an
+// unreadable agent directory (found by discovery) and an unreadable agent file
+// (found by the message-count scan).
+func TestCountSessionMessages_SkippedAccounting(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionID := "sess"
 	writeJSONL := func(path, content string) {
@@ -1405,14 +1411,19 @@ func TestDiscoverSessionsFromDisk_SkippedAccounting(t *testing.T) {
 	}
 	makeUnreadableDir(t, filepath.Join(subagentsDir, "workflows"))
 
-	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
+	sessions, err := DiscoverSessionsFromDisk(tmpDir)
 	if err != nil {
 		t.Fatalf("DiscoverSessionsFromDisk: %v", err)
 	}
 	if len(sessions) != 1 {
 		t.Fatalf("sessions: got %d, want 1", len(sessions))
 	}
-	s := sessions[0]
+	// Discovery alone sees the directory, and counts the file it can't open
+	// as an agent until the scan tries it.
+	if d := sessions[0]; d.SkippedAgents != 1 || d.AgentCount != 1 {
+		t.Errorf("discovery: AgentCount=%d SkippedAgents=%d, want 1/1", d.AgentCount, d.SkippedAgents)
+	}
+	s := CountSessionMessages(sessions[0])
 	if s.MessageCount != 1 {
 		t.Errorf("MessageCount: got %d, want 1", s.MessageCount)
 	}
@@ -1433,7 +1444,7 @@ func TestDiscoverSessionsFromDisk_SkippedAccounting(t *testing.T) {
 
 // A readable agent beside an unreadable one still counts, so AgentCount and
 // SkippedAgents partition what discovery found.
-func TestDiscoverSessionsFromDisk_AgentCountExcludesUnreadable(t *testing.T) {
+func TestCountSessionMessages_AgentCountExcludesUnreadable(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionID := "sess"
 	line := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","requestId":"r1","message":{"id":"m1","usage":{"input_tokens":10}}}` + "\n"
@@ -1459,11 +1470,11 @@ func TestDiscoverSessionsFromDisk_AgentCountExcludesUnreadable(t *testing.T) {
 		t.Skip("chmod 000 does not bar reads (running as root?)")
 	}
 
-	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
+	sessions, err := DiscoverSessionsFromDisk(tmpDir)
 	if err != nil {
 		t.Fatalf("DiscoverSessionsFromDisk: %v", err)
 	}
-	s := sessions[0]
+	s := CountSessionMessages(sessions[0])
 	if s.AgentCount != 1 || s.SkippedAgents != 1 {
 		t.Errorf("AgentCount=%d SkippedAgents=%d, want 1/1", s.AgentCount, s.SkippedAgents)
 	}
@@ -1474,7 +1485,7 @@ func TestDiscoverSessionsFromDisk_AgentCountExcludesUnreadable(t *testing.T) {
 
 // An unreadable parent transcript must not read as an empty session: `list`
 // shows a zero message count, and only SkippedSessions says why.
-func TestDiscoverSessionsFromDisk_UnreadableParentIsCounted(t *testing.T) {
+func TestCountSessionMessages_UnreadableParentIsCounted(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessPath := filepath.Join(tmpDir, "sess.jsonl")
 	line := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","requestId":"r1","message":{"id":"m1","usage":{"input_tokens":10}}}` + "\n"
@@ -1489,11 +1500,14 @@ func TestDiscoverSessionsFromDisk_UnreadableParentIsCounted(t *testing.T) {
 		t.Skip("chmod 000 does not bar reads (running as root?)")
 	}
 
-	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
+	sessions, err := DiscoverSessionsFromDisk(tmpDir)
 	if err != nil {
 		t.Fatalf("DiscoverSessionsFromDisk: %v", err)
 	}
-	s := sessions[0]
+	if sessions[0].SkippedSessions != 0 {
+		t.Errorf("discovery opened the transcript: SkippedSessions=%d", sessions[0].SkippedSessions)
+	}
+	s := CountSessionMessages(sessions[0])
 	if s.SkippedSessions != 1 {
 		t.Errorf("SkippedSessions: got %d, want 1", s.SkippedSessions)
 	}
@@ -1545,7 +1559,7 @@ func TestReadAgentDir_PlainFileCountsAsUnreadable(t *testing.T) {
 
 // The scan names the transcripts behind SkippedLines, the parent first, with
 // the lines it skipped, so list -v can list them. They add up to the count.
-func TestDiscoverSessionsFromDisk_SkippedFiles(t *testing.T) {
+func TestCountSessionMessages_SkippedFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionID := "sess"
 	good := `{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","requestId":"r1","message":{"id":"m1","usage":{"input_tokens":10}}}` + "\n"
@@ -1566,11 +1580,11 @@ func TestDiscoverSessionsFromDisk_SkippedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessions, err := DiscoverSessionsFromDisk(tmpDir, true)
+	sessions, err := DiscoverSessionsFromDisk(tmpDir)
 	if err != nil || len(sessions) != 1 {
 		t.Fatalf("DiscoverSessionsFromDisk: %d sessions, %v", len(sessions), err)
 	}
-	s := sessions[0]
+	s := CountSessionMessages(sessions[0])
 	want := []models.FileSkips{
 		{Path: parent, Count: 1, Lines: []models.SkippedLine{{Line: 2, Reason: models.SkipMalformed}}},
 		{Path: agent, AgentID: "a1", Count: 2, Lines: []models.SkippedLine{{Line: 1, Reason: models.SkipMalformed}, {Line: 2, Reason: models.SkipMalformed}}},
@@ -1588,14 +1602,13 @@ func TestDiscoverSessionsFromDisk_SkippedFiles(t *testing.T) {
 
 	// Merged over an index entry, the session keeps them.
 	index := &models.SessionsIndex{Entries: []models.SessionEntry{{SessionID: sessionID, FullPath: parent}}}
-	merged, _ := MergeSessionSources(index, sessions, tmpDir, true)
+	merged, _ := MergeSessionSources(index, []models.SessionEntry{s}, tmpDir)
 	if len(merged) != 1 || !reflect.DeepEqual(merged[0].SkippedFiles, want) {
 		t.Errorf("merged SkippedFiles: got %+v, want %+v", merged, want)
 	}
 
 	// Without the scan nothing is parsed, so nothing is named.
-	unscanned, err := DiscoverSessionsFromDisk(tmpDir, false)
-	if err != nil || len(unscanned) != 1 || unscanned[0].SkippedFiles != nil {
-		t.Errorf("without the scan: got %+v, %v; want no SkippedFiles", unscanned, err)
+	if sessions[0].SkippedFiles != nil || sessions[0].SkippedLines != 0 {
+		t.Errorf("without the scan: got %+v; want no SkippedFiles", sessions[0])
 	}
 }

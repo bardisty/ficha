@@ -28,21 +28,19 @@ func (e *sessionLookupError) Unwrap() error { return e.err }
 
 // loadProjectSessions loads all sessions for the current project.
 // It handles project path resolution, disk scanning, index loading, and source merging.
-// countMessages controls whether per-file message counts are computed during
-// discovery (see loadProjectSessionsWithDir). Returns the merged sessions list
-// or an error.
-func loadProjectSessions(cfg *config, countMessages bool) ([]models.SessionEntry, error) {
-	sessions, _, err := loadProjectSessionsWithDir(cfg, countMessages)
+// Returns the merged sessions list or an error.
+func loadProjectSessions(cfg *config) ([]models.SessionEntry, error) {
+	sessions, _, err := loadProjectSessionsWithDir(cfg)
 	return sessions, err
 }
 
 // loadProjectSessionsWithDir loads all sessions and returns the project directory path.
 // Used by live-view commands that need to watch the project directory for new sessions.
 //
-// countMessages gates the discovery-time message-count scan. Every command
-// passes false and takes counts from the analyzer's own parse, so each file
-// is read once.
-func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.SessionEntry, string, error) {
+// The sessions carry no message counts: discovery opens no transcript. A
+// command that prints counts takes them from the analyzer's parse, so no file
+// is read twice.
+func loadProjectSessionsWithDir(cfg *config) ([]models.SessionEntry, string, error) {
 	project, err := resolveProjectDirectory(cfg)
 	if err != nil {
 		return nil, "", err
@@ -50,7 +48,7 @@ func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.Sessi
 	projDir := project.dir
 
 	// Scan disk for session files
-	diskSessions, err := parser.DiscoverSessionsFromDisk(projDir, countMessages)
+	diskSessions, err := parser.DiscoverSessionsFromDisk(projDir)
 	if err != nil {
 		// The *os.PathError already names the directory; wrapping it whole
 		// would print the path twice.
@@ -74,7 +72,7 @@ func loadProjectSessionsWithDir(cfg *config, countMessages bool) ([]models.Sessi
 	}
 
 	// Merge sources
-	sessions, orphanCount := parser.MergeSessionSources(index, diskSessions, projDir, countMessages)
+	sessions, orphanCount := parser.MergeSessionSources(index, diskSessions, projDir)
 
 	if len(sessions) == 0 {
 		cfg.tracef("no transcripts in %s", filepath.Base(projDir))
@@ -104,14 +102,12 @@ func selectSession(cfg *config, args []string) (*models.SessionEntry, string, bo
 }
 
 func findSession(cfg *config, args []string) (*models.SessionEntry, string, bool, error) {
-	// Analysis paths (show/watch/breakdown) recompute counts from their own
-	// parse, so skip the discovery-time message-count scan.
 	explicitSessionID := len(args) > 0
 	if explicitSessionID && isTranscriptPath(args[0]) {
 		session, projectDir, err := sessionFromPath(cfg, args[0])
 		return session, projectDir, true, err
 	}
-	sessions, projectDir, err := loadProjectSessionsWithDir(cfg, false)
+	sessions, projectDir, err := loadProjectSessionsWithDir(cfg)
 	if err != nil {
 		// A session ID copied from elsewhere may belong to a project other
 		// than this directory's, and saying where beats a bare project error.

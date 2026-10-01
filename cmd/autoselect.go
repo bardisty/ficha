@@ -19,7 +19,7 @@ import (
 // session in its place would hide that. It returns nil when it stops there,
 // or when no session has a reply.
 func newestSessionWithReplies(cfg *config, scope analyzer.MessageScope) (*models.SessionAnalysis, int, error) {
-	sessions, err := loadProjectSessions(cfg, false)
+	sessions, err := loadProjectSessions(cfg)
 	if err != nil {
 		return nil, 0, err
 	}
