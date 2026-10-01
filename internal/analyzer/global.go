@@ -1,6 +1,8 @@
 package analyzer
 
 import (
+	"errors"
+	"io/fs"
 	"sort"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -12,6 +14,9 @@ import (
 type projectResult struct {
 	analysis *models.ProjectAnalysis
 	err      error
+	// indexErr is why the project's sessions-index.json went unused, nil
+	// when it was read or isn't there.
+	indexErr error
 }
 
 // AnalyzeAllProjects analyzes all projects in parallel and returns aggregated stats
@@ -36,7 +41,7 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 	projectJobs := make([][]parseJob, len(projects))
 	results := make([]projectResult, len(projects))
 	forEachParallel(len(projects), func(idx int) {
-		sessions[idx], results[idx].err = discoverProjectSessions(projects[idx])
+		sessions[idx], results[idx].indexErr, results[idx].err = discoverProjectSessions(projects[idx])
 		if len(sessions[idx]) > 0 {
 			parses[idx], projectJobs[idx] = planSessionParses(sessions[idx], window)
 		}
@@ -68,7 +73,15 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 	}
 
 	firstActiveSet := false
-	for _, result := range results {
+	for idx, result := range results {
+		// Kept in input order, like the sums below, so the warnings read the
+		// same from run to run.
+		if result.indexErr != nil {
+			global.IgnoredIndexes = append(global.IgnoredIndexes, models.IgnoredIndex{
+				Path: paths.GetSessionsIndexPath(projects[idx].FullPath),
+				Err:  result.indexErr,
+			})
+		}
 		if result.err != nil {
 			global.SkippedProjects++
 			continue
@@ -133,20 +146,23 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 	return global, nil
 }
 
-// discoverProjectSessions lists a project directory's sessions.
-func discoverProjectSessions(project models.ProjectInfo) ([]models.SessionEntry, error) {
+// discoverProjectSessions lists a project directory's sessions. The sessions
+// on disk load without sessions-index.json, so an index that can't be used
+// comes back as indexErr beside them. A missing one is no error: current
+// Claude Code writes none.
+func discoverProjectSessions(project models.ProjectInfo) (sessions []models.SessionEntry, indexErr, err error) {
 	diskSessions, err := parser.DiscoverSessionsFromDisk(project.FullPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// Try to load index (may not exist)
-	indexPath := paths.GetSessionsIndexPath(project.FullPath)
-	index, _ := parser.ParseSessionsIndex(indexPath) // Ignore error - index may not exist
+	index, indexErr := parser.ParseSessionsIndex(paths.GetSessionsIndexPath(project.FullPath))
+	if errors.Is(indexErr, fs.ErrNotExist) {
+		indexErr = nil
+	}
 
-	// Merge sources
-	sessions, _ := parser.MergeSessionSources(index, diskSessions, project.FullPath)
-	return sessions, nil
+	sessions, _ = parser.MergeSessionSources(index, diskSessions, project.FullPath)
+	return sessions, indexErr, nil
 }
 
 // analyzeProject builds a project's analysis from its sessions and their

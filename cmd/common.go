@@ -66,9 +66,8 @@ func loadProjectSessionsWithDir(cfg *config) ([]models.SessionEntry, string, err
 	indexPath := paths.GetSessionsIndexPath(projDir)
 	index, indexErr := parser.ParseSessionsIndex(indexPath)
 	if indexErr != nil && !errors.Is(indexErr, fs.ErrNotExist) {
-		// The sessions on disk still load without the index. Only a file error
-		// carries the path, so it's added here and the error's own copy dropped.
-		writeWarning(cfg, "ignoring %s: %s", render.NoBreak(indexPath), unwrapPathError(indexErr))
+		// The sessions on disk still load without the index.
+		writeWarning(cfg, "%s", ignoredIndexMessage(indexPath, indexErr))
 	}
 
 	// Merge sources
@@ -372,6 +371,13 @@ func agentsOutOfReach(path, sessionID string) bool {
 		return false
 	}
 	return !isWithin(filepath.Dir(path), projects)
+}
+
+// ignoredIndexMessage is the warning for a sessions-index.json that is there
+// but can't be used, without its "Warning: " label. Only a file error carries
+// the path, so it's added here and the error's own copy dropped.
+func ignoredIndexMessage(indexPath string, err error) string {
+	return fmt.Sprintf("ignoring %s: %s", render.NoBreak(indexPath), unwrapPathError(err))
 }
 
 // unwrapPathError drops an *os.PathError's own copy of the path, for a

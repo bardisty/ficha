@@ -99,6 +99,7 @@ func runGlobal(cfg *config) error {
 
 	// Warn about every input the totals could not account for
 	var warnings bytes.Buffer
+	warnIgnoredIndexes(&warnings, analysis.IgnoredIndexes, cfg.verbose)
 	if analysis.SkippedProjects > 0 {
 		fmt.Fprintf(&warnings, "Warning: %d project(s) could not be analyzed\n", analysis.SkippedProjects)
 	}

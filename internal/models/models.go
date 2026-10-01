@@ -690,6 +690,13 @@ type ProjectAnalysis struct {
 	UnpricedModels []string `json:"unpriced_models,omitempty"`
 }
 
+// IgnoredIndex is a sessions-index.json a project was analyzed without, and
+// why. Only a file error names Path in Err.
+type IgnoredIndex struct {
+	Path string
+	Err  error
+}
+
 // GlobalAnalysis represents aggregated stats across all projects
 type GlobalAnalysis struct {
 	// Window is the --since/--until range the analysis covers, when one was
@@ -713,6 +720,11 @@ type GlobalAnalysis struct {
 	// skipped input. They stay out of Projects and the counts, but not out
 	// of the skip counters above, and -v lists their SkipDetails.
 	OutOfWindow []ProjectAnalysis `json:"-"`
+	// IgnoredIndexes holds the sessions-index.json files that are there but
+	// couldn't be used, in the order the projects were given. It stands apart
+	// from Projects and OutOfWindow because a project with no transcripts,
+	// or with nothing inside Window and nothing skipped, is in neither.
+	IgnoredIndexes []IgnoredIndex `json:"-"`
 	// Messages whose cache-write cost is a 5m-rate estimate (see SessionAnalysis)
 	EstimatedCostMessages int `json:"estimated_cost_messages,omitempty"`
 	// CostByModel keys priced at a fallback rate (see SessionAnalysis)
