@@ -17,7 +17,8 @@ const (
 	maxIndexFileSize = 10 * 1024 * 1024
 )
 
-// ParseSessionsIndex parses a sessions-index.json file
+// ParseSessionsIndex parses a sessions-index.json file. Only a file error
+// names path, so a caller that reports the error adds it.
 func ParseSessionsIndex(path string) (*models.SessionsIndex, error) {
 	// Check file size before reading to prevent memory exhaustion
 	info, err := os.Stat(path)
@@ -25,7 +26,7 @@ func ParseSessionsIndex(path string) (*models.SessionsIndex, error) {
 		return nil, err
 	}
 	if info.Size() > maxIndexFileSize {
-		return nil, fmt.Errorf("sessions-index.json too large (%d bytes, max %d)", info.Size(), maxIndexFileSize)
+		return nil, fmt.Errorf("too large (%d bytes, limit %d)", info.Size(), maxIndexFileSize)
 	}
 
 	data, err := os.ReadFile(path)

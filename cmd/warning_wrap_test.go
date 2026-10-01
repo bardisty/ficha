@@ -57,66 +57,143 @@ func TestFlagWarningsWrap(t *testing.T) {
 	}
 }
 
-// The sessions-index warning names the file it couldn't read. With a space
-// in the config directory, the path must come through whole at any width,
-// and exactly as the error spelled it when stderr is redirected.
-func TestSessionsIndexWarningKeepsItsPathWhole(t *testing.T) {
+// The sessions-index warning names the file once, whatever failed: a file
+// error carries the path and the others don't. With a space in the config
+// directory, the path must come through whole at any width, and exactly as
+// it is when stderr is redirected.
+func TestSessionsIndexWarningNamesTheFileOnce(t *testing.T) {
+	tests := []struct {
+		name   string
+		damage func(t *testing.T, index string)
+		// reason is the text after the path. Empty where the OS or
+		// encoding/json words it.
+		reason string
+	}{
+		{
+			// A directory where the index should be: it can be found but not
+			// read as a file, on every OS and for every user, root included
+			name: "file error",
+			damage: func(t *testing.T, index string) {
+				if err := os.Mkdir(index, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "malformed json",
+			damage: func(t *testing.T, index string) {
+				if err := os.WriteFile(index, []byte("{"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			reason: "unexpected end of JSON input",
+		},
+		{
+			name: "wrong type",
+			damage: func(t *testing.T, index string) {
+				if err := os.WriteFile(index, []byte(`{"entries":7}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "over the size cap",
+			damage: func(t *testing.T, index string) {
+				if err := os.WriteFile(index, nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Truncate(index, 10*1024*1024+1); err != nil {
+					t.Fatal(err)
+				}
+			},
+			reason: "too large (10485761 bytes, limit 10485760)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := setupE2EFixture(t)
+			spaced := filepath.Join(t.TempDir(), "Claude  Config")
+			if err := os.Rename(root, spaced); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("CLAUDE_CONFIG_DIR", spaced)
+			index := filepath.Join(spaced, "projects", e2eProjDir, "sessions-index.json")
+			tt.damage(t, index)
+			args := []string{"show", projFlag, e2eAlphaID, "-f", "json"}
+
+			_, stderr, err := executeCLISplit(t, args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prefix := "Warning: ignoring " + index + ": "
+			if !strings.HasPrefix(stderr, prefix) || strings.Count(stderr, "\n") != 1 {
+				t.Errorf("redirected, want one line starting %q, got %q", prefix, stderr)
+			}
+			if n := strings.Count(stderr, "sessions-index.json"); n != 1 {
+				t.Errorf("the warning names the file %d times, want once: %q", n, stderr)
+			}
+			if tt.reason != "" && stderr != prefix+tt.reason+"\n" {
+				t.Errorf("redirected:\n got: %q\nwant: %q", stderr, prefix+tt.reason+"\n")
+			}
+			if strings.Contains(stderr, "\x00") {
+				t.Errorf("the path's mark reached stderr: %q", stderr)
+			}
+			oneLine := stderr
+
+			for _, width := range []int{40, 60, 80} {
+				withStderrWidth(t, width)
+				_, stderr, err = executeCLISplit(t, args...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				lines := strings.Split(strings.TrimSuffix(stderr, "\n"), "\n")
+				if len(lines) < 2 {
+					t.Fatalf("at %d the warning didn't wrap: %q", width, stderr)
+				}
+				// The path is longer than any of these widths, so it starts at
+				// the left edge on a line of its own. Every other line hangs.
+				whole := false
+				for i, line := range lines {
+					switch {
+					case line == index+":":
+						whole = true
+					case i > 0 && !strings.HasPrefix(line, "         "):
+						t.Errorf("at %d line %d isn't hung under the warning's text: %q", width, i+1, line)
+					}
+				}
+				if !whole {
+					t.Errorf("at %d the path isn't whole on a line of its own:\n%s", width, stderr)
+				}
+				// Nothing but the line breaks and their indents may differ
+				got := strings.ReplaceAll(stderr, "\n         ", " ")
+				got = strings.ReplaceAll(strings.TrimSuffix(got, "\n"), "\n", " ") + "\n"
+				if got != oneLine {
+					t.Errorf("at %d the text changed:\n got: %q\nwant: %q", width, got, oneLine)
+				}
+			}
+		})
+	}
+}
+
+// Current Claude Code writes no sessions-index.json, so a project without one
+// is the usual case and says nothing.
+func TestMissingSessionsIndexIsSilent(t *testing.T) {
 	root := setupE2EFixture(t)
-	spaced := filepath.Join(t.TempDir(), "Claude  Config")
-	if err := os.Rename(root, spaced); err != nil {
-		t.Fatal(err)
+	index := filepath.Join(root, "projects", e2eProjDir, "sessions-index.json")
+	if _, err := os.Stat(index); !os.IsNotExist(err) {
+		t.Fatalf("the fixture has an index: %v", err)
 	}
-	t.Setenv("CLAUDE_CONFIG_DIR", spaced)
-	// A directory where the index should be: it can be found but not read
-	// as a file, on every OS and for every user, root included
-	index := filepath.Join(spaced, "projects", e2eProjDir, "sessions-index.json")
-	if err := os.Mkdir(index, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	args := []string{"show", projFlag, e2eAlphaID, "-f", "json"}
-
-	_, stderr, err := executeCLISplit(t, args...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const label = "Warning: failed to parse sessions-index.json: "
-	if !strings.HasPrefix(stderr, label) || strings.Count(stderr, "\n") != 1 || !strings.Contains(stderr, " "+index+": ") {
-		t.Errorf("redirected, want one line naming %q, got %q", index, stderr)
-	}
-	if strings.Contains(stderr, "\x00") {
-		t.Errorf("the path's mark reached stderr: %q", stderr)
-	}
-	oneLine := stderr
-
-	for _, width := range []int{40, 60, 80} {
-		withStderrWidth(t, width)
-		_, stderr, err = executeCLISplit(t, args...)
+	for _, args := range [][]string{
+		{"show", projFlag, e2eAlphaID, "-f", "json"},
+		{"list", projFlag, "-f", "json"},
+		{"summary", projFlag, "-f", "json"},
+	} {
+		_, stderr, err := executeCLISplit(t, args...)
 		if err != nil {
 			t.Fatal(err)
 		}
-		lines := strings.Split(strings.TrimSuffix(stderr, "\n"), "\n")
-		if len(lines) < 2 {
-			t.Fatalf("at %d the warning didn't wrap: %q", width, stderr)
-		}
-		// The path is longer than any of these widths, so it starts at the
-		// left edge on a line of its own. Every other line hangs.
-		whole := false
-		for i, line := range lines {
-			switch {
-			case line == index+":":
-				whole = true
-			case i > 0 && !strings.HasPrefix(line, "         "):
-				t.Errorf("at %d line %d isn't hung under the warning's text: %q", width, i+1, line)
-			}
-		}
-		if !whole {
-			t.Errorf("at %d the path isn't whole on a line of its own:\n%s", width, stderr)
-		}
-		// Nothing but the line breaks and their indents may differ
-		got := strings.ReplaceAll(stderr, "\n         ", " ")
-		got = strings.ReplaceAll(strings.TrimSuffix(got, "\n"), "\n", " ") + "\n"
-		if got != oneLine {
-			t.Errorf("at %d the text changed:\n got: %q\nwant: %q", width, got, oneLine)
+		if stderr != "" {
+			t.Errorf("%s: want nothing on stderr, got %q", args[0], stderr)
 		}
 	}
 }
