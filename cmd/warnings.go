@@ -253,6 +253,20 @@ func labelSkips(project string, details []models.SkipDetail) []namedSkip {
 	return out
 }
 
+// warnIgnoredIndexes writes the line show, list and summary print for an
+// unusable sessions-index.json, once per project that has one. A report over
+// every project can meet hundreds, when one cause damages them all, so past
+// maxListedFiles the rest are a count unless -v asks for them.
+func warnIgnoredIndexes(w io.Writer, ignored []models.IgnoredIndex, verbose bool) {
+	for i, index := range ignored {
+		if i == maxListedFiles && !verbose {
+			fmt.Fprintf(w, "  ignoring %s. Run with -v to list them.\n", plural(len(ignored)-i, "more sessions-index.json file"))
+			return
+		}
+		fmt.Fprintf(w, "Warning: %s\n", ignoredIndexMessage(index.Path, index.Err))
+	}
+}
+
 // warnEstimatedCosts warns when some messages' cache-write tokens carried no
 // TTL attribution and were priced at the 5m rate, the cheapest write tier, so
 // the affected totals are lower-bound estimates rather than exact.
