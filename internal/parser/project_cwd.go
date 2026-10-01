@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"io"
@@ -85,9 +84,9 @@ func transcriptCwd(path string) string {
 	}
 	defer f.Close()
 
-	r := bufio.NewReaderSize(io.LimitReader(f, cwdScanBytes), 64*1024)
+	r := newLineReader(io.LimitReader(f, cwdScanBytes))
 	for {
-		line, oversized, err := readLine(r, cwdLineBytes)
+		line, oversized, err := r.next(cwdLineBytes)
 		// Cheap pre-check: most lines without the key never reach the decoder
 		if !oversized && bytes.Contains(line, []byte(`"cwd"`)) {
 			var rec struct {
