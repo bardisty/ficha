@@ -131,16 +131,28 @@ func renderLiveHeaderPanel(p liveHeaderParams) string {
 	return sb.String()
 }
 
+// statusForm is how much room the header's status may take.
+type statusForm int
+
+const (
+	statusFull     statusForm = iota // "last msg 12s ago"
+	statusNoPrefix                   // "12s ago"
+	statusTerse                      // "12s ago", and "no msgs" for "no messages yet"
+)
+
 // fitStatusHeader builds the mode-style header content and fits it to width,
 // giving up detail in order of least value: the "last msg" prefix, then
-// project name characters, then the project name altogether.
+// project name characters, then the project name altogether, then the words
+// of a status that is a phrase. The ID and the mode stay whole, since they
+// tell one pane from the next, and a status loses words, never letters:
+// "no messag" reads as a glitch where "no msgs" doesn't.
 func fitStatusHeader(p liveHeaderParams, width int) string {
-	short := false
+	form := statusFull
 	project := p.project
-	content := buildStatusHeader(p, project, short)
+	content := buildStatusHeader(p, project, form)
 	if lipgloss.Width(content) > width {
-		short = true
-		content = buildStatusHeader(p, project, short)
+		form = statusNoPrefix
+		content = buildStatusHeader(p, project, form)
 	}
 	if over := lipgloss.Width(content) - width; over > 0 && project != "" {
 		// Keep at least a few characters: a stub is still recognizable
@@ -150,14 +162,17 @@ func fitStatusHeader(p liveHeaderParams, width int) string {
 		} else {
 			project = ""
 		}
-		content = buildStatusHeader(p, project, short)
+		content = buildStatusHeader(p, project, form)
+	}
+	if lipgloss.Width(content) > width {
+		content = buildStatusHeader(p, project, statusTerse)
 	}
 	return content
 }
 
-// buildStatusHeader renders "project │ id │ ● MODE │ status". short drops
-// the "last msg" prefix from the status.
-func buildStatusHeader(p liveHeaderParams, project string, short bool) string {
+// buildStatusHeader renders "project │ id │ ● MODE │ status", with the
+// status in the given form.
+func buildStatusHeader(p liveHeaderParams, project string, form statusForm) string {
 	style := func(st lipgloss.Style, s string) string {
 		if p.noColor {
 			return s
@@ -177,20 +192,30 @@ func buildStatusHeader(p liveHeaderParams, project string, short bool) string {
 		modeStyle = dimStyle
 	}
 
+	terse := form == statusTerse
 	var status string
 	switch {
+	case p.waiting && terse:
+		status = "waiting for session"
 	case p.waiting:
 		status = "waiting for a session"
 	case p.loading:
 		status = "Loading..."
-		if !p.noColor {
-			status = p.spinnerView + " Loading..."
+		spin := p.spinnerView
+		if terse {
+			// The dot spinner's frames end in a space of their own.
+			status, spin = "Loading", strings.TrimRight(spin, " ")
 		}
+		if !p.noColor {
+			status = spin + " " + status
+		}
+	case (p.lastActivity.IsZero() || p.noMessages && !idle) && terse:
+		status = "no msgs"
 	case p.lastActivity.IsZero(), p.noMessages && !idle:
 		status = "no messages yet"
 	case idle:
 		status = style(dimStyle, "idle "+strings.TrimSuffix(render.Ago(p.lastActivity, p.now), " ago"))
-	case short:
+	case form != statusFull:
 		status = messageAge(p.lastActivity, p.now)
 	default:
 		status = "last msg " + messageAge(p.lastActivity, p.now)
