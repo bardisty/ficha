@@ -34,7 +34,10 @@ A few sessions carry agents, a corrupt line, or a fork of an older session,
 so dedup and the skip counters have work to do.
 
 Like mkfixture.py's, the data is fake and seeded, and the timestamps are
-relative to now.
+relative to now. They stay put once written, but --since today follows the
+clock: a history built at 23:00 and timed again at 01:00 gives it a
+different set of sessions. Compare timings taken on the same side of
+midnight, or build again and retake them all.
 """
 import argparse, json, os, random, uuid
 from datetime import datetime, timedelta, timezone
