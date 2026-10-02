@@ -539,3 +539,53 @@ func TestWindowSkipReadsAgentTails(t *testing.T) {
 		t.Errorf("agent with a recent tail: SkippedLines got %d, want 1 (the session is parsed)", got)
 	}
 }
+
+// A clock that steps back partway through a session can leave a message
+// stamped inside the window ahead of last lines stamped more than an hour
+// before --since. Once those later lines fill the tail, the tail read sees
+// only them, the file is skipped, and the message is left out of the report
+// with no warning. That is accepted. Finding a later stamp earlier in a file
+// takes a parse of every file written in the day before --since, which is the
+// work the tail read is there to save.
+//
+// So a skipped run that starts counting the message is the gap closing, not a
+// regression: measure global --since today on a long history before changing
+// the want. A parsed run that stops counting it is a regression.
+func TestWindowSkipLeavesOutAMessageBeforeAClockStepBack(t *testing.T) {
+	// Written after the step, and longer than the tail read, so windowMsg
+	// before it is out of the tail's reach.
+	afterStep := `{"type":"user","timestamp":"2024-01-16T22:00:00Z","content":"` + strings.Repeat("x", 70*1024) + `"}`
+
+	cases := []struct {
+		name     string
+		lastLine string
+		inSlack  int
+	}{
+		{"last line over an hour before since", "2024-01-16T22:59:59Z", 0},
+		// The tail ends within tailSkipSlack of since, so the file is parsed.
+		{"last line an hour before since", "2024-01-16T23:00:00Z", 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "sess.jsonl")
+			writeJSONLFile(t, path, []string{windowMsg, afterStep, stampedLine(c.lastLine)})
+			messages := func(mtime time.Time) int {
+				t.Helper()
+				setMtime(t, path, mtime)
+				agg, _, err := AnalyzeMultipleSessionsInWindow(diskEntries(t, path), skipWindow)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return agg.MessageCount
+			}
+			if got := messages(slackMtime); got != c.inSlack {
+				t.Errorf("written inside the slack: got %d messages, want %d", got, c.inSlack)
+			}
+			// The same file with its mtime inside the window is parsed, so
+			// the message is there to count and only the tail rule hid it.
+			if got := messages(newMtime); got != 1 {
+				t.Errorf("written inside the window: got %d messages, want 1", got)
+			}
+		})
+	}
+}
