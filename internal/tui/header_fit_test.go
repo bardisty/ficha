@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 // At every width watch draws, boxed or compact, the header ends in a whole
@@ -34,8 +36,8 @@ func TestHeaderStatusIsNeverCutMidWord(t *testing.T) {
 		{"loading", func(p *liveHeaderParams) { p.loading = true }, []string{"loading...", "loading"}},
 		{"loading with a spinner", func(p *liveHeaderParams) { p.loading = true; p.noColor = false; p.spinnerView = dots },
 			[]string{"⣾ loading...", "⣾ loading"}},
-		{"loading with the ASCII spinner", func(p *liveHeaderParams) { p.loading = true; p.noColor = false; p.spinnerView = "|" },
-			[]string{"| loading...", "| loading"}},
+		{"loading with the ASCII spinner", func(p *liveHeaderParams) { p.loading = true; p.noColor = false; p.spinnerView = "/" },
+			[]string{"/ loading...", "/ loading"}},
 		{"error", func(p *liveHeaderParams) { p.err = errors.New("x"); p.lastActivity = now.Add(-12 * time.Second) },
 			[]string{"last msg 12s ago", "12s ago"}},
 		{"waiting", func(p *liveHeaderParams) { p.waiting = true; p.sessionID = "" }, []string{"waiting for a session", "waiting for session"}},
@@ -155,7 +157,7 @@ func TestLoadingSpinnerIsOneSpaceFromTheStatus(t *testing.T) {
 	for _, ascii := range []bool{false, true} {
 		glyph := "⣾"
 		if ascii {
-			glyph = "|"
+			glyph = "/"
 		}
 		t.Run(glyph, func(t *testing.T) {
 			if ascii {
@@ -183,6 +185,24 @@ func TestLoadingSpinnerIsOneSpaceFromTheStatus(t *testing.T) {
 					if !strings.HasSuffix(got, " "+want) || strings.HasSuffix(got, "  "+want) {
 						t.Errorf("%s, form %d: %q, want one space before %q", view, form, got, want)
 					}
+				}
+			}
+		})
+	}
+}
+
+// No spinner frame is the header's separator. One that was would draw
+// "| * FOLLOWING | | loading" under --ascii, where the status reads as an
+// empty cell.
+func TestLoadingSpinnerNeverDrawsTheSeparator(t *testing.T) {
+	for _, ascii := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ascii=%t", ascii), func(t *testing.T) {
+			if ascii {
+				useASCII(t)
+			}
+			for _, f := range newSpinner(false).Spinner.Frames {
+				if strings.Contains(f, styles.BoxVerticalSep) {
+					t.Errorf("frame %q holds the separator %q", f, styles.BoxVerticalSep)
 				}
 			}
 		})

@@ -51,7 +51,10 @@ func newSpinner(noColor bool) spinner.Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	if styles.ASCII() {
-		s.Spinner = spinner.Line
+		// The line without its upright frame: that one is the header's
+		// ASCII separator, and "| * FOLLOWING | | loading" reads as an
+		// empty cell.
+		s.Spinner = spinner.Spinner{Frames: []string{"/", "-", `\`}, FPS: spinner.Line.FPS}
 	}
 	// A new slice: the frames belong to the spinner package.
 	frames := make([]string, len(s.Spinner.Frames))
