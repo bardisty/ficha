@@ -6,7 +6,7 @@ require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.10
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/NimbleMarkets/ntcharts/v2 v2.5.0
+	github.com/NimbleMarkets/ntcharts/v2 v2.6.0
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/fsnotify/fsnotify v1.10.1
