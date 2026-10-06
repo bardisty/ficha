@@ -70,7 +70,9 @@ irm https://raw.githubusercontent.com/bardisty/ficha/main/install.ps1 | iex
 
 The script downloads the latest binary for your platform, checks it against the release's `checksums.txt`, and installs it only if they match. It installs to `~/.local/bin`. On Windows it installs to `%LOCALAPPDATA%\Programs\ficha` and adds that folder to your user `PATH`. The shell script doesn't edit your startup files, so if `~/.local/bin` isn't on your `PATH`, it prints the line to add. Run the script again to upgrade.
 
-To pick a release, set `FICHA_VERSION`, as in `curl -fsSL https://raw.githubusercontent.com/bardisty/ficha/main/install.sh | FICHA_VERSION=v0.65.20 sh`. To pick the folder, set `FICHA_INSTALL_DIR`. In PowerShell, set them with `$env:FICHA_VERSION = 'v0.65.20'` before the line. You can read [install.sh](install.sh) and [install.ps1](install.ps1) before running them.
+To install a particular release, put `FICHA_VERSION=v0.65.20` before `sh`. `FICHA_INSTALL_DIR` picks the folder the same way. In PowerShell, set them first, as in `$env:FICHA_VERSION = 'v0.65.20'`.
+
+You can read [install.sh](install.sh) and [install.ps1](install.ps1) before running them. To install without them, or to check a binary's build provenance, see [Installing by hand](docs/install.md).
 
 ### mise
 
@@ -80,89 +82,6 @@ With [mise](https://mise.jdx.dev):
 mise use -g github:bardisty/ficha
 ```
 
-### Prebuilt binaries
-
-To install by hand, take the binary from a release. Each release on the [releases page](https://github.com/bardisty/ficha/releases) has one raw binary per platform, plus `checksums.txt`:
-
-| File | Platform |
-| --- | --- |
-| `ficha-darwin-arm64` | macOS, Apple silicon |
-| `ficha-darwin-amd64` | macOS, Intel |
-| `ficha-linux-amd64` | Linux, x86-64 |
-| `ficha-linux-arm64` | Linux, ARM64 |
-| `ficha-windows-amd64.exe` | Windows, x86-64 |
-
-There is no Windows ARM64 build. The Linux binaries are statically linked, so they also run on Alpine and other musl-based systems.
-
-Each block below downloads the latest binary and `checksums.txt`, checks the binary's SHA-256, and installs it only if the check passes. Run the same block again later to upgrade.
-
-#### macOS and Linux
-
-In zsh or bash, set `f` to your file from the table, then run the rest as is. On macOS:
-
-```sh
-f=ficha-darwin-arm64
-curl -fLO "https://github.com/bardisty/ficha/releases/latest/download/$f"
-curl -fLO https://github.com/bardisty/ficha/releases/latest/download/checksums.txt
-shasum -a 256 -c --ignore-missing checksums.txt &&
-  mkdir -p ~/.local/bin && install -m 755 "$f" ~/.local/bin/ficha &&
-  rm "$f" checksums.txt
-```
-
-On Linux, the same with `sha256sum` for the check:
-
-```sh
-f=ficha-linux-amd64
-curl -fLO "https://github.com/bardisty/ficha/releases/latest/download/$f"
-curl -fLO https://github.com/bardisty/ficha/releases/latest/download/checksums.txt
-sha256sum -c --ignore-missing checksums.txt &&
-  mkdir -p ~/.local/bin && install -m 755 "$f" ~/.local/bin/ficha &&
-  rm "$f" checksums.txt
-```
-
-> [!IMPORTANT]
-> Run `ficha version` next. If it says command not found, `~/.local/bin` isn't on your `PATH` yet. macOS never adds it, and Debian and Ubuntu add it at login only if it already existed. Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`, or for bash to `~/.bashrc` (`~/.bash_profile` on macOS), and open a new terminal.
-
-If the check fails, the chain stops there. Nothing is installed, and both files stay where they are. To install for all users instead, swap the `mkdir` line for `sudo mkdir -p /usr/local/bin && sudo install -m 755 "$f" /usr/local/bin/ficha &&`.
-
-The macOS binaries aren't notarized. That's fine with curl, but Gatekeeper blocks a binary downloaded in a browser on first run. Clear the flag before you install it, with `xattr -d com.apple.quarantine ficha-darwin-arm64` (or `-amd64`).
-
-#### Windows
-
-This block is for Claude Code running on Windows itself. If Claude Code runs in WSL, use the Linux block inside WSL. In PowerShell, 5.1 or 7:
-
-```powershell
-$url = 'https://github.com/bardisty/ficha/releases/latest/download'
-$dir = "$env:LOCALAPPDATA\Programs\ficha"
-$ProgressPreference = 'SilentlyContinue'   # the progress bar makes 5.1 download very slowly
-Invoke-WebRequest "$url/ficha-windows-amd64.exe" -OutFile ficha-windows-amd64.exe -UseBasicParsing
-Invoke-WebRequest "$url/checksums.txt" -OutFile checksums.txt -UseBasicParsing
-$want = ((Select-String -SimpleMatch ficha-windows-amd64.exe checksums.txt).Line -split ' ')[0]
-if ((Get-FileHash ficha-windows-amd64.exe).Hash -eq $want) {
-    New-Item -ItemType Directory -Force $dir -ErrorAction Stop | Out-Null
-    Move-Item -Force ficha-windows-amd64.exe "$dir\ficha.exe" -ErrorAction Stop
-    Remove-Item checksums.txt
-    "Installed $dir\ficha.exe"
-} else {
-    Write-Error 'ficha-windows-amd64.exe does not match checksums.txt, or a download failed. Nothing was installed.'
-}
-```
-
-> [!IMPORTANT]
-> The first time, add the folder to your user `PATH`, or `ficha` won't be found. `rundll32 sysdm.cpl,EditEnvironmentVariables` opens the Environment Variables window. Under the variables for your user, select `Path`, then Edit, New, and paste `%LOCALAPPDATA%\Programs\ficha`. Click OK in both windows, open a new terminal, and run `ficha version`.
-
-If ficha is running, say in a `ficha watch` window, Windows won't let the block replace it. Quit ficha and run the block again.
-
-#### Verifying provenance
-
-Releases from v0.24.0 on also carry a build provenance attestation, which ties each binary to the GitHub Actions run that built it from a tagged commit. Checking it needs the [GitHub CLI](https://cli.github.com), logged in with `gh auth login`:
-
-```sh
-gh attestation verify ~/.local/bin/ficha --repo bardisty/ficha
-```
-
-Point it at wherever you installed ficha. On Windows that's `"$env:LOCALAPPDATA\Programs\ficha\ficha.exe"`.
-
 ### From source
 
 With Go 1.26.8 or newer:
@@ -171,7 +90,7 @@ With Go 1.26.8 or newer:
 go install github.com/bardisty/ficha@latest
 ```
 
-This puts `ficha` in `$(go env GOPATH)/bin`, usually `~/go/bin`, or in `$GOBIN` if you set it. Add that folder to your `PATH` if `ficha` isn't found. To install a particular release, replace `@latest` with its tag from the releases page, such as `@v0.52.0`.
+This puts `ficha` in `$(go env GOPATH)/bin`, usually `~/go/bin`, or in `$GOBIN` if you set it. Add that folder to your `PATH` if `ficha` isn't found. To install a particular release, replace `@latest` with its tag from the [releases page](https://github.com/bardisty/ficha/releases), such as `@v0.52.0`.
 
 ### WSL
 
@@ -187,7 +106,7 @@ For a single project, run ficha from a folder with the same name as the Windows 
 
 ### Upgrading and uninstalling
 
-To upgrade, run the install script or your install block again, `mise upgrade`, or `go install github.com/bardisty/ficha@latest`. `ficha version` prints the version you have.
+To upgrade, run the install script again, `mise upgrade`, or `go install github.com/bardisty/ficha@latest`. `ficha version` prints the version you have.
 
 ficha never checks for updates, because it makes no network requests. To hear about new releases, watch the repository for releases only (Watch, Custom, Releases), follow the [releases feed](https://github.com/bardisty/ficha/releases.atom), or run `gh release list -R bardisty/ficha`.
 
@@ -229,7 +148,7 @@ ficha can only report sessions whose transcripts still exist, and Claude Code de
 
 Run `watch` and `breakdown` side by side, with session totals in one terminal and per-message costs in the other. When a new session starts, after `/clear` or a restart, both switch to it. A session ID, a transcript path or `--no-follow` keeps them on one session.
 
-Press `?` in either view for the keys. `breakdown` has all of `watch`'s keys, plus `p` and `s`. `?` or `esc` closes the list. Any other key closes it too, and does what it always does. `ficha watch --help` and `ficha breakdown --help` list the keys as well.
+Press `?` in either view for the keys. `breakdown` has all of `watch`'s keys, plus `p` and `s`.
 
 | Key | Does |
 | --- | --- |
@@ -284,7 +203,7 @@ Bare `ficha` works like `show` and takes the same project flags. A flag on a com
 
 On macOS and Linux, ficha asks the terminal for its background and picks a light or dark palette to match. Inside tmux or screen it can't ask and assumes dark, so on a light background set `COLORFGBG='0;15'`. Quote it, because the shell reads an unquoted `;` as the end of the command. On Windows ficha always uses the dark palette.
 
-Color is off when output goes to a pipe or file. To keep it in a pager, set `CLICOLOR_FORCE=1`, as in `CLICOLOR_FORCE=1 ficha summary | less -R`. The pager gets the 16 basic colors. `NO_COLOR`, `CLICOLOR=0` and `CI` turn color off even on a terminal, and there `--no-color=false` overrides all three. `ficha help environment` describes the environment variables ficha reads.
+Color is off when output goes to a pipe or file. To keep it in a pager, set `CLICOLOR_FORCE=1`, as in `CLICOLOR_FORCE=1 ficha summary | less -R`. `ficha help environment` lists the other variables that turn color on or off.
 
 ## Shell completion
 

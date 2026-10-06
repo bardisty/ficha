@@ -13,6 +13,7 @@ A test pins every command's json keys and csv header, so a change to either turn
 To keep a script working across upgrades, pin the version you tested it against:
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/bardisty/ficha/main/install.sh | FICHA_VERSION=vX.Y.Z sh
 go install github.com/bardisty/ficha@vX.Y.Z
 ```
 
