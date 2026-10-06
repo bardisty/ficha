@@ -25,6 +25,12 @@ func isTerminal(w io.Writer) bool {
 	return ok && term.IsTerminal(f.Fd())
 }
 
+// readsTerminal reports whether r is a terminal.
+func readsTerminal(r io.Reader) bool {
+	f, ok := r.(*os.File)
+	return ok && term.IsTerminal(f.Fd())
+}
+
 // terminalWidth returns w's width in columns, or 0 when w isn't a terminal,
 // which tells the table formatters to use their fixed layout.
 func terminalWidth(w io.Writer) int {

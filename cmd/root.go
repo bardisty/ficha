@@ -84,6 +84,9 @@ Exit status:
 			if isTUI && cfg.format != "table" {
 				return usageErrorf("--format %s is not supported in live/TUI mode", cfg.format)
 			}
+			if cmd.Name() == "statusline" && cfg.format != "table" {
+				return usageErrorf("--format %s is not supported by statusline, which prints one line for Claude Code. For scripting, use 'ficha show <transcript_path> -f %s'", cfg.format, cfg.format)
+			}
 			// Runs ahead of cobra's own mutual-exclusion check, whose message
 			// doesn't say what either flag is for.
 			if cmd.Flags().Changed("project") && cmd.Flags().Changed("project-dir") {
@@ -128,6 +131,7 @@ Exit status:
 	rootCmd.AddCommand(newWatchCmd(cfg))
 	rootCmd.AddCommand(newGlobalCmd(cfg))
 	rootCmd.AddCommand(newBreakdownCmd(cfg))
+	rootCmd.AddCommand(newStatuslineCmd(cfg))
 	version := newVersionCmd()
 	rootCmd.AddCommand(version)
 	takeNoGlobalFlags(version)

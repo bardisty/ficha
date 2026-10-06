@@ -329,14 +329,7 @@ func sessionFromPath(cfg *config, arg string) (*models.SessionEntry, string, err
 	if !info.Mode().IsRegular() {
 		return nil, "", fmt.Errorf("%s isn't a transcript file", arg)
 	}
-	// Agents write to <project>/<session>/subagents/agent-*.jsonl, and
-	// workflow agents one level further down, in workflows/<run>/.
-	dir := filepath.Dir(path)
-	if filepath.Base(filepath.Dir(dir)) == "workflows" {
-		dir = filepath.Dir(filepath.Dir(dir))
-	}
-	if filepath.Base(dir) == "subagents" {
-		sessionDir := filepath.Dir(dir)
+	if sessionDir := agentSessionDir(path); sessionDir != "" {
 		parent := sessionDir + filepath.Ext(path)
 		return nil, "", usageErrorf("%s is an agent's transcript, part of session %s. Run: %s %s",
 			filepath.Base(path), shortSessionID(filepath.Base(sessionDir)), cfg.command(), shellQuote(parent))
@@ -353,6 +346,21 @@ func sessionFromPath(cfg *config, arg string) (*models.SessionEntry, string, err
 		writeNote(cfg, "any agents this session ran aren't counted. ficha looks for them in %s, which isn't there.", render.NoBreak(dir))
 	}
 	return &session, filepath.Dir(path), nil
+}
+
+// agentSessionDir is the session directory an agent's transcript sits under,
+// or "" when path isn't an agent's. Agents write to
+// <project>/<session>/subagents/agent-*.jsonl, and workflow agents one level
+// further down, in workflows/<run>/.
+func agentSessionDir(path string) string {
+	dir := filepath.Dir(path)
+	if filepath.Base(filepath.Dir(dir)) == "workflows" {
+		dir = filepath.Dir(filepath.Dir(dir))
+	}
+	if filepath.Base(dir) != "subagents" {
+		return ""
+	}
+	return filepath.Dir(dir)
 }
 
 // agentsOutOfReach reports whether a transcript's agents can't be found:
