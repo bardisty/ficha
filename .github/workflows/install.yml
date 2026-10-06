@@ -1,0 +1,89 @@
+name: Install scripts
+
+# Runs install.sh and install.ps1 against the latest release. The weekly run
+# catches a release whose asset names no longer match what the scripts fetch.
+on:
+  push:
+    branches: [main]
+    paths: [install.sh, install.ps1, .github/workflows/install.yml]
+  pull_request:
+    paths: [install.sh, install.ps1, .github/workflows/install.yml]
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  sh:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck -s sh install.sh
+
+      # On sh's stdin, as the README's pipe feeds it. On Ubuntu sh is dash. An older
+      # release first, so the second run upgrades over a working install.
+      - name: Install
+        env:
+          FICHA_INSTALL_DIR: ${{ runner.temp }}/bin
+          FICHA_VERSION: v0.65.19
+        run: sh < install.sh
+
+      - name: Upgrade
+        env:
+          FICHA_INSTALL_DIR: ${{ runner.temp }}/bin
+        run: sh < install.sh
+
+      - name: Run
+        run: |
+          v=$("$RUNNER_TEMP/bin/ficha" version)
+          echo "$v"
+          case $v in *' 0.65.19 '*) echo "::error::the upgrade left v0.65.19 in place"; exit 1 ;; esac
+
+  ps1:
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [pwsh, powershell]
+    runs-on: windows-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Through iex, as the README runs it. The runner's user PATH gains the
+      # default folder, which is fine on a throwaway machine. An older release
+      # first, so the second run upgrades over a working install.
+      - name: Install
+        env:
+          FICHA_VERSION: v0.65.19
+        run: Get-Content -Raw install.ps1 | Invoke-Expression
+
+      - name: Upgrade
+        run: Get-Content -Raw install.ps1 | Invoke-Expression
+
+      - name: Run
+        run: |
+          $v = & "$env:LOCALAPPDATA\Programs\ficha\ficha.exe" version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $v
+          if ($v -like '* 0.65.19 *') { Write-Error 'the upgrade left v0.65.19 in place' }

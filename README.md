@@ -19,11 +19,13 @@ ficha only reads the transcripts Claude Code keeps on your machine. It makes no 
 
 ## Quick start
 
-1. Install ficha on the machine where Claude Code runs, or inside WSL if Claude Code runs there. [Install](#install) has a download block for each platform that checks the file before installing it. With Go 1.26.8 or newer, this works too:
+1. Install ficha on the machine where Claude Code runs, or inside WSL if Claude Code runs there. On macOS and Linux:
 
    ```sh
-   go install github.com/bardisty/ficha@latest
+   curl -fsSL https://raw.githubusercontent.com/bardisty/ficha/main/install.sh | sh
    ```
+
+   If it prints a line to add to your `PATH`, run that line and open a new terminal. [Install](#install) has the line for Windows and other ways to install.
 
 2. Go to a directory you've started Claude Code in, and look at its sessions:
 
@@ -52,9 +54,35 @@ Install ficha where Claude Code runs, since it reads the transcripts Claude Code
 
 ficha runs on Linux, macOS and Windows, and CI tests all three. It has been checked against the transcripts of Claude Code 2.1.
 
+### Install script
+
+On macOS and Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bardisty/ficha/main/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/bardisty/ficha/main/install.ps1 | iex
+```
+
+The script downloads the latest binary for your platform, checks it against the release's `checksums.txt`, and installs it only if they match. It installs to `~/.local/bin`. On Windows it installs to `%LOCALAPPDATA%\Programs\ficha` and adds that folder to your user `PATH`. The shell script doesn't edit your startup files, so if `~/.local/bin` isn't on your `PATH`, it prints the line to add. Run the script again to upgrade.
+
+To pick a release, set `FICHA_VERSION`, as in `curl -fsSL https://raw.githubusercontent.com/bardisty/ficha/main/install.sh | FICHA_VERSION=v0.65.20 sh`. To pick the folder, set `FICHA_INSTALL_DIR`. In PowerShell, set them with `$env:FICHA_VERSION = 'v0.65.20'` before the line. You can read [install.sh](install.sh) and [install.ps1](install.ps1) before running them.
+
+### mise
+
+With [mise](https://mise.jdx.dev):
+
+```sh
+mise use -g github:bardisty/ficha
+```
+
 ### Prebuilt binaries
 
-Each release on the [releases page](https://github.com/bardisty/ficha/releases) has one raw binary per platform, plus `checksums.txt`:
+To install by hand, take the binary from a release. Each release on the [releases page](https://github.com/bardisty/ficha/releases) has one raw binary per platform, plus `checksums.txt`:
 
 | File | Platform |
 | --- | --- |
@@ -159,13 +187,13 @@ For a single project, run ficha from a folder with the same name as the Windows 
 
 ### Upgrading and uninstalling
 
-To upgrade, run your install block again, or `go install github.com/bardisty/ficha@latest`. `ficha version` prints the version you have.
+To upgrade, run the install script or your install block again, `mise upgrade`, or `go install github.com/bardisty/ficha@latest`. `ficha version` prints the version you have.
 
 ficha never checks for updates, because it makes no network requests. To hear about new releases, watch the repository for releases only (Watch, Custom, Releases), follow the [releases feed](https://github.com/bardisty/ficha/releases.atom), or run `gh release list -R bardisty/ficha`.
 
 If you script against `-f json` or `-f csv`, read the [release notes](https://github.com/bardisty/ficha/releases) before you upgrade. Before 1.0, a minor release can rename or remove keys.
 
-To uninstall, delete the binary. If you set up shell completion, remove the completion file, or in PowerShell the `ficha completion` line from each `$PROFILE` you added it to. On Windows, also delete the `%LOCALAPPDATA%\Programs\ficha` folder and remove it from your user `PATH` in the Environment Variables window, which `rundll32 sysdm.cpl,EditEnvironmentVariables` opens. ficha writes nothing else.
+To uninstall, delete the binary, or with mise run `mise unuse -g github:bardisty/ficha`. If you set up shell completion, remove the completion file, or in PowerShell the `ficha completion` line from each `$PROFILE` you added it to. On Windows, also delete the `%LOCALAPPDATA%\Programs\ficha` folder and remove it from your user `PATH` in the Environment Variables window, which `rundll32 sysdm.cpl,EditEnvironmentVariables` opens. ficha writes nothing else.
 
 ## Usage
 
