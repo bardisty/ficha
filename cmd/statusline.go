@@ -76,9 +76,13 @@ func runStatusline(cfg *config, stdin io.Reader) error {
 	if in.TranscriptPath == "" {
 		return errors.New("no transcript_path in the status line JSON on stdin")
 	}
+	abs, err := filepath.Abs(in.TranscriptPath)
+	if err != nil {
+		return err
+	}
 	// show names the session to run instead, as an argument statusline
 	// doesn't take.
-	if sessionDir := agentSessionDir(in.TranscriptPath); sessionDir != "" {
+	if sessionDir := agentSessionDir(abs); sessionDir != "" {
 		return fmt.Errorf("transcript_path %s is an agent's transcript, part of session %s", in.TranscriptPath, shortSessionID(filepath.Base(sessionDir)))
 	}
 

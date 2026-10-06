@@ -289,4 +289,16 @@ func TestStatuslineFailures(t *testing.T) {
 			}
 		})
 	}
+
+	// A relative path is an agent's by where it resolves.
+	t.Run("an agent's transcript, relative", func(t *testing.T) {
+		t.Chdir(filepath.Join(proj, statusID, "subagents"))
+		stdout, _, err := executeStatusline(t, `{"transcript_path":"agent-a1.jsonl"}`)
+		if err == nil || !strings.Contains(err.Error(), "part of session dddddddd") || strings.Contains(err.Error(), "Run:") {
+			t.Fatalf("error = %v", err)
+		}
+		if code := exitCode(err); code != 1 || stdout != "" {
+			t.Errorf("exit status %d, stdout %q", code, stdout)
+		}
+	})
 }
