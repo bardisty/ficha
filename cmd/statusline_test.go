@@ -143,9 +143,10 @@ func executeStatusline(t *testing.T, stdin string, args ...string) (stdout, stde
 	return out.String(), errOut.String(), err
 }
 
-// scriptLine is what the README's jq status line script printed for a
-// session, from show's json: the spec statusline replaces it with.
-func scriptLine(t *testing.T, transcript, model string) string {
+// lineFromShowJSON builds the status line from show's json for the same
+// transcript, so statusline and show can't disagree on a figure or on which
+// parts a session has.
+func lineFromShowJSON(t *testing.T, transcript, model string) string {
 	t.Helper()
 	out, _, err := executeCLISplit(t, "show", transcript, "-f", "json")
 	if err != nil {
@@ -188,7 +189,7 @@ func scriptLine(t *testing.T, transcript, model string) string {
 	return line + "\n"
 }
 
-func TestStatuslinePrintsWhatTheScriptDid(t *testing.T) {
+func TestStatuslineAgreesWithShowJSON(t *testing.T) {
 	proj := setupStatusFixture(t)
 	for _, id := range []string{statusID, statusSoloID} {
 		t.Run(id[:8], func(t *testing.T) {
@@ -199,7 +200,7 @@ func TestStatuslinePrintsWhatTheScriptDid(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if want := scriptLine(t, transcript, "Opus 5.5"); stdout != want {
+			if want := lineFromShowJSON(t, transcript, "Opus 5.5"); stdout != want {
 				t.Errorf("got  %q\nwant %q", stdout, want)
 			}
 			if stderr != "" {
@@ -261,10 +262,14 @@ func TestStatuslineFailures(t *testing.T) {
 		{"empty stdin", "", nil, 1, "no JSON on stdin"},
 		{"invalid JSON", "{transcript_path", nil, 1, "reading Claude Code's status line JSON on stdin"},
 		{"no transcript_path", `{"model":{"display_name":"Opus 5.5"}}`, nil, 1, "no transcript_path"},
+		{"a number for transcript_path", `{"transcript_path":5}`, nil, 1, "unexpected number at transcript_path"},
+		{"an array", `[1,2]`, nil, 1, "unexpected array at the top level"},
+		{"trailing data", good + " garbage", nil, 1, "reading Claude Code's status line JSON on stdin"},
+		{"an agent's transcript", statusInput(t, filepath.Join(proj, statusID, "subagents", "agent-a1.jsonl"), "Opus 5.5"), nil, 1, "is an agent's transcript, part of session dddddddd"},
 		{"missing transcript", statusInput(t, filepath.Join(proj, "nope.jsonl"), "Opus 5.5"), nil, 1, "can't read transcript"},
 		{"-f json", good, []string{"-f", "json"}, 2, "--format json is not supported by statusline"},
 		{"-f csv", good, []string{"-f", "csv"}, 2, "--format csv is not supported by statusline"},
-		{"an argument", good, []string{transcript}, 2, "unknown command"},
+		{"an argument", good, []string{transcript}, 2, "ficha statusline takes no arguments"},
 		{"a project flag", good, []string{"-p", proj}, 2, "unknown shorthand flag"},
 	}
 	for _, tt := range tests {
@@ -278,6 +283,9 @@ func TestStatuslineFailures(t *testing.T) {
 			}
 			if stdout != "" {
 				t.Errorf("stdout: %q", stdout)
+			}
+			if strings.Contains(err.Error(), "Run:") {
+				t.Errorf("suggests a command: %v", err)
 			}
 		})
 	}

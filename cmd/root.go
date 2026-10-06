@@ -85,7 +85,7 @@ Exit status:
 				return usageErrorf("--format %s is not supported in live/TUI mode", cfg.format)
 			}
 			if cmd.Name() == "statusline" && cfg.format != "table" {
-				return usageErrorf("--format %s is not supported by statusline, which prints one line for Claude Code. For scripting, use 'ficha show -f %s'", cfg.format, cfg.format)
+				return usageErrorf("--format %s is not supported by statusline, which prints one line for Claude Code. For scripting, use 'ficha show <transcript_path> -f %s'", cfg.format, cfg.format)
 			}
 			// Runs ahead of cobra's own mutual-exclusion check, whose message
 			// doesn't say what either flag is for.

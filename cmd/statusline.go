@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/bardisty/ficha/internal/analyzer"
@@ -29,7 +30,7 @@ session on stdin. statusline reads transcript_path and model.display_name
 from it. Add it to ~/.claude/settings.json:
 
   { "statusLine": { "type": "command", "command": "ficha statusline" } }`,
-		Args:              cobra.NoArgs,
+		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runStatusline(cfg, cmd.InOrStdin())
@@ -52,15 +53,33 @@ func runStatusline(cfg *config, stdin io.Reader) error {
 	if readsTerminal(stdin) {
 		return usageErrorf("%s reads Claude Code's status line JSON on stdin, and stdin is a terminal. '%s --help' shows how to set it up.", cfg.command(), cfg.command())
 	}
+	data, err := io.ReadAll(stdin)
+	if err != nil {
+		return fmt.Errorf("reading stdin: %w", err)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return errors.New("no JSON on stdin: statusline reads the JSON Claude Code writes for its status line")
+	}
 	var in statusLineInput
-	if err := json.NewDecoder(stdin).Decode(&in); err != nil {
-		if errors.Is(err, io.EOF) {
-			return errors.New("no JSON on stdin: statusline reads the JSON Claude Code writes for its status line")
+	if err := json.Unmarshal(data, &in); err != nil {
+		// Go's own message names the struct the JSON was decoded into.
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) {
+			where := "the top level"
+			if typeErr.Field != "" {
+				where = typeErr.Field
+			}
+			return fmt.Errorf("reading Claude Code's status line JSON on stdin: unexpected %s at %s", typeErr.Value, where)
 		}
 		return fmt.Errorf("reading Claude Code's status line JSON on stdin: %w", err)
 	}
 	if in.TranscriptPath == "" {
 		return errors.New("no transcript_path in the status line JSON on stdin")
+	}
+	// show names the session to run instead, as an argument statusline
+	// doesn't take.
+	if sessionDir := agentSessionDir(in.TranscriptPath); sessionDir != "" {
+		return fmt.Errorf("transcript_path %s is an agent's transcript, part of session %s", in.TranscriptPath, shortSessionID(filepath.Base(sessionDir)))
 	}
 
 	session, _, err := sessionFromPath(cfg, in.TranscriptPath)
