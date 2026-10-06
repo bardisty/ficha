@@ -31,6 +31,7 @@ var (
 	BarUsed        string // █ filled progress-bar cell
 	BarFree        string // ░ empty progress-bar cell
 	Bullet         string // • help-line separator
+	FieldSep       string // · separator between the status line's fields
 	LiveDot        string // ● live indicator
 	IdleDot        string // ○ idle indicator
 	Warning        string // ⚠ warning prefix
@@ -63,6 +64,7 @@ func SetASCII(ascii bool) {
 		BoxHorizontal, BoxVertical, BoxVerticalSep, LineHorizontal = "=", "|", "|", "-"
 		BarUsed, BarFree = "#", "-"
 		Bullet, LiveDot, Warning, Arrow = "|", "*", "!", "->"
+		FieldSep = "|"
 		TrendUp, TrendDown, TrendFlat = "^", "v", "="
 		TreeBranch, TreeLast, TreeRail, GroupRule = "+-", "`-", "|", "--"
 		ScrollKeys, Ellipsis = "j/k", "..."
@@ -74,6 +76,7 @@ func SetASCII(ascii bool) {
 	BoxHorizontal, BoxVertical, BoxVerticalSep, LineHorizontal = "═", "║", "│", "─"
 	BarUsed, BarFree = "█", "░"
 	Bullet, LiveDot, Warning, Arrow = "•", "●", "⚠", "→"
+	FieldSep = "·"
 	TrendUp, TrendDown, TrendFlat = "▲", "▼", "═"
 	TreeBranch, TreeLast, TreeRail, GroupRule = "├─", "└─", "│", "──"
 	ScrollKeys, Ellipsis = "↑↓", "…"

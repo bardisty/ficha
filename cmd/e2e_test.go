@@ -1263,7 +1263,7 @@ func TestE2EUsageErrors(t *testing.T) {
 		wantErr string
 	}{
 		{"typo suggests the command", []string{"lst"}, `unknown command "lst" for "ficha". Did you mean "list"?`},
-		{"prefix lists every match", []string{"s"}, `unknown command "s" for "ficha". Did you mean "show" or "summary"?`},
+		{"prefix lists every match", []string{"s"}, `unknown command "s" for "ficha". Did you mean "show", "statusline" or "summary"?`},
 		{"unrelated word points at help", []string{"frobnicate"}, `unknown command "frobnicate" for "ficha". Run 'ficha --help' to see the commands.`},
 		{"directory points at -p", []string{dir}, "unknown command " + strconv.Quote(dir) + ` for "ficha". To analyze that directory, run: ficha -p ` + shellQuote(dir)},
 		{"unmatched word in the project", []string{projFlag, "frobnicate"}, `unknown command "frobnicate" for "ficha". Run 'ficha --help' to see the commands.`},
