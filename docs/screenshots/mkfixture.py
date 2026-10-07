@@ -65,11 +65,10 @@ def user(dt, sid, cwd):
             "message": {"role": "user", "content": "synthetic prompt"}}
 
 
-def convo(end, n, models, sid, cwd, ctx_cap=190_000, growth=6000, start=8000):
-    """n assistant messages (plus the user turns between them), the last at end,
-    with the context growing from start."""
+def convo(end, n, models, sid, cwd, ctx_cap=190_000, growth=6000):
+    """n assistant messages (plus the user turns between them), the last at end."""
     gaps = [rng.randint(5, 90) for _ in range(n)]
-    dt, ctx, lines = end - timedelta(seconds=sum(gaps)), start, []
+    dt, ctx, lines = end - timedelta(seconds=sum(gaps)), 8000, []
     for i in range(n):
         dt += timedelta(seconds=gaps[i])
         if i % 4 == 0:
@@ -120,18 +119,19 @@ for end, n, model in [(ago(hours=2, minutes=20), 25, "claude-sonnet-5-5"), (ago(
     write_jsonl(os.path.join(wp, big, "subagents", "agent-a%016x.jsonl" % rng.getrandbits(64)),
                 convo(end, n, [model], big, wd))
 
-# One finished workflow run and one still running. The running run's agents
-# start deep into their 1M windows, one ending short of the compaction mark and
-# one past it, so watch's context column shows both warning colors beside the
-# plain agent's dim reading.
-runs = [("wf_7f3a9c", "review-changes", "completed", [(ago(hours=1, minutes=30), 8000), (ago(hours=1, minutes=25), 8000), (ago(hours=1, minutes=18), 8000)]),
-        ("wf_91bd02", "audit-codebase", "running", [(ago(seconds=25), 600_000), (ago(minutes=1, seconds=10), 700_000)])]
+# One finished workflow run and one still running. Each agent is (end, message
+# count, growth); a count of None draws a short run. The running run's agents
+# are long and grow fast through their 1M windows, one ending past the
+# compaction mark and one short of it, so watch's context column shows both
+# warning colors beside the plain agent's dim reading.
+runs = [("wf_7f3a9c", "review-changes", "completed", [(ago(hours=1, minutes=30), None, 6000), (ago(hours=1, minutes=25), None, 6000), (ago(hours=1, minutes=18), None, 6000)]),
+        ("wf_91bd02", "audit-codebase", "running", [(ago(seconds=25), 128, 10_600), (ago(minutes=1, seconds=10), 109, 11_400)])]
 for run, name, status, agents in runs:
     rd = os.path.join(wp, big, "subagents", "workflows", run)
-    for end, start in agents:
+    for end, n, growth in agents:
         aid = "a%016x" % rng.getrandbits(64)
         write_jsonl(os.path.join(rd, "agent-%s.jsonl" % aid),
-                    convo(end, rng.randint(8, 22), [rng.choice(["claude-fable-5-1", "claude-opus-5-5"])], big, wd, ctx_cap=1_000_000, start=start))
+                    convo(end, n or rng.randint(8, 22), [rng.choice(["claude-fable-5-1", "claude-opus-5-5"])], big, wd, ctx_cap=1_000_000, growth=growth))
         with open(os.path.join(rd, "agent-%s.meta.json" % aid), "w") as fh:
             json.dump({"agentType": "general-purpose", "spawnDepth": 1}, fh)
     os.makedirs(os.path.join(wp, big, "workflows"), exist_ok=True)
