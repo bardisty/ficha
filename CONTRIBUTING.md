@@ -82,7 +82,7 @@ Tests and goldens don't show what a change looks like in a terminal. Your own `~
 make build fixture
 ```
 
-That writes fake transcripts to `bin/fixture`: one project, `work/webapp`, with one 424-message session and nine agents, five of them in two workflow runs. Point ficha at it and run it from the project's directory:
+That writes fake transcripts to `bin/fixture`: one project, `work/webapp`, with one 618-message session and nine agents, five of them in two workflow runs. Point ficha at it and run it from the project's directory:
 
 ```sh
 FX="$PWD/bin/fixture" PATH="$PWD/bin:$PATH"

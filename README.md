@@ -288,7 +288,7 @@ Claude Code passes `session_id` and `transcript_path` to hooks and to the status
 `ficha statusline` prints a line for Claude Code's status line: the model, how full the context window is, what recent messages cost, and the session's total with the agents' share:
 
 ```text
-Opus 5.5 · ctx 68% · $0.19/msg ▲ · $49.20 (agents $18.07)
+Opus 5.5 · ctx 68% · $0.19/msg ▲ · $73.02 (agents $41.90)
 ```
 
 `$0.19/msg` is the average cost of recent messages in the main conversation. `▲` or `▼` means that's more than 20% above or below the session's average. The line leaves out the context before the first reply, the recent cost before the sixth message, and the agents' share when no agents ran.
