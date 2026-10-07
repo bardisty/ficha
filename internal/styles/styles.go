@@ -308,13 +308,16 @@ func rebuild() {
 	DimStyle = lipgloss.NewStyle().Foreground(SecondaryColor)
 }
 
+// ContextHighPct is where GetContextUsageColor turns from green to orange.
+const ContextHighPct = 65
+
 // GetContextUsageColor returns the appropriate color based on context usage percentage.
 // Thresholds aligned with Claude Code's ~75-78% auto-compaction trigger.
 func GetContextUsageColor(usagePct float64) color.Color {
 	switch {
 	case usagePct >= 75:
 		return ContextCriticalColor // Red - compaction territory
-	case usagePct >= 65:
+	case usagePct >= ContextHighPct:
 		return ContextHighColor // Orange - approaching compaction
 	default:
 		return ContextLowColor // Green - comfortable

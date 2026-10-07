@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/bardisty/ficha/internal/models"
 )
 
 // Direct tests for AnalyzeAgent. AnalyzeSession's agent roll-up exercises it
@@ -102,6 +104,61 @@ func TestAnalyzeAgent_EmptyFile(t *testing.T) {
 	}
 	if analysis.CostByModel == nil {
 		t.Error("CostByModel should be initialized (non-nil) for empty file")
+	}
+	if analysis.Context != nil {
+		t.Errorf("Context = %+v, want nil for an agent with no request", analysis.Context)
+	}
+}
+
+// An agent's context reading is its own last request that carries context,
+// out of that request's model window, as the parent's gauge reads its own.
+func TestAnalyzeAgent_Context(t *testing.T) {
+	content := `{"type":"assistant","timestamp":"2026-01-15T10:00:00Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-haiku-4-5","usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":2000,"cache_read_input_tokens":8000}}}
+{"type":"assistant","timestamp":"2026-01-15T10:05:00Z","requestId":"req_2","message":{"id":"msg_2","model":"claude-haiku-4-5","usage":{"input_tokens":300,"output_tokens":700,"cache_creation_input_tokens":4000,"cache_read_input_tokens":45700}}}
+{"type":"assistant","timestamp":"2026-01-15T10:06:00Z","requestId":"req_3","message":{"id":"msg_3","model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0}}}
+`
+	analysis, err := AnalyzeAgent(writeAgentFile(t, "agent-ctx.jsonl", content))
+	if err != nil {
+		t.Fatalf("AnalyzeAgent returned error: %v", err)
+	}
+	// msg_2, past the trailing synthetic line: 300 + 4000 + 45700, output
+	// excluded, of Haiku 4.5's 200K.
+	want := models.ContextUsage{Tokens: 50000, Window: 200000, Percent: 25}
+	if analysis.Context == nil || *analysis.Context != want {
+		t.Errorf("Context = %+v, want %+v", analysis.Context, want)
+	}
+}
+
+// A [1m] model ID reads against the 1M window, though the catalog row's own
+// window is 200K.
+func TestAnalyzeAgent_ContextLongWindow(t *testing.T) {
+	content := `{"type":"assistant","timestamp":"2026-01-15T10:00:00Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-sonnet-4-5[1m]","usage":{"input_tokens":10,"output_tokens":500,"cache_read_input_tokens":299990}}}
+`
+	analysis, err := AnalyzeAgent(writeAgentFile(t, "agent-long.jsonl", content))
+	if err != nil {
+		t.Fatalf("AnalyzeAgent returned error: %v", err)
+	}
+	want := models.ContextUsage{Tokens: 300000, Window: 1000000, Percent: 30}
+	if analysis.Context == nil || *analysis.Context != want {
+		t.Errorf("Context = %+v, want %+v", analysis.Context, want)
+	}
+}
+
+// Under a time window, the reading comes from the agent's last request inside
+// it, as its totals do.
+func TestAnalyzeAgentParse_ContextInWindow(t *testing.T) {
+	ts := func(m int) time.Time { return time.Date(2026, 1, 15, 10, m, 0, 0, time.UTC) }
+	msg := func(m int, cacheRead int64) models.MessageAnalysis {
+		return models.MessageAnalysis{Timestamp: ts(m), Model: "claude-haiku-4-5", Usage: models.TokenUsage{CacheReadInputTokens: cacheRead}}
+	}
+	parse := agentParse{messages: []models.MessageAnalysis{msg(0, 20000), msg(10, 90000)}}
+
+	analysis, _, err := analyzeAgentParse("agent-win.jsonl", parse, models.TimeWindow{Until: ts(5)})
+	if err != nil {
+		t.Fatalf("analyzeAgentParse returned error: %v", err)
+	}
+	if analysis.Context == nil || analysis.Context.Tokens != 20000 {
+		t.Errorf("Context = %+v, want the 20000-token request inside the window", analysis.Context)
 	}
 }
 

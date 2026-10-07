@@ -132,6 +132,8 @@ func goldenShowAnalysis() *models.SessionAnalysis {
 				StartTime: goldenTime(10, 15, 0),
 				EndTime:   goldenTime(10, 25, 0),
 				Duration:  models.Duration(10 * time.Minute),
+				// Past ~compaction, so the color goldens show it red
+				Context: &models.ContextUsage{Tokens: 156000, Window: 200000, Percent: 78},
 			},
 			{
 				AgentID:      "f6e5d4c3b2a1",
@@ -143,6 +145,7 @@ func goldenShowAnalysis() *models.SessionAnalysis {
 				StartTime: goldenTime(11, 0, 0),
 				EndTime:   goldenTime(11, 2, 0),
 				Duration:  models.Duration(2 * time.Minute),
+				Context:   &models.ContextUsage{Tokens: 380000, Window: 1000000, Percent: 38},
 			},
 		},
 		ParentCost: models.CostBreakdown{TotalCost: 7.90},
@@ -525,6 +528,7 @@ func goldenShowWorkflowAnalysis() *models.SessionAnalysis {
 			StartTime: goldenTime(11, 5, 0),
 			EndTime:   goldenTime(11, 15, 0),
 			Duration:  models.Duration(10 * time.Minute),
+			Context:   &models.ContextUsage{Tokens: 670000, Window: 1000000, Percent: 67},
 		},
 		models.AgentAnalysis{
 			AgentID:      "w6e5d4c3b2a1",

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
 )
@@ -266,6 +267,50 @@ func TestRunHeadingStatusesAllOrNone(t *testing.T) {
 		}
 		if strings.Contains(got, "(completed)") || strings.Contains(got, "(running)") {
 			t.Errorf("width %d: a heading kept its status:\n%s", width, got)
+		}
+	}
+}
+
+// As the terminal narrows, an agent row gives up its gap, then its message
+// count, then its context reading, and every cost in the section stays in
+// one column, the folded rows' too.
+func TestAgentColumnsDropCountBeforeReading(t *testing.T) {
+	for _, tc := range []struct {
+		width      int
+		msgs, ctxs bool
+	}{
+		{58, true, true},
+		{56, true, true},
+		{55, false, true},
+		{47, false, true},
+		{46, false, false},
+	} {
+		for name, analysis := range map[string]*models.SessionAnalysis{"view": goldenViewAnalysis(), "folded": foldAnalysis()} {
+			m := NewModel("/fixture/sess.jsonl", "sess", false, "", false)
+			m.now = func() time.Time { return foldNow }
+			m.width = tc.width
+			m.analysis = analysis
+			out := stripANSI(m.renderAgentBreakdownContent())
+
+			// Every row ends in its cost cell, so equal widths mean
+			// aligned costs.
+			rowWidth := -1
+			for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+				if !strings.Contains(line, "$") {
+					t.Fatalf("width %d %s: row lost its cost: %q", tc.width, name, line)
+				}
+				if w := lipgloss.Width(line); rowWidth >= 0 && w != rowWidth {
+					t.Errorf("width %d %s: row %q is %d wide, want %d:\n%s", tc.width, name, line, w, rowWidth, out)
+				} else {
+					rowWidth = w
+				}
+			}
+			if got := strings.Contains(out, "msg"); got != tc.msgs {
+				t.Errorf("width %d %s: message counts shown = %v, want %v:\n%s", tc.width, name, got, tc.msgs, out)
+			}
+			if name == "view" && strings.Contains(out, "% ctx") != tc.ctxs {
+				t.Errorf("width %d: context readings shown = %v, want %v:\n%s", tc.width, !tc.ctxs, tc.ctxs, out)
+			}
 		}
 	}
 }

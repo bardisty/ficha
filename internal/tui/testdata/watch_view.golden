@@ -32,11 +32,11 @@
   ───────────────────────────[ AGENT SUB-SESSIONS ]───────────────────────────                      
                                                                                                     
     Parent session                                 $7.90                                            
-  ● [Af6e5d4c] Sonnet 5       1 msg                $1.58                                            
-    [A1b2c3d4] Haiku 4.5    12 msgs                $0.4200                                          
+  ● [Af6e5d4c] Sonnet 5       1 msg  38% ctx       $1.58                                            
+    [A1b2c3d4] Haiku 4.5    12 msgs  78% ctx       $0.4200                                          
     ── workflow: audit-codebase (completed)        $1.65                                            
     [Aw6e5d4c] Sonnet 5       1 msg                $0.5500                                          
-    [Aw1a2b3c] Opus 4.8     21 msgs                $1.10                                            
+    [Aw1a2b3c] Opus 4.8     21 msgs  67% ctx       $1.10                                            
     Agents subtotal                                $3.65                                            
                                                                                                     
   ────────────────────────────[ MESSAGE INSIGHTS ]────────────────────────────                      

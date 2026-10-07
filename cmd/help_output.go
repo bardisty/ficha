@@ -52,7 +52,8 @@ Context
   How full the model's context window was on the latest parent message:
   its fresh input plus cache writes plus cache reads, the figure Claude
   Code's /context shows, out of the model's window. It's a snapshot, not a
-  running total, and agents have context windows of their own.
+  running total. Agents have context windows of their own: AGENT
+  SUB-SESSIONS reads each one's the same way, from its latest request.
 
 Agents and workflows
   Agents are sub-sessions Claude started. Their cost is included in the
