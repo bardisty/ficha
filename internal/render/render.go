@@ -518,6 +518,31 @@ func ContextGauge(contextSize int64, maxContext, width int, noColor, highlight b
 	return line, contextNote(contextSize, maxContext, width-1)
 }
 
+// AgentContextWidth is the width of AgentContextCell: "100% ctx".
+const AgentContextWidth = 8
+
+// AgentContextCell is an agent row's context reading, " 38% ctx",
+// right-aligned in AgentContextWidth columns, or blanks when c is nil. It's
+// dim like the message count beside it until the gauge would turn orange, so
+// only an agent nearing compaction stands out.
+func AgentContextCell(c *models.ContextUsage, noColor bool) string {
+	if c == nil {
+		return strings.Repeat(" ", AgentContextWidth)
+	}
+	cell := fmt.Sprintf("%3.0f%% ctx", c.Percent)
+	if len(cell) < AgentContextWidth {
+		cell = strings.Repeat(" ", AgentContextWidth-len(cell)) + cell
+	}
+	switch {
+	case noColor:
+		return cell
+	case c.Percent < styles.ContextHighPct:
+		return styles.DimStyle.Render(cell)
+	default:
+		return lipgloss.NewStyle().Foreground(styles.GetContextUsageColor(c.Percent)).Render(cell)
+	}
+}
+
 // contextNote is the line under the gauge, laid out one column in (under
 // the percentage's digits) within width. It sheds the scope before the
 // reading, and a shorter reading before nothing at all, so a narrow

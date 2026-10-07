@@ -309,7 +309,38 @@ func analyzeAgentParse(agentPath string, parse agentParse, window models.TimeWin
 	analysis.StartTime, analysis.EndTime = timeRange(messageAnalyses)
 	analysis.Duration = models.Duration(analysis.EndTime.Sub(analysis.StartTime))
 
+	last := lastContextMessage(messageAnalyses)
+	analysis.Context = ContextUsage(last.Usage, last.Model)
+
 	return analysis, messageAnalyses, nil
+}
+
+// lastContextMessage is the message a context reading comes from: the last
+// one that carries context. Claude Code writes synthetic API-error lines
+// (model "<synthetic>", all-zero usage) that can end a transcript; taking the
+// positional last message would zero out the reading even though real
+// context exists. It falls back to the positional last only when no message
+// carries context, so an all-synthetic transcript still degrades to zero.
+// Synthetic lines stay counted in MessageCount, dedup and cost. msgs must not
+// be empty.
+func lastContextMessage(msgs []models.MessageAnalysis) models.MessageAnalysis {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Usage.ContextWindowSize() > 0 {
+			return msgs[i]
+		}
+	}
+	return msgs[len(msgs)-1]
+}
+
+// ContextUsage is how full model's context window was at a request with this
+// usage, or nil when the usage carries no context.
+func ContextUsage(usage models.TokenUsage, model string) *models.ContextUsage {
+	tokens := usage.ContextWindowSize()
+	if tokens == 0 {
+		return nil
+	}
+	p := pricing.GetModelPricing(model)
+	return &models.ContextUsage{Tokens: tokens, Window: p.MaxContextTokens, Percent: pricing.GetContextPercentage(p, tokens)}
 }
 
 // timeRange returns the earliest and latest non-zero timestamps in messages.
@@ -427,20 +458,8 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 		analysis.Messages = messageAnalyses
 	}
 
-	// Capture last-message usage and model for context-window display. Claude
-	// Code writes synthetic API-error lines (model "<synthetic>", all-zero
-	// usage) that can end a transcript; taking the positional last message
-	// would zero out the CONTEXT readout even though real context exists. Walk
-	// back to the last message that actually carries context, falling back to
-	// the positional last only when none does (an all-synthetic session still
-	// degrades to zero). Synthetic lines stay counted in MessageCount/dedup/cost.
-	lastMsg := messageAnalyses[len(messageAnalyses)-1]
-	for i := len(messageAnalyses) - 1; i >= 0; i-- {
-		if messageAnalyses[i].Usage.ContextWindowSize() > 0 {
-			lastMsg = messageAnalyses[i]
-			break
-		}
-	}
+	// Capture last-message usage and model for context-window display.
+	lastMsg := lastContextMessage(messageAnalyses)
 	analysis.LastMessageUsage = lastMsg.Usage
 	analysis.LastMessageModel = lastMsg.Model
 

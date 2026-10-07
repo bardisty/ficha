@@ -148,14 +148,14 @@ func agentMsgsWidth(agents []models.AgentAnalysis) int {
 }
 
 // formatAgentBreakdownContent renders agent breakdown rows (content only, no header)
-// Layout: [AN] Model (ID) msgs cost
+// Layout: [A<id>] model msgs ctx cost
 // All rows align costs at column 45 (2 indent + 43 content), further right
 // when a workflow heading needs the room and width has it, or further left
 // when the rows would be wider than width
 // Example:
 //
 //	Parent session                              $1.14
-//	[Aa0b184d] Opus 4.5      14 msgs            $0.3588
+//	[Aa0b184d] Opus 4.5      14 msgs  38% ctx   $0.3588
 //	Agents subtotal                             $5.11
 func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, noColor bool) string {
 	var sb strings.Builder
@@ -185,15 +185,22 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedLabel, formatCostStyled(analysis.ParentCost.TotalCost, 11, noColor)))
 	}
 
-	// Each agent with [A<id>] Model msgs cost format — the marker carries the
-	// abbreviated real agent ID, matching the breakdown TUI's scheme.
-	// Format: 2(indent) + 10(marker) + 1 + 11(model) + 1 + msgs + gap + cost
-	// where msgs + gap = labelWidth - 20 (normally 8 + 12; the gap shrinks as
-	// the msgs column grows to fit an oversized count), keeping cost at 45
-	// chars (aligned with parent and subtotal).
+	// Each agent with [A<id>] Model msgs ctx cost format — the marker carries
+	// the abbreviated real agent ID, matching the breakdown TUI's scheme.
+	// Format: 2(indent) + 10(marker) + 1 + 11(model) + 1 + msgs + ctx + gap + cost
+	// where msgs + ctx + gap = labelWidth - 20 (normally 8 + 9 + 3; the gap
+	// shrinks as the msgs column grows to fit an oversized count), keeping
+	// cost at 45 chars (aligned with parent and subtotal). Where the context
+	// reading, " 38% ctx", would leave no gap, it takes the count's place,
+	// as in watch; labelWidth's floor always leaves it room there.
 	// Workflow agents are grouped after regular agents; a dim header line marks
 	// each run's start.
-	msgsGap := strings.Repeat(" ", max(1, labelWidth-20-msgsWidth))
+	gapWidth := labelWidth - 20 - msgsWidth - 1 - render.AgentContextWidth
+	showMsgs := gapWidth >= 1
+	if !showMsgs {
+		gapWidth += 1 + msgsWidth
+	}
+	msgsGap := strings.Repeat(" ", max(1, gapWidth))
 	status := workflowStatuses(styles.GroupRule+" ", labelWidth, analysis)
 	prevWorkflow := ""
 	for _, agent := range analysis.Agents {
@@ -221,12 +228,17 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 		modelName := render.PrimaryModel(agent.CostByModel)
 		modelLabel := render.ClampModel(modelName, 11)
 
-		// Format message count with singular/plural
-		msgStr := agentMsgs(agent.MessageCount)
+		// Format message count with singular/plural, right-aligned after a
+		// space, or nothing where the context reading took its place
+		msgStr := ""
+		if showMsgs {
+			msgStr = fmt.Sprintf(" %*s", msgsWidth, agentMsgs(agent.MessageCount))
+		}
+		ctx := " " + render.AgentContextCell(agent.Context, noColor)
 
 		if noColor {
-			sb.WriteString(fmt.Sprintf("  %-10s %-11s %*s%s%s\n",
-				marker, modelLabel, msgsWidth, msgStr, msgsGap, render.CostCell(agent.TotalCost.TotalCost, 11)))
+			sb.WriteString(fmt.Sprintf("  %-10s %-11s%s%s%s%s\n",
+				marker, modelLabel, msgStr, ctx, msgsGap, render.CostCell(agent.TotalCost.TotalCost, 11)))
 		} else {
 			// Color the marker by hashing the full agent ID (matches breakdown)
 			agentColor := styles.GetAgentColor(agent.AgentID)
@@ -236,13 +248,16 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 			modelColor := styles.GetModelColor(modelName)
 			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
 
-			// Dim the message count
-			msgStyled := styles.DimStyle.Render(fmt.Sprintf("%*s", msgsWidth, msgStr))
+			// Dim the message count, leaving its leading space plain
+			msgStyled := ""
+			if msgStr != "" {
+				msgStyled = " " + styles.DimStyle.Render(msgStr[1:])
+			}
 
 			costStr := formatCostStyled(agent.TotalCost.TotalCost, 11, noColor)
 
-			sb.WriteString(fmt.Sprintf("  %s %s %s%s%s\n",
-				markerStyled, modelStyled, msgStyled, msgsGap, costStr))
+			sb.WriteString(fmt.Sprintf("  %s %s%s%s%s%s\n",
+				markerStyled, modelStyled, msgStyled, ctx, msgsGap, costStr))
 		}
 	}
 

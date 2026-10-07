@@ -374,9 +374,9 @@ func (m Model) renderAgentBreakdownContent() string {
 		sb.WriteString(fmt.Sprintf("    %-*s   %s\n", labelWidth, "Parent session", parentCostStr))
 	}
 
-	// Show each agent with [AN] Model (ID) msgs cost format
-	// Format: 4(indent) + 5(marker) + 1 + 11(model) + 1 + 10(id) + 1 + 8(msgs) + 6(spaces) + cost
-	//       = 4 + 37 + 6 = 47 chars before cost (aligned with parent)
+	// Show each agent as [A<id>] model msgs ctx cost
+	// Format: 2(indent) + 1(dot) + 1 + 10(marker) + 1 + 11(model) + 9(msgs) + 9(ctx) + 3(gap) + cost
+	//       = 47 chars before cost (aligned with parent)
 	// Uses plain white costs - model tier colors already provide cost hierarchy
 	// Workflow agents are grouped after regular agents; a dim header line marks
 	// each run's start. Markers carry the real agent ID (abbreviated), matching
@@ -422,11 +422,11 @@ func (m Model) renderAgentBreakdownContent() string {
 		case agentRowFinished:
 			label := fmt.Sprintf("%-22s", fmt.Sprintf("%d finished agents", row.count))
 			costStr := render.CostStyled(row.cost, 11, false, m.noColor)
-			msgs, gap := m.agentMsgsColumn(row.msgs)
+			msgs, ctx, gap := m.agentColumns(row.msgs, nil)
 			if m.noColor {
-				sb.WriteString("    " + label + msgs + gap + costStr + "\n")
+				sb.WriteString("    " + label + msgs + ctx + gap + costStr + "\n")
 			} else {
-				sb.WriteString("    " + styles.DimStyle.Render(label) + dimMsgs(msgs) + gap + costStr + "\n")
+				sb.WriteString("    " + styles.DimStyle.Render(label) + dimMsgs(msgs) + ctx + gap + costStr + "\n")
 			}
 		case agentRowAgent:
 			sb.WriteString(m.renderAgentRow(row.agent, row.running))
@@ -456,7 +456,7 @@ func (m Model) agentShrink() int {
 	return max(4+40+3+11-m.width, 0)
 }
 
-// dimMsgs dims agentMsgsColumn's count, leaving its leading space plain.
+// dimMsgs dims agentColumns' count, leaving its leading space plain.
 func dimMsgs(msgs string) string {
 	if msgs == "" {
 		return ""
@@ -464,16 +464,22 @@ func dimMsgs(msgs string) string {
 	return " " + styles.DimStyle.Render(msgs[1:])
 }
 
-// agentMsgsColumn is an agent row's message count, " 22 msgs" right-aligned
-// in 9 columns, and the gap before its cost: 12 spaces, less what a narrow
-// terminal lacks. Where no gap is left the count goes, so the cost stays.
-func (m Model) agentMsgsColumn(n int) (msgs, gap string) {
-	width := 12 - m.agentShrink()
+// agentColumns are an agent row's message count, " 22 msgs" right-aligned in
+// 9 columns, its context reading, " 38% ctx" in 9 more (blank for a nil c),
+// and the gap before its cost: 3 spaces, less what a narrow terminal lacks.
+// Where no gap is left the count goes, then the reading, so the cost stays.
+// The count goes first because the reading says more about a running agent.
+func (m Model) agentColumns(n int, c *models.ContextUsage) (msgs, ctx, gap string) {
+	width := 3 - m.agentShrink()
 	msgs = fmt.Sprintf(" %8s", msgCount(n))
+	ctx = " " + render.AgentContextCell(c, m.noColor)
 	if width < 1 {
 		msgs, width = "", width+len(msgs)
 	}
-	return msgs, strings.Repeat(" ", max(width, 1))
+	if width < 1 {
+		ctx, width = "", width+1+render.AgentContextWidth
+	}
+	return msgs, ctx, strings.Repeat(" ", max(width, 1))
 }
 
 // workflowCost sums the cost of a workflow run's agents.
@@ -488,7 +494,7 @@ func workflowCost(agents []models.AgentAnalysis, runID string) float64 {
 }
 
 // renderAgentRow renders one agent's row: live dot, [A<id>] marker, model,
-// message count and cost.
+// message count, context reading and cost.
 func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool) string {
 	agentHighlighted := m.isHighlighted("agent_" + agent.AgentID)
 	costStr := render.CostStyled(agent.TotalCost.TotalCost, 11, agentHighlighted, m.noColor)
@@ -506,10 +512,10 @@ func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool) string {
 		dot = styles.LiveDot
 	}
 
-	msgs, gap := m.agentMsgsColumn(agent.MessageCount)
+	msgs, ctx, gap := m.agentColumns(agent.MessageCount, agent.Context)
 	if m.noColor {
-		return fmt.Sprintf("  %s %-10s %-11s%s%s%s\n",
-			dot, marker, modelLabel, msgs, gap, costStr)
+		return fmt.Sprintf("  %s %-10s %-11s%s%s%s%s\n",
+			dot, marker, modelLabel, msgs, ctx, gap, costStr)
 	}
 	if running {
 		dot = styles.LiveIndicatorStyle.Render(dot)
@@ -522,8 +528,8 @@ func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool) string {
 	modelColor := styles.GetModelColor(modelName)
 	modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
 
-	return fmt.Sprintf("  %s %s %s%s%s%s\n",
-		dot, markerStyled, modelStyled, dimMsgs(msgs), gap, costStr)
+	return fmt.Sprintf("  %s %s %s%s%s%s%s\n",
+		dot, markerStyled, modelStyled, dimMsgs(msgs), ctx, gap, costStr)
 }
 
 // msgCount is "1 msg" or "N msgs".

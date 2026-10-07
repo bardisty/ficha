@@ -255,6 +255,9 @@ type AgentAnalysis struct {
 	EstimatedCostMessages int `json:"estimated_cost_messages,omitempty"`
 	// CostByModel keys priced at a fallback rate (see SessionAnalysis)
 	UnpricedModels []string `json:"unpriced_models,omitempty"`
+	// How full the agent's own context window was at its last request; nil
+	// when it has none
+	Context *ContextUsage `json:"context,omitempty"`
 }
 
 // WorkflowMeta identifies a workflow run whose agents appear in a session's
@@ -353,8 +356,9 @@ type SessionAnalysis struct {
 	SessionCount int `json:"session_count"`
 }
 
-// ContextUsage is how full a session's context window was at its last parent
-// request, as the table's gauge and Claude Code's /context show it.
+// ContextUsage is how full a context window was at one request, as Claude
+// Code's /context shows it: a session's last parent request for the table's
+// gauge, or an agent's own last request for its row.
 type ContextUsage struct {
 	Tokens  int64   `json:"tokens"`  // TokenUsage.ContextWindowSize of that request
 	Window  int     `json:"window"`  // The model's context window, from ficha's catalog

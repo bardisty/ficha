@@ -5,6 +5,10 @@ sessions[].agent_message_count number
 sessions[].agents array
 sessions[].agents[] object
 sessions[].agents[].agent_id string
+sessions[].agents[].context object
+sessions[].agents[].context.percent number
+sessions[].agents[].context.tokens number
+sessions[].agents[].context.window number
 sessions[].agents[].cost_by_model object
 sessions[].agents[].cost_by_model.* object
 sessions[].agents[].cost_by_model.*.cache_read_cost number
