@@ -259,7 +259,7 @@ func TestCacheRates(t *testing.T) {
 
 // TestCacheReadRateOverride pins which catalog rows carry an absolute cache-read
 // rate: Fable 5.1 and Mythos 5.1 bill $0.25/MTok, Opus 5.5 $0.20/MTok,
-// everything else derives 0.1x from input.
+// Sonnet 5.5 $0.10/MTok, everything else derives 0.1x from input.
 func TestCacheReadRateOverride(t *testing.T) {
 	tests := []struct {
 		modelID          string
@@ -277,7 +277,9 @@ func TestCacheReadRateOverride(t *testing.T) {
 		{"claude-opus-5-5-20260901", 0.20, 0.20},
 		{"claude-opus-5-5[1m]", 0.20, 0.20},
 		{"claude-opus-5", 0, 0.50},
-		{"claude-sonnet-5-5", 0, 0.20},
+		{"claude-sonnet-5-5", 0.10, 0.10},
+		{"claude-sonnet-5-5-20260901", 0.10, 0.10},
+		{"claude-sonnet-5-5[1m]", 0.10, 0.10},
 		{"claude-sonnet-5", 0, 0.20},
 		{"claude-haiku-5-5", 0, 0.01},
 		{"unknown-model", 0, 0.30},
@@ -313,7 +315,7 @@ func TestForPrompt(t *testing.T) {
 		{"claude-haiku-5-5-20261001", 100001, 0.50, 2.50, 0.05, 0.625},
 		{"claude-haiku-5-5[1m]", 900000, 0.50, 2.50, 0.05, 0.625},
 		// Single-card models ignore prompt length
-		{"claude-sonnet-5-5", 900000, 2.00, 10.00, 0.20, 2.50},
+		{"claude-sonnet-5-5", 900000, 2.00, 10.00, 0.10, 2.50},
 		{"claude-opus-5-5", 900000, 4.00, 20.00, 0.20, 5.00},
 		{"unknown-model", 900000, 3.00, 15.00, 0.30, 3.75},
 	}

@@ -67,10 +67,11 @@ var modelCatalog = []ModelInfo{
 	{ID: "claude-mythos-5-1", DisplayName: "Mythos 5.1", InputRate: 10.00, OutputRate: 50.00, CacheReadRate: 0.25, MaxContextTokens: 1000000},
 	{ID: "claude-fable-5", DisplayName: "Fable 5", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},
 	{ID: "claude-mythos-5", DisplayName: "Mythos 5", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},
-	// Opus 5.5 cache reads are $0.20/MTok (0.05x), not the 0.1x default.
+	// Opus 5.5 and Sonnet 5.5 cache reads are 0.05x input ($0.20 and
+	// $0.10/MTok), not the 0.1x default.
 	{ID: "claude-opus-5-5", DisplayName: "Opus 5.5", InputRate: 4.00, OutputRate: 20.00, CacheReadRate: 0.20, MaxContextTokens: 1000000},
 	{ID: "claude-opus-5", DisplayName: "Opus 5", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
-	{ID: "claude-sonnet-5-5", DisplayName: "Sonnet 5.5", InputRate: 2.00, OutputRate: 10.00, MaxContextTokens: 1000000},
+	{ID: "claude-sonnet-5-5", DisplayName: "Sonnet 5.5", InputRate: 2.00, OutputRate: 10.00, CacheReadRate: 0.10, MaxContextTokens: 1000000},
 	{ID: "claude-sonnet-5", DisplayName: "Sonnet 5", InputRate: 2.00, OutputRate: 10.00, MaxContextTokens: 1000000},
 	// Haiku 5.5 prompts over 100K tokens bill at $0.50/$2.50, five times the base card.
 	{ID: "claude-haiku-5-5", DisplayName: "Haiku 5.5", InputRate: 0.10, OutputRate: 0.50, MaxContextTokens: 1000000,
