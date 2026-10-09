@@ -27,6 +27,10 @@ func TestGetModelPricing(t *testing.T) {
 		{"sonnet 5.5 versioned", "claude-sonnet-5-5-20260901", 2.00, 10.00},
 		{"sonnet 5 exact", "claude-sonnet-5", 2.00, 10.00},
 		{"sonnet 5 versioned", "claude-sonnet-5-20260401", 2.00, 10.00},
+		// Haiku 5.5's base card; the long-prompt card is TestForPrompt's
+		{"haiku 5.5 exact", "claude-haiku-5-5", 0.10, 0.50},
+		{"haiku 5.5 versioned", "claude-haiku-5-5-20261001", 0.10, 0.50},
+		{"haiku 5.5 1m beta", "claude-haiku-5-5[1m]", 0.10, 0.50},
 		{"opus 4.8 exact", "claude-opus-4-8", 5.00, 25.00},
 		{"opus 4.8 versioned", "claude-opus-4-8-20260601", 5.00, 25.00},
 		{"opus 4.7 exact", "claude-opus-4-7", 5.00, 25.00},
@@ -74,6 +78,7 @@ func TestGetModelPricing(t *testing.T) {
 		{"unlisted mythos 5.2 uses default", "claude-mythos-5-2", 3.00, 15.00},
 		{"unlisted sonnet 5.6 uses default", "claude-sonnet-5-6", 3.00, 15.00},
 		{"unlisted opus 5.6 uses default", "claude-opus-5-6", 3.00, 15.00},
+		{"unlisted haiku 5.6 uses default", "claude-haiku-5-6", 3.00, 15.00},
 
 		// Vertex '@date' IDs. Before the segment-boundary fix these matched the
 		// shorter "claude-opus-4" prefix and billed at $15/$75.
@@ -152,6 +157,9 @@ func TestGetModelDisplayName(t *testing.T) {
 		{"claude-sonnet-5-5[1m]", "Sonnet 5.5"},
 		{"claude-sonnet-5", "Sonnet 5"},
 		{"claude-sonnet-5-20260401", "Sonnet 5"},
+		{"claude-haiku-5-5", "Haiku 5.5"},
+		{"claude-haiku-5-5-20261001", "Haiku 5.5"},
+		{"claude-haiku-5-5[1m]", "Haiku 5.5"},
 		{"claude-opus-5-5", "Opus 5.5"},
 		{"claude-opus-5-5-20260901", "Opus 5.5"},
 		{"claude-opus-5-5[1m]", "Opus 5.5"},
@@ -271,6 +279,7 @@ func TestCacheReadRateOverride(t *testing.T) {
 		{"claude-opus-5", 0, 0.50},
 		{"claude-sonnet-5-5", 0, 0.20},
 		{"claude-sonnet-5", 0, 0.20},
+		{"claude-haiku-5-5", 0, 0.01},
 		{"unknown-model", 0, 0.30},
 	}
 
@@ -282,6 +291,45 @@ func TestCacheReadRateOverride(t *testing.T) {
 			}
 			if got := GetCacheReadRate(p); got < tt.expectedRate-0.001 || got > tt.expectedRate+0.001 {
 				t.Errorf("GetCacheReadRate: got %f, want %f", got, tt.expectedRate)
+			}
+		})
+	}
+}
+
+// TestForPrompt pins Haiku 5.5's switch to the long-prompt card: a prompt of
+// exactly 100K tokens stays on the base card, one more token moves every rate.
+func TestForPrompt(t *testing.T) {
+	tests := []struct {
+		modelID      string
+		promptTokens int64
+		wantInput    float64
+		wantOutput   float64
+		wantRead     float64
+		wantWrite5m  float64
+	}{
+		{"claude-haiku-5-5", 0, 0.10, 0.50, 0.01, 0.125},
+		{"claude-haiku-5-5", 100000, 0.10, 0.50, 0.01, 0.125},
+		{"claude-haiku-5-5", 100001, 0.50, 2.50, 0.05, 0.625},
+		{"claude-haiku-5-5-20261001", 100001, 0.50, 2.50, 0.05, 0.625},
+		{"claude-haiku-5-5[1m]", 900000, 0.50, 2.50, 0.05, 0.625},
+		// Single-card models ignore prompt length
+		{"claude-sonnet-5-5", 900000, 2.00, 10.00, 0.20, 2.50},
+		{"claude-opus-5-5", 900000, 4.00, 20.00, 0.20, 5.00},
+		{"unknown-model", 900000, 3.00, 15.00, 0.30, 3.75},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.modelID, func(t *testing.T) {
+			p := GetModelPricing(tt.modelID).ForPrompt(tt.promptTokens)
+			if p.InputRate != tt.wantInput || p.OutputRate != tt.wantOutput {
+				t.Errorf("rates at %d tokens: got $%g/$%g, want $%g/$%g",
+					tt.promptTokens, p.InputRate, p.OutputRate, tt.wantInput, tt.wantOutput)
+			}
+			if got := GetCacheReadRate(p); got < tt.wantRead-1e-9 || got > tt.wantRead+1e-9 {
+				t.Errorf("cache read at %d tokens: got %g, want %g", tt.promptTokens, got, tt.wantRead)
+			}
+			if got := GetCacheWrite5mRate(p); got < tt.wantWrite5m-1e-9 || got > tt.wantWrite5m+1e-9 {
+				t.Errorf("5m cache write at %d tokens: got %g, want %g", tt.promptTokens, got, tt.wantWrite5m)
 			}
 		})
 	}
@@ -592,6 +640,18 @@ func TestModelCatalogIntegrity(t *testing.T) {
 		if m.MaxContextTokens <= 0 {
 			t.Errorf("%s: non-positive MaxContextTokens (%d)", m.ID, m.MaxContextTokens)
 		}
+		if m.LongPromptTokens != 0 {
+			if m.LongPromptInputRate <= m.InputRate || m.LongPromptOutputRate <= m.OutputRate {
+				t.Errorf("%s: long-prompt rates (%f/%f) not above base (%f/%f)",
+					m.ID, m.LongPromptInputRate, m.LongPromptOutputRate, m.InputRate, m.OutputRate)
+			}
+			// An absolute cache-read rate would not follow the switch to the long-prompt input rate
+			if m.CacheReadRate != 0 {
+				t.Errorf("%s: sets both CacheReadRate and a long-prompt card", m.ID)
+			}
+		} else if m.LongPromptInputRate != 0 || m.LongPromptOutputRate != 0 {
+			t.Errorf("%s: long-prompt rates without LongPromptTokens", m.ID)
+		}
 	}
 
 	// Derived structures must mirror the catalog 1:1
@@ -610,7 +670,9 @@ func TestModelCatalogIntegrity(t *testing.T) {
 			t.Errorf("%s: missing from modelPricing", m.ID)
 			continue
 		}
-		if p.InputRate != m.InputRate || p.OutputRate != m.OutputRate || p.MaxContextTokens != m.MaxContextTokens {
+		if p.InputRate != m.InputRate || p.OutputRate != m.OutputRate || p.MaxContextTokens != m.MaxContextTokens ||
+			p.LongPromptTokens != m.LongPromptTokens || p.LongPromptInputRate != m.LongPromptInputRate ||
+			p.LongPromptOutputRate != m.LongPromptOutputRate {
 			t.Errorf("%s: modelPricing %+v does not match catalog %+v", m.ID, p, m)
 		}
 		if displayNames[m.ID] != m.DisplayName {
@@ -654,6 +716,9 @@ func TestGetModelPricingContextWindow(t *testing.T) {
 		{"claude-sonnet-5-5-20260901", 1000000},
 		{"claude-sonnet-5", 1000000},
 		{"claude-sonnet-5-20260401", 1000000},
+		{"claude-haiku-5-5", 1000000},
+		{"claude-haiku-5-5-20261001", 1000000},
+		{"claude-haiku-5-5[1m]", 1000000},
 		{"claude-opus-4-8", 1000000},
 		{"claude-sonnet-4-6", 1000000},
 		{"claude-opus-4-5", 200000},
@@ -789,6 +854,7 @@ func TestUnlistedFamilyVersionsNeverResolve(t *testing.T) {
 		"claude-mythos-5-2", "claude-mythos-5-1-fast",
 		"claude-sonnet-5-6", "claude-sonnet-5-5-fast", "claude-sonnet-5-50",
 		"claude-opus-5-6", "claude-opus-5-5-fast", "claude-opus-5-50",
+		"claude-haiku-5-6", "claude-haiku-5-5-fast", "claude-haiku-5-50", "claude-haiku-5",
 		"claude-opus-4-10-20260601", "anthropic.claude-9-fake-v1:0",
 		"claude-opus-4-5{2m}", "claude-opus-4-8[2m]", "claude-opus-4-8[foo]",
 		"claude-3-5-sonnet[beta]", "claude-opus-4-8[1m", "claude-opus-4-81m]",

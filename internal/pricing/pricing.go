@@ -12,6 +12,24 @@ type ModelPricing struct {
 	OutputRate       float64 // Cost per million output tokens
 	CacheReadRate    float64 // Cost per million cache-read tokens; 0 = InputRate * CacheReadMultiplier
 	MaxContextTokens int     // Maximum context window size in tokens
+
+	// A request whose prompt is longer than LongPromptTokens bills every token,
+	// output included, at the long-prompt rates. 0 means one rate card.
+	LongPromptTokens     int64
+	LongPromptInputRate  float64
+	LongPromptOutputRate float64
+}
+
+// ForPrompt returns the rate card that bills a request whose prompt is
+// promptTokens long: input plus cache writes plus cache reads, which is what
+// models.TokenUsage.ContextWindowSize counts. Cache rates follow the input
+// rate, so a row with a long-prompt card must not set CacheReadRate.
+func (p ModelPricing) ForPrompt(promptTokens int64) ModelPricing {
+	if p.LongPromptTokens == 0 || promptTokens <= p.LongPromptTokens {
+		return p
+	}
+	p.InputRate, p.OutputRate = p.LongPromptInputRate, p.LongPromptOutputRate
+	return p
 }
 
 // Cache multipliers (relative to input rate). Cache reads are the only bucket
@@ -32,6 +50,11 @@ type ModelInfo struct {
 	OutputRate       float64 // Cost per million output tokens
 	CacheReadRate    float64 // Absolute cache-read rate; 0 = InputRate * CacheReadMultiplier
 	MaxContextTokens int
+
+	// Rates for prompts over LongPromptTokens; see ModelPricing.ForPrompt
+	LongPromptTokens     int64
+	LongPromptInputRate  float64
+	LongPromptOutputRate float64
 }
 
 // modelCatalog is the single source of truth for known models. The pricing
@@ -49,6 +72,9 @@ var modelCatalog = []ModelInfo{
 	{ID: "claude-opus-5", DisplayName: "Opus 5", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
 	{ID: "claude-sonnet-5-5", DisplayName: "Sonnet 5.5", InputRate: 2.00, OutputRate: 10.00, MaxContextTokens: 1000000},
 	{ID: "claude-sonnet-5", DisplayName: "Sonnet 5", InputRate: 2.00, OutputRate: 10.00, MaxContextTokens: 1000000},
+	// Haiku 5.5 prompts over 100K tokens bill at $0.50/$2.50, five times the base card.
+	{ID: "claude-haiku-5-5", DisplayName: "Haiku 5.5", InputRate: 0.10, OutputRate: 0.50, MaxContextTokens: 1000000,
+		LongPromptTokens: 100000, LongPromptInputRate: 0.50, LongPromptOutputRate: 2.50},
 	// Opus 4.x
 	{ID: "claude-opus-4-8", DisplayName: "Opus 4.8", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
 	{ID: "claude-opus-4-7", DisplayName: "Opus 4.7", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
@@ -91,6 +117,10 @@ func init() {
 			OutputRate:       m.OutputRate,
 			CacheReadRate:    m.CacheReadRate,
 			MaxContextTokens: m.MaxContextTokens,
+
+			LongPromptTokens:     m.LongPromptTokens,
+			LongPromptInputRate:  m.LongPromptInputRate,
+			LongPromptOutputRate: m.LongPromptOutputRate,
 		}
 		displayNames[m.ID] = m.DisplayName
 		prefixPatterns = append(prefixPatterns, m.ID)
