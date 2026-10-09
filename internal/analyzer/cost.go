@@ -13,7 +13,7 @@ func CalculateCost(usage models.TokenUsage, modelID string) models.CostBreakdown
 	// safety net for hand-built usages.
 	usage = usage.Sanitized()
 
-	modelPricing := pricing.GetModelPricing(modelID)
+	modelPricing := pricing.GetModelPricing(modelID).ForPrompt(usage.ContextWindowSize())
 
 	// Calculate input cost (non-cached tokens)
 	inputCost := float64(usage.InputTokens) / 1_000_000 * modelPricing.InputRate

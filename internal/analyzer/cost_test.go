@@ -216,6 +216,66 @@ func TestCalculateCostPerModelCacheReadRate(t *testing.T) {
 	}
 }
 
+// Haiku 5.5 bills a request at $0.10/$0.50 while its prompt (input, cache
+// writes and cache reads together) is at most 100K tokens, and every token of
+// a longer one, output included, at $0.50/$2.50.
+func TestCalculateCostLongPrompt(t *testing.T) {
+	tests := []struct {
+		name          string
+		usage         models.TokenUsage
+		expectedTotal float64
+		expectedSaved float64
+	}{
+		{
+			name:          "prompt at the threshold stays on the base card",
+			usage:         models.TokenUsage{InputTokens: 100_000, OutputTokens: 10_000},
+			expectedTotal: 0.01 + 0.005,
+		},
+		{
+			name:          "one token over moves input and output",
+			usage:         models.TokenUsage{InputTokens: 100_001, OutputTokens: 10_000},
+			expectedTotal: 0.0500005 + 0.025,
+		},
+		{
+			// A cache hit still counts toward the prompt, so a small uncached
+			// input on top of a long cached prefix pays the long-prompt card.
+			name: "cache reads push the prompt over",
+			usage: models.TokenUsage{
+				InputTokens:          1_000,
+				OutputTokens:         2_000,
+				CacheReadInputTokens: 150_000,
+			},
+			expectedTotal: 0.0005 + 0.005 + 0.0075, // input + output + read at $0.05
+			expectedSaved: 0.075 - 0.0075,
+		},
+		{
+			name: "cache writes push the prompt over",
+			usage: models.TokenUsage{
+				InputTokens:  1_000,
+				OutputTokens: 2_000,
+				CacheCreation: &models.CacheCreation{
+					Ephemeral5mInputTokens: 60_000,
+					Ephemeral1hInputTokens: 60_000,
+				},
+				CacheCreationInputTokens: 120_000,
+			},
+			expectedTotal: 0.0005 + 0.005 + 0.0375 + 0.06, // 5m write at $0.625, 1h at $1
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cost := CalculateCost(tt.usage, "claude-haiku-5-5")
+			if !almostEqual(cost.TotalCost, tt.expectedTotal, 1e-9) {
+				t.Errorf("TotalCost: got %.9f, want %.9f", cost.TotalCost, tt.expectedTotal)
+			}
+			if !almostEqual(cost.CacheSavings, tt.expectedSaved, 1e-9) {
+				t.Errorf("CacheSavings: got %.9f, want %.9f", cost.CacheSavings, tt.expectedSaved)
+			}
+		})
+	}
+}
+
 func TestCalculateMessageCost(t *testing.T) {
 	msg := &models.MessageAnalysis{
 		Model: "claude-sonnet-4-5",
