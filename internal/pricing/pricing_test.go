@@ -758,6 +758,76 @@ func TestGetModelPricingContextWindow(t *testing.T) {
 	}
 }
 
+// Claude Code compacts a native 1M model at about 967K and any other model
+// when its window fills; Opus 4.6 and Sonnet 4.6 compact at 200K unless "[1m]"
+// widens them.
+func TestGetModelPricingCompactAt(t *testing.T) {
+	tests := []struct {
+		modelID string
+		want    int
+	}{
+		{"claude-opus-5-5", 967000},
+		{"claude-opus-5-5-20260901", 967000},
+		{"claude-fable-5-1", 967000},
+		{"claude-haiku-5-5", 967000},
+		{"claude-opus-4-7", 967000},
+		{"claude-haiku-4-5", 200000},
+		{"claude-sonnet-4-5-20250929", 200000},
+		{"claude-opus-4-6", 200000},
+		{"claude-sonnet-4-6", 200000},
+
+		// "[1m]" leaves a native 1M model's point alone, and moves any other
+		// model's to the end of the widened window.
+		{"claude-opus-5-5[1m]", 967000},
+		{"claude-haiku-4-5[1m]", 1000000},
+		{"claude-opus-4-6[1m]", 1000000},
+		{"claude-opus-4-9[1m]", 1000000}, // unknown
+
+		// An unknown model compacts when the fallback window fills.
+		{"unknown-model", 200000},
+		{SyntheticModel, 200000},
+		{"us.anthropic.claude-opus-4-8-20260601-v1:0", 967000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.modelID, func(t *testing.T) {
+			p := GetModelPricing(tt.modelID)
+			if p.CompactAtTokens != tt.want {
+				t.Errorf("CompactAtTokens = %d, want %d", p.CompactAtTokens, tt.want)
+			}
+			if p.CompactAtTokens > p.MaxContextTokens {
+				t.Errorf("CompactAtTokens %d is past the window %d", p.CompactAtTokens, p.MaxContextTokens)
+			}
+		})
+	}
+}
+
+func TestContextZoneOf(t *testing.T) {
+	tests := []struct {
+		name      string
+		tokens    int64
+		compactAt int
+		want      ContextZone
+	}{
+		{"1M model well short", 678200, 967000, ContextClear},
+		{"1M model just short of the band", 821000, 967000, ContextClear},
+		{"1M model at the band", 821950, 967000, ContextNear},
+		{"1M model just short of the mark", 966999, 967000, ContextNear},
+		{"1M model at the mark", 967000, 967000, ContextPast},
+		{"1M model past the mark", 980000, 967000, ContextPast},
+		{"200K model short of the band", 169999, 200000, ContextClear},
+		{"200K model in the band", 170000, 200000, ContextNear},
+		{"200K model at the mark", 200000, 200000, ContextPast},
+		{"no mark", 500000, 0, ContextClear},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ContextZoneOf(tt.tokens, tt.compactAt); got != tt.want {
+				t.Errorf("ContextZoneOf(%d, %d) = %d, want %d", tt.tokens, tt.compactAt, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStripDecorations(t *testing.T) {
 	tests := []struct {
 		modelID         string

@@ -363,6 +363,9 @@ type ContextUsage struct {
 	Tokens  int64   `json:"tokens"`  // TokenUsage.ContextWindowSize of that request
 	Window  int     `json:"window"`  // The model's context window, from ficha's catalog
 	Percent float64 `json:"percent"` // Tokens / Window * 100, unrounded
+	// The model's ~compaction point, from ficha's catalog. Human output
+	// colors and words the reading against it; json leaves it out.
+	CompactAt int `json:"-"`
 }
 
 // WorkflowByID returns the metadata for a workflow run in this session, or a

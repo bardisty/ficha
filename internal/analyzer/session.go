@@ -340,7 +340,7 @@ func ContextUsage(usage models.TokenUsage, model string) *models.ContextUsage {
 		return nil
 	}
 	p := pricing.GetModelPricing(model)
-	return &models.ContextUsage{Tokens: tokens, Window: p.MaxContextTokens, Percent: pricing.GetContextPercentage(p, tokens)}
+	return &models.ContextUsage{Tokens: tokens, Window: p.MaxContextTokens, Percent: pricing.GetContextPercentage(p, tokens), CompactAt: p.CompactAtTokens}
 }
 
 // timeRange returns the earliest and latest non-zero timestamps in messages.

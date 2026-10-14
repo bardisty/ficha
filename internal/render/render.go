@@ -426,22 +426,27 @@ func SectionHeader(name string, width int, noColor bool) string {
 }
 
 // ContextBar renders a context-window bar of width cells between brackets:
-// used (█) then free (░), with a tick (│) at the ~compaction point so the
-// warning survives --no-color. Only the used part carries the usage color.
-func ContextBar(contextSize int64, maxContext, width int, noColor bool) string {
+// used (█) then free (░), with a tick (│) at compactAt, the ~compaction
+// point, so the warning survives --no-color. A mark at the end of the window
+// takes the last cell, so the tick always shows. Only the used part carries
+// the usage color.
+func ContextBar(contextSize int64, maxContext, compactAt, width int, noColor bool) string {
 	width = max(width, 1)
-	used := 0
+	used, tick := 0, width-1
 	if maxContext > 0 {
 		used = int(float64(contextSize) / float64(maxContext) * float64(width))
+		// The tick takes the cell the mark falls in, counted the way used
+		// cells are, so a reading at the mark has no free cell before it.
+		tick = min(int(float64(compactAt)/float64(maxContext)*float64(width)), width-1)
 	}
 	used = min(max(used, 0), width)
-	tick := min(int(math.Round(CompactionPct/100*float64(width))), width-1)
+	tick = max(tick, 0)
 
 	usedStyle := lipgloss.NewStyle()
 	freeStyle := lipgloss.NewStyle().Foreground(styles.ContextFreeColor)
 	tickStyle := lipgloss.NewStyle().Bold(true)
 	if maxContext > 0 {
-		usedStyle = usedStyle.Foreground(styles.GetContextUsageColor(float64(contextSize) / float64(maxContext) * 100))
+		usedStyle = usedStyle.Foreground(styles.ContextZoneColor(pricing.ContextZoneOf(contextSize, compactAt)))
 	}
 	paint := func(st lipgloss.Style, s string) string {
 		if noColor || s == "" {
@@ -463,26 +468,24 @@ func ContextBar(contextSize int64, maxContext, width int, noColor bool) string {
 	return "[" + bar + "]"
 }
 
-// CompactionPct is where Claude Code auto-compacts, as a share of the context
-// window (see styles.GetContextUsageColor, which turns red at the same
-// point). It is approximate, and unconfirmed for 1M windows, so the UI
-// always calls it "~compaction".
-const CompactionPct = 75.0
-
 // minContextBar is the narrowest bar worth drawing, brackets excluded.
 const minContextBar = 10
 
 // ContextGauge renders the context line's content and the note under it,
-// fitted to width columns:
+// fitted to width columns, with the tick and the note's headroom taken from
+// compactAt, the model's ~compaction point:
 //
-//	95% [████████████████████████████│░░░░░░] 190.1K / 200.0K
-//	past ~compaction at 75% (main session, last request)
+//	 95% [██████████████████████████████████│░] 950.0K / 1.00M
+//	17.0K to ~compaction (main session, last request)
+//
+// The point is approximate, and Claude Code settings can move it, so the UI
+// always calls it "~compaction".
 //
 // The percentage leads because it is the reading people look for; the bar
 // takes whatever width is left. When the line can't fit, whole fields drop
 // (the token counts, then the bar) rather than clipping inside a number.
 // highlight marks the token counts as just changed.
-func ContextGauge(contextSize int64, maxContext, width int, noColor, highlight bool) (line, note string) {
+func ContextGauge(contextSize int64, maxContext, compactAt, width int, noColor, highlight bool) (line, note string) {
 	pct := 0.0
 	if maxContext > 0 {
 		pct = float64(contextSize) / float64(maxContext) * 100
@@ -496,7 +499,7 @@ func ContextGauge(contextSize int64, maxContext, width int, noColor, highlight b
 		}
 		return st.Render(s)
 	}
-	pctStyled := style(lipgloss.NewStyle().Foreground(styles.GetContextUsageColor(pct)), pctStr)
+	pctStyled := style(lipgloss.NewStyle().Foreground(styles.ContextZoneColor(pricing.ContextZoneOf(contextSize, compactAt))), pctStr)
 	valueStyled := value
 	if highlight {
 		valueStyled = style(styles.HighlightStyle, value)
@@ -506,16 +509,16 @@ func ContextGauge(contextSize int64, maxContext, width int, noColor, highlight b
 	inner := width - len(pctStr) - 1 - 2 - 1 - lipgloss.Width(value)
 	switch {
 	case inner >= minContextBar:
-		line = pctStyled + " " + ContextBar(contextSize, maxContext, inner, noColor) + " " + valueStyled
+		line = pctStyled + " " + ContextBar(contextSize, maxContext, compactAt, inner, noColor) + " " + valueStyled
 	case width-len(pctStr)-3 >= minContextBar:
-		line = pctStyled + " " + ContextBar(contextSize, maxContext, width-len(pctStr)-3, noColor)
+		line = pctStyled + " " + ContextBar(contextSize, maxContext, compactAt, width-len(pctStr)-3, noColor)
 	case width >= len(pctStr)+1+lipgloss.Width(value):
 		line = pctStyled + " " + valueStyled
 	default:
 		line = pctStyled
 	}
 
-	return line, contextNote(contextSize, maxContext, width-1)
+	return line, contextNote(contextSize, compactAt, width-1)
 }
 
 // AgentContextWidth is the width of AgentContextCell: "100% ctx".
@@ -523,8 +526,8 @@ const AgentContextWidth = 8
 
 // AgentContextCell is an agent row's context reading, " 38% ctx",
 // right-aligned in AgentContextWidth columns, or blanks when c is nil. It's
-// dim like the message count beside it until the gauge would turn orange, so
-// only an agent nearing compaction stands out.
+// dim like the message count beside it until the reading enters its own
+// model's warning band, so only an agent nearing compaction stands out.
 func AgentContextCell(c *models.ContextUsage, noColor bool) string {
 	if c == nil {
 		return strings.Repeat(" ", AgentContextWidth)
@@ -533,31 +536,37 @@ func AgentContextCell(c *models.ContextUsage, noColor bool) string {
 	if len(cell) < AgentContextWidth {
 		cell = strings.Repeat(" ", AgentContextWidth-len(cell)) + cell
 	}
+	zone := pricing.ContextZoneOf(c.Tokens, c.CompactAt)
 	switch {
 	case noColor:
 		return cell
-	case c.Percent < styles.ContextHighPct:
+	case zone == pricing.ContextClear:
 		return styles.DimStyle.Render(cell)
 	default:
-		return lipgloss.NewStyle().Foreground(styles.GetContextUsageColor(c.Percent)).Render(cell)
+		return lipgloss.NewStyle().Foreground(styles.ContextZoneColor(zone)).Render(cell)
 	}
 }
 
 // contextNote is the line under the gauge, laid out one column in (under
-// the percentage's digits) within width. It sheds the scope before the
-// reading, and a shorter reading before nothing at all, so a narrow
-// terminal never cuts the headroom figure or the warning mid-word.
-func contextNote(contextSize int64, maxContext, width int) string {
-	if maxContext <= 0 {
+// the percentage's digits) within width. It counts tokens to or past
+// compactAt rather than naming the mark's share of the window, which differs
+// from model to model. It sheds the scope before the reading, and a shorter
+// reading before nothing at all, so a narrow terminal never cuts the
+// headroom figure or the warning mid-word.
+func contextNote(contextSize int64, compactAt, width int) string {
+	if compactAt <= 0 {
 		return ""
 	}
 	const scope = " (main session, last request)"
 	var forms []string
-	if headroom := int64(float64(maxContext)*CompactionPct/100) - contextSize; headroom > 0 {
+	switch headroom := int64(compactAt) - contextSize; {
+	case headroom > 0:
 		reading := Number(headroom) + " to ~compaction"
 		forms = []string{reading + scope, reading, Number(headroom) + " left"}
-	} else {
-		reading := fmt.Sprintf("past ~compaction at %.0f%%", CompactionPct)
+	case headroom == 0:
+		forms = []string{"at ~compaction" + scope, "at ~compaction"}
+	default:
+		reading := Number(-headroom) + " past ~compaction"
 		forms = []string{reading + scope, reading, "past ~compaction"}
 	}
 	for _, f := range forms {
