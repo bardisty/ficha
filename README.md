@@ -204,7 +204,7 @@ Bare `ficha` works like `show` and takes the same project flags. A flag on a com
 
 On macOS and Linux, ficha asks the terminal for its background and picks a light or dark palette to match. Inside tmux or screen it can't ask and assumes dark, so on a light background set `COLORFGBG='0;15'`. Quote it, because the shell reads an unquoted `;` as the end of the command. On Windows ficha always uses the dark palette.
 
-Color is off when output goes to a pipe or file. To keep it in a pager, set `CLICOLOR_FORCE=1`, as in `CLICOLOR_FORCE=1 ficha summary | less -R`. `ficha help environment` lists the other variables that turn color on or off.
+Color is off when output goes to a pipe or file, except for `statusline`, whose pipe goes to Claude Code. To keep it in a pager, set `CLICOLOR_FORCE=1`, as in `CLICOLOR_FORCE=1 ficha summary | less -R`. `ficha help environment` lists the other variables that turn color on or off.
 
 ## Shell completion
 
@@ -291,9 +291,9 @@ Claude Code passes `session_id` and `transcript_path` to hooks and to the status
 Opus 5.5 · ctx 68% · $0.19/msg ▲ · $72.77 (agents $41.65)
 ```
 
-Near ~compaction the context part says how far it is, as `ctx 90%, 67.0K to ~compaction`, and past the mark `ctx 98%, past ~compaction`, with the same mark `show` uses. It's green, yellow or red in your terminal's own colors. `--no-color` or `NO_COLOR=1` in the command turns that off.
-
 `$0.19/msg` is the average cost of recent messages in the main conversation. `▲` or `▼` means that's more than 20% above or below the session's average. The line leaves out the context before the first reply, the recent cost before the sixth message, and the agents' share when no agents ran.
+
+Near ~compaction the context part says how much room is left, as `ctx 90%, 67.0K to ~compaction`, and `past ~compaction` once it's over. `ficha statusline --no-color` turns its color off.
 
 Add it to `~/.claude/settings.json`:
 

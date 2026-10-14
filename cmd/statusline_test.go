@@ -106,9 +106,9 @@ func TestStatusLineCompaction(t *testing.T) {
 	}
 }
 
-// In color, the words take the reading's color with it: 93 (bright yellow)
-// in the band and 91 (bright red) past the mark, from the basic palette
-// statusline uses.
+// In color, only the percentage takes its zone's color, and only from the
+// band on: 93 (bright yellow) in it and 91 (bright red) past the mark, from
+// the basic palette statusline uses. Below the band it's plain.
 func TestStatusLineCompactionColor(t *testing.T) {
 	styles.SetBasic(true)
 	t.Cleanup(func() { styles.SetBasic(false) })
@@ -116,8 +116,9 @@ func TestStatusLineCompactionColor(t *testing.T) {
 		c    models.ContextUsage
 		want string
 	}{
-		{models.ContextUsage{Tokens: 900_000, Window: 1_000_000, Percent: 90, CompactAt: 967_000}, "ctx \x1b[93m90%, 67.0K to ~compaction\x1b[m · $0.00"},
-		{models.ContextUsage{Tokens: 980_000, Window: 1_000_000, Percent: 98, CompactAt: 967_000}, "ctx \x1b[91m98%, past ~compaction\x1b[m · $0.00"},
+		{models.ContextUsage{Tokens: 678_200, Window: 1_000_000, Percent: 67.82, CompactAt: 967_000}, "ctx 68% · $0.00"},
+		{models.ContextUsage{Tokens: 900_000, Window: 1_000_000, Percent: 90, CompactAt: 967_000}, "ctx \x1b[93m90%\x1b[m, 67.0K to ~compaction · $0.00"},
+		{models.ContextUsage{Tokens: 980_000, Window: 1_000_000, Percent: 98, CompactAt: 967_000}, "ctx \x1b[91m98%\x1b[m, past ~compaction · $0.00"},
 	} {
 		if got := statusLine("", &models.SessionAnalysis{Context: &tt.c}, false); got != tt.want {
 			t.Errorf("got  %q\nwant %q", got, tt.want)
@@ -129,19 +130,30 @@ func TestStatusLineCompactionColor(t *testing.T) {
 // basic colors, and nothing else on the line. --no-color, NO_COLOR and
 // CLICOLOR=0 leave it plain, with the same words.
 func TestStatuslineColor(t *testing.T) {
-	proj := setupStatusFixture(t)
-	in := statusInput(t, filepath.Join(proj, statusID+".jsonl"), "Opus 5.5")
+	root := t.TempDir()
+	transcript := filepath.Join(root, "projects", statusProjDir, statusID+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// One request at 900K on Opus 5.5: in the band before its 967K mark.
+	msg := e2eMsg("2026-03-01T10:00:00Z", "m1", "claude-opus-5-5", 10, 500, 0, 0, 899_990)
+	if err := os.WriteFile(transcript, []byte(msg+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("CLICOLOR", "")
 	t.Setenv("CLICOLOR_FORCE", "")
-	const plain = "Opus 5.5 · ctx 14% · $0.39/msg ▲ · $1.57 (agents $0.03)\n"
+	// statusline picks the basic palette, and it must not outlive the test.
+	t.Cleanup(func() { styles.SetBasic(false) })
+	in := statusInput(t, transcript, "Opus 5.5")
+	const plain = "Opus 5.5 · ctx 90%, 67.0K to ~compaction · $0.19\n"
 
-	// 92 is bright green, the basic palette's color below the band.
 	got, _, err := executeStatusline(t, in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "Opus 5.5 · ctx \x1b[92m14%\x1b[m · $0.39/msg ▲ · $1.57 (agents $0.03)\n"; got != want {
+	if want := "Opus 5.5 · ctx \x1b[93m90%\x1b[m, 67.0K to ~compaction · $0.19\n"; got != want {
 		t.Errorf("colored:\n got  %q\nwant %q", got, want)
 	}
 
