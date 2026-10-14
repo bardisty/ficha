@@ -499,13 +499,75 @@ func TestContextGaugeColorFollowsTheMark(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			line, _ := ContextGauge(tt.size, tt.max, tt.compactAt, 60, false, false)
+			line, _ := ContextGauge(reading(tt.size, tt.max, tt.compactAt), "Opus", 60, false, false)
 			pct := fmt.Sprintf("%3.0f%%", float64(tt.size)/float64(tt.max)*100)
 			want := lipgloss.NewStyle().Foreground(tt.want).Render(pct)
 			if !strings.HasPrefix(line, want) {
 				t.Errorf("line = %q, want it to start with %q", line, want)
 			}
 		})
+	}
+}
+
+// reading is a context reading of size tokens out of window, as
+// analyzer.ContextUsage builds one.
+func reading(size int64, window, compactAt int) models.ContextUsage {
+	return models.ContextUsage{Tokens: size, Window: window, Percent: float64(size) / float64(window) * 100, CompactAt: compactAt}
+}
+
+// A reading with no window shows its tokens and says why, naming the model
+// while there's room, and never a percentage, bar or compaction note.
+func TestContextGaugeWindowUnknown(t *testing.T) {
+	c := models.ContextUsage{Tokens: 680_400}
+	tests := []struct {
+		width    int
+		wantNote string
+	}{
+		{60, "window unknown for claude-mystery-9"},
+		{30, "window unknown"},
+		{10, ""},
+	}
+	for _, tt := range tests {
+		line, note := ContextGauge(c, "claude-mystery-9", tt.width, true, false)
+		if line != "680.4K tokens" {
+			t.Errorf("width %d: line = %q, want %q", tt.width, line, "680.4K tokens")
+		}
+		if note != tt.wantNote {
+			t.Errorf("width %d: note = %q, want %q", tt.width, note, tt.wantNote)
+		}
+	}
+	if line, _ := ContextGauge(c, "claude-mystery-9", 60, false, true); line != styles.HighlightStyle.Render("680.4K tokens") {
+		t.Errorf("highlighted line = %q", line)
+	}
+
+	// A model ficha knows has a window; this reading outgrew every one it
+	// knows, so the note says that rather than calling the model unknown.
+	over := models.ContextUsage{Tokens: 1_050_000}
+	for width, want := range map[int]string{60: "over the 1.00M window ficha knows for Opus 5.5", 30: "over the known window", 10: ""} {
+		if _, note := ContextGauge(over, "claude-opus-5-5", width, true, false); note != want {
+			t.Errorf("1.05M on Opus 5.5, width %d: note = %q, want %q", width, note, want)
+		}
+	}
+}
+
+func TestNumberShort(t *testing.T) {
+	tests := []struct {
+		n    int64
+		want string
+	}{
+		{512, "512"},
+		{1000, "1K"},
+		{95_400, "95K"},
+		{680_400, "680K"},
+		{999_499, "999K"},
+		{999_500, "1.0M"},
+		{1_050_000, "1.1M"},
+		{12_000_000, "12M"},
+	}
+	for _, tt := range tests {
+		if got := NumberShort(tt.n); got != tt.want {
+			t.Errorf("NumberShort(%d) = %q, want %q", tt.n, got, tt.want)
+		}
 	}
 }
 
@@ -562,7 +624,7 @@ func TestContextGauge(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			line, note := ContextGauge(tt.size, 1_000_000, 967_000, tt.width, true, false)
+			line, note := ContextGauge(reading(tt.size, 1_000_000, 967_000), "Opus 5.5", tt.width, true, false)
 			if line != tt.wantLine {
 				t.Errorf("line = %q, want %q", line, tt.wantLine)
 			}
@@ -600,6 +662,14 @@ func TestAgentContextCell(t *testing.T) {
 				t.Errorf("AgentContextCell = %q, want %q", got, tt.want)
 			}
 		})
+	}
+	// No window: the tokens, in the same 8 columns, and dim.
+	unknown := &models.ContextUsage{Tokens: 680_400}
+	if got, want := AgentContextCell(unknown, false), styles.DimStyle.Render("680K ctx"); got != want {
+		t.Errorf("window unknown = %q, want %q", got, want)
+	}
+	if got := AgentContextCell(&models.ContextUsage{Tokens: 1_050_000}, true); got != "1.1M ctx" {
+		t.Errorf("window unknown, no color = %q, want %q", got, "1.1M ctx")
 	}
 	if got := AgentContextCell(nil, false); got != "        " {
 		t.Errorf("nil reading = %q, want blanks", got)

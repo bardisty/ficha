@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -255,4 +256,31 @@ func TestBreakdownUnknownNoteFitsWidth(t *testing.T) {
 			t.Errorf("width %d: line is %d wide", tc.width, w)
 		}
 	}
+}
+
+// windowUnknownAnalysis is the golden session with its last request at
+// 680.4K on a model ficha doesn't know, and one agent's reading on that
+// model too.
+func windowUnknownAnalysis() *models.SessionAnalysis {
+	a := goldenViewAnalysis()
+	a.LastMessageModel = "claude-mystery-9"
+	a.CostByModel["claude-mystery-9"] = models.CostBreakdown{TotalCost: 1.20}
+	a.LastMessageUsage = models.TokenUsage{InputTokens: 400, CacheReadInputTokens: 680_000}
+	a.Agents[1].CostByModel = map[string]models.CostBreakdown{"claude-mystery-9": {TotalCost: 0.42}}
+	a.Agents[1].Context = &models.ContextUsage{Tokens: 680_400}
+	return a
+}
+
+// Without a window, the gauge gives the tokens and says why, and the footer
+// gives the tokens too: no percentage, bar or compaction note at any width.
+func TestGoldenWatchWindowUnknown(t *testing.T) {
+	for _, size := range [][2]int{{40, 15}, {60, 20}, {80, 24}} {
+		name := fmt.Sprintf("watch_window_unknown_%dx%d", size[0], size[1])
+		frame := goldenWatchViewOf(t, windowUnknownAnalysis(), true, size[0], size[1])
+		checkGolden(t, name, frame)
+		if strings.Contains(frame, "compaction") || !strings.Contains(frame, "ctx 680.4K") {
+			t.Errorf("%s: want no compaction note and a ctx 680.4K footer:\n%s", name, frame)
+		}
+	}
+	checkGolden(t, "watch_window_unknown_120x40_color", goldenWatchViewOf(t, windowUnknownAnalysis(), false, 120, 40))
 }

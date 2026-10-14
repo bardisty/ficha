@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -190,6 +191,43 @@ func TestGoldenMachineKeys(t *testing.T) {
 			}
 		}
 	})
+}
+
+// The key-set goldens take the union over every reading, so they can't show
+// a key that's left out. A reading on a model ficha can't price has no window:
+// its context carries tokens and nothing else, while a priced one keeps all
+// three keys.
+func TestContextKeysWindowUnknown(t *testing.T) {
+	setupKeysFixture(t)
+	out, stderr, err := executeCLISplit(t, "show", keysProj, keysFullID, "-f", "json")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, stderr)
+	}
+	var s struct {
+		Context map[string]any `json:"context"`
+		Agents  []struct {
+			WorkflowID string         `json:"workflow_id"`
+			Context    map[string]any `json:"context"`
+		} `json:"agents"`
+	}
+	mustJSON(t, out, &s)
+	keys := func(m map[string]any) []string { return slices.Sorted(maps.Keys(m)) }
+	if got := keys(s.Context); !slices.Equal(got, []string{"percent", "tokens", "window"}) {
+		t.Errorf("priced session's context keys = %v, want percent, tokens, window", got)
+	}
+	found := false
+	for _, a := range s.Agents {
+		if a.WorkflowID != "wf_keys-run" {
+			continue
+		}
+		found = true
+		if got := keys(a.Context); !slices.Equal(got, []string{"tokens"}) {
+			t.Errorf("claude-zeta-9 agent's context keys = %v, want tokens alone", got)
+		}
+	}
+	if !found {
+		t.Fatalf("no workflow agent in show json:\n%s", out)
+	}
 }
 
 // collectKeyTypes records the json type of every path under v. Arrays

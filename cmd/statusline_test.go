@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 )
 
@@ -20,7 +21,7 @@ func TestStatusLineParts(t *testing.T) {
 		return &models.SessionAnalysis{
 			TotalCost:  models.CostBreakdown{TotalCost: 43.66796885},
 			AgentsCost: models.CostBreakdown{TotalCost: 12.54245205},
-			Context:    &models.ContextUsage{Percent: 67.8235},
+			Context:    &models.ContextUsage{Tokens: 678235, Window: 1000000, Percent: 67.8235, CompactAt: 967000},
 			Insights:   insights(424, 0.18954351, models.TrendIncreasing),
 		}
 	}
@@ -43,6 +44,9 @@ func TestStatusLineParts(t *testing.T) {
 			"Opus 5.5 · ctx 68% · $43.67 (agents $12.54)"},
 		{"no context reading", "Opus 5.5", func(a *models.SessionAnalysis) { a.Context = nil },
 			"Opus 5.5 · $0.19/msg ▲ · $43.67 (agents $12.54)"},
+		// No window, no percentage: the tokens alone.
+		{"window unknown", "claude-mystery-9", func(a *models.SessionAnalysis) { a.Context = &models.ContextUsage{Tokens: 680400} },
+			"claude-mystery-9 · ctx 680.4K · $0.19/msg ▲ · $43.67 (agents $12.54)"},
 		{"no agents", "Opus 5.5", func(a *models.SessionAnalysis) { a.AgentsCost = models.CostBreakdown{} },
 			"Opus 5.5 · ctx 68% · $0.19/msg ▲ · $43.67"},
 		{"no model", "", nil, "ctx 68% · $0.19/msg ▲ · $43.67 (agents $12.54)"},
@@ -159,6 +163,7 @@ func lineFromShowJSON(t *testing.T, transcript, model string) string {
 		TotalCost  cost `json:"total_cost"`
 		AgentsCost cost `json:"agents_cost"`
 		Context    *struct {
+			Tokens  int64   `json:"tokens"`
 			Percent float64 `json:"percent"`
 		} `json:"context"`
 		Insights struct {
@@ -170,7 +175,11 @@ func lineFromShowJSON(t *testing.T, transcript, model string) string {
 		t.Fatal(err)
 	}
 	line := model
-	if s.Context != nil {
+	switch {
+	case s.Context == nil:
+	case s.Context.Percent == 0:
+		line += " · ctx " + render.Number(s.Context.Tokens)
+	default:
 		line += fmt.Sprintf(" · ctx %.0f%%", s.Context.Percent)
 	}
 	if s.Insights.CostTrend != nil {

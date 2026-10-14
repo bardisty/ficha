@@ -360,13 +360,23 @@ type SessionAnalysis struct {
 // Code's /context shows it: a session's last parent request for the table's
 // gauge, or an agent's own last request for its row.
 type ContextUsage struct {
-	Tokens  int64   `json:"tokens"`  // TokenUsage.ContextWindowSize of that request
-	Window  int     `json:"window"`  // The model's context window, from ficha's catalog
-	Percent float64 `json:"percent"` // Tokens / Window * 100, unrounded
+	Tokens int64 `json:"tokens"` // TokenUsage.ContextWindowSize of that request
+	// The window the reading is out of, from ficha's catalog or the 1M
+	// long-context window a larger request must have run on, and Tokens / Window
+	// * 100, unrounded. Both are 0, and json leaves them out, when ficha
+	// doesn't know the window (see WindowKnown).
+	Window  int     `json:"window,omitempty"`
+	Percent float64 `json:"percent,omitempty"`
 	// The model's ~compaction point, from ficha's catalog. Human output
 	// colors and words the reading against it; json leaves it out.
 	CompactAt int `json:"-"`
 }
+
+// WindowKnown reports whether ficha knows the window the reading is out of.
+// It doesn't for a model its catalog doesn't know, or for a reading larger
+// than any window it knows for the model. Human output then shows the
+// tokens alone.
+func (c ContextUsage) WindowKnown() bool { return c.Window > 0 }
 
 // WorkflowByID returns the metadata for a workflow run in this session, or a
 // runID-only fallback when the run isn't in the list (shouldn't happen for
