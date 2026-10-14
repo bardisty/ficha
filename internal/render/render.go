@@ -564,8 +564,11 @@ type ContextAgent struct {
 
 // gaugeNote fits the note under the gauge to width: the main reading's
 // forms, longest first, led by forms that add agent after main, the main
-// reading without its scope. The agent part goes before the main reading's
-// headroom does, and "(main session)" before the agent's own headroom.
+// reading without its scope. The agent part carries its own label, so the
+// unlabeled reading before it reads as the main session's; the panel is too
+// narrow to keep the scope as well. The agent part goes before the main
+// reading's headroom does. Only the agent's reading takes its zone's color,
+// as only the gauge's percentage takes the main reading's.
 func gaugeNote(forms []string, main string, agent *ContextAgent, width int, noColor bool) string {
 	paint := func(col color.Color, s string) string {
 		if noColor || s == "" {
@@ -575,12 +578,10 @@ func gaugeNote(forms []string, main string, agent *ContextAgent, width int, noCo
 	}
 	if agent != nil {
 		r := agent.Reading
-		label := "agent A" + ShortAgentID(agent.ID) + " "
-		long, short := label+CompactionWords(r.Tokens, r.CompactAt), label+fmt.Sprintf("%.0f%%", r.Percent)
-		sep := " " + styles.FieldSep + " "
-		for _, f := range [][2]string{{main + " (main session)" + sep, long}, {main + sep, long}, {main + sep, short}} {
-			if lipgloss.Width(f[0]+f[1]) <= width {
-				return paint(styles.NoteColor, f[0]) + paint(styles.ContextZoneColor(pricing.ContextZoneOf(r.Tokens, r.CompactAt)), f[1])
+		lead := main + " " + styles.FieldSep + " agent A" + ShortAgentID(agent.ID) + " "
+		for _, reading := range []string{CompactionWords(r.Tokens, r.CompactAt), fmt.Sprintf("%.0f%%", r.Percent)} {
+			if lipgloss.Width(lead+reading) <= width {
+				return paint(styles.NoteColor, lead) + paint(styles.ContextZoneColor(pricing.ContextZoneOf(r.Tokens, r.CompactAt)), reading)
 			}
 		}
 	}

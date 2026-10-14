@@ -87,8 +87,10 @@ func runningAgentsKey(a *models.SessionAnalysis, now time.Time) string {
 // nearestAgent is the running agent nearest ~compaction, when it's in its
 // warning band or past its mark and nearer its own mark than main, the
 // session's reading, is to its own. Each reading measures against its own
-// model's mark, as tokens over the mark, so an agent at 60% of a 200K
-// window outranks a session at 68% of a 1M one. nil when no agent does.
+// model's mark, as tokens over the mark, so an agent at 190K of a 200K mark
+// (95%) outranks a session at 900K of a 967K one (93%). A main reading with
+// no mark counts as far from one: ficha can't place it, and an agent near
+// its own mark is a warning by itself. nil when no agent qualifies.
 func nearestAgent(a *models.SessionAnalysis, main *models.ContextUsage, now time.Time) *models.AgentAnalysis {
 	var nearest *models.AgentAnalysis
 	best := markShare(main)

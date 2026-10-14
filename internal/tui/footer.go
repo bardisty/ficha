@@ -181,8 +181,9 @@ func (m Model) renderStatsLine(width int) string {
 		sep = styles.FooterStyle.Render(sep)
 	}
 	// A running agent nearer ~compaction rides on the ctx reading. It goes
-	// after the label, and before any whole reading, so the warning outlasts
-	// everything but the main readings.
+	// right after the label, before any whole reading: it adds to the ctx
+	// reading, and the readings it would push out stand on their own. The
+	// note under the gauge keeps it longer.
 	for _, label := range []bool{true, false} {
 		if line := strings.Join(m.statsSegments(label, true), sep); lipgloss.Width(line) <= width {
 			return line
