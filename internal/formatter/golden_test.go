@@ -132,8 +132,8 @@ func goldenShowAnalysis() *models.SessionAnalysis {
 				StartTime: goldenTime(10, 15, 0),
 				EndTime:   goldenTime(10, 25, 0),
 				Duration:  models.Duration(10 * time.Minute),
-				// Past ~compaction, so the color goldens show it red
-				Context: &models.ContextUsage{Tokens: 156000, Window: 200000, Percent: 78},
+				// At its 200K mark, so the color goldens show it red
+				Context: &models.ContextUsage{Tokens: 200000, Window: 200000, Percent: 100, CompactAt: 200000},
 			},
 			{
 				AgentID:      "f6e5d4c3b2a1",
@@ -145,7 +145,7 @@ func goldenShowAnalysis() *models.SessionAnalysis {
 				StartTime: goldenTime(11, 0, 0),
 				EndTime:   goldenTime(11, 2, 0),
 				Duration:  models.Duration(2 * time.Minute),
-				Context:   &models.ContextUsage{Tokens: 380000, Window: 1000000, Percent: 38},
+				Context:   &models.ContextUsage{Tokens: 380000, Window: 1000000, Percent: 38, CompactAt: 967000},
 			},
 		},
 		ParentCost: models.CostBreakdown{TotalCost: 7.90},
@@ -528,7 +528,8 @@ func goldenShowWorkflowAnalysis() *models.SessionAnalysis {
 			StartTime: goldenTime(11, 5, 0),
 			EndTime:   goldenTime(11, 15, 0),
 			Duration:  models.Duration(10 * time.Minute),
-			Context:   &models.ContextUsage{Tokens: 670000, Window: 1000000, Percent: 67},
+			// In the warning band short of its 967K mark, so the color goldens show it orange
+			Context: &models.ContextUsage{Tokens: 900000, Window: 1000000, Percent: 90, CompactAt: 967000},
 		},
 		models.AgentAnalysis{
 			AgentID:      "w6e5d4c3b2a1",

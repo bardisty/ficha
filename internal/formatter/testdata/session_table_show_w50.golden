@@ -11,8 +11,8 @@
   Cache read         $2.25           1.50M tokens
   Savings           $20.25
 
-  Context  38% [██████░░░░░░░░│░░░] 380.0K / 1.00M
-           370.0K to ~compaction
+  Context  38% [██████░░░░░░░░░░░│] 380.0K / 1.00M
+           587.0K to ~compaction
 
 ────────────────[ COST BY MODEL ]─────────────────
 
@@ -23,10 +23,10 @@
 ──────────────[ AGENT SUB-SESSIONS ]──────────────
 
   Parent session                           $7.90
-  [A1b2c3d4] Haiku 4.5    78% ctx          $0.4200
+  [A1b2c3d4] Haiku 4.5   100% ctx          $0.4200
   [Af6e5d4c] Sonnet 5     38% ctx          $1.58
   ── workflow: audit-codebase              $1.65
-  [Aw1a2b3c] Opus 4.8     67% ctx          $1.10
+  [Aw1a2b3c] Opus 4.8     90% ctx          $1.10
   [Aw6e5d4c] Sonnet 5                      $0.5500
   Agents subtotal                          $3.65
 

@@ -268,7 +268,7 @@ func (m Model) renderContextSection() string {
 	if contextSize == 0 {
 		return ""
 	}
-	maxContext := pricing.GetModelPricing(m.analysis.LastMessageModel).MaxContextTokens
+	modelPricing := pricing.GetModelPricing(m.analysis.LastMessageModel).ForContext(contextSize)
 
 	// The panel's 2-column inner indent and the "Context " label come first;
 	// the gauge right-aligns its percentage, so "Context  95%" and
@@ -280,7 +280,7 @@ func (m Model) renderContextSection() string {
 		avail = min(avail, m.width-2)
 	}
 	width := avail - 2 - 8
-	line, note := render.ContextGauge(contextSize, maxContext, width, m.noColor, m.isHighlighted("context_window"))
+	line, note := render.ContextGauge(contextSize, modelPricing.MaxContextTokens, modelPricing.CompactAtTokens, width, m.noColor, m.isHighlighted("context_window"))
 	if !m.noColor {
 		note = lipgloss.NewStyle().Foreground(styles.NoteColor).Render(note)
 	}

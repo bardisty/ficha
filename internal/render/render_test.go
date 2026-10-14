@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"testing"
 	"time"
@@ -430,24 +431,30 @@ func TestSectionHeader(t *testing.T) {
 
 func TestContextBar(t *testing.T) {
 	tests := []struct {
-		name  string
-		size  int64
-		max   int
-		width int
-		want  string
+		name      string
+		size      int64
+		max       int
+		compactAt int
+		width     int
+		want      string
 	}{
-		{"half full: tick in the free part", 50, 100, 20, "[██████████░░░░░│░░░░]"},
-		{"past compaction: tick inside the used part", 90, 100, 20, "[███████████████│██░░]"},
-		{"exactly at the tick", 75, 100, 20, "[███████████████│░░░░]"},
-		{"full", 100, 100, 8, "[██████│█]"},
-		{"over full clamps", 150, 100, 8, "[██████│█]"},
-		{"unknown window", 10, 0, 8, "[░░░░░░│░]"},
+		{"half full: tick in the free part", 50, 100, 75, 20, "[██████████░░░░░│░░░░]"},
+		{"past compaction: tick inside the used part", 90, 100, 75, 20, "[███████████████│██░░]"},
+		{"exactly at the tick", 75, 100, 75, 20, "[███████████████│░░░░]"},
+		{"full", 100, 100, 75, 8, "[██████│█]"},
+		{"over full clamps", 150, 100, 75, 8, "[██████│█]"},
+		// The tick takes the cell 967K falls in, not the nearest edge.
+		{"1M model: mark in the second-last cell", 678_200, 1_000_000, 967_000, 44, "[█████████████████████████████░░░░░░░░░░░░░│░]"},
+		{"1M model past its mark", 980_000, 1_000_000, 967_000, 20, "[███████████████████│]"},
+		{"mark at the end of the window takes the last cell", 100_000, 200_000, 200_000, 20, "[██████████░░░░░░░░░│]"},
+		{"full to a mark at the end", 200_000, 200_000, 200_000, 8, "[███████│]"},
+		{"unknown window", 10, 0, 0, 8, "[░░░░░░░│]"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ContextBar(tt.size, tt.max, tt.width, true)
+			got := ContextBar(tt.size, tt.max, tt.compactAt, tt.width, true)
 			if got != tt.want {
-				t.Errorf("ContextBar(%d, %d, %d) = %q, want %q", tt.size, tt.max, tt.width, got, tt.want)
+				t.Errorf("ContextBar(%d, %d, %d, %d) = %q, want %q", tt.size, tt.max, tt.compactAt, tt.width, got, tt.want)
 			}
 			if n := len([]rune(got)); n != tt.width+2 {
 				t.Errorf("width = %d runes, want %d", n, tt.width+2)
@@ -456,7 +463,7 @@ func TestContextBar(t *testing.T) {
 	}
 
 	// Color touches only the escapes, never the cells.
-	colored := ContextBar(90, 100, 20, false)
+	colored := ContextBar(90, 100, 75, 20, false)
 	if !strings.Contains(colored, "\x1b[") {
 		t.Errorf("colored bar has no escapes: %q", colored)
 	}
@@ -464,33 +471,72 @@ func TestContextBar(t *testing.T) {
 	// The ASCII glyph set: '#' used, '-' free, '|' tick.
 	styles.SetASCII(true)
 	t.Cleanup(func() { styles.SetASCII(false) })
-	if got, want := ContextBar(50, 100, 20, true), "[##########-----|----]"; got != want {
+	if got, want := ContextBar(50, 100, 75, 20, true), "[##########-----|----]"; got != want {
 		t.Errorf("ASCII bar = %q, want %q", got, want)
+	}
+	if got, want := ContextBar(980_000, 1_000_000, 967_000, 20, true), "[###################|]"; got != want {
+		t.Errorf("ASCII bar past a 1M mark = %q, want %q", got, want)
+	}
+}
+
+// The bar and the percentage take their color from the reading's zone
+// against its own mark, not from a fixed share of the window: 78% of a 1M
+// window is well short of 967K, and 90% of a 200K one is in the band.
+func TestContextGaugeColorFollowsTheMark(t *testing.T) {
+	tests := []struct {
+		name      string
+		size      int64
+		max       int
+		compactAt int
+		want      color.Color
+	}{
+		{"1M model at 78%", 780_000, 1_000_000, 967_000, styles.ContextLowColor},
+		{"1M model in the band", 900_000, 1_000_000, 967_000, styles.ContextHighColor},
+		{"1M model past its mark", 980_000, 1_000_000, 967_000, styles.ContextCriticalColor},
+		{"200K model at 78%", 156_000, 200_000, 200_000, styles.ContextLowColor},
+		{"200K model in the band", 180_000, 200_000, 200_000, styles.ContextHighColor},
+		{"200K model at its mark", 200_000, 200_000, 200_000, styles.ContextCriticalColor},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line, _ := ContextGauge(tt.size, tt.max, tt.compactAt, 60, false, false)
+			pct := fmt.Sprintf("%3.0f%%", float64(tt.size)/float64(tt.max)*100)
+			want := lipgloss.NewStyle().Foreground(tt.want).Render(pct)
+			if !strings.HasPrefix(line, want) {
+				t.Errorf("line = %q, want it to start with %q", line, want)
+			}
+		})
 	}
 }
 
 // The note keeps its reading whole at any width, shedding the scope first.
+// It counts tokens to or past the mark, so it reads true for any model.
 func TestContextNote(t *testing.T) {
 	tests := []struct {
-		size  int64
-		width int
-		want  string
+		size      int64
+		compactAt int
+		width     int
+		want      string
 	}{
-		{100_000, 60, "50.0K to ~compaction (main session, last request)"},
-		{100_000, 40, "50.0K to ~compaction"},
-		{100_000, 15, "50.0K left"},
-		{100_000, 5, ""},
-		{190_100, 60, "past ~compaction at 75% (main session, last request)"},
-		{190_100, 30, "past ~compaction at 75%"},
-		{190_100, 20, "past ~compaction"},
+		{100_000, 150_000, 60, "50.0K to ~compaction (main session, last request)"},
+		{100_000, 150_000, 40, "50.0K to ~compaction"},
+		{100_000, 150_000, 15, ""},
+		{100_000, 150_000, 5, ""},
+		{678_200, 967_000, 60, "288.8K to ~compaction (main session, last request)"},
+		{980_000, 967_000, 60, "13.0K past ~compaction (main session, last request)"},
+		{980_000, 967_000, 30, "13.0K past ~compaction"},
+		{980_000, 967_000, 20, "past ~compaction"},
+		{200_000, 200_000, 60, "at ~compaction (main session, last request)"},
+		{200_000, 200_000, 20, "at ~compaction"},
+		{200_000, 200_000, 10, ""},
 	}
 	for _, tt := range tests {
-		if got := contextNote(tt.size, 200_000, tt.width); got != tt.want {
-			t.Errorf("contextNote(%d, width %d) = %q, want %q", tt.size, tt.width, got, tt.want)
+		if got := contextNote(tt.size, tt.compactAt, tt.width); got != tt.want {
+			t.Errorf("contextNote(%d, %d, width %d) = %q, want %q", tt.size, tt.compactAt, tt.width, got, tt.want)
 		}
 	}
 	if got := contextNote(10, 0, 80); got != "" {
-		t.Errorf("unknown window: note = %q, want none", got)
+		t.Errorf("no mark: note = %q, want none", got)
 	}
 }
 
@@ -502,21 +548,21 @@ func TestContextGauge(t *testing.T) {
 		wantLine string
 		wantNote string
 	}{
-		{"fits: bar takes the rest", 190_100, 50,
-			" 95% [████████████████████│████░░] 190.1K / 200.0K",
-			"past ~compaction at 75%"},
-		{"headroom before compaction", 100_000, 50,
-			" 50% [█████████████░░░░░░░│░░░░░░] 100.0K / 200.0K",
-			"50.0K to ~compaction (main session, last request)"},
+		{"fits: bar takes the rest", 980_000, 50,
+			" 98% [███████████████████████████│] 980.0K / 1.00M",
+			"13.0K past ~compaction"},
+		{"headroom before compaction", 500_000, 50,
+			" 50% [██████████████░░░░░░░░░░░░░│] 500.0K / 1.00M",
+			"467.0K to ~compaction"},
 		// The bar outranks the counts: it carries the compaction tick.
-		{"narrow drops the counts before clipping", 190_100, 25,
-			" 95% [██████████████│██░]", ""},
-		{"narrower still keeps a floor-width bar", 190_100, 17, " 95% [████████│░]", ""},
-		{"narrowest keeps the percentage", 190_100, 8, " 95%", ""},
+		{"narrow drops the counts before clipping", 980_000, 25,
+			" 98% [█████████████████│]", ""},
+		{"narrower still keeps a floor-width bar", 980_000, 17, " 98% [█████████│]", ""},
+		{"narrowest keeps the percentage", 980_000, 8, " 98%", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			line, note := ContextGauge(tt.size, 200_000, tt.width, true, false)
+			line, note := ContextGauge(tt.size, 1_000_000, 967_000, tt.width, true, false)
 			if line != tt.wantLine {
 				t.Errorf("line = %q, want %q", line, tt.wantLine)
 			}
@@ -527,6 +573,36 @@ func TestContextGauge(t *testing.T) {
 				t.Errorf("note = %q, want %q", note, tt.wantNote)
 			}
 		})
+	}
+}
+
+// An agent's cell is dim until its reading enters its own model's warning
+// band, then takes the zone's color.
+func TestAgentContextCell(t *testing.T) {
+	dim := styles.DimStyle.Render(" 78% ctx")
+	tests := []struct {
+		name string
+		c    models.ContextUsage
+		want string
+	}{
+		{"1M model at 78% stays dim", models.ContextUsage{Tokens: 780_000, Window: 1_000_000, Percent: 78, CompactAt: 967_000}, dim},
+		{"200K model at 78% stays dim", models.ContextUsage{Tokens: 156_000, Window: 200_000, Percent: 78, CompactAt: 200_000}, dim},
+		{"1M model in the band", models.ContextUsage{Tokens: 900_000, Window: 1_000_000, Percent: 90, CompactAt: 967_000},
+			lipgloss.NewStyle().Foreground(styles.ContextHighColor).Render(" 90% ctx")},
+		{"1M model past its mark", models.ContextUsage{Tokens: 980_000, Window: 1_000_000, Percent: 98, CompactAt: 967_000},
+			lipgloss.NewStyle().Foreground(styles.ContextCriticalColor).Render(" 98% ctx")},
+		{"200K model at its mark", models.ContextUsage{Tokens: 200_000, Window: 200_000, Percent: 100, CompactAt: 200_000},
+			lipgloss.NewStyle().Foreground(styles.ContextCriticalColor).Render("100% ctx")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AgentContextCell(&tt.c, false); got != tt.want {
+				t.Errorf("AgentContextCell = %q, want %q", got, tt.want)
+			}
+		})
+	}
+	if got := AgentContextCell(nil, false); got != "        " {
+		t.Errorf("nil reading = %q, want blanks", got)
 	}
 }
 

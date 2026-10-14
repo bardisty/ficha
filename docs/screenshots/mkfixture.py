@@ -105,7 +105,7 @@ def ago(**kw):
 
 
 # The main conversation, ending moments before the capture so it reads as live.
-# Its context grows to about 70% of Opus's 1M window, just short of the
+# Its context grows to about 70% of Opus's 1M window, short of the ~967K
 # compaction mark, so the gauge shows both the fill and the mark ahead of it.
 # The growth rate gets there without hitting the cap, which would flatline
 # the cache-read column.
@@ -121,9 +121,9 @@ for end, n, model in [(ago(hours=2, minutes=20), 25, "claude-sonnet-5-5"), (ago(
 
 # One finished workflow run and one still running. Each agent is (end, message
 # count, growth); a count of None draws a short run. The running run's agents
-# are long and grow fast through their 1M windows, one ending past the
-# compaction mark and one short of it, so watch's context column shows both
-# warning colors beside the plain agent's dim reading.
+# are long and grow fast through their 1M windows, to 78% and 68%. Both stay
+# short of the band before the ~967K compaction mark, so their readings are
+# dim like the plain agent's.
 runs = [("wf_7f3a9c", "review-changes", "completed", [(ago(hours=1, minutes=30), None, 6000), (ago(hours=1, minutes=25), None, 6000), (ago(hours=1, minutes=18), None, 6000)]),
         ("wf_91bd02", "audit-codebase", "running", [(ago(seconds=25), 128, 10_600), (ago(minutes=1, seconds=10), 109, 11_400)])]
 for run, name, status, agents in runs:

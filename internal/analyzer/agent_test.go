@@ -123,14 +123,14 @@ func TestAnalyzeAgent_Context(t *testing.T) {
 	}
 	// msg_2, past the trailing synthetic line: 300 + 4000 + 45700, output
 	// excluded, of Haiku 4.5's 200K.
-	want := models.ContextUsage{Tokens: 50000, Window: 200000, Percent: 25}
+	want := models.ContextUsage{Tokens: 50000, Window: 200000, Percent: 25, CompactAt: 200000}
 	if analysis.Context == nil || *analysis.Context != want {
 		t.Errorf("Context = %+v, want %+v", analysis.Context, want)
 	}
 }
 
 // A [1m] model ID reads against the 1M window, though the catalog row's own
-// window is 200K.
+// window is 200K, and compacts when that window fills.
 func TestAnalyzeAgent_ContextLongWindow(t *testing.T) {
 	content := `{"type":"assistant","timestamp":"2026-01-15T10:00:00Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-sonnet-4-5[1m]","usage":{"input_tokens":10,"output_tokens":500,"cache_read_input_tokens":299990}}}
 `
@@ -138,7 +138,7 @@ func TestAnalyzeAgent_ContextLongWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AnalyzeAgent returned error: %v", err)
 	}
-	want := models.ContextUsage{Tokens: 300000, Window: 1000000, Percent: 30}
+	want := models.ContextUsage{Tokens: 300000, Window: 1000000, Percent: 30, CompactAt: 1000000}
 	if analysis.Context == nil || *analysis.Context != want {
 		t.Errorf("Context = %+v, want %+v", analysis.Context, want)
 	}

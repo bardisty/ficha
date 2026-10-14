@@ -8,6 +8,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/muesli/termenv"
+
+	"github.com/bardisty/ficha/internal/pricing"
 )
 
 // Glyphs. ficha draws with Unicode box-drawing characters and symbols by
@@ -206,10 +208,10 @@ var (
 	CacheWriteTokenColor color.Color // Warm orange - cost investment
 	CacheReadTokenColor  color.Color // Cyan - efficiency/savings
 
-	// Context usage level colors (thresholds based on ~75-78% compaction trigger)
-	ContextLowColor      color.Color // Green - 0-65%
-	ContextHighColor     color.Color // Orange - 65-75% (approaching compaction)
-	ContextCriticalColor color.Color // Red - 75%+ (compaction territory)
+	// Context usage colors, one per pricing.ContextZone
+	ContextLowColor      color.Color // Green - short of the warning band
+	ContextHighColor     color.Color // Orange - in the band, approaching ~compaction
+	ContextCriticalColor color.Color // Red - at or past ~compaction
 	ContextFreeColor     color.Color // free space in the context bar
 
 	// AgentColors is the cycling palette that tells sub-agents apart:
@@ -308,19 +310,15 @@ func rebuild() {
 	DimStyle = lipgloss.NewStyle().Foreground(SecondaryColor)
 }
 
-// ContextHighPct is where GetContextUsageColor turns from green to orange.
-const ContextHighPct = 65
-
-// GetContextUsageColor returns the appropriate color based on context usage percentage.
-// Thresholds aligned with Claude Code's ~75-78% auto-compaction trigger.
-func GetContextUsageColor(usagePct float64) color.Color {
-	switch {
-	case usagePct >= 75:
-		return ContextCriticalColor // Red - compaction territory
-	case usagePct >= ContextHighPct:
-		return ContextHighColor // Orange - approaching compaction
+// ContextZoneColor returns the color for a context reading in zone z.
+func ContextZoneColor(z pricing.ContextZone) color.Color {
+	switch z {
+	case pricing.ContextPast:
+		return ContextCriticalColor
+	case pricing.ContextNear:
+		return ContextHighColor
 	default:
-		return ContextLowColor // Green - comfortable
+		return ContextLowColor
 	}
 }
 

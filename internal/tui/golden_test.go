@@ -135,7 +135,7 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 				EndTime:     goldenTime(11, 29, 50),
 				TotalCost:   models.CostBreakdown{TotalCost: 1.58},
 				CostByModel: map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 1.58}},
-				Context:     &models.ContextUsage{Tokens: 380000, Window: 1000000, Percent: 38},
+				Context:     &models.ContextUsage{Tokens: 380000, Window: 1000000, Percent: 38, CompactAt: 967000},
 			},
 			{
 				AgentID:      "a1b2c3d4e5f6",
@@ -144,8 +144,8 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 				EndTime:      goldenTime(10, 40, 0),
 				TotalCost:    models.CostBreakdown{TotalCost: 0.42},
 				CostByModel:  map[string]models.CostBreakdown{"claude-haiku-4-5": {TotalCost: 0.42}},
-				// Past ~compaction, so the color goldens show it red
-				Context: &models.ContextUsage{Tokens: 156000, Window: 200000, Percent: 78},
+				// At its 200K mark, so the color goldens show it red
+				Context: &models.ContextUsage{Tokens: 200000, Window: 200000, Percent: 100, CompactAt: 200000},
 			},
 			// Workflow agents: exercise the dim group-header line. The first
 			// has no reading yet, so its row leaves the column blank.
@@ -166,7 +166,8 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 				EndTime:      goldenTime(11, 10, 0),
 				TotalCost:    models.CostBreakdown{TotalCost: 1.10},
 				CostByModel:  map[string]models.CostBreakdown{"claude-opus-4-8": {TotalCost: 1.10}},
-				Context:      &models.ContextUsage{Tokens: 670000, Window: 1000000, Percent: 67},
+				// In the warning band short of its 967K mark, so the color goldens show it orange
+				Context: &models.ContextUsage{Tokens: 900000, Window: 1000000, Percent: 90, CompactAt: 967000},
 			},
 		},
 		ParentCost:         models.CostBreakdown{TotalCost: 7.90},

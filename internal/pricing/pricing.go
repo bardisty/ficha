@@ -12,6 +12,7 @@ type ModelPricing struct {
 	OutputRate       float64 // Cost per million output tokens
 	CacheReadRate    float64 // Cost per million cache-read tokens; 0 = InputRate * CacheReadMultiplier
 	MaxContextTokens int     // Maximum context window size in tokens
+	CompactAtTokens  int     // Where Claude Code auto-compacts by default; see ContextZoneOf
 
 	// A request whose prompt is longer than LongPromptTokens bills every token,
 	// output included, at the long-prompt rates. 0 means one rate card.
@@ -29,6 +30,21 @@ func (p ModelPricing) ForPrompt(promptTokens int64) ModelPricing {
 		return p
 	}
 	p.InputRate, p.OutputRate = p.LongPromptInputRate, p.LongPromptOutputRate
+	return p
+}
+
+// ForContext returns the card a context reading of tokens is measured
+// against. Claude Code writes a model ID without its "[1m]" marker, so a
+// transcript doesn't say whether Opus 4.6 or Sonnet 4.6 ran on the 1M window.
+// A reading past their 200K mark says it did, since Claude Code would have
+// compacted it there otherwise, so the mark moves to the end of the window.
+// Only that reading counts: a 1M session that compacted and is climbing
+// again reads against 200K until it passes it, since the reading alone
+// can't tell it from a 200K session.
+func (p ModelPricing) ForContext(tokens int64) ModelPricing {
+	if tokens > int64(p.CompactAtTokens) && p.CompactAtTokens < min(p.MaxContextTokens, nativeLongContextCompactAt) {
+		p.CompactAtTokens = p.MaxContextTokens
+	}
 	return p
 }
 
@@ -50,6 +66,10 @@ type ModelInfo struct {
 	OutputRate       float64 // Cost per million output tokens
 	CacheReadRate    float64 // Absolute cache-read rate; 0 = InputRate * CacheReadMultiplier
 	MaxContextTokens int
+	// Where Claude Code auto-compacts the model by default. 0 = derived: a
+	// native 1M window compacts at nativeLongContextCompactAt, any other
+	// window when it fills.
+	CompactAtTokens int
 
 	// Rates for prompts over LongPromptTokens; see ModelPricing.ForPrompt
 	LongPromptTokens     int64
@@ -79,7 +99,9 @@ var modelCatalog = []ModelInfo{
 	// Opus 4.x
 	{ID: "claude-opus-4-8", DisplayName: "Opus 4.8", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
 	{ID: "claude-opus-4-7", DisplayName: "Opus 4.7", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
-	{ID: "claude-opus-4-6", DisplayName: "Opus 4.6", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
+	// Opus 4.6 and Sonnet 4.6 reach 1M only through "[1m]", so Claude Code
+	// compacts them at 200K without it; see ModelPricing.ForContext.
+	{ID: "claude-opus-4-6", DisplayName: "Opus 4.6", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000, CompactAtTokens: 200000},
 	{ID: "claude-opus-4-5", DisplayName: "Opus 4.5", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 200000},
 	{ID: "claude-opus-4-1", DisplayName: "Opus 4.1", InputRate: 15.00, OutputRate: 75.00, MaxContextTokens: 200000},
 	// "claude-opus-4-0" / "claude-sonnet-4-0" are the official aliases for
@@ -88,7 +110,7 @@ var modelCatalog = []ModelInfo{
 	{ID: "claude-opus-4-0", DisplayName: "Opus 4", InputRate: 15.00, OutputRate: 75.00, MaxContextTokens: 200000},
 	{ID: "claude-opus-4", DisplayName: "Opus 4", InputRate: 15.00, OutputRate: 75.00, MaxContextTokens: 200000},
 	// Sonnet 4.x
-	{ID: "claude-sonnet-4-6", DisplayName: "Sonnet 4.6", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 1000000},
+	{ID: "claude-sonnet-4-6", DisplayName: "Sonnet 4.6", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 1000000, CompactAtTokens: 200000},
 	{ID: "claude-sonnet-4-5", DisplayName: "Sonnet 4.5", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 200000},
 	{ID: "claude-sonnet-4-0", DisplayName: "Sonnet 4", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 200000},
 	{ID: "claude-sonnet-4", DisplayName: "Sonnet 4", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 200000},
@@ -118,6 +140,7 @@ func init() {
 			OutputRate:       m.OutputRate,
 			CacheReadRate:    m.CacheReadRate,
 			MaxContextTokens: m.MaxContextTokens,
+			CompactAtTokens:  compactAt(m),
 
 			LongPromptTokens:     m.LongPromptTokens,
 			LongPromptInputRate:  m.LongPromptInputRate,
@@ -131,12 +154,34 @@ func init() {
 	})
 }
 
+// nativeLongContextCompactAt is where Claude Code auto-compacts a model that
+// runs with a 1M window by default: about 967K tokens, per
+// https://code.claude.com/docs/en/model-config#default-auto-compact-thresholds.
+// Every other model compacts when its window fills.
+const nativeLongContextCompactAt = 967000
+
+// compactAt is a catalog row's compaction point: its own when set, else
+// derived from its window.
+func compactAt(m ModelInfo) int {
+	switch {
+	case m.CompactAtTokens > 0:
+		return m.CompactAtTokens
+	case m.MaxContextTokens >= longContextTokens:
+		return nativeLongContextCompactAt
+	default:
+		return m.MaxContextTokens
+	}
+}
+
 // Default pricing for unknown models: the Sonnet 4.x rates. The real rate can
 // be off in either direction, which is why unknown models carry a warning.
+// Claude Code compacts a model it doesn't recognize when the window it
+// assumes fills, so the mark sits at the end of the fallback window.
 var defaultPricing = ModelPricing{
 	InputRate:        3.00,
 	OutputRate:       15.00,
 	MaxContextTokens: 200000,
+	CompactAtTokens:  200000,
 }
 
 // SyntheticModel is the model name Claude Code writes on lines it records
@@ -152,7 +197,7 @@ const syntheticDisplayName = "synthetic"
 // syntheticPricing keeps the fallback context window rather than a zero one,
 // so a synthetic line that ever did carry tokens can't divide by zero or
 // read as a full window.
-var syntheticPricing = ModelPricing{MaxContextTokens: defaultPricing.MaxContextTokens}
+var syntheticPricing = ModelPricing{MaxContextTokens: defaultPricing.MaxContextTokens, CompactAtTokens: defaultPricing.CompactAtTokens}
 
 // longContextMarker is the suffix Claude Code appends to a model ID when the
 // 1M-context beta is active, e.g. "claude-opus-4-8[1m]".
@@ -185,6 +230,12 @@ func GetModelPricing(modelID string) ModelPricing {
 	}
 	if longContext && pricing.MaxContextTokens < longContextTokens {
 		pricing.MaxContextTokens = longContextTokens
+	}
+	// A model that reaches 1M only through the beta isn't a native 1M model,
+	// so Claude Code compacts it when the widened window fills. A native one
+	// keeps its earlier point.
+	if longContext && pricing.CompactAtTokens < nativeLongContextCompactAt {
+		pricing.CompactAtTokens = longContextTokens
 	}
 	return pricing
 }
@@ -385,6 +436,38 @@ func GetContextPercentage(pricing ModelPricing, currentUsage int64) float64 {
 		return 0
 	}
 	return float64(currentUsage) / float64(pricing.MaxContextTokens) * 100
+}
+
+// ContextZone places a context reading against its model's compaction point.
+type ContextZone int
+
+const (
+	ContextClear ContextZone = iota // short of the warning band
+	ContextNear                     // in the warning band, short of the mark
+	ContextPast                     // at the mark or past it
+)
+
+// warningBandShare is where the warning band starts, as a share of the
+// compaction point. It scales with the mark, so a 1M window doesn't warn
+// 300K early and a 200K one still gets a couple of turns' notice (30K).
+const warningBandShare = 0.85
+
+// ContextZoneOf reports where tokens sit against compactAt, the point
+// ModelPricing.CompactAtTokens gives. Everything that colors or words a
+// context reading asks this rather than comparing percentages, since the
+// mark's share of the window differs from model to model. A reading with no
+// mark (compactAt 0) is clear.
+func ContextZoneOf(tokens int64, compactAt int) ContextZone {
+	switch {
+	case compactAt <= 0:
+		return ContextClear
+	case tokens >= int64(compactAt):
+		return ContextPast
+	case float64(tokens) >= warningBandShare*float64(compactAt):
+		return ContextNear
+	default:
+		return ContextClear
+	}
 }
 
 // IsKnownModel returns true if the model ID is recognized
