@@ -361,7 +361,8 @@ type SessionAnalysis struct {
 // gauge, or an agent's own last request for its row.
 type ContextUsage struct {
 	Tokens int64 `json:"tokens"` // TokenUsage.ContextWindowSize of that request
-	// The model's context window, from ficha's catalog, and Tokens / Window
+	// The window the reading is out of, from ficha's catalog or the 1M
+	// long-context window a larger request must have run on, and Tokens / Window
 	// * 100, unrounded. Both are 0, and json leaves them out, when ficha
 	// doesn't know the window (see WindowKnown).
 	Window  int     `json:"window,omitempty"`

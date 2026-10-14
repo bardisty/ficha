@@ -62,8 +62,7 @@ Context
   Code settings can move it. A request larger than a 200K model's window
   reads against the 1M long-context window it must have run on. For a
   model ficha doesn't know, or a request larger than any window ficha knows
-  for its model, ficha shows the tokens alone and says the window is
-  unknown.
+  for its model, ficha shows the tokens alone and says why.
 
 Agents and workflows
   Agents are sub-sessions Claude started. Their cost is included in the
