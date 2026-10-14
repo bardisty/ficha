@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1610,5 +1611,65 @@ func TestCountSessionMessages_SkippedFiles(t *testing.T) {
 	// Without the scan nothing is parsed, so nothing is named.
 	if sessions[0].SkippedFiles != nil || sessions[0].SkippedLines != 0 {
 		t.Errorf("without the scan: got %+v; want no SkippedFiles", sessions[0])
+	}
+}
+
+func TestParseAgentMeta(t *testing.T) {
+	dir := t.TempDir()
+	tests := []struct {
+		name     string
+		meta     string // "" writes no meta file
+		size     int64  // when set, the meta file is padded past this size
+		wantType string
+		wantDesc string
+	}{
+		{name: "both", meta: `{"agentType":"Explore","description":"Find the auth middleware","spawnDepth":1}`,
+			wantType: "Explore", wantDesc: "Find the auth middleware"},
+		{name: "missing"},
+		{name: "empty description", meta: `{"agentType":"Explore","description":""}`, wantType: "Explore"},
+		{name: "type only", meta: `{"agentType":"general-purpose","spawnDepth":1}`, wantType: "general-purpose"},
+		{name: "oversized", meta: `{"agentType":"Explore","description":"Find it"}`, size: maxIndexFileSize},
+		{name: "malformed", meta: `{"agentType":"Explore","description":`},
+		{name: "wrong type", meta: `{"agentType":"Explore","description":42}`},
+		{name: "empty file", meta: " "},
+		// Raw: the escape is stripped where a row prints it, not here.
+		{name: "escape sequence", meta: `{"agentType":"Explore","description":"\u001b[31mRed\u001b[0m task\nline two"}`,
+			wantType: "Explore", wantDesc: "\x1b[31mRed\x1b[0m task\nline two"},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agentPath := filepath.Join(dir, fmt.Sprintf("agent-a%d.jsonl", i))
+			if tt.meta != "" {
+				content := tt.meta
+				if tt.size > 0 {
+					content += strings.Repeat(" ", int(tt.size))
+				}
+				metaPath := filepath.Join(dir, fmt.Sprintf("agent-a%d.meta.json", i))
+				if err := os.WriteFile(metaPath, []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			gotType, gotDesc := ParseAgentMeta(agentPath)
+			if gotType != tt.wantType || gotDesc != tt.wantDesc {
+				t.Errorf("ParseAgentMeta = (%q, %q), want (%q, %q)", gotType, gotDesc, tt.wantType, tt.wantDesc)
+			}
+		})
+	}
+}
+
+// A workflow agent's meta file sits beside its transcript in the run's
+// directory, as a plain agent's does in subagents/.
+func TestParseAgentMetaWorkflowAgent(t *testing.T) {
+	runDir := filepath.Join(t.TempDir(), "sess", "subagents", "workflows", "wf_run")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "agent-w1.meta.json"),
+		[]byte(`{"agentType":"general-purpose","description":"Review the parser changes"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gotType, gotDesc := ParseAgentMeta(filepath.Join(runDir, "agent-w1.jsonl"))
+	if gotType != "general-purpose" || gotDesc != "Review the parser changes" {
+		t.Errorf("ParseAgentMeta = (%q, %q)", gotType, gotDesc)
 	}
 }

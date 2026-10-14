@@ -163,7 +163,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	if expandAgents {
 		for _, r := range sorted {
 			if r.Analysis != nil && len(r.Analysis.Agents) > 0 {
-				deepestTree = max(deepestTree, agentTreeWidth(r.Analysis, 10, true))
+				deepestTree = max(deepestTree, agentTreeWidth(r.Analysis, 10, true, 0))
 			}
 		}
 	}
@@ -202,18 +202,48 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	}
 	modelWidth = max(modelWidth-max(rowWidth()-width, 0), minModelWidth)
 
-	// treeMsgs is whether agent rows show their message count, which goes
-	// from every row before any model would be cut to fit before COST: the
-	// model tells agents apart, the count doesn't.
+	// treeMsgs is whether agent rows show their message count, and treeTask
+	// how wide their task is (0 for none). The count goes from every row
+	// before a task would be cut, and the task, cut below minTaskWidth,
+	// before any model would be cut to fit before COST: the model tells
+	// agents apart, the count doesn't.
 	treeMsgs := true
+	treeTask := 0
 	if expandAgents {
 		// MODEL widens when the deepest agent row or a workflow label would
 		// run into COST, as far as the report's width allows; past that,
-		// agents' models and workflow labels are cut.
+		// agents' tasks, models and workflow labels are cut.
 		maxModelWidth := modelWidth + max(width-rowWidth(), 0)
 		maxCostCol := costCol() + maxModelWidth - modelWidth
+		taskWant := 0
 		for _, r := range sorted {
-			if r.Analysis != nil && len(r.Analysis.Agents) > 0 && agentTreeWidth(r.Analysis, 10, true)+2 > maxCostCol {
+			if r.Analysis != nil {
+				taskWant = max(taskWant, agentTaskWidth(r.Analysis.Agents))
+			}
+		}
+		// taskRoom is the widest task, up to taskWant, that every tree fits
+		// before maxCostCol with 10-column models.
+		taskRoom := func(msgs bool) int {
+			room := taskWant
+			for _, r := range sorted {
+				if r.Analysis != nil && len(r.Analysis.Agents) > 0 {
+					room = min(room, maxCostCol-2-agentTreeWidth(r.Analysis, 10, msgs, 0)-1)
+				}
+			}
+			return room
+		}
+		if taskWant > 0 {
+			if treeTask = taskRoom(true); treeTask < taskWant {
+				treeMsgs = false
+				treeTask = taskRoom(false)
+			}
+			if treeTask < min(taskWant, minTaskWidth) {
+				treeTask = 0
+				treeMsgs = true
+			}
+		}
+		for _, r := range sorted {
+			if r.Analysis != nil && len(r.Analysis.Agents) > 0 && agentTreeWidth(r.Analysis, 10, treeMsgs, treeTask)+2 > maxCostCol {
 				treeMsgs = false
 			}
 		}
@@ -222,8 +252,8 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 				continue
 			}
 			if len(r.Analysis.Agents) > 0 {
-				full := agentTreeWidth(r.Analysis, 10, treeMsgs) + 2 - costCol() + modelWidth
-				cut := agentTreeWidth(r.Analysis, minModelWidth, treeMsgs) + 2 - costCol() + modelWidth
+				full := agentTreeWidth(r.Analysis, 10, treeMsgs, treeTask) + 2 - costCol() + modelWidth
+				cut := agentTreeWidth(r.Analysis, minModelWidth, treeMsgs, treeTask) + 2 - costCol() + modelWidth
 				modelWidth = max(modelWidth, min(full, max(maxModelWidth, cut)))
 			}
 			for _, wf := range r.Analysis.Workflows {
@@ -308,6 +338,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 				costCol:   costCol(),
 				costWidth: costWidth,
 				msgs:      treeMsgs,
+				task:      treeTask,
 				status:    treeStatus,
 			}))
 		}
@@ -342,9 +373,10 @@ const (
 const minModelWidth = 6
 
 // agentTreeWidth is how wide an analysis's agent rows get before their cost:
-// connectors, marker, a modelWidth model and, with msgs, message count.
-// Workflow agents sit a level deeper than the rest.
-func agentTreeWidth(a *models.SessionAnalysis, modelWidth int, msgs bool) int {
+// connectors, marker, a taskWidth task (none when 0), a modelWidth model
+// and, with msgs, message count. Workflow agents sit a level deeper than the
+// rest.
+func agentTreeWidth(a *models.SessionAnalysis, modelWidth int, msgs bool, taskWidth int) int {
 	depth := 1
 	for _, agent := range a.Agents {
 		if agent.WorkflowID != "" {
@@ -352,6 +384,9 @@ func agentTreeWidth(a *models.SessionAnalysis, modelWidth int, msgs bool) int {
 		}
 	}
 	width := treeIndent + depth*treeStep + 10 + 1 + modelWidth
+	if taskWidth > 0 {
+		width += taskWidth + 1
+	}
 	if msgs {
 		width += 1 + agentMsgsWidth(a.Agents)
 	}
@@ -359,10 +394,12 @@ func agentTreeWidth(a *models.SessionAnalysis, modelWidth int, msgs bool) int {
 }
 
 // treeLayout places an agent tree's rows: each cost in a costWidth cell at
-// costCol, message counts shown with msgs, and workflow statuses with status.
+// costCol, message counts shown with msgs, tasks task columns wide (none
+// when 0), and workflow statuses with status.
 type treeLayout struct {
 	costCol, costWidth int
 	msgs, status       bool
+	task               int
 }
 
 // renderAgentTreeRows renders a session's agents as a tree under its row,
@@ -437,6 +474,11 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 		marker := fmt.Sprintf("%-10s", "[A"+render.ShortAgentID(agent.AgentID)+"]")
 		// Up to 10 columns, as many as leave the 2-column gap before COST.
 		room := costCol - 2 - lipgloss.Width(prefix) - 10 - 1
+		task := ""
+		if layout.task > 0 {
+			room -= layout.task + 1
+			task = padTask(agent.TaskLabel(), layout.task) + " "
+		}
 		if layout.msgs {
 			room -= 1 + msgsWidth
 		}
@@ -448,7 +490,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 			model = lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName)).Render(model)
 			msgs = styles.DimStyle.Render(msgs)
 		}
-		left := prefix + marker + " " + model
+		left := prefix + marker + " " + task + model
 		if layout.msgs {
 			left += " " + msgs
 		}

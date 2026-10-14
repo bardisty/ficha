@@ -256,6 +256,7 @@ func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessio
 func AnalyzeAgent(agentPath string) (*models.AgentAnalysis, error) {
 	var parse agentParse
 	parse.messages, parse.skips, parse.err = loadAgentMessages(agentPath, nil)
+	parse.agentType, parse.description = parser.ParseAgentMeta(agentPath)
 	analysis, _, err := analyzeAgentParse(agentPath, parse, models.TimeWindow{})
 	return analysis, err
 }
@@ -285,6 +286,8 @@ func analyzeAgentParse(agentPath string, parse agentParse, window models.TimeWin
 	analysis := &models.AgentAnalysis{
 		AgentID:      agentID,
 		FullPath:     agentPath,
+		AgentType:    parse.agentType,
+		Description:  parse.description,
 		MessageCount: len(messageAnalyses),
 		CostByModel:  make(map[string]models.CostBreakdown),
 		SkippedLines: skips.Count,

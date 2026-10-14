@@ -22,10 +22,10 @@
 
 ───────────────────────────[ AGENT SUB-SESSIONS ]───────────────────────────
 
-  Parent session                                $17.91
-  [A1b2c3d4] Haiku 4.5    12 msgs 100% ctx       $0.4231
-  [Af6e5d4c] Sonnet 5       1 msg  38% ctx      $12.35
-  Agents subtotal                               $12.77
+  Parent session                                              $17.91
+  [A1b2c3d4] Find the auth middleware Haiku 4.5   100% ctx     $0.4231
+  [Af6e5d4c] code-reviewer            Sonnet 5     38% ctx    $12.35
+  Agents subtotal                                             $12.77
 
 ────────────────────────────[ MESSAGE INSIGHTS ]────────────────────────────
 

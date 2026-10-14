@@ -181,6 +181,7 @@ func TestFormatSummaryDetailCSV_NoExpand(t *testing.T) {
 		"total_cost", "cache_savings", "cumulative_cost", "workflow_id",
 		"skipped_agents", "skipped_lines", "estimated_cost_messages",
 		"parent_cost", "agents_cost", "unpriced_models",
+		"agent_type", "description",
 	}
 	if len(records[0]) != len(wantHeader) {
 		t.Fatalf("header columns: got %d, want %d", len(records[0]), len(wantHeader))

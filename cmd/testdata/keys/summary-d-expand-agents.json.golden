@@ -5,6 +5,7 @@ sessions[].agent_message_count number
 sessions[].agents array
 sessions[].agents[] object
 sessions[].agents[].agent_id string
+sessions[].agents[].agent_type string
 sessions[].agents[].context object
 sessions[].agents[].context.percent number
 sessions[].agents[].context.tokens number
@@ -18,6 +19,7 @@ sessions[].agents[].cost_by_model.*.cache_write_5m_cost number
 sessions[].agents[].cost_by_model.*.input_cost number
 sessions[].agents[].cost_by_model.*.output_cost number
 sessions[].agents[].cost_by_model.*.total_cost number
+sessions[].agents[].description string
 sessions[].agents[].duration string
 sessions[].agents[].duration_seconds number
 sessions[].agents[].end_time string

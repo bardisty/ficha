@@ -191,3 +191,53 @@ func TestAnalyzeAgent_MissingFile(t *testing.T) {
 		t.Fatal("AnalyzeAgent on missing file should return error")
 	}
 }
+
+// Each agent takes its type and task from the meta file beside its
+// transcript, and an agent whose meta file is missing or broken still counts
+// in full, with neither.
+func TestAnalyzeSessionReadsAgentMeta(t *testing.T) {
+	dir := t.TempDir()
+	sessionID := "sess-meta"
+	sessionPath := filepath.Join(dir, sessionID+".jsonl")
+	line := func(ts, id string) string {
+		return `{"type":"assistant","timestamp":"` + ts + `","requestId":"req_` + id + `","message":{"id":"` + id + `","model":"claude-haiku-4-5","usage":{"input_tokens":100,"output_tokens":50}}}` + "\n"
+	}
+	write := func(path, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	subagents := filepath.Join(dir, sessionID, "subagents")
+	runDir := filepath.Join(subagents, "workflows", "wf_run")
+	write(sessionPath, line("2026-01-15T10:00:00Z", "p1"))
+	write(filepath.Join(subagents, "agent-meta.jsonl"), line("2026-01-15T10:01:00Z", "a1"))
+	write(filepath.Join(subagents, "agent-meta.meta.json"), `{"agentType":"Explore","description":"Find the auth middleware"}`)
+	write(filepath.Join(subagents, "agent-none.jsonl"), line("2026-01-15T10:02:00Z", "a2"))
+	write(filepath.Join(subagents, "agent-bad.jsonl"), line("2026-01-15T10:03:00Z", "a3"))
+	write(filepath.Join(subagents, "agent-bad.meta.json"), `{"agentType":`)
+	write(filepath.Join(runDir, "agent-wf.jsonl"), line("2026-01-15T10:04:00Z", "a4"))
+	write(filepath.Join(runDir, "agent-wf.meta.json"), `{"agentType":"general-purpose","description":"Review the parser changes"}`)
+
+	analysis, err := AnalyzeSession(sessionPath, sessionID, NoMessages)
+	if err != nil {
+		t.Fatalf("AnalyzeSession: %v", err)
+	}
+	if analysis.AgentCount != 4 || analysis.SkippedAgents != 0 {
+		t.Fatalf("AgentCount %d, SkippedAgents %d; want 4 and 0", analysis.AgentCount, analysis.SkippedAgents)
+	}
+	want := map[string][2]string{
+		"meta": {"Explore", "Find the auth middleware"},
+		"none": {"", ""},
+		"bad":  {"", ""},
+		"wf":   {"general-purpose", "Review the parser changes"},
+	}
+	for _, a := range analysis.Agents {
+		if got := [2]string{a.AgentType, a.Description}; got != want[a.AgentID] {
+			t.Errorf("agent %s: (type, description) = %q, want %q", a.AgentID, got, want[a.AgentID])
+		}
+	}
+}

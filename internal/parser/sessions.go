@@ -404,6 +404,32 @@ func ParseWorkflowMeta(projectDir, sessionID, runID string) (models.WorkflowMeta
 	return meta, true
 }
 
+// ParseAgentMeta reads the agent-<id>.meta.json Claude Code writes beside an
+// agent's transcript, for the agent's type and the task label its parent gave
+// it. A missing, oversized or malformed file yields empty strings: the meta
+// file only names the agent, so an agent without one still analyzes.
+func ParseAgentMeta(agentPath string) (agentType, description string) {
+	path := strings.TrimSuffix(agentPath, ".jsonl") + ".meta.json"
+	info, err := os.Stat(path)
+	if err != nil || info.Size() > maxIndexFileSize {
+		return "", ""
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", ""
+	}
+
+	var raw struct {
+		AgentType   string `json:"agentType"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return "", ""
+	}
+	return raw.AgentType, raw.Description
+}
+
 // countMessagesInFile counts the assistant messages a JSONL file contributes to
 // an analysis, and names the lines the parse rejected. It runs the very
 // parse the analysis paths run, so the two can never disagree: a line dropped

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode"
 
 	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
@@ -58,7 +57,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		idWidth = max(idWidth, len(ids[i]))
 		if r.Analysis != nil {
 			costs = append(costs, r.Analysis.TotalCost.TotalCost)
-			titleWidth = max(titleWidth, runewidth.StringWidth(cleanTitle(r.Analysis.Title)))
+			titleWidth = max(titleWidth, runewidth.StringWidth(models.OneLine(r.Analysis.Title)))
 		}
 	}
 	costWidth := render.CostCellWidth(len("COST"), costs...)
@@ -158,7 +157,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 			title := "(unreadable)"
 			if a != nil {
 				title = "(no replies yet)"
-				if t := cleanTitle(a.Title); t != "" {
+				if t := models.OneLine(a.Title); t != "" {
 					title = t
 				}
 			}
@@ -182,7 +181,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		if a.AgentCount > 0 {
 			agents = fmt.Sprintf("%*d", listAgentsWidth, a.AgentCount)
 		}
-		title := cleanTitle(a.Title)
+		title := models.OneLine(a.Title)
 		if title == "" {
 			title = "-"
 		}
@@ -243,24 +242,6 @@ func shortSessionIDs(results []models.SessionResult) []string {
 		ids[i] = id[:n]
 	}
 	return ids
-}
-
-// cleanTitle makes a transcript's title safe to print on one line, with
-// runs of whitespace collapsed.
-func cleanTitle(s string) string {
-	return strings.Join(strings.Fields(stripControl(s)), " ")
-}
-
-// stripControl replaces control characters with spaces. Titles and project
-// paths come from transcripts, so one could otherwise move the cursor or
-// recolor the terminal, and throw off the width of the line it's in.
-func stripControl(s string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return ' '
-		}
-		return r
-	}, s)
 }
 
 // truncateRight fits s into width display columns, ending in an ellipsis

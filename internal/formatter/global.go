@@ -155,7 +155,7 @@ func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOption
 		sum += p.TotalCost.TotalCost
 		costs = append(costs, p.TotalCost.TotalCost)
 		running = append(running, sum)
-		nameWidth = max(nameWidth, runewidth.StringWidth(stripControl(p.DisplayName)))
+		nameWidth = max(nameWidth, runewidth.StringWidth(models.StripControl(p.DisplayName)))
 	}
 	l.cost = render.CostCellWidth(costMinWidth, costs...)
 	if opts.Details && opts.SortBy == "cost" {
@@ -336,7 +336,7 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 		// Truncate project name from the left if needed, then pad by
 		// display width: fmt's %-Ns counts runes, so a wide (CJK/emoji) name
 		// would under-pad and shift every column to its right.
-		name := truncateLeft(stripControl(p.DisplayName), layout.project)
+		name := truncateLeft(models.StripControl(p.DisplayName), layout.project)
 		name += strings.Repeat(" ", layout.project-runewidth.StringWidth(name))
 
 		rank := fmt.Sprintf("%*d", rankWidth, i+1)
