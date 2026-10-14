@@ -588,6 +588,26 @@ func gaugeNote(forms []string, main string, agent *ContextAgent, width int, noCo
 	return paint(styles.NoteColor, firstFit(width, forms...))
 }
 
+// MinTaskWidth is as narrow as an agent's task gets in watch and breakdown
+// before it goes: two short words and an ellipsis, as show cuts it. A task
+// shorter than this is never cut.
+const MinTaskWidth = 12
+
+// FitTask fits an agent's task, models.AgentAnalysis.TaskLabel, into width
+// display columns, padded with spaces, or cut with an ellipsis that never
+// follows a space. Tasks are transcript text and can hold wide characters,
+// so it counts display columns, not bytes or runes.
+func FitTask(task string, width int) string {
+	if lipgloss.Width(task) > width {
+		r := []rune(task)
+		for len(r) > 0 && lipgloss.Width(string(r))+lipgloss.Width(styles.Ellipsis) > width {
+			r = r[:len(r)-1]
+		}
+		task = strings.TrimRight(string(r), " ") + styles.Ellipsis
+	}
+	return task + strings.Repeat(" ", max(width-lipgloss.Width(task), 0))
+}
+
 // AgentContextWidth is the width of AgentContextCell: "100% ctx".
 const AgentContextWidth = 8
 

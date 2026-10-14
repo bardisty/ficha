@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 )
 
 // Breakdown column widths, in display columns. Every cell is ASCII or
@@ -30,6 +31,7 @@ const (
 type breakdownLayout struct {
 	indexWidth int
 	agentWidth int  // 0 when AGENT isn't drawn
+	taskWidth  int  // columns AGENT gets past agentWidth for agents' tasks; 0 for none
 	modelExtra int  // columns MODEL gets past bdModelWidth, for unknown model IDs
 	runTags    bool // AGENT cells carry workflow run tags
 	in, out    bool
@@ -93,11 +95,38 @@ func (l breakdownLayout) widenModel(want, termWidth int) breakdownLayout {
 	return l
 }
 
+// widenAgent gives AGENT room for the agents' tasks after their markers,
+// want columns at most, from whatever the row leaves spare, as widenModel
+// does for MODEL. A task is a nicety beside a cost, so it never takes a
+// column from the others, and with less room than render.MinTaskWidth (or
+// the whole task, if shorter) it doesn't show at all.
+func (l breakdownLayout) widenAgent(want, termWidth int) breakdownLayout {
+	if l.agentWidth == 0 || want == 0 {
+		return l
+	}
+	room := want
+	if termWidth > 0 {
+		room = min(want, termWidth-l.width()-1)
+	}
+	if room >= min(want, render.MinTaskWidth) {
+		l.taskWidth = room
+	}
+	return l
+}
+
+// agentColumn is AGENT's width: its markers, and the tasks after them.
+func (l breakdownLayout) agentColumn() int {
+	if l.taskWidth > 0 {
+		return l.agentWidth + 1 + l.taskWidth
+	}
+	return l.agentWidth
+}
+
 // width is the display width of a row drawn with this layout, indent included.
 func (l breakdownLayout) width() int {
 	w := bdIndent + l.indexWidth + bdGap + bdTimeWidth + bdGap + l.modelWidth() + bdGap + bdCostWidth
 	if l.agentWidth > 0 {
-		w += bdGap + l.agentWidth
+		w += bdGap + l.agentColumn()
 	}
 	if l.in {
 		w += bdGap + bdInWidth
@@ -143,7 +172,7 @@ func (l breakdownLayout) header() string {
 	return l.join(breakdownCells{
 		index:      fmt.Sprintf("%-*s", l.indexWidth, "#"),
 		time:       fmt.Sprintf("%-*s", bdTimeWidth, "TIME"),
-		agent:      fmt.Sprintf("%-*s", l.agentWidth, "AGENT"),
+		agent:      fmt.Sprintf("%-*s", l.agentColumn(), "AGENT"),
 		model:      fmt.Sprintf("%-*s", l.modelWidth(), "MODEL"),
 		cost:       fmt.Sprintf("%*s", bdCostWidth, "COST"),
 		in:         fmt.Sprintf("%*s", bdInWidth, "IN"),

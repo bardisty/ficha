@@ -44,6 +44,7 @@ type BreakdownModel struct {
 	hasAgents      bool              // Any agent row in the merged list — drives the insight scope label
 	runTags        map[string]string // Workflow run ID -> AGENT-column run tag
 	runNames       map[string]string // AGENT-column run tag -> workflow name
+	tasks          map[string]string // Agent ID -> its task, for agents that have one
 	err            error
 	loading        bool
 	loaded         bool // a load has landed for this session; see showLoading
@@ -159,6 +160,7 @@ type (
 		unknownModels  []string
 		hasAgents      bool
 		workflows      []models.WorkflowMeta
+		tasks          map[string]string
 		modTime        time.Time // session file mtime at load; zero if unknown
 		// sessionPath identifies the session this load was started for. In
 		// follow mode a slow in-flight load for the previous session can land
@@ -389,6 +391,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.unknownModels = msg.unknownModels
 		m.hasAgents = msg.hasAgents
 		m.runTags = workflowRunTags(msg.workflows)
+		m.tasks = msg.tasks
 		m.runNames = make(map[string]string, len(msg.workflows))
 		for _, run := range msg.workflows {
 			m.runNames[m.runTags[run.RunID]] = runName(run)
@@ -600,6 +603,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.hasAgents = false
 	m.runTags = nil
 	m.runNames = nil
+	m.tasks = nil
 	m.totalCost = 0
 	m.minCost = 0
 	m.maxCost = 0
@@ -1264,6 +1268,16 @@ func (m BreakdownModel) agentCell(msg models.BreakdownMessage, withTag bool) str
 	return marker
 }
 
+// agentColumnCell is the AGENT cell padded to its column: agentCell, then,
+// when the layout has room, the agent's task.
+func (m BreakdownModel) agentColumnCell(msg models.BreakdownMessage, layout breakdownLayout) string {
+	cell := fmt.Sprintf("%-*s", layout.agentWidth, m.agentCell(msg, layout.runTags))
+	if layout.taskWidth == 0 {
+		return cell
+	}
+	return cell + " " + render.FitTask(m.tasks[msg.AgentID], layout.taskWidth)
+}
+
 // relayout works out the table's layout again. Call it whenever the rows,
 // the run tags or the width change, or columns misalign.
 func (m *BreakdownModel) relayout() { m.table = m.layout() }
@@ -1271,16 +1285,17 @@ func (m *BreakdownModel) relayout() { m.table = m.layout() }
 // layout picks the columns the table draws. See breakdownLayout. It walks
 // every row; View reads the copy in m.table.
 func (m BreakdownModel) layout() breakdownLayout {
-	markerWidth, cellWidth, lastIndex, modelWant := 0, 0, 0, 0
+	markerWidth, cellWidth, lastIndex, modelWant, taskWant := 0, 0, 0, 0, 0
 	for _, msg := range m.messages {
 		markerWidth = max(markerWidth, len(agentMarker(msg.AgentID)))
+		taskWant = max(taskWant, lipgloss.Width(m.tasks[msg.AgentID]))
 		cellWidth = max(cellWidth, len(m.agentCell(msg, true)))
 		lastIndex = max(lastIndex, msg.Index)
 		if !pricing.IsKnownModel(msg.Model) {
 			modelWant = max(modelWant, utf8.RuneCountInString(pricing.GetModelDisplayName(msg.Model))+len(unknownModelMarker))
 		}
 	}
-	return newBreakdownLayout(len(strconv.Itoa(lastIndex)), markerWidth, cellWidth, m.width).widenModel(modelWant, m.width)
+	return newBreakdownLayout(len(strconv.Itoa(lastIndex)), markerWidth, cellWidth, m.width).widenModel(modelWant, m.width).widenAgent(taskWant, m.width)
 }
 
 // renderRow renders a single message row
@@ -1297,7 +1312,7 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, layou
 	c := breakdownCells{
 		index: fmt.Sprintf("%-*d", layout.indexWidth, msg.Index),
 		time:  fmt.Sprintf("%-*s", bdTimeWidth, render.Clock(msg.Timestamp)),
-		agent: fmt.Sprintf("%-*s", layout.agentWidth, m.agentCell(msg, layout.runTags)),
+		agent: m.agentColumnCell(msg, layout),
 		model: fmt.Sprintf("%-*s", layout.modelWidth(), modelLabel),
 		cost:  render.CostCell(msg.Cost.TotalCost, bdCostWidth),
 		in:    fmt.Sprintf("%*s", bdInWidth, render.Number(msg.Usage.InputTokens)),
@@ -1405,6 +1420,7 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 		unknownModels:  unknownModelIDs(unknown),
 		hasAgents:      hasAgents,
 		workflows:      result.Workflows,
+		tasks:          result.Tasks,
 		modTime:        modTime,
 		sessionPath:    m.sessionPath,
 	}
