@@ -24,7 +24,7 @@ const idleAfter = 5 * time.Minute
 //	webapp │ 68994c84 │ ● FOLLOWING │ last msg 12s ago
 //
 // turning to "○ FOLLOWING │ idle 7m" once no message has landed for
-// idleAfter.
+// idleAfter, and to "⚠ FOLLOWING" while nothing can see a new session.
 type liveHeaderParams struct {
 	sessionID   string
 	loading     bool

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -224,21 +223,5 @@ func TestSessionWatcherBlindHeader(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-// A row too narrow for the whole notice cuts the description, never the
-// retry hint.
-func TestWatchFallbackNoticeKeepsRetryHint(t *testing.T) {
-	polling := watchFallback{err: watchUnavailableError{err: fmt.Errorf("inotify_init1: %w", syscall.EMFILE)}}
-	blind := polling
-	blind.blind = fmt.Errorf("open x: %w", os.ErrPermission)
-	for _, f := range []watchFallback{polling, blind} {
-		for _, w := range []int{80, 50, 38} {
-			got := f.notice(w)
-			if !strings.HasSuffix(got, "• r to retry") || lipgloss.Width(got) > w {
-				t.Errorf("notice(%d) = %q", w, got)
-			}
-		}
 	}
 }

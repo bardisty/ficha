@@ -293,4 +293,13 @@ func TestWatchFallbackNoticeKeepsRetryHintWhenNarrow(t *testing.T) {
 	if strings.Contains(got, "no watches") || !strings.HasSuffix(got, "r to retry") || lipgloss.Width(got) > 58 {
 		t.Errorf("notice(58) = %q, want the reason dropped for the retry hint", got)
 	}
+	// Narrower still, the description is cut, for a session watcher that
+	// can't even poll too.
+	blind := f
+	blind.blind = errors.New("permission denied")
+	for _, f := range []watchFallback{f, blind} {
+		if got := f.notice(38); !strings.HasSuffix(got, "r to retry") || lipgloss.Width(got) > 38 {
+			t.Errorf("notice(38) = %q, want the description cut for the retry hint", got)
+		}
+	}
 }
