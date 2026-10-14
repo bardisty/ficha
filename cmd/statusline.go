@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
@@ -24,6 +25,11 @@ func newStatuslineCmd(cfg *config) *cobra.Command {
 		Long: `Print one line for Claude Code's status line: the model, how full the
 context window is, what recent messages cost, and the session's total with
 the agents' share.
+
+Near ~compaction the context part says how far it is, as in
+"ctx 90%, 67.0K to ~compaction", or "past ~compaction" past the mark. It's
+colored in the terminal's basic colors; --no-color, NO_COLOR or CLICOLOR=0
+turns that off.
 
 Claude Code runs the command after each message and writes JSON about the
 session on stdin. statusline reads transcript_path and model.display_name
@@ -122,7 +128,15 @@ func runStatusline(cfg *config, stdin io.Reader) error {
 	if model == "" && analysis.LastMessageModel != "" {
 		model = pricing.GetModelDisplayName(analysis.LastMessageModel)
 	}
-	fmt.Fprintln(cfg.stdout, statusLine(model, analysis))
+	// Claude Code reads the line through a pipe, so the usual rule would
+	// leave it plain. It colors the line itself, so statusline opts in unless
+	// --no-color, NO_COLOR or CLICOLOR=0 says no. ficha can't ask a pipe for
+	// the terminal's background, so it uses the 16 basic colors, which the
+	// user's own terminal theme shades.
+	if !cfg.noColor {
+		styles.SetBasic(true)
+	}
+	fmt.Fprintln(cfg.stdout, statusLine(model, analysis, cfg.noColor))
 	return nil
 }
 
@@ -131,8 +145,10 @@ func runStatusline(cfg *config, stdin io.Reader) error {
 // nothing behind it is left out: the context before the first reply, the
 // recent cost before the trend has enough messages, the arrow while the
 // trend is stable, the agents' share when they cost nothing. Amounts take two
-// decimals and the context none, to keep the line short.
-func statusLine(model string, a *models.SessionAnalysis) string {
+// decimals and the context none, to keep the line short. In the warning band
+// and past the mark the context says how near ~compaction it is, as show's
+// note does, and unless noColor it takes the gauge's color.
+func statusLine(model string, a *models.SessionAnalysis, noColor bool) string {
 	var parts []string
 	if model != "" {
 		parts = append(parts, model)
@@ -141,6 +157,12 @@ func statusLine(model string, a *models.SessionAnalysis) string {
 		reading := render.Number(c.Tokens)
 		if c.WindowKnown() {
 			reading = fmt.Sprintf("%.0f%%", c.Percent)
+			if words := render.ContextWords(*c); words != "" {
+				reading += ", " + words
+			}
+			if !noColor {
+				reading = lipgloss.NewStyle().Foreground(styles.ContextZoneColor(pricing.ContextZoneOf(c.Tokens, c.CompactAt))).Render(reading)
+			}
 		}
 		parts = append(parts, "ctx "+reading)
 	}

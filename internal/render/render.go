@@ -634,9 +634,31 @@ func contextNotes(contextSize int64, compactAt int) []string {
 	const scope = " (main session, last request)"
 	reading := CompactionWords(contextSize, compactAt)
 	if contextSize > int64(compactAt) {
-		return []string{reading + scope, reading, "past ~compaction"}
+		return []string{reading + scope, reading, pastCompaction}
 	}
 	return []string{reading + scope, reading}
+}
+
+// pastCompaction is the shortest form of a reading past its mark.
+const pastCompaction = "past ~compaction"
+
+// ContextWords says how near ~compaction reading c is, for a line with no
+// room for the gauge, such as the statusline: nothing short of the warning
+// band, the headroom inside it ("67.0K to ~compaction"), and "at
+// ~compaction" or "past ~compaction" from the mark on. A count past the mark
+// says little there, since Claude Code is about to compact.
+func ContextWords(c models.ContextUsage) string {
+	switch pricing.ContextZoneOf(c.Tokens, c.CompactAt) {
+	case pricing.ContextNear:
+		return CompactionWords(c.Tokens, c.CompactAt)
+	case pricing.ContextPast:
+		if c.Tokens == int64(c.CompactAt) {
+			return CompactionWords(c.Tokens, c.CompactAt)
+		}
+		return pastCompaction
+	default:
+		return ""
+	}
 }
 
 // CompactionWords says how far tokens are from compactAt: "288.8K to

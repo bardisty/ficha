@@ -291,6 +291,8 @@ Claude Code passes `session_id` and `transcript_path` to hooks and to the status
 Opus 5.5 · ctx 68% · $0.19/msg ▲ · $72.77 (agents $41.65)
 ```
 
+Near ~compaction the context part says how far it is, as `ctx 90%, 67.0K to ~compaction`, and past the mark `ctx 98%, past ~compaction`, with the same mark `show` uses. It's green, yellow or red in your terminal's own colors. `--no-color` or `NO_COLOR=1` in the command turns that off.
+
 `$0.19/msg` is the average cost of recent messages in the main conversation. `▲` or `▼` means that's more than 20% above or below the session's average. The line leaves out the context before the first reply, the recent cost before the sixth message, and the agents' share when no agents ran.
 
 Add it to `~/.claude/settings.json`:
