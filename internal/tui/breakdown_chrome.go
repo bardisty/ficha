@@ -171,7 +171,7 @@ const emptyStateText = "No replies yet. Rows appear as Claude responds."
 // renderWaiting stands in for the table until the project has a session:
 // "Waiting for a Claude Code session in ~/work/webapp…", as in watch.
 func (m BreakdownModel) renderWaiting() string {
-	lines := waitingLines(m.waitingIn, m.waitingHint, m.width-2)
+	lines := waitingLines(m.waitingIn, m.waitingHint, m.panelWidth())
 	for i, line := range lines {
 		if !m.noColor {
 			line = styles.DimStyle.Render(line)

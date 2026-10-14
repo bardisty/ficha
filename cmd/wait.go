@@ -54,13 +54,14 @@ func waitingBreakdown(cfg *config) func(dir, projectPath string, hint []string) 
 // someone who meant one can switch. ok is false when waiting would hide a
 // real problem or a better answer: an explicit --project-dir, a missing or
 // empty projects directory (usually a wrong CLAUDE_CONFIG_DIR), a path that
-// isn't a directory, a project that recorded this path as its own, a -p path
-// with similarly but not identically named projects (a likely typo), a
-// subdirectory of a project with sessions, or a directory inside WSL seen
-// from the Windows build's default config, whose sessions will never show up
-// there. A repository or worktree root nested in such a project still waits:
-// Claude Code records sessions under the directory it starts in, and that is
-// where it would start.
+// isn't a directory, a project that recorded this path as its own, a
+// same-named project recorded from the other OS (it may be this directory),
+// a -p path with similarly named projects and none of the same name (a likely
+// typo), a subdirectory of a project with sessions, or a directory inside WSL
+// seen from the Windows build's default config, whose sessions will never
+// show up there. A repository or worktree root nested in such a project still
+// waits: Claude Code records sessions under the directory it starts in, and
+// that is where it would start.
 func waitingProject(cfg *config) (dir, projectPath string, hint []string, ok bool) {
 	if cfg.projectDir != "" {
 		return "", "", nil, false
@@ -88,27 +89,34 @@ func waitingProject(cfg *config) (dir, projectPath string, hint []string, ok boo
 	}
 	dir = filepath.Join(projectsDir, paths.PathToProjectDir(canonical))
 	if isDir(dir) {
-		sessions, err := parser.DiscoverSessionsFromDisk(dir)
-		return dir, canonical, nil, err == nil && len(sessions) == 0
+		// hasTranscripts can't tell an unreadable directory from an empty one
+		_, err := os.ReadDir(dir)
+		return dir, canonical, nil, err == nil && !hasTranscripts(dir)
 	}
 	all, err := parser.DiscoverAllProjects()
 	if err != nil || len(all) == 0 {
 		return "", "", nil, false
 	}
-	var sameName, others []models.ProjectInfo
+	var sameName []models.ProjectInfo
 	for _, p := range all {
 		// A folder name Claude Code shortened is found by its recorded path,
 		// and that project is this directory's own.
 		if p.OriginalPath == canonical {
 			return "", "", nil, false
 		}
-		if p.OriginalPath != "" && strings.EqualFold(paths.BasenameCrossOS(p.OriginalPath), filepath.Base(canonical)) {
-			sameName = append(sameName, p)
-		} else {
-			others = append(others, p)
+		if p.OriginalPath == "" || !strings.EqualFold(paths.BasenameCrossOS(p.OriginalPath), filepath.Base(canonical)) {
+			continue
 		}
+		// A path from the other OS, such as Windows' Claude Code seen through
+		// a shared config from WSL, may well be this directory under another
+		// name, and the name match is how the README says to reach it.
+		if !filepath.IsAbs(p.OriginalPath) {
+			return "", "", nil, false
+		}
+		sameName = append(sameName, p)
 	}
-	if cfg.projectPath != "" && len(similarProjects(canonical, others)) > 0 {
+	// Refusing with a same-named project would hand the view to it.
+	if cfg.projectPath != "" && len(sameName) == 0 && len(similarProjects(canonical, all)) > 0 {
 		return "", "", nil, false
 	}
 	return dir, canonical, sameNameHint(cfg, filepath.Base(canonical), sameName), true
@@ -125,7 +133,7 @@ func sameNameHint(cfg *config, name string, sameName []models.ProjectInfo) []str
 		p := sameName[0]
 		where, arg := tildePath(p.OriginalPath), projectArgs(p)
 		// "~" expands only unquoted
-		if filepath.IsAbs(p.OriginalPath) && shellQuote(where) == where {
+		if shellQuote(where) == where {
 			arg = "-p " + where
 		}
 		return []string{
@@ -133,7 +141,7 @@ func sameNameHint(cfg *config, name string, sameName []models.ProjectInfo) []str
 			where + " has sessions",
 		}
 	}
-	others := fmt.Sprintf("%d other projects named %s", len(sameName), name)
+	others := fmt.Sprintf("%d projects named %s", len(sameName), name)
 	return []string{others + " have sessions: ficha global", others + " have sessions", others}
 }
 

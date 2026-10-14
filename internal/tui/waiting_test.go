@@ -120,14 +120,19 @@ func TestWaitingHintFits(t *testing.T) {
 	long := "~/work/webapp has sessions: ficha watch -p ~/work/webapp"
 	short := "~/work/webapp has sessions"
 	hint := []string{long, short}
+	// The last case's one form is wider than a 40-column panel.
 	for _, tt := range []struct {
 		w, h int
 		want string
 	}{
 		{80, 24, long},
 		{40, 15, short},
-		{24, 15, ""},
+		{40, 15, ""},
 	} {
+		hint := hint
+		if tt.want == "" {
+			hint = []string{"~/projects/clients/acme/webapp has sessions"}
+		}
 		watch := sized(t, NewWaitingModel("/cfg/projects/-c-webapp", "~/clone/webapp", hint, true, true), tt.w, tt.h)
 		updated, _ := NewWaitingBreakdownModel("/cfg/projects/-c-webapp", "~/clone/webapp", hint, true, true).Update(tea.WindowSizeMsg{Width: tt.w, Height: tt.h})
 		for name, frame := range map[string]string{"watch": frameOf(watch), "breakdown": frameOf(updated)} {

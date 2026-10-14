@@ -103,7 +103,23 @@ func TestWaitingProject(t *testing.T) {
 	}
 	sameName("one same-named project", tildePath(withSessions)+" has sessions: ficha ")
 	addCwdProject(t, configDir, realDir(t, "other", "webapp"))
-	sameName("two same-named projects", "2 other projects named webapp have sessions: ficha global")
+	sameName("two same-named projects", "2 projects named webapp have sessions: ficha global")
+
+	// A similar name is no typo when the same name is there too: refusing
+	// would hand the view to the same-named project.
+	addCwdProject(t, configDir, realDir(t, "work", "webapp-api"))
+	sameName("same-named and similarly named projects", "2 projects named webapp have sessions: ficha global")
+
+	// From WSL with a shared Windows config, the same-named Windows project
+	// may be this very directory, so the name match keeps it.
+	winDir := filepath.Join(projects, "C--Users-me-src-mobile")
+	writeCwdSession(t, winDir, `C:\Users\me\src\mobile`)
+	if !filepath.IsAbs(`C:\Users\me\src\mobile`) {
+		mobileCfg := config{projectPath: realDir(t, "mnt", "c", "Users", "me", "src", "mobile")}
+		if _, _, _, ok := waitingProject(&mobileCfg); ok {
+			t.Error("waited beside a same-named project recorded from the other OS")
+		}
+	}
 
 	// A folder name Claude Code shortened doesn't match the path's encoding,
 	// but the project recorded the path, so it's this directory's own.
