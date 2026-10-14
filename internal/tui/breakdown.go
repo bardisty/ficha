@@ -845,7 +845,7 @@ func (m BreakdownModel) renderNotifyRow() string {
 		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render(text)
 	}
 	if f := shownFallback(m.fallback, m.sessionFallback); f.active() {
-		text := f.notice(m.panelWidth())
+		text := withinWidth(f.notice(m.panelWidth()), m.panelWidth())
 		if m.noColor {
 			return "  " + text
 		}
@@ -995,7 +995,10 @@ func (m BreakdownModel) renderHeaderPanel(width int) string {
 // headerParams fills the shared live header the way watch does, so the two
 // TUIs' headers read the same.
 func (m BreakdownModel) headerParams(width int) liveHeaderParams {
-	mode := followLabel(m.followMode, m.sessionFallback)
+	mode := "PINNED"
+	if m.followMode {
+		mode = "FOLLOWING"
+	}
 	return liveHeaderParams{
 		sessionID:    m.sessionID,
 		loading:      m.showLoading(),
@@ -1006,6 +1009,7 @@ func (m BreakdownModel) headerParams(width int) liveHeaderParams {
 		project:      m.project,
 		mode:         mode,
 		waiting:      m.waiting(),
+		blind:        m.followMode && m.sessionFallback.blind != nil,
 		lastActivity: m.lastActivity,
 		noMessages:   m.activityFromFile,
 		now:          m.clock(),

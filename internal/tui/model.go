@@ -228,18 +228,6 @@ func NewWaitingModel(projectDir, projectPath string, hint []string, noColor, fol
 // waiting reports whether watch has no session yet.
 func (m Model) waiting() bool { return m.sessionPath == "" }
 
-// followLabel is the header's mode: FOLLOWING promises that a new session
-// will be seen, so it isn't used while nothing can see one.
-func followLabel(following bool, f watchFallback) string {
-	switch {
-	case !following:
-		return "PINNED"
-	case f.blind != nil:
-		return "NOT FOLLOWING"
-	}
-	return "FOLLOWING"
-}
-
 // waitingLines is a waiting view's message and the hint under it, fitted to
 // width columns. The message drops the directory when it doesn't fit, and
 // the hint takes its first form that fits or is left out: wrapped, either

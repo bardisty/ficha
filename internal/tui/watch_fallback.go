@@ -88,7 +88,8 @@ type watchFallback struct {
 }
 
 // notice is the notify-row text while polling. A row too narrow for all of
-// it drops the reason before the retry hint, which says what to do.
+// it drops the reason, then cuts the description, before the retry hint,
+// which says what to do.
 func (f watchFallback) notice(width int) string {
 	tail := " " + styles.Bullet + " r to retry"
 	full, short := describeErr(f.err), watchUnavailableText("")
@@ -96,11 +97,14 @@ func (f watchFallback) notice(width int) string {
 		short = "can't watch for new sessions"
 		full = short + " (" + pathErrText(f.blind) + ")"
 	}
-	text := styles.Warning + " " + full + tail
-	if lipgloss.Width(text) > width {
-		text = styles.Warning + " " + short + tail
+	text := styles.Warning + " " + full
+	if lipgloss.Width(text+tail) > width {
+		text = styles.Warning + " " + short
 	}
-	return text
+	if lipgloss.Width(text+tail) > width {
+		text = withEllipsis(text, max(width-lipgloss.Width(tail), 1))
+	}
+	return text + tail
 }
 
 // pathErrText is err without the path a *fs.PathError carries, which the

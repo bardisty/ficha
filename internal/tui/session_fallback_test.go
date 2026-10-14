@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -194,7 +195,7 @@ func TestSessionWatcherRetryTakesUpFsnotify(t *testing.T) {
 }
 
 // When even the poll can't list the project directory, nothing will see a
-// new session, and the header doesn't claim to follow.
+// new session, and the header's follow mode carries a warning.
 func TestSessionWatcherBlindHeader(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("needs a directory the process can't list")
@@ -211,13 +212,33 @@ func TestSessionWatcherBlindHeader(t *testing.T) {
 			m := v.open(dir, sessA, true)
 			m, _ = m.Update(v.start(m)())
 			t.Cleanup(func() { v.watcher(m).Stop() })
-			frame := frameOf(m)
-			if !strings.Contains(frame, "NOT FOLLOWING") {
-				t.Errorf("header still says following:\n%s", frame)
-			}
 			if got, want := v.notify(m), "can't watch for new sessions (permission denied) • r to retry"; !strings.Contains(got, want) {
 				t.Errorf("notify row = %q, want %q", got, want)
 			}
+			// At the boxed header's narrowest the mode still fits whole.
+			for _, w := range []int{80, 40} {
+				m, _ = m.Update(tea.WindowSizeMsg{Width: w, Height: 24})
+				frame := frameOf(m)
+				if strings.Contains(frame, "● FOLLOWING") || !strings.Contains(frame, "⚠ FOLLOWING │") {
+					t.Errorf("%d columns: header doesn't warn that it can't follow:\n%s", w, frame)
+				}
+			}
 		})
+	}
+}
+
+// A row too narrow for the whole notice cuts the description, never the
+// retry hint.
+func TestWatchFallbackNoticeKeepsRetryHint(t *testing.T) {
+	polling := watchFallback{err: watchUnavailableError{err: fmt.Errorf("inotify_init1: %w", syscall.EMFILE)}}
+	blind := polling
+	blind.blind = fmt.Errorf("open x: %w", os.ErrPermission)
+	for _, f := range []watchFallback{polling, blind} {
+		for _, w := range []int{80, 50, 38} {
+			got := f.notice(w)
+			if !strings.HasSuffix(got, "• r to retry") || lipgloss.Width(got) > w {
+				t.Errorf("notice(%d) = %q", w, got)
+			}
+		}
 	}
 }
