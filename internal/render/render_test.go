@@ -520,7 +520,7 @@ func TestContextNote(t *testing.T) {
 	}{
 		{100_000, 150_000, 60, "50.0K to ~compaction (main session, last request)"},
 		{100_000, 150_000, 40, "50.0K to ~compaction"},
-		{100_000, 150_000, 15, "50.0K left"},
+		{100_000, 150_000, 15, ""},
 		{100_000, 150_000, 5, ""},
 		{678_200, 967_000, 60, "288.8K to ~compaction (main session, last request)"},
 		{980_000, 967_000, 60, "13.0K past ~compaction (main session, last request)"},

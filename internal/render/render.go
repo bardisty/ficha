@@ -552,7 +552,8 @@ func AgentContextCell(c *models.ContextUsage, noColor bool) string {
 // compactAt rather than naming the mark's share of the window, which differs
 // from model to model. It sheds the scope before the reading, and a shorter
 // reading before nothing at all, so a narrow terminal never cuts the
-// headroom figure or the warning mid-word.
+// headroom figure or the warning mid-word. The headroom has no shorter form:
+// "288.8K left" beside "678.2K / 1.00M" reads as room in the window.
 func contextNote(contextSize int64, compactAt, width int) string {
 	if compactAt <= 0 {
 		return ""
@@ -562,7 +563,7 @@ func contextNote(contextSize int64, compactAt, width int) string {
 	switch headroom := int64(compactAt) - contextSize; {
 	case headroom > 0:
 		reading := Number(headroom) + " to ~compaction"
-		forms = []string{reading + scope, reading, Number(headroom) + " left"}
+		forms = []string{reading + scope, reading}
 	case headroom == 0:
 		forms = []string{"at ~compaction" + scope, "at ~compaction"}
 	default:

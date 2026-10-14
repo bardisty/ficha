@@ -228,7 +228,7 @@ func (m Model) statsSegments(label bool) []string {
 	segs = append(segs, totalSeg)
 
 	if contextSize := a.LastMessageUsage.ContextWindowSize(); contextSize > 0 {
-		modelPricing := pricing.GetModelPricing(a.LastMessageModel)
+		modelPricing := pricing.GetModelPricing(a.LastMessageModel).ForContext(contextSize)
 		pct := pricing.GetContextPercentage(modelPricing, contextSize)
 		ctxStyle := lipgloss.NewStyle().Foreground(styles.ContextZoneColor(pricing.ContextZoneOf(contextSize, modelPricing.CompactAtTokens)))
 		segs = append(segs, style(styles.FooterStyle, "ctx ")+style(ctxStyle, fmt.Sprintf("%.0f%%", pct)))

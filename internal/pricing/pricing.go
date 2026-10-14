@@ -33,6 +33,18 @@ func (p ModelPricing) ForPrompt(promptTokens int64) ModelPricing {
 	return p
 }
 
+// ForContext returns the card a context reading of tokens is measured
+// against. Claude Code writes a model ID without its "[1m]" marker, so a
+// transcript doesn't say whether Opus 4.6 or Sonnet 4.6 ran on the 1M window.
+// A reading past their 200K mark says it did, since Claude Code would have
+// compacted it there otherwise, so the mark moves to the end of the window.
+func (p ModelPricing) ForContext(tokens int64) ModelPricing {
+	if tokens > int64(p.CompactAtTokens) && p.CompactAtTokens < min(p.MaxContextTokens, nativeLongContextCompactAt) {
+		p.CompactAtTokens = p.MaxContextTokens
+	}
+	return p
+}
+
 // Cache multipliers (relative to input rate). Cache reads are the only bucket
 // a catalog row may override with an absolute rate (see ModelInfo.CacheReadRate).
 const (
@@ -85,7 +97,7 @@ var modelCatalog = []ModelInfo{
 	{ID: "claude-opus-4-8", DisplayName: "Opus 4.8", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
 	{ID: "claude-opus-4-7", DisplayName: "Opus 4.7", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
 	// Opus 4.6 and Sonnet 4.6 reach 1M only through "[1m]", so Claude Code
-	// compacts them at 200K without it.
+	// compacts them at 200K without it; see ModelPricing.ForContext.
 	{ID: "claude-opus-4-6", DisplayName: "Opus 4.6", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000, CompactAtTokens: 200000},
 	{ID: "claude-opus-4-5", DisplayName: "Opus 4.5", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 200000},
 	{ID: "claude-opus-4-1", DisplayName: "Opus 4.1", InputRate: 15.00, OutputRate: 75.00, MaxContextTokens: 200000},

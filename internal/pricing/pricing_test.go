@@ -801,6 +801,30 @@ func TestGetModelPricingCompactAt(t *testing.T) {
 	}
 }
 
+// The transcript's model ID never carries "[1m]", so a reading past Opus
+// 4.6's or Sonnet 4.6's 200K mark moves the mark to the end of their window.
+// Other rows keep theirs.
+func TestForContext(t *testing.T) {
+	tests := []struct {
+		modelID string
+		tokens  int64
+		want    int
+	}{
+		{"claude-opus-4-6", 150000, 200000},
+		{"claude-opus-4-6", 200000, 200000},
+		{"claude-opus-4-6", 500000, 1000000},
+		{"claude-sonnet-4-6-20260101", 200001, 1000000},
+		{"claude-opus-5-5", 980000, 967000},
+		{"claude-haiku-4-5", 200000, 200000},
+		{"unknown-model", 300000, 200000},
+	}
+	for _, tt := range tests {
+		if got := GetModelPricing(tt.modelID).ForContext(tt.tokens).CompactAtTokens; got != tt.want {
+			t.Errorf("GetModelPricing(%q).ForContext(%d).CompactAtTokens = %d, want %d", tt.modelID, tt.tokens, got, tt.want)
+		}
+	}
+}
+
 func TestContextZoneOf(t *testing.T) {
 	tests := []struct {
 		name      string

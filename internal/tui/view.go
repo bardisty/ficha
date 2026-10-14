@@ -268,7 +268,7 @@ func (m Model) renderContextSection() string {
 	if contextSize == 0 {
 		return ""
 	}
-	modelPricing := pricing.GetModelPricing(m.analysis.LastMessageModel)
+	modelPricing := pricing.GetModelPricing(m.analysis.LastMessageModel).ForContext(contextSize)
 
 	// The panel's 2-column inner indent and the "Context " label come first;
 	// the gauge right-aligns its percentage, so "Context  95%" and

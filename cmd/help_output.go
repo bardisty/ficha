@@ -54,10 +54,12 @@ Context
   Code's /context shows, out of the model's window. It's a snapshot, not a
   running total. Agents have context windows of their own: AGENT
   SUB-SESSIONS reads each one's the same way, from its latest request.
-  The bar's tick marks ~compaction, where Claude Code compacts the model by
-  default: about 967K tokens on a model with a native 1M window, the end
-  of the window on others (code.claude.com/docs/en/model-config). It's
-  approximate, and your Claude Code settings can move it.
+  The bar's tick marks ~compaction, where Claude Code auto-compacts the
+  conversation by default: about 967K tokens on models with a native 1M
+  window, 200K on Opus 4.6 and Sonnet 4.6 until a request goes past it,
+  and the end of the window on the rest, per
+  code.claude.com/docs/en/model-config. It's approximate, and your Claude
+  Code settings can move it.
 
 Agents and workflows
   Agents are sub-sessions Claude started. Their cost is included in the

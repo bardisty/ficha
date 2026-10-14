@@ -113,7 +113,7 @@ func renderContextSection(analysis *models.SessionAnalysis, width int, noColor b
 	if contextSize == 0 {
 		return ""
 	}
-	modelPricing := pricing.GetModelPricing(analysis.LastMessageModel)
+	modelPricing := pricing.GetModelPricing(analysis.LastMessageModel).ForContext(contextSize)
 
 	// Fill the section after the "  Context " label; the gauge right-aligns
 	// its percentage, so "Context  95%" and "Context 100%" align.

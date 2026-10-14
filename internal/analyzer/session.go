@@ -339,7 +339,7 @@ func ContextUsage(usage models.TokenUsage, model string) *models.ContextUsage {
 	if tokens == 0 {
 		return nil
 	}
-	p := pricing.GetModelPricing(model)
+	p := pricing.GetModelPricing(model).ForContext(tokens)
 	return &models.ContextUsage{Tokens: tokens, Window: p.MaxContextTokens, Percent: pricing.GetContextPercentage(p, tokens), CompactAt: p.CompactAtTokens}
 }
 
