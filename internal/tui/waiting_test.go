@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,25 +72,25 @@ func TestSessionWatcherAdoptsNewProjectDir(t *testing.T) {
 	}
 }
 
-// If the session watcher can't start, the waiting view says so and r
+// If the session watcher can't use fsnotify, the waiting view says so and r
 // retries it, rather than offering a retry that does nothing.
 func TestWaitingWatcherFailureRetries(t *testing.T) {
+	failSessionWatch(t)
 	m := NewWaitingModel(t.TempDir()+"/-w-webapp", "~/work/webapp", nil, true, true)
 	m = sized(t, m, 80, 24)
-	m = send(t, m, errorMsg{err: errors.New("too many open files")})
-	if !strings.Contains(frameOf(m), "too many open files") {
+	m = send(t, m, m.startSessionWatcher()())
+	defer m.sessionWatcher.Stop()
+	if !strings.Contains(frameOf(m), unavailableText) {
 		t.Fatalf("watcher failure not shown:\n%s", frameOf(m))
 	}
-	updated, cmd := m.Update(keyMsg(t, "r"))
-	m = updated.(Model)
-	if cmd == nil || m.err != nil {
+	_, cmd := m.Update(keyMsg(t, "r"))
+	if cmd == nil {
 		t.Fatal("r didn't retry the session watcher")
 	}
-	started, ok := cmd().(sessionWatcherStartedMsg)
-	if !ok {
-		t.Fatalf("retry produced %T, want sessionWatcherStartedMsg", cmd())
+	cmd()
+	if _, ok := m.waitForNewSession()().(sessionWatcherStartedMsg); !ok {
+		t.Fatal("r's retry wasn't made and reported")
 	}
-	started.watcher.Stop()
 }
 
 // A session that lands between the decision to wait and the watcher's start

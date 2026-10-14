@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -46,6 +48,13 @@ type SessionWatcher struct {
 	nextPoll   time.Time
 	polls      int
 	dirPending bool // the project directory hadn't appeared at Start
+
+	// retryCh asks the waiter to try fsnotify again; see RetryWatch.
+	// retryErr is the outcome it reports. watchMu orders the waiter's
+	// setting watcher against Stop closing it.
+	retryCh  chan struct{}
+	retryErr error
+	watchMu  sync.Mutex
 }
 
 // sessionSig is a session file's size and mtime.
@@ -71,6 +80,7 @@ func NewSessionWatcher(projectDir, currentSession string) *SessionWatcher {
 		pollEvery:      subagentPollInterval,
 		done:           make(chan struct{}),
 		restartCh:      make(chan struct{}),
+		retryCh:        make(chan struct{}, 1),
 	}
 }
 
@@ -111,32 +121,18 @@ func (sw *SessionWatcher) SetCurrentSession(sessionID string) {
 	}
 }
 
-// Start begins watching the project directory for new session files
-func (sw *SessionWatcher) Start() error {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return err
-	}
-	sw.watcher = watcher
+// newFsnotifyWatcher creates the session watcher's fsnotify watcher; tests
+// swap it to inject a creation failure.
+var newFsnotifyWatcher = fsnotify.NewWatcher
 
-	// A project Claude Code hasn't run in yet has no directory: watch the
-	// projects directory for it instead, and switch over when it appears
-	// (see adoptProjectDir).
-	target := sw.projectDir
-	if _, statErr := os.Stat(target); os.IsNotExist(statErr) {
-		target = filepath.Dir(target)
-	}
-	err = watcher.Add(target)
+// Start begins watching the project directory for session files. When
+// fsnotify can't watch it, usually for an exhausted inotify limit, the
+// watcher runs on its directory poll alone and Start returns why: new
+// sessions still arrive, within pollEvery.
+func (sw *SessionWatcher) Start() error {
+	err := sw.watch()
 	if err != nil {
-		watcher.Close()
-		return err
-	}
-	// The directory may have appeared between the Stat and the Add, whose
-	// Create event would then be missed: watch it now if it exists.
-	if target != sw.projectDir {
-		if _, statErr := os.Stat(sw.projectDir); statErr == nil {
-			_ = watcher.Add(sw.projectDir)
-		} else {
+		if _, statErr := os.Stat(sw.projectDir); os.IsNotExist(statErr) {
 			sw.dirPending = true
 		}
 	}
@@ -154,6 +150,64 @@ func (sw *SessionWatcher) Start() error {
 		sw.sessionMu.Unlock()
 	}
 
+	return err
+}
+
+// watch sets up the fsnotify watch, on the project directory or, while
+// that doesn't exist, on the projects directory for its creation.
+func (sw *SessionWatcher) watch() error {
+	watcher, err := newFsnotifyWatcher()
+	if err != nil {
+		return err
+	}
+
+	// A project Claude Code hasn't run in yet has no directory: watch the
+	// projects directory for it instead, and switch over when it appears
+	// (see adoptProjectDir).
+	target := sw.projectDir
+	if _, statErr := os.Stat(target); os.IsNotExist(statErr) {
+		target = filepath.Dir(target)
+	}
+	if err := watcher.Add(target); err != nil {
+		watcher.Close()
+		return err
+	}
+	// The directory may have appeared between the Stat and the Add, whose
+	// Create event would then be missed: watch it now if it exists.
+	if target != sw.projectDir {
+		if _, statErr := os.Stat(sw.projectDir); statErr == nil {
+			_ = watcher.Add(sw.projectDir)
+		} else {
+			sw.dirPending = true
+		}
+	}
+	sw.watchMu.Lock()
+	defer sw.watchMu.Unlock()
+	select {
+	case <-sw.done:
+		watcher.Close()
+	default:
+		sw.watcher = watcher
+	}
+	return nil
+}
+
+// RetryWatch asks a watcher running on its poll alone to try fsnotify
+// again. The waiter makes the attempt, so the poll's state stays its own,
+// and reports it as sessionRetriedPath.
+func (sw *SessionWatcher) RetryWatch() {
+	select {
+	case sw.retryCh <- struct{}{}:
+	default:
+	}
+}
+
+// listable returns why the poll can't list the project directory, or nil.
+// One that doesn't exist yet is fine: the poll waits for it.
+func (sw *SessionWatcher) listable() error {
+	if _, err := os.ReadDir(sw.projectDir); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	return nil
 }
 
@@ -164,14 +218,20 @@ func (sw *SessionWatcher) Stop() {
 		sw.restartMu.Lock()
 		close(sw.done)
 		sw.restartMu.Unlock()
+		sw.watchMu.Lock()
 		if sw.watcher != nil {
 			sw.watcher.Close()
 		}
+		sw.watchMu.Unlock()
 	})
 }
 
 // sessionRestartedPath is a sentinel path telling the waiter to restart
 const sessionRestartedPath = "\x00RESTART\x00"
+
+// sessionRetriedPath is a sentinel path reporting a RetryWatch attempt,
+// whose error is in retryErr.
+const sessionRetriedPath = "\x00RETRIED\x00"
 
 // NewestSession returns the most recently modified session file already in
 // the project directory, or empty strings when there is none.
@@ -218,8 +278,11 @@ func (sw *SessionWatcher) WaitForSessionEvent() sessionEvent {
 		return sessionEvent{}
 	default:
 	}
-	if sw.watcher == nil {
-		return sessionEvent{}
+	// Without fsnotify the poll is all there is; nil channels never fire.
+	var events chan fsnotify.Event
+	var watchErrs chan error
+	if sw.watcher != nil {
+		events, watchErrs = sw.watcher.Events, sw.watcher.Errors
 	}
 
 	// Get current restart channel under lock
@@ -247,7 +310,13 @@ func (sw *SessionWatcher) WaitForSessionEvent() sessionEvent {
 		case <-restartCh:
 			// Session was changed externally, signal caller to restart
 			return sessionEvent{path: sessionRestartedPath}
-		case event, ok := <-sw.watcher.Events:
+		case <-sw.retryCh:
+			if sw.watcher != nil {
+				continue
+			}
+			sw.retryErr = sw.watch()
+			return sessionEvent{path: sessionRetriedPath}
+		case event, ok := <-events:
 			if !ok {
 				return sessionEvent{}
 			}
@@ -262,7 +331,7 @@ func (sw *SessionWatcher) WaitForSessionEvent() sessionEvent {
 					return ev
 				}
 			}
-		case _, ok := <-sw.watcher.Errors:
+		case _, ok := <-watchErrs:
 			if !ok {
 				return sessionEvent{}
 			}
@@ -276,8 +345,10 @@ func (sw *SessionWatcher) WaitForSessionEvent() sessionEvent {
 // count as created now.
 func (sw *SessionWatcher) adoptProjectDir() sessionEvent {
 	sw.dirPending = false
-	if err := sw.watcher.Add(sw.projectDir); err != nil {
-		return sessionEvent{}
+	if sw.watcher != nil {
+		if err := sw.watcher.Add(sw.projectDir); err != nil {
+			return sessionEvent{}
+		}
 	}
 	entries, err := os.ReadDir(sw.projectDir)
 	if err != nil {

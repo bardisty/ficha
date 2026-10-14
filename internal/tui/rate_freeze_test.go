@@ -73,7 +73,7 @@ func TestRateFallsWhenTheDataIsCurrent(t *testing.T) {
 		msg  any
 	}{
 		{"quiet", nil},
-		{"session watcher failed", errorMsg{err: errors.New("too many open files"), sessionWatcher: true}},
+		{"session watcher polling", sessionWatcherStartedMsg{watcher: NewSessionWatcher(t.TempDir(), ""), err: errors.New("too many open files")}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, now := rateModel(t)

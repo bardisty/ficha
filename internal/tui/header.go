@@ -24,7 +24,7 @@ const idleAfter = 5 * time.Minute
 //	webapp │ 68994c84 │ ● FOLLOWING │ last msg 12s ago
 //
 // turning to "○ FOLLOWING │ idle 7m" once no message has landed for
-// idleAfter.
+// idleAfter, and to "⚠ FOLLOWING" while nothing can see a new session.
 type liveHeaderParams struct {
 	sessionID   string
 	loading     bool
@@ -38,6 +38,7 @@ type liveHeaderParams struct {
 	lastActivity time.Time // newest message timestamp; zero when none yet
 	noMessages   bool      // lastActivity is the file's mtime: no message yet
 	waiting      bool      // no session yet: no ID, and the status says so
+	blind        bool      // following, but nothing can see a new session
 	now          time.Time
 }
 
@@ -191,6 +192,11 @@ func buildStatusHeader(p liveHeaderParams, project string, form statusForm) stri
 	switch {
 	case p.err != nil:
 		modeStyle = lipgloss.NewStyle().Bold(true).Foreground(styles.ErrorColor)
+	case p.blind:
+		// The mode is still what the user chose; the notify row says why
+		// it can't work.
+		dot = styles.Warning
+		modeStyle = lipgloss.NewStyle().Bold(true).Foreground(styles.WarningColor)
 	case idle:
 		dot = styles.IdleDot
 		modeStyle = styles.DimStyle

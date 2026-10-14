@@ -86,6 +86,9 @@ type Model struct {
 
 	// fallback polls the session file while its watcher can't be created
 	fallback watchFallback
+	// sessionFallback is the session watcher's, polling the project
+	// directory for want of fsnotify
+	sessionFallback watchFallback
 
 	// fileSig is the session file's sessionFileSig when the last load
 	// started; the poll reloads when the file no longer matches it
@@ -161,9 +164,6 @@ type (
 	errorMsg struct {
 		err         error
 		sessionPath string
-		// sessionWatcher marks a failure to start the session watcher,
-		// which leaves the data on screen current.
-		sessionWatcher bool
 	}
 	// fileChangedMsg reports a session-file change seen by a specific watcher.
 	// The watcher identifies the message's origin: handlers drop messages from
@@ -202,6 +202,7 @@ func NewModel(sessionPath, sessionID string, noColor bool, projectDir string, fo
 		agentCache:  analyzer.NewAgentParseCache(),
 		project:     projectName(projectDir),
 	}
+	m.sessionFallback.sessions = true
 	if sessionPath != "" {
 		m.subagentSig = subagentTreeSignature(filepath.Dir(sessionPath), sessionID)
 		// Init's load starts after this and reads at least as much.
@@ -277,16 +278,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// The view is already live; r is the retry the notify row offers
 			// after an error, and a harmless re-read otherwise.
 			if m.waiting() {
-				// The session watcher is all a waiting view has; if it
-				// failed to start, r is the retry the notify row offers.
-				if m.sessionWatcher == nil && m.projectDir != "" {
-					m.err = nil
-					return m, m.startSessionWatcher()
-				}
-				return m, nil
+				return m, m.retrySessionWatch()
 			}
 			load := m.startLoad()
-			return m, tea.Batch(load, m.spinnerCmd(), m.retryWatchNow())
+			return m, tea.Batch(load, m.spinnerCmd(), m.retryWatchNow(), m.retrySessionWatch())
 
 		case "ctrl+z":
 			if canSuspend() {
@@ -437,9 +432,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = msg.err
 		m.loading = false
-		if !msg.sessionWatcher {
-			m.markStale()
-		}
+		m.markStale()
 		// Re-arm (if needed) even after an error to continue monitoring
 		// Call before return: the arm must mutate the m the caller receives
 		armCmd := m.armFileWaiter()
@@ -476,6 +469,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, retry
 
 	case watchRetryMsg:
+		if m.sessionFallback.retryDue(msg) {
+			return m, m.retrySessionWatch()
+		}
 		if !m.fallback.retryDue(msg) || m.watcher != nil || m.waiting() {
 			return m, nil
 		}
@@ -507,17 +503,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(armCmd, catchUp)
 
 	case sessionWatcherStartedMsg:
-		// Store the session watcher and start waiting for new sessions
 		m.sessionWatcher = msg.watcher
+		retry := m.sessionFallback.sessionWatchResult(msg)
 		// A session created between the decision to wait and the watcher's
 		// start is already on disk; take it rather than wait for its next
 		// write.
 		if m.waiting() {
 			if path, id := msg.watcher.NewestSession(); path != "" {
-				return m.switchTo(path, id, true)
+				next, cmd := m.switchTo(path, id, true)
+				return next, tea.Batch(cmd, retry)
 			}
 		}
-		return m, m.waitForNewSession()
+		return m, tea.Batch(m.waitForNewSession(), retry)
 
 	case sessionWatcherRestartMsg:
 		// Session was changed externally, restart waiting

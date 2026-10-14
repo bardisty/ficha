@@ -113,8 +113,10 @@ type BreakdownModel struct {
 	// poll-triggered reloads can't stack extra waiters
 	fileWaiterActive bool
 
-	// fallback polls the session file while its watcher can't be created
-	fallback watchFallback
+	// fallback polls the session file while its watcher can't be created,
+	// and sessionFallback the project directory; see Model
+	fallback        watchFallback
+	sessionFallback watchFallback
 
 	// fileSig is the session file's sessionFileSig when the last load
 	// started; the poll reloads when the file no longer matches it
@@ -199,6 +201,7 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 		agentCache:  analyzer.NewAgentParseCache(),
 		project:     projectName(projectDir),
 	}
+	m.sessionFallback.sessions = true
 	if sessionPath != "" {
 		m.subagentSig = subagentTreeSignature(filepath.Dir(sessionPath), sessionID)
 		// Init's load starts after this and reads at least as much.
@@ -268,16 +271,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// The view is already live; r is the retry the notify row offers
 			// after an error, and a harmless re-read otherwise.
 			if m.waiting() {
-				// The session watcher is all a waiting view has; if it
-				// failed to start, r is the retry.
-				if m.sessionWatcher == nil && m.projectDir != "" {
-					m.err = nil
-					return m, m.startSessionWatcher()
-				}
-				return m, nil
+				return m, m.retrySessionWatch()
 			}
 			load := m.startLoad()
-			return m, tea.Batch(load, m.retryWatchNow(), m.spinnerCmd())
+			return m, tea.Batch(load, m.retryWatchNow(), m.retrySessionWatch(), m.spinnerCmd())
 
 		case "p":
 			m.selectNextTop()
@@ -459,6 +456,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, retry
 
 	case watchRetryMsg:
+		if m.sessionFallback.retryDue(msg) {
+			return m, m.retrySessionWatch()
+		}
 		if !m.fallback.retryDue(msg) || m.watcher != nil || m.waiting() {
 			return m, nil
 		}
@@ -491,16 +491,17 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(armCmd, catchUp)
 
 	case sessionWatcherStartedMsg:
-		// Store the session watcher and start waiting for new sessions
 		m.sessionWatcher = msg.watcher
+		retry := m.sessionFallback.sessionWatchResult(msg)
 		// A session created between the decision to wait and the watcher's
 		// start is already on disk; take it rather than wait for its next write.
 		if m.waiting() {
 			if path, id := msg.watcher.NewestSession(); path != "" {
-				return m.switchTo(path, id, true)
+				next, cmd := m.switchTo(path, id, true)
+				return next, tea.Batch(cmd, retry)
 			}
 		}
-		return m, m.waitForNewSession()
+		return m, tea.Batch(m.waitForNewSession(), retry)
 
 	case sessionWatcherRestartMsg:
 		// Session was changed externally, restart waiting
@@ -809,11 +810,12 @@ func (m BreakdownModel) frame() string {
 }
 
 // renderNotifyRow is a load error in words, then p's selection, the switch
-// notice for a few seconds after a switch, a missing file watcher, or a hint
-// about another session, and blank otherwise. The switch notice and the
+// notice for a few seconds after a switch, a hint about another session, or
+// a missing watcher, and blank otherwise. The switch notice and the
 // selection come first because they're brief and answer something the reader
-// just did; the hint comes last, as in watch, because it can stay up for
-// minutes.
+// just did. The hint outranks the watcher notice, as in watch: a watcher
+// usually fails for an inotify limit that takes the other with it, and the
+// hint, which fades once the other session goes quiet, is what n acts on.
 func (m BreakdownModel) renderNotifyRow() string {
 	if m.err != nil {
 		text := errNotice(m.err, m.panelWidth())
@@ -835,19 +837,19 @@ func (m BreakdownModel) renderNotifyRow() string {
 		}
 		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render(text)
 	}
-	if m.fallback.active() {
-		text := m.fallback.notice(m.panelWidth())
-		if m.noColor {
-			return "  " + text
-		}
-		return "  " + lipgloss.NewStyle().Foreground(styles.WarningColor).Render(text)
-	}
 	if m.hintVisible() {
 		text := withinWidth(hintText(*m.hint), m.panelWidth())
 		if m.noColor {
 			return "  " + text
 		}
 		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render(text)
+	}
+	if f := shownFallback(m.fallback, m.sessionFallback); f.active() {
+		text := withinWidth(f.notice(m.panelWidth()), m.panelWidth())
+		if m.noColor {
+			return "  " + text
+		}
+		return "  " + lipgloss.NewStyle().Foreground(styles.WarningColor).Render(text)
 	}
 	return ""
 }
@@ -1007,6 +1009,7 @@ func (m BreakdownModel) headerParams(width int) liveHeaderParams {
 		project:      m.project,
 		mode:         mode,
 		waiting:      m.waiting(),
+		blind:        m.followMode && m.sessionFallback.blind != nil,
 		lastActivity: m.lastActivity,
 		noMessages:   m.activityFromFile,
 		now:          m.clock(),
@@ -1427,12 +1430,6 @@ func (m BreakdownModel) loadBreakdownCmd() tea.Cmd {
 	}
 }
 
-// wrapErr lets the shared watcher commands report failures as this model's
-// error message.
-func (m BreakdownModel) wrapErr(err error) tea.Msg {
-	return breakdownErrorMsg{err: err, sessionPath: m.sessionPath}
-}
-
 func (m BreakdownModel) watchFile() tea.Msg { return watchFileCmd(m.sessionPath) }
 
 // retryWatchNow is r's watcher retry; see Model.retryWatchNow.
@@ -1455,7 +1452,13 @@ func (m *BreakdownModel) armFileWaiter() tea.Cmd {
 }
 
 func (m BreakdownModel) startSessionWatcher() tea.Cmd {
-	return startSessionWatcherCmd(m.projectDir, m.sessionID, m.wrapErr)
+	return startSessionWatcherCmd(m.projectDir, m.sessionID)
+}
+
+// retrySessionWatch is the session watcher's retry; see
+// Model.retrySessionWatch.
+func (m BreakdownModel) retrySessionWatch() tea.Cmd {
+	return retrySessionWatchCmd(m.sessionWatcher, m.sessionFallback)
 }
 
 func (m BreakdownModel) waitForNewSession() tea.Cmd {

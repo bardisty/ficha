@@ -701,6 +701,7 @@ func (m Model) headerParams(width int) liveHeaderParams {
 		lastActivity: m.lastActivity,
 		noMessages:   m.activityFromFile,
 		waiting:      m.waiting(),
+		blind:        m.followMode && m.sessionFallback.blind != nil,
 		now:          m.clock(),
 	}
 }
