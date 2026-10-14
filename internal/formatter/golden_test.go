@@ -336,6 +336,7 @@ func TestGoldenSessionTableShowColor(t *testing.T) {
 func TestGoldenSessionTableShowWindowUnknown(t *testing.T) {
 	a := goldenShowAnalysis()
 	a.LastMessageModel = "claude-mystery-9"
+	a.CostByModel["claude-mystery-9"] = models.CostBreakdown{TotalCost: 1.20}
 	a.LastMessageUsage = models.TokenUsage{InputTokens: 400, CacheReadInputTokens: 680_000}
 	a.Agents[0].CostByModel = map[string]models.CostBreakdown{"claude-mystery-9": {TotalCost: 0.42}}
 	a.Agents[0].Context = &models.ContextUsage{Tokens: 680_400}

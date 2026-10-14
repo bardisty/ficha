@@ -539,6 +539,15 @@ func TestContextGaugeWindowUnknown(t *testing.T) {
 	if line, _ := ContextGauge(c, "claude-mystery-9", 60, false, true); line != styles.HighlightStyle.Render("680.4K tokens") {
 		t.Errorf("highlighted line = %q", line)
 	}
+
+	// A model ficha knows has a window; this reading outgrew every one it
+	// knows, so the note says that rather than calling the model unknown.
+	over := models.ContextUsage{Tokens: 1_050_000}
+	for width, want := range map[int]string{60: "over the 1.00M window ficha knows for Opus 5.5", 30: "over the known window", 10: ""} {
+		if _, note := ContextGauge(over, "claude-opus-5-5", width, true, false); note != want {
+			t.Errorf("1.05M on Opus 5.5, width %d: note = %q, want %q", width, note, want)
+		}
+	}
 }
 
 func TestNumberShort(t *testing.T) {

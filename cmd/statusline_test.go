@@ -46,7 +46,7 @@ func TestStatusLineParts(t *testing.T) {
 			"Opus 5.5 · $0.19/msg ▲ · $43.67 (agents $12.54)"},
 		// No window, no percentage: the tokens alone.
 		{"window unknown", "claude-mystery-9", func(a *models.SessionAnalysis) { a.Context = &models.ContextUsage{Tokens: 680400} },
-			"claude-mystery-9 · ctx 680K · $0.19/msg ▲ · $43.67 (agents $12.54)"},
+			"claude-mystery-9 · ctx 680.4K · $0.19/msg ▲ · $43.67 (agents $12.54)"},
 		{"no agents", "Opus 5.5", func(a *models.SessionAnalysis) { a.AgentsCost = models.CostBreakdown{} },
 			"Opus 5.5 · ctx 68% · $0.19/msg ▲ · $43.67"},
 		{"no model", "", nil, "ctx 68% · $0.19/msg ▲ · $43.67 (agents $12.54)"},
@@ -178,7 +178,7 @@ func lineFromShowJSON(t *testing.T, transcript, model string) string {
 	switch {
 	case s.Context == nil:
 	case s.Context.Percent == 0:
-		line += " · ctx " + render.NumberShort(s.Context.Tokens)
+		line += " · ctx " + render.Number(s.Context.Tokens)
 	default:
 		line += fmt.Sprintf(" · ctx %.0f%%", s.Context.Percent)
 	}

@@ -264,6 +264,7 @@ func TestBreakdownUnknownNoteFitsWidth(t *testing.T) {
 func windowUnknownAnalysis() *models.SessionAnalysis {
 	a := goldenViewAnalysis()
 	a.LastMessageModel = "claude-mystery-9"
+	a.CostByModel["claude-mystery-9"] = models.CostBreakdown{TotalCost: 1.20}
 	a.LastMessageUsage = models.TokenUsage{InputTokens: 400, CacheReadInputTokens: 680_000}
 	a.Agents[1].CostByModel = map[string]models.CostBreakdown{"claude-mystery-9": {TotalCost: 0.42}}
 	a.Agents[1].Context = &models.ContextUsage{Tokens: 680_400}
@@ -277,8 +278,8 @@ func TestGoldenWatchWindowUnknown(t *testing.T) {
 		name := fmt.Sprintf("watch_window_unknown_%dx%d", size[0], size[1])
 		frame := goldenWatchViewOf(t, windowUnknownAnalysis(), true, size[0], size[1])
 		checkGolden(t, name, frame)
-		if strings.Contains(frame, "compaction") || !strings.Contains(frame, "ctx 680K") {
-			t.Errorf("%s: want no compaction note and a ctx 680K footer:\n%s", name, frame)
+		if strings.Contains(frame, "compaction") || !strings.Contains(frame, "ctx 680.4K") {
+			t.Errorf("%s: want no compaction note and a ctx 680.4K footer:\n%s", name, frame)
 		}
 	}
 	checkGolden(t, "watch_window_unknown_120x40_color", goldenWatchViewOf(t, windowUnknownAnalysis(), false, 120, 40))

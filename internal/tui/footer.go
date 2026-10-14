@@ -231,7 +231,7 @@ func (m Model) statsSegments(label bool) []string {
 	if c := analyzer.ContextUsage(a.LastMessageUsage, a.LastMessageModel); c != nil {
 		// Without a window there's no percentage or mark, so the tokens go
 		// in the footer's own style.
-		reading, ctxStyle := render.NumberShort(c.Tokens), styles.FooterStyle
+		reading, ctxStyle := render.Number(c.Tokens), styles.FooterStyle
 		if c.WindowKnown() {
 			reading = fmt.Sprintf("%.0f%%", c.Percent)
 			ctxStyle = lipgloss.NewStyle().Foreground(styles.ContextZoneColor(pricing.ContextZoneOf(c.Tokens, c.CompactAt)))

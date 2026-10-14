@@ -502,8 +502,9 @@ const minContextBar = 10
 // highlight marks the token counts as just changed.
 //
 // A reading whose window ficha doesn't know has no percentage, bar or
-// headroom to give, so the line is its tokens and the note says why, naming
-// model, the model's display name:
+// headroom to give, so the line is its tokens and the note says why: model,
+// the request's model ID, isn't in the catalog, or the request was larger
+// than any window ficha knows for it.
 //
 //	680.4K tokens
 //	window unknown for claude-mystery-9
@@ -519,7 +520,7 @@ func ContextGauge(c models.ContextUsage, model string, width int, noColor, highl
 		if highlight {
 			line = style(styles.HighlightStyle, line)
 		}
-		return line, firstFit(width-1, "window unknown for "+model, "window unknown")
+		return line, windowUnknownNote(model, width-1)
 	}
 
 	contextSize, maxContext, compactAt := c.Tokens, c.Window, c.CompactAt
@@ -603,6 +604,16 @@ func contextNote(contextSize int64, compactAt, width int) string {
 		forms = []string{reading + scope, reading, "past ~compaction"}
 	}
 	return firstFit(width, forms...)
+}
+
+// windowUnknownNote says why a reading on model has no window, fitted to
+// width. A model the catalog knows has a window; the reading outgrew it.
+func windowUnknownNote(model string, width int) string {
+	name := pricing.GetModelDisplayName(model)
+	if largest := pricing.LargestWindow(model); largest > 0 {
+		return firstFit(width, "over the "+Number(int64(largest))+" window ficha knows for "+name, "over the known window")
+	}
+	return firstFit(width, "window unknown for "+name, "window unknown")
 }
 
 // firstFit returns the first of forms that fits in width columns, or "".

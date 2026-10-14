@@ -138,7 +138,7 @@ func statusLine(model string, a *models.SessionAnalysis) string {
 		parts = append(parts, model)
 	}
 	if c := a.Context; c != nil {
-		reading := render.NumberShort(c.Tokens)
+		reading := render.Number(c.Tokens)
 		if c.WindowKnown() {
 			reading = fmt.Sprintf("%.0f%%", c.Percent)
 		}

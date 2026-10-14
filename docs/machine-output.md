@@ -103,14 +103,14 @@ Each session row also carries `parent_cost` and `agents_cost`, which add up to i
 | Key | Meaning |
 | --- | --- |
 | `tokens` | input tokens of that request, cache reads and writes included, as Claude Code's `/context` counts them |
-| `window` | the model's context window, from ficha's price list |
+| `window` | the window ficha reads the request against: the model's, from ficha's price list, or the 1M long-context window when the request was larger |
 | `percent` | `tokens / window * 100`, unrounded. The table rounds it |
 
-`window` and `percent` are absent when ficha doesn't know the window: the model isn't on its price list, or the request is larger than any window ficha knows for the model. `context` then has `tokens` alone, and the table shows the tokens with "window unknown". jq's `.context.percent // empty` skips those readings. A model on the price list whose request is larger than its usual window, as a 200K model's is on the 1M window, reads against 1M. So a `percent` is never over 100.
+`context` is absent when the session has no parent request, and on the `summary` aggregate, which spans many sessions. A `summary -d` session made only of history repeated from an earlier session has no request of its own, so it has no `context` there, though `show` gives it one.
 
-It's absent when the session has no parent request, and on the `summary` aggregate, which spans many sessions. A `summary -d` session made only of history repeated from an earlier session has no request of its own, so it has no `context` there, though `show` gives it one.
+A model on the price list whose request is larger than its usual window reads against the 1M long-context window: Sonnet 4.5 at 687K reads 69%, not 344%. So `percent` is never over 100. `window` and `percent` are absent when ficha doesn't know the window: the model isn't on its price list, or the request is larger than any window ficha knows for the model. `context` then has `tokens` alone, and the table shows the tokens with "window unknown". jq's `.context.percent // empty` skips those readings.
 
-Each entry in `agents` has a `context` of its own, with the same keys, read from the agent's last request: the reading the table shows as `38% ctx` on its row. It's absent when the agent has no request yet, or none inside `--since` and `--until`.
+Each entry in `agents` has a `context` of its own, with the same keys and the same omission, read from the agent's last request: the reading the table shows as `38% ctx` on its row, or `680K ctx` without a window. It's absent when the agent has no request yet, or none inside `--since` and `--until`.
 
 ## Workflow runs
 

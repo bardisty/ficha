@@ -7,7 +7,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
-	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 	"github.com/mattn/go-runewidth"
@@ -118,7 +117,7 @@ func renderContextSection(analysis *models.SessionAnalysis, width int, noColor b
 	// Fill the section after the "  Context " label; the gauge right-aligns
 	// its percentage, so "Context  95%" and "Context 100%" align.
 	gaugeWidth := width - 10
-	line, note := render.ContextGauge(*c, pricing.GetModelDisplayName(analysis.LastMessageModel), gaugeWidth, noColor, false)
+	line, note := render.ContextGauge(*c, analysis.LastMessageModel, gaugeWidth, noColor, false)
 	if !noColor {
 		note = lipgloss.NewStyle().Foreground(styles.NoteColor).Render(note)
 	}

@@ -48,7 +48,7 @@ func (p ModelPricing) ForPrompt(promptTokens int64) ModelPricing {
 // 200K until it passes it, since the reading alone can't tell it from a 200K
 // session.
 func ContextWindow(modelID string, tokens int64) (window, compactAt int) {
-	if !IsKnownModel(modelID) {
+	if tokens > int64(LargestWindow(modelID)) {
 		return 0, 0
 	}
 	p := GetModelPricing(modelID)
@@ -58,10 +58,17 @@ func ContextWindow(modelID string, tokens int64) (window, compactAt int) {
 	if tokens > int64(p.CompactAtTokens) && p.CompactAtTokens < min(p.MaxContextTokens, nativeLongContextCompactAt) {
 		p.CompactAtTokens = p.MaxContextTokens
 	}
-	if tokens > int64(p.MaxContextTokens) {
-		return 0, 0
-	}
 	return p.MaxContextTokens, p.CompactAtTokens
+}
+
+// LargestWindow is the largest context window ficha knows modelID can run
+// with: its catalog window, or the 1M long-context window when that's
+// larger. It's 0 for a model the catalog doesn't know.
+func LargestWindow(modelID string) int {
+	if !IsKnownModel(modelID) {
+		return 0
+	}
+	return max(GetModelPricing(modelID).MaxContextTokens, longContextTokens)
 }
 
 // Cache multipliers (relative to input rate). Cache reads are the only bucket

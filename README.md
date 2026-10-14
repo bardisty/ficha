@@ -324,7 +324,7 @@ ficha does not model:
 - Web search, which Anthropic charges per search on top of the tokens.
 - Bedrock and Vertex billing. ficha recognizes their model IDs and prices them at Anthropic's first-party rates. Both platforms bill on their own terms, so treat the figures as a proxy.
 
-ficha prices unknown models at $3 input and $15 output per million tokens with a 200K context, and prints a warning naming the model so you know the number is a placeholder. [Troubleshooting](#troubleshooting) says what to do about it. Claude Code writes the model `<synthetic>` on API-error lines. Those lines cost nothing and get no warning.
+ficha prices unknown models at $3 input and $15 output per million tokens, and prints a warning naming the model so you know the number is a placeholder. It doesn't know their context window either, so Context shows the tokens alone and says the window is unknown. [Troubleshooting](#troubleshooting) says what to do about it. Claude Code writes the model `<synthetic>` on API-error lines. Those lines cost nothing and get no warning.
 
 Claude Code's transcript format is undocumented and can change between releases. ficha counts what it could not parse instead of guessing, so if the skip warnings or the `skipped_*` counters jump after a Claude Code update, that is the signal to file a bug.
 
