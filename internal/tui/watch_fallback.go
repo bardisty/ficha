@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"runtime"
 	"syscall"
 	"time"
@@ -32,8 +33,11 @@ type watcherFailedMsg struct {
 }
 
 // watchRetryMsg is a backoff timer firing; gen drops one that a switch or a
-// successful start has superseded.
-type watchRetryMsg struct{ gen int }
+// successful start has superseded. sessions marks the session watcher's.
+type watchRetryMsg struct {
+	gen      int
+	sessions bool
+}
 
 // watchUnavailableError marks a watcher-creation failure, so describeErr can
 // say what it means for the view rather than print the raw syscall error.
@@ -72,23 +76,41 @@ func watchFailureReason(err error) string {
 // failure the notify row shows and the retry backoff. The poll that reloads
 // in the meantime runs whether or not a watcher is up; see sessionFileSig.
 // The failure stays up through reloads; only a watcher that starts, or a
-// switch to another session, clears it.
+// switch to another session, clears it. The session watcher has one too,
+// marked sessions, for its fsnotify watch; its poll runs without one.
 type watchFallback struct {
-	err     error         // watchUnavailableError; nil while a watcher is up
-	gen     int           // identifies the live retry timer
-	pending bool          // a retry timer is scheduled
-	delay   time.Duration // the next retry's wait; 0 means watchRetryMin
+	err      error         // watchUnavailableError; nil while a watcher is up
+	gen      int           // identifies the live retry timer
+	pending  bool          // a retry timer is scheduled
+	delay    time.Duration // the next retry's wait; 0 means watchRetryMin
+	sessions bool          // the session watcher's, not the session file's
+	blind    error         // why the session watcher's poll can't list the project
 }
 
 // notice is the notify-row text while polling. A row too narrow for all of
 // it drops the reason before the retry hint, which says what to do.
 func (f watchFallback) notice(width int) string {
 	tail := " " + styles.Bullet + " r to retry"
-	text := styles.Warning + " " + describeErr(f.err) + tail
+	full, short := describeErr(f.err), watchUnavailableText("")
+	if f.blind != nil {
+		short = "can't watch for new sessions"
+		full = short + " (" + pathErrText(f.blind) + ")"
+	}
+	text := styles.Warning + " " + full + tail
 	if lipgloss.Width(text) > width {
-		text = styles.Warning + " " + watchUnavailableText("") + tail
+		text = styles.Warning + " " + short + tail
 	}
 	return text
+}
+
+// pathErrText is err without the path a *fs.PathError carries, which the
+// notify row has no room for.
+func pathErrText(err error) string {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error()
+	}
+	return err.Error()
 }
 
 // active reports whether the view is polling for want of a watcher.
@@ -108,19 +130,40 @@ func (f *watchFallback) fail(err error) tea.Cmd {
 	f.delay = min(2*d, watchRetryMax)
 	f.pending = true
 	f.gen++
-	gen := f.gen
-	return tea.Tick(d, func(time.Time) tea.Msg { return watchRetryMsg{gen: gen} })
+	gen, sessions := f.gen, f.sessions
+	return tea.Tick(d, func(time.Time) tea.Msg { return watchRetryMsg{gen: gen, sessions: sessions} })
 }
 
 // reset clears the fallback, for a watcher that started or a new session.
 // The generation moves on so a timer still in flight is ignored.
-func (f *watchFallback) reset() { *f = watchFallback{gen: f.gen + 1} }
+func (f *watchFallback) reset() { *f = watchFallback{gen: f.gen + 1, sessions: f.sessions} }
 
 // retryDue reports whether msg is the live retry timer, consuming it.
 func (f *watchFallback) retryDue(msg watchRetryMsg) bool {
-	if msg.gen != f.gen || !f.pending {
+	if msg.gen != f.gen || msg.sessions != f.sessions || !f.pending {
 		return false
 	}
 	f.pending = false
 	return true
+}
+
+// sessionWatchResult records the session watcher's attempt at fsnotify, and
+// returns the retry timer while it polls without.
+func (f *watchFallback) sessionWatchResult(msg sessionWatcherStartedMsg) tea.Cmd {
+	if msg.err == nil {
+		f.reset()
+		return nil
+	}
+	f.blind = msg.blind
+	return f.fail(msg.err)
+}
+
+// shownFallback is the fallback whose notice the notify row shows: a session
+// watcher that can't see new sessions at all matters most, and otherwise the
+// two notices read the same.
+func shownFallback(file, sessions watchFallback) watchFallback {
+	if file.active() && sessions.blind == nil {
+		return file
+	}
+	return sessions
 }

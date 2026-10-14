@@ -316,14 +316,21 @@ func waitForFileChangeCmd(wg *sync.WaitGroup, closing *atomic.Bool, watcher *fsn
 }
 
 // startSessionWatcherCmd starts the auto-follow session watcher for the project.
-func startSessionWatcherCmd(projectDir, sessionID string, onErr func(error) tea.Msg) tea.Cmd {
+func startSessionWatcherCmd(projectDir, sessionID string) tea.Cmd {
 	return func() tea.Msg {
 		watcher := NewSessionWatcher(projectDir, sessionID)
-		if err := watcher.Start(); err != nil {
-			return onErr(err)
-		}
-		return sessionWatcherStartedMsg{watcher: watcher}
+		return sessionWatcherStarted(watcher, watcher.Start())
 	}
+}
+
+// sessionWatcherStarted reports sw after an attempt at fsnotify that ended
+// in err, nil when the watch is up.
+func sessionWatcherStarted(sw *SessionWatcher, err error) sessionWatcherStartedMsg {
+	msg := sessionWatcherStartedMsg{watcher: sw, err: err}
+	if err != nil {
+		msg.blind = sw.listable()
+	}
+	return msg
 }
 
 // sessionActivityMsg reports another session in the project changing: a
@@ -352,6 +359,8 @@ func waitForSessionEventCmd(wg *sync.WaitGroup, sw *SessionWatcher) tea.Cmd {
 			return nil // Shutdown or error
 		case sessionRestartedPath:
 			return sessionWatcherRestartMsg{}
+		case sessionRetriedPath:
+			return sessionWatcherStarted(sw, sw.retryErr)
 		}
 		return sessionActivityMsg(ev)
 	}

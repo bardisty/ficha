@@ -354,9 +354,11 @@ func clipRows(rows []string, width int) []string {
 }
 
 // renderNotifyRow renders the row under the header, or "" when there is
-// nothing to say. An error wins over the switch notice, then a missing file
-// watcher, then a hint about another session. The switch notice outranks the
-// watcher because it lasts only until the next key, and answers one.
+// nothing to say. An error wins over the switch notice, then a hint about
+// another session, then a missing watcher. The switch notice outranks the
+// rest because it lasts only until the next key, and answers one. The hint
+// outranks the watcher notice because n acts on it and it fades on its own,
+// and an inotify limit that stops one watcher usually stops the other.
 func (m Model) renderNotifyRow(width int) string {
 	style := func(c color.Color, s string) string {
 		if m.noColor {
@@ -373,11 +375,11 @@ func (m Model) renderNotifyRow(width int) string {
 		text = errNotice(m.err, width)
 	case m.switched != nil:
 		text = switchNoticeText(*m.switched, m.sessionID, m.prevSessionID, m.prevSessionPath != "")
-	case m.fallback.active():
-		color = styles.WarningColor
-		text = m.fallback.notice(width)
 	case m.hintVisible():
 		text = hintText(*m.hint)
+	case shownFallback(m.fallback, m.sessionFallback).active():
+		color = styles.WarningColor
+		text = shownFallback(m.fallback, m.sessionFallback).notice(width)
 	default:
 		return ""
 	}

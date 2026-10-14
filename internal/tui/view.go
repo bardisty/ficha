@@ -685,10 +685,7 @@ func (m Model) renderHeaderPanel(width int) string {
 
 // headerParams fills the live header for the current frame.
 func (m Model) headerParams(width int) liveHeaderParams {
-	mode := "PINNED"
-	if m.followMode {
-		mode = "FOLLOWING"
-	}
+	mode := followLabel(m.followMode, m.sessionFallback)
 	return liveHeaderParams{
 		sessionID:    m.sessionID,
 		loading:      m.showLoading(),

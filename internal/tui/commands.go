@@ -80,19 +80,18 @@ type watcherStartedMsg struct {
 	sessionPath string
 }
 
-// sessionWatcherStartedMsg is sent when the session watcher is ready
+// sessionWatcherStartedMsg is sent when the session watcher is ready, and
+// after each RetryWatch. err says why it runs on its poll alone, and blind
+// why even that can't list the project directory; both are nil for a
+// watcher with fsnotify.
 type sessionWatcherStartedMsg struct {
 	watcher *SessionWatcher
+	err     error
+	blind   error
 }
 
 // sessionWatcherRestartMsg signals that the watcher should restart waiting
 type sessionWatcherRestartMsg struct{}
-
-// wrapErr lets the shared watcher commands report failures as this model's
-// error message.
-func (m Model) wrapErr(err error) tea.Msg {
-	return errorMsg{err: err, sessionPath: m.sessionPath, sessionWatcher: true}
-}
 
 func (m Model) watchFile() tea.Msg { return watchFileCmd(m.sessionPath) }
 
@@ -120,7 +119,25 @@ func (m *Model) armFileWaiter() tea.Cmd {
 }
 
 func (m Model) startSessionWatcher() tea.Cmd {
-	return startSessionWatcherCmd(m.projectDir, m.sessionID, m.wrapErr)
+	return startSessionWatcherCmd(m.projectDir, m.sessionID)
+}
+
+// retrySessionWatch is the session watcher's retry while it polls for want
+// of fsnotify, for r and the backoff timer; nil otherwise. The outcome
+// comes back as a sessionWatcherStartedMsg.
+func (m Model) retrySessionWatch() tea.Cmd {
+	return retrySessionWatchCmd(m.sessionWatcher, m.sessionFallback)
+}
+
+// retrySessionWatchCmd is both views' retrySessionWatch.
+func retrySessionWatchCmd(sw *SessionWatcher, f watchFallback) tea.Cmd {
+	if sw == nil || !f.active() {
+		return nil
+	}
+	return func() tea.Msg {
+		sw.RetryWatch()
+		return nil
+	}
 }
 
 func (m Model) waitForNewSession() tea.Cmd {
