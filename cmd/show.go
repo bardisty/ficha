@@ -55,13 +55,15 @@ func runShow(cfg *config, args []string, live bool) error {
 		writeWarning(cfg, "--messages has no effect on table output (use -f json or -f csv)")
 	}
 
+	// Before resolving: resolution would settle for a project that only
+	// shares this directory's name, which a live view mustn't follow.
+	if live && len(args) == 0 {
+		if waited, err := waitForFirstSession(cfg, waitingWatch(cfg)); waited {
+			return err
+		}
+	}
 	session, projectDir, explicitSessionID, err := selectSession(cfg, args)
 	if err != nil {
-		if live && len(args) == 0 {
-			if waited, waitErr := waitForFirstSession(cfg, waitingWatch(cfg)); waited {
-				return waitErr
-			}
-		}
 		return err
 	}
 

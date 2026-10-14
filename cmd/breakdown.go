@@ -49,14 +49,14 @@ Examples:
 }
 
 func runBreakdown(cfg *config, args []string) error {
+	// No session yet: wait for one, as watch does, where that's the answer
+	if len(args) == 0 {
+		if waited, err := waitForFirstSession(cfg, waitingBreakdown(cfg)); waited {
+			return err
+		}
+	}
 	session, projectDir, explicitSessionID, err := selectSession(cfg, args)
 	if err != nil {
-		// No session yet: wait for one, as watch does, where that's the answer
-		if len(args) == 0 {
-			if waited, waitErr := waitForFirstSession(cfg, waitingBreakdown(cfg)); waited {
-				return waitErr
-			}
-		}
 		return err
 	}
 

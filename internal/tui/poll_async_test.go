@@ -236,8 +236,8 @@ func TestPollReloadUsesItsOwnMeasurementAsBaseline(t *testing.T) {
 // going for the session it will open.
 func TestWaitingViewKeepsPolling(t *testing.T) {
 	for name, m := range map[string]tea.Model{
-		"watch":     NewWaitingModel(t.TempDir(), "/work/webapp", true, true),
-		"breakdown": NewWaitingBreakdownModel(t.TempDir(), "/work/webapp", true, true),
+		"watch":     NewWaitingModel(t.TempDir(), "/work/webapp", nil, true, true),
+		"breakdown": NewWaitingBreakdownModel(t.TempDir(), "/work/webapp", nil, true, true),
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

@@ -7,13 +7,16 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // A waiting view says where it waits, and the first session to appear
 // replaces it, pinned or not.
 func TestWaitingModel(t *testing.T) {
 	for _, follow := range []bool{true, false} {
-		m := NewWaitingModel("/cfg/projects/-w-webapp", "~/work/webapp", true, follow)
+		m := NewWaitingModel("/cfg/projects/-w-webapp", "~/work/webapp", nil, true, follow)
 		m = sized(t, m, 80, 24)
 		view := frameOf(m)
 		for _, want := range []string{"webapp │ ● ", "waiting for a session", "Waiting for a Claude Code session in ~/work/webapp…"} {
@@ -73,7 +76,7 @@ func TestSessionWatcherAdoptsNewProjectDir(t *testing.T) {
 // If the session watcher can't start, the waiting view says so and r
 // retries it, rather than offering a retry that does nothing.
 func TestWaitingWatcherFailureRetries(t *testing.T) {
-	m := NewWaitingModel(t.TempDir()+"/-w-webapp", "~/work/webapp", true, true)
+	m := NewWaitingModel(t.TempDir()+"/-w-webapp", "~/work/webapp", nil, true, true)
 	m = sized(t, m, 80, 24)
 	m = send(t, m, errorMsg{err: errors.New("too many open files")})
 	if !strings.Contains(frameOf(m), "too many open files") {
@@ -104,9 +107,54 @@ func TestWaitingTakesSessionCreatedBeforeWatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sw.Stop()
-	m := NewWaitingModel(dir, "~/w", true, true)
+	m := NewWaitingModel(dir, "~/w", nil, true, true)
 	m = send(t, m, sessionWatcherStartedMsg{watcher: sw})
 	if m.sessionID != id {
 		t.Errorf("session on disk at start not taken: sessionID = %q", m.sessionID)
 	}
+}
+
+// The hint under the waiting message takes the longest form that fits and is
+// dropped when none does: wrapped, it would push the frame out of shape.
+func TestWaitingHintFits(t *testing.T) {
+	long := "~/work/webapp has sessions: ficha watch -p ~/work/webapp"
+	short := "~/work/webapp has sessions"
+	hint := []string{long, short}
+	for _, tt := range []struct {
+		w, h int
+		want string
+	}{
+		{80, 24, long},
+		{40, 15, short},
+		{24, 15, ""},
+	} {
+		watch := sized(t, NewWaitingModel("/cfg/projects/-c-webapp", "~/clone/webapp", hint, true, true), tt.w, tt.h)
+		updated, _ := NewWaitingBreakdownModel("/cfg/projects/-c-webapp", "~/clone/webapp", hint, true, true).Update(tea.WindowSizeMsg{Width: tt.w, Height: tt.h})
+		for name, frame := range map[string]string{"watch": frameOf(watch), "breakdown": frameOf(updated)} {
+			if frameHeight := strings.Count(frame, "\n") + 1; frameHeight > tt.h {
+				t.Errorf("%s %dx%d: frame is %d rows", name, tt.w, tt.h, frameHeight)
+			}
+			for _, line := range strings.Split(frame, "\n") {
+				if lipgloss.Width(line) > tt.w {
+					t.Errorf("%s %dx%d: line wider than the terminal: %q", name, tt.w, tt.h, line)
+				}
+			}
+			switch {
+			case tt.want == "" && strings.Contains(frame, "has sessions"):
+				t.Errorf("%s %dx%d: hint shown with no room:\n%s", name, tt.w, tt.h, frame)
+			case tt.want != "" && !containsLine(frame, tt.want):
+				t.Errorf("%s %dx%d: want the line %q:\n%s", name, tt.w, tt.h, tt.want, frame)
+			}
+		}
+	}
+}
+
+// containsLine reports whether a line of frame, trimmed, is exactly want.
+func containsLine(frame, want string) bool {
+	for _, line := range strings.Split(frame, "\n") {
+		if strings.TrimSpace(line) == want {
+			return true
+		}
+	}
+	return false
 }
