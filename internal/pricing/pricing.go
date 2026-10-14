@@ -38,6 +38,9 @@ func (p ModelPricing) ForPrompt(promptTokens int64) ModelPricing {
 // transcript doesn't say whether Opus 4.6 or Sonnet 4.6 ran on the 1M window.
 // A reading past their 200K mark says it did, since Claude Code would have
 // compacted it there otherwise, so the mark moves to the end of the window.
+// Only that reading counts: a 1M session that compacted and is climbing
+// again reads against 200K until it passes it, since the reading alone
+// can't tell it from a 200K session.
 func (p ModelPricing) ForContext(tokens int64) ModelPricing {
 	if tokens > int64(p.CompactAtTokens) && p.CompactAtTokens < min(p.MaxContextTokens, nativeLongContextCompactAt) {
 		p.CompactAtTokens = p.MaxContextTokens
