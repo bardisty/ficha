@@ -54,6 +54,9 @@ Context
   Code's /context shows, out of the model's window. It's a snapshot, not a
   running total. Agents have context windows of their own: AGENT
   SUB-SESSIONS reads each one's the same way, from its latest request.
+  For a model ficha doesn't know, or a request larger than any window
+  ficha knows for its model, it gives the tokens alone and says the window
+  is unknown.
   The bar's tick marks ~compaction, where Claude Code auto-compacts the
   conversation by default: about 967K tokens on models with a native 1M
   window, 200K on Opus 4.6 and Sonnet 4.6 unless the latest request is

@@ -331,6 +331,18 @@ func TestGoldenSessionTableShowColor(t *testing.T) {
 	checkGolden(t, "session_table_show_color", FormatSessionTable(goldenShowAnalysis(), false, 0))
 }
 
+// A model ficha doesn't know has no window: the gauge gives the tokens and
+// says why, and so does an agent's cell, in the same 8 columns.
+func TestGoldenSessionTableShowWindowUnknown(t *testing.T) {
+	a := goldenShowAnalysis()
+	a.LastMessageModel = "claude-mystery-9"
+	a.LastMessageUsage = models.TokenUsage{InputTokens: 400, CacheReadInputTokens: 680_000}
+	a.Agents[0].CostByModel = map[string]models.CostBreakdown{"claude-mystery-9": {TotalCost: 0.42}}
+	a.Agents[0].Context = &models.ContextUsage{Tokens: 680_400}
+	checkGolden(t, "session_table_show_window_unknown", FormatSessionTable(a, true, 0))
+	checkGolden(t, "session_table_show_window_unknown_w45", FormatSessionTable(a, true, 45))
+}
+
 func TestGoldenSessionTableSummary(t *testing.T) {
 	checkGolden(t, "session_table_summary", FormatSessionTable(goldenSummaryAnalysis(), true, 0))
 }

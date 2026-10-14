@@ -10,6 +10,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/render"
@@ -227,11 +228,15 @@ func (m Model) statsSegments(label bool) []string {
 	}
 	segs = append(segs, totalSeg)
 
-	if contextSize := a.LastMessageUsage.ContextWindowSize(); contextSize > 0 {
-		modelPricing := pricing.GetModelPricing(a.LastMessageModel).ForContext(contextSize)
-		pct := pricing.GetContextPercentage(modelPricing, contextSize)
-		ctxStyle := lipgloss.NewStyle().Foreground(styles.ContextZoneColor(pricing.ContextZoneOf(contextSize, modelPricing.CompactAtTokens)))
-		segs = append(segs, style(styles.FooterStyle, "ctx ")+style(ctxStyle, fmt.Sprintf("%.0f%%", pct)))
+	if c := analyzer.ContextUsage(a.LastMessageUsage, a.LastMessageModel); c != nil {
+		// Without a window there's no percentage or mark, so the tokens go
+		// in the footer's own style.
+		reading, ctxStyle := render.NumberShort(c.Tokens), styles.FooterStyle
+		if c.WindowKnown() {
+			reading = fmt.Sprintf("%.0f%%", c.Percent)
+			ctxStyle = lipgloss.NewStyle().Foreground(styles.ContextZoneColor(pricing.ContextZoneOf(c.Tokens, c.CompactAt)))
+		}
+		segs = append(segs, style(styles.FooterStyle, "ctx ")+style(ctxStyle, reading))
 	}
 
 	// Stale data gives the rate when it went stale, until that is a whole

@@ -333,14 +333,20 @@ func lastContextMessage(msgs []models.MessageAnalysis) models.MessageAnalysis {
 }
 
 // ContextUsage is how full model's context window was at a request with this
-// usage, or nil when the usage carries no context.
+// usage, or nil when the usage carries no context. Every context reading,
+// json's and the gauges' alike, goes through here, so the window rules in
+// pricing.ContextWindow apply to all of them.
 func ContextUsage(usage models.TokenUsage, model string) *models.ContextUsage {
 	tokens := usage.ContextWindowSize()
 	if tokens == 0 {
 		return nil
 	}
-	p := pricing.GetModelPricing(model).ForContext(tokens)
-	return &models.ContextUsage{Tokens: tokens, Window: p.MaxContextTokens, Percent: pricing.GetContextPercentage(p, tokens), CompactAt: p.CompactAtTokens}
+	c := &models.ContextUsage{Tokens: tokens}
+	c.Window, c.CompactAt = pricing.ContextWindow(model, tokens)
+	if c.WindowKnown() {
+		c.Percent = float64(tokens) / float64(c.Window) * 100
+	}
+	return c
 }
 
 // timeRange returns the earliest and latest non-zero timestamps in messages.

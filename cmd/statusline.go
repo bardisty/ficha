@@ -137,8 +137,12 @@ func statusLine(model string, a *models.SessionAnalysis) string {
 	if model != "" {
 		parts = append(parts, model)
 	}
-	if a.Context != nil {
-		parts = append(parts, fmt.Sprintf("ctx %.0f%%", a.Context.Percent))
+	if c := a.Context; c != nil {
+		reading := render.NumberShort(c.Tokens)
+		if c.WindowKnown() {
+			reading = fmt.Sprintf("%.0f%%", c.Percent)
+		}
+		parts = append(parts, "ctx "+reading)
 	}
 	if in := a.Insights; in != nil && in.HasTrend() {
 		recent := fmt.Sprintf("$%.2f/msg", in.RecentAvgCost)

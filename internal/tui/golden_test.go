@@ -218,12 +218,18 @@ func goldenWatchView(t *testing.T, noColor bool) string {
 
 func goldenWatchViewSized(t *testing.T, noColor bool, width, height int) string {
 	t.Helper()
+	return goldenWatchViewOf(t, goldenViewAnalysis(), noColor, width, height)
+}
+
+// goldenWatchViewOf renders watch on analysis a at the golden clock.
+func goldenWatchViewOf(t *testing.T, a *models.SessionAnalysis, noColor bool, width, height int) string {
+	t.Helper()
 	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", noColor, "", true)
 	m.project = "webapp"
 	m.now = func() time.Time { return goldenTime(11, 30, 12) }
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	m = updated.(Model)
-	updated, _ = m.Update(analysisMsg{analysis: goldenViewAnalysis()})
+	updated, _ = m.Update(analysisMsg{analysis: a})
 	m = updated.(Model)
 	m.lastUpdated = goldenTime(11, 30, 0)
 	return frameOf(m)

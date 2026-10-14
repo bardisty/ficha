@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/render"
@@ -109,16 +110,15 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool, width in
 // renderContextSection renders the context window section: the gauge line,
 // then its scope and headroom note under the bar.
 func renderContextSection(analysis *models.SessionAnalysis, width int, noColor bool) string {
-	contextSize := analysis.LastMessageUsage.ContextWindowSize()
-	if contextSize == 0 {
+	c := analyzer.ContextUsage(analysis.LastMessageUsage, analysis.LastMessageModel)
+	if c == nil {
 		return ""
 	}
-	modelPricing := pricing.GetModelPricing(analysis.LastMessageModel).ForContext(contextSize)
 
 	// Fill the section after the "  Context " label; the gauge right-aligns
 	// its percentage, so "Context  95%" and "Context 100%" align.
 	gaugeWidth := width - 10
-	line, note := render.ContextGauge(contextSize, modelPricing.MaxContextTokens, modelPricing.CompactAtTokens, gaugeWidth, noColor, false)
+	line, note := render.ContextGauge(*c, pricing.GetModelDisplayName(analysis.LastMessageModel), gaugeWidth, noColor, false)
 	if !noColor {
 		note = lipgloss.NewStyle().Foreground(styles.NoteColor).Render(note)
 	}

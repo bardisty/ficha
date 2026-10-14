@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/render"
@@ -264,11 +265,10 @@ func (m Model) renderAnalysis() string {
 // renderContextSection renders the context gauge sized to the panel, with
 // its scope and headroom note under the bar.
 func (m Model) renderContextSection() string {
-	contextSize := m.analysis.LastMessageUsage.ContextWindowSize()
-	if contextSize == 0 {
+	c := analyzer.ContextUsage(m.analysis.LastMessageUsage, m.analysis.LastMessageModel)
+	if c == nil {
 		return ""
 	}
-	modelPricing := pricing.GetModelPricing(m.analysis.LastMessageModel).ForContext(contextSize)
 
 	// The panel's 2-column inner indent and the "Context " label come first;
 	// the gauge right-aligns its percentage, so "Context  95%" and
@@ -280,7 +280,7 @@ func (m Model) renderContextSection() string {
 		avail = min(avail, m.width-2)
 	}
 	width := avail - 2 - 8
-	line, note := render.ContextGauge(contextSize, modelPricing.MaxContextTokens, modelPricing.CompactAtTokens, width, m.noColor, m.isHighlighted("context_window"))
+	line, note := render.ContextGauge(*c, pricing.GetModelDisplayName(m.analysis.LastMessageModel), width, m.noColor, m.isHighlighted("context_window"))
 	if !m.noColor {
 		note = lipgloss.NewStyle().Foreground(styles.NoteColor).Render(note)
 	}

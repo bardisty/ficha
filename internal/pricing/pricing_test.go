@@ -801,26 +801,50 @@ func TestGetModelPricingCompactAt(t *testing.T) {
 	}
 }
 
-// The transcript's model ID never carries "[1m]", so a reading past Opus
-// 4.6's or Sonnet 4.6's 200K mark moves the mark to the end of their window.
-// Other rows keep theirs.
-func TestForContext(t *testing.T) {
+// The transcript's model ID never carries "[1m]", so a reading too big for a
+// 200K row, or past Opus 4.6's or Sonnet 4.6's 200K mark, reads against the
+// 1M window with the mark at its end. A reading no known window holds, or one
+// on a model the catalog doesn't know, has no window.
+func TestContextWindow(t *testing.T) {
 	tests := []struct {
-		modelID string
-		tokens  int64
-		want    int
+		modelID       string
+		tokens        int64
+		wantWindow    int
+		wantCompactAt int
 	}{
-		{"claude-opus-4-6", 150000, 200000},
-		{"claude-opus-4-6", 200000, 200000},
-		{"claude-opus-4-6", 500000, 1000000},
-		{"claude-sonnet-4-6-20260101", 200001, 1000000},
-		{"claude-opus-5-5", 980000, 967000},
-		{"claude-haiku-4-5", 200000, 200000},
-		{"unknown-model", 300000, 200000},
+		{"claude-opus-5-5", 678200, 1000000, 967000},
+		{"claude-opus-5-5", 980000, 1000000, 967000},
+		{"claude-opus-5-5", 1000000, 1000000, 967000},
+		{"claude-opus-5-5", 1000001, 0, 0},
+		{"claude-haiku-4-5", 150000, 200000, 200000},
+		{"claude-haiku-4-5", 200000, 200000, 200000},
+		{"claude-sonnet-4-5-20250929", 687300, 1000000, 1000000},
+		{"claude-sonnet-4-5[1m]", 150000, 1000000, 1000000},
+		{"claude-sonnet-4-5", 1200000, 0, 0},
+		{"claude-opus-4-6", 150000, 1000000, 200000},
+		{"claude-opus-4-6", 200000, 1000000, 200000},
+		{"claude-opus-4-6", 500000, 1000000, 1000000},
+		{"claude-sonnet-4-6-20260101", 200001, 1000000, 1000000},
+		{"claude-mystery-9", 680400, 0, 0},
+		{"claude-mystery-9", 50000, 0, 0},
+		{"claude-opus-4-9[1m]", 50000, 0, 0},
+		{SyntheticModel, 1000, 200000, 200000},
 	}
 	for _, tt := range tests {
-		if got := GetModelPricing(tt.modelID).ForContext(tt.tokens).CompactAtTokens; got != tt.want {
-			t.Errorf("GetModelPricing(%q).ForContext(%d).CompactAtTokens = %d, want %d", tt.modelID, tt.tokens, got, tt.want)
+		window, compactAt := ContextWindow(tt.modelID, tt.tokens)
+		if window != tt.wantWindow || compactAt != tt.wantCompactAt {
+			t.Errorf("ContextWindow(%q, %d) = %d, %d, want %d, %d", tt.modelID, tt.tokens, window, compactAt, tt.wantWindow, tt.wantCompactAt)
+		}
+	}
+}
+
+// No known reading can read over 100% of its window, whatever the model.
+func TestContextWindowHoldsTheReading(t *testing.T) {
+	for _, m := range modelCatalog {
+		for _, tokens := range []int64{1, 199999, 200000, 200001, 966999, 967000, 999999, 1000000, 1000001, 5000000} {
+			if window, _ := ContextWindow(m.ID, tokens); window > 0 && tokens > int64(window) {
+				t.Errorf("ContextWindow(%q, %d) = window %d, smaller than the reading", m.ID, tokens, window)
+			}
 		}
 	}
 }

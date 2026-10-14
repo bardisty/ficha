@@ -88,6 +88,21 @@ func Number(n int64) string {
 	return fmt.Sprintf("%d", n)
 }
 
+// NumberShort formats a token count in at most four columns, for cells too
+// narrow for Number: "680K", "1.1M", "512".
+func NumberShort(n int64) string {
+	switch {
+	case n >= 9_950_000:
+		return fmt.Sprintf("%.0fM", float64(n)/1e6)
+	case n >= 999_500:
+		return fmt.Sprintf("%.1fM", float64(n)/1e6)
+	case n >= 1000:
+		return fmt.Sprintf("%.0fK", float64(n)/1000)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
+}
+
 // Count formats an exact count with thousands separators ("1,523"), for
 // counts a reader may compare, such as messages. Number abbreviates.
 func Count(n int) string {
@@ -471,9 +486,9 @@ func ContextBar(contextSize int64, maxContext, compactAt, width int, noColor boo
 // minContextBar is the narrowest bar worth drawing, brackets excluded.
 const minContextBar = 10
 
-// ContextGauge renders the context line's content and the note under it,
+// ContextGauge renders reading c's context line and the note under it,
 // fitted to width columns, with the tick and the note's headroom taken from
-// compactAt, the model's ~compaction point:
+// c.CompactAt, the model's ~compaction point:
 //
 //	 95% [██████████████████████████████████│░] 950.0K / 1.00M
 //	17.0K to ~compaction (main session, last request)
@@ -485,20 +500,32 @@ const minContextBar = 10
 // takes whatever width is left. When the line can't fit, whole fields drop
 // (the token counts, then the bar) rather than clipping inside a number.
 // highlight marks the token counts as just changed.
-func ContextGauge(contextSize int64, maxContext, compactAt, width int, noColor, highlight bool) (line, note string) {
-	pct := 0.0
-	if maxContext > 0 {
-		pct = float64(contextSize) / float64(maxContext) * 100
-	}
-	pctStr := fmt.Sprintf("%3.0f%%", pct)
-	value := Number(contextSize) + " / " + Number(int64(maxContext))
-
+//
+// A reading whose window ficha doesn't know has no percentage, bar or
+// headroom to give, so the line is its tokens and the note says why, naming
+// model, the model's display name:
+//
+//	680.4K tokens
+//	window unknown for claude-mystery-9
+func ContextGauge(c models.ContextUsage, model string, width int, noColor, highlight bool) (line, note string) {
 	style := func(st lipgloss.Style, s string) string {
 		if noColor {
 			return s
 		}
 		return st.Render(s)
 	}
+	if !c.WindowKnown() {
+		line = Number(c.Tokens) + " tokens"
+		if highlight {
+			line = style(styles.HighlightStyle, line)
+		}
+		return line, firstFit(width-1, "window unknown for "+model, "window unknown")
+	}
+
+	contextSize, maxContext, compactAt := c.Tokens, c.Window, c.CompactAt
+	pctStr := fmt.Sprintf("%3.0f%%", c.Percent)
+	value := Number(contextSize) + " / " + Number(int64(maxContext))
+
 	pctStyled := style(lipgloss.NewStyle().Foreground(styles.ContextZoneColor(pricing.ContextZoneOf(contextSize, compactAt))), pctStr)
 	valueStyled := value
 	if highlight {
@@ -527,12 +554,17 @@ const AgentContextWidth = 8
 // AgentContextCell is an agent row's context reading, " 38% ctx",
 // right-aligned in AgentContextWidth columns, or blanks when c is nil. It's
 // dim like the message count beside it until the reading enters its own
-// model's warning band, so only an agent nearing compaction stands out.
+// model's warning band, so only an agent nearing compaction stands out. A
+// reading whose window ficha doesn't know gives its tokens, "680K ctx", and
+// stays dim, since there's no mark to warn against.
 func AgentContextCell(c *models.ContextUsage, noColor bool) string {
 	if c == nil {
 		return strings.Repeat(" ", AgentContextWidth)
 	}
 	cell := fmt.Sprintf("%3.0f%% ctx", c.Percent)
+	if !c.WindowKnown() {
+		cell = NumberShort(c.Tokens) + " ctx"
+	}
 	if len(cell) < AgentContextWidth {
 		cell = strings.Repeat(" ", AgentContextWidth-len(cell)) + cell
 	}
@@ -570,6 +602,11 @@ func contextNote(contextSize int64, compactAt, width int) string {
 		reading := Number(-headroom) + " past ~compaction"
 		forms = []string{reading + scope, reading, "past ~compaction"}
 	}
+	return firstFit(width, forms...)
+}
+
+// firstFit returns the first of forms that fits in width columns, or "".
+func firstFit(width int, forms ...string) string {
 	for _, f := range forms {
 		if lipgloss.Width(f) <= width {
 			return f

@@ -33,19 +33,35 @@ func (p ModelPricing) ForPrompt(promptTokens int64) ModelPricing {
 	return p
 }
 
-// ForContext returns the card a context reading of tokens is measured
-// against. Claude Code writes a model ID without its "[1m]" marker, so a
-// transcript doesn't say whether Opus 4.6 or Sonnet 4.6 ran on the 1M window.
-// A reading past their 200K mark says it did, since Claude Code would have
-// compacted it there otherwise, so the mark moves to the end of the window.
-// Only that reading counts: a 1M session that compacted and is climbing
-// again reads against 200K until it passes it, since the reading alone
-// can't tell it from a 200K session.
-func (p ModelPricing) ForContext(tokens int64) ModelPricing {
+// ContextWindow returns the window and ~compaction point a context reading
+// of tokens on modelID reads against. window is 0 when ficha doesn't know
+// the window: the catalog doesn't know the model, or the reading is larger
+// than any window ficha knows for it. A guessed window would turn the reading
+// into a percentage that's wrong, often over 100.
+//
+// Claude Code writes a model ID without its "[1m]" marker, so a transcript
+// doesn't say whether a model ran on the 1M window. A reading past a 200K
+// row's window, or past Opus 4.6's and Sonnet 4.6's 200K mark, says it did,
+// since the request couldn't fit or Claude Code would have compacted it
+// there. The mark then moves to the end of the 1M window. Only that reading
+// counts: a 1M session that compacted and is climbing again reads against
+// 200K until it passes it, since the reading alone can't tell it from a 200K
+// session.
+func ContextWindow(modelID string, tokens int64) (window, compactAt int) {
+	if !IsKnownModel(modelID) {
+		return 0, 0
+	}
+	p := GetModelPricing(modelID)
+	if tokens > int64(p.MaxContextTokens) && p.MaxContextTokens < longContextTokens {
+		p.MaxContextTokens = longContextTokens
+	}
 	if tokens > int64(p.CompactAtTokens) && p.CompactAtTokens < min(p.MaxContextTokens, nativeLongContextCompactAt) {
 		p.CompactAtTokens = p.MaxContextTokens
 	}
-	return p
+	if tokens > int64(p.MaxContextTokens) {
+		return 0, 0
+	}
+	return p.MaxContextTokens, p.CompactAtTokens
 }
 
 // Cache multipliers (relative to input rate). Cache reads are the only bucket
@@ -100,7 +116,7 @@ var modelCatalog = []ModelInfo{
 	{ID: "claude-opus-4-8", DisplayName: "Opus 4.8", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
 	{ID: "claude-opus-4-7", DisplayName: "Opus 4.7", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
 	// Opus 4.6 and Sonnet 4.6 reach 1M only through "[1m]", so Claude Code
-	// compacts them at 200K without it; see ModelPricing.ForContext.
+	// compacts them at 200K without it; see ContextWindow.
 	{ID: "claude-opus-4-6", DisplayName: "Opus 4.6", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000, CompactAtTokens: 200000},
 	{ID: "claude-opus-4-5", DisplayName: "Opus 4.5", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 200000},
 	{ID: "claude-opus-4-1", DisplayName: "Opus 4.1", InputRate: 15.00, OutputRate: 75.00, MaxContextTokens: 200000},
