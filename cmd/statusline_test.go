@@ -58,7 +58,7 @@ func TestStatusLineParts(t *testing.T) {
 			if tt.change != nil {
 				tt.change(a)
 			}
-			if got := statusLine(tt.model, a); got != tt.want {
+			if got := statusLine(tt.model, a, true); got != tt.want {
 				t.Errorf("got  %q\nwant %q", got, tt.want)
 			}
 		})
@@ -66,8 +66,118 @@ func TestStatusLineParts(t *testing.T) {
 
 	styles.SetASCII(true)
 	t.Cleanup(func() { styles.SetASCII(false) })
-	if got, want := statusLine("Opus 5.5", full()), "Opus 5.5 | ctx 68% | $0.19/msg ^ | $43.67 (agents $12.54)"; got != want {
+	if got, want := statusLine("Opus 5.5", full(), true), "Opus 5.5 | ctx 68% | $0.19/msg ^ | $43.67 (agents $12.54)"; got != want {
 		t.Errorf("--ascii:\n got  %q\nwant %q", got, want)
+	}
+}
+
+// The ctx part says how near ~compaction the reading is once it's in the
+// warning band, against each model's own mark: the words show's note uses,
+// short. Below the band it's the percentage alone.
+func TestStatusLineCompaction(t *testing.T) {
+	reading := func(tokens int64, window, compactAt int) *models.ContextUsage {
+		return &models.ContextUsage{Tokens: tokens, Window: window, Percent: float64(tokens) / float64(window) * 100, CompactAt: compactAt}
+	}
+	tests := []struct {
+		name string
+		c    *models.ContextUsage
+		want string
+	}{
+		{"1M below the band", reading(678_200, 1_000_000, 967_000), "ctx 68%"},
+		{"1M in the band", reading(900_000, 1_000_000, 967_000), "ctx 90%, 67.0K to ~compaction"},
+		{"1M at the mark", reading(967_000, 1_000_000, 967_000), "ctx 97%, at ~compaction"},
+		{"1M past the mark", reading(980_000, 1_000_000, 967_000), "ctx 98%, past ~compaction"},
+		{"200K below the band", reading(150_000, 200_000, 200_000), "ctx 75%"},
+		{"200K in the band", reading(180_000, 200_000, 200_000), "ctx 90%, 20.0K to ~compaction"},
+		{"200K at the mark", reading(200_000, 200_000, 200_000), "ctx 100%, at ~compaction"},
+		// A request past 200K on a 200K model reads against 1M, and Opus 4.6
+		// past its 200K mark compacts at the end of its 1M window.
+		{"Opus 4.6 past 200K", reading(250_000, 1_000_000, 1_000_000), "ctx 25%"},
+		{"window unknown", &models.ContextUsage{Tokens: 680_400}, "ctx 680.4K"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &models.SessionAnalysis{Context: tt.c}
+			want := "Opus 5.5 · " + tt.want + " · $0.00"
+			if got := statusLine("Opus 5.5", a, true); got != want {
+				t.Errorf("got  %q\nwant %q", got, want)
+			}
+		})
+	}
+}
+
+// In color, only the percentage takes its zone's color, and only from the
+// band on: 93 (bright yellow) in it and 91 (bright red) past the mark, from
+// the basic palette statusline uses. Below the band it's plain.
+func TestStatusLineCompactionColor(t *testing.T) {
+	styles.SetBasic(true)
+	t.Cleanup(func() { styles.SetBasic(false) })
+	for _, tt := range []struct {
+		c    models.ContextUsage
+		want string
+	}{
+		{models.ContextUsage{Tokens: 678_200, Window: 1_000_000, Percent: 67.82, CompactAt: 967_000}, "ctx 68% · $0.00"},
+		{models.ContextUsage{Tokens: 900_000, Window: 1_000_000, Percent: 90, CompactAt: 967_000}, "ctx \x1b[93m90%\x1b[m, 67.0K to ~compaction · $0.00"},
+		{models.ContextUsage{Tokens: 980_000, Window: 1_000_000, Percent: 98, CompactAt: 967_000}, "ctx \x1b[91m98%\x1b[m, past ~compaction · $0.00"},
+	} {
+		if got := statusLine("", &models.SessionAnalysis{Context: &tt.c}, false); got != tt.want {
+			t.Errorf("got  %q\nwant %q", got, tt.want)
+		}
+	}
+}
+
+// statusline colors its ctx part on the pipe Claude Code reads, in the 16
+// basic colors, and nothing else on the line. --no-color, NO_COLOR and
+// CLICOLOR=0 leave it plain, with the same words.
+func TestStatuslineColor(t *testing.T) {
+	root := t.TempDir()
+	transcript := filepath.Join(root, "projects", statusProjDir, statusID+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// One request at 900K on Opus 5.5: in the band before its 967K mark.
+	msg := e2eMsg("2026-03-01T10:00:00Z", "m1", "claude-opus-5-5", 10, 500, 0, 0, 899_990)
+	if err := os.WriteFile(transcript, []byte(msg+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("CLICOLOR", "")
+	t.Setenv("CLICOLOR_FORCE", "")
+	// statusline picks the basic palette, and it must not outlive the test.
+	t.Cleanup(func() { styles.SetBasic(false) })
+	in := statusInput(t, transcript, "Opus 5.5")
+	const plain = "Opus 5.5 · ctx 90%, 67.0K to ~compaction · $0.19\n"
+
+	got, _, err := executeStatusline(t, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "Opus 5.5 · ctx \x1b[93m90%\x1b[m, 67.0K to ~compaction · $0.19\n"; got != want {
+		t.Errorf("colored:\n got  %q\nwant %q", got, want)
+	}
+
+	for _, tc := range []struct {
+		name string
+		env  [2]string
+		args []string
+	}{
+		{"--no-color", [2]string{}, []string{"--no-color"}},
+		{"NO_COLOR=1", [2]string{"NO_COLOR", "1"}, nil},
+		{"CLICOLOR=0", [2]string{"CLICOLOR", "0"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.env[0] != "" {
+				t.Setenv(tc.env[0], tc.env[1])
+			}
+			got, _, err := executeStatusline(t, in, tc.args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != plain {
+				t.Errorf("got  %q\nwant %q", got, plain)
+			}
+		})
 	}
 }
 
@@ -205,7 +315,9 @@ func TestStatuslineAgreesWithShowJSON(t *testing.T) {
 			// filepath.Join gives a path with backslashes on Windows, which
 			// the JSON carries escaped.
 			transcript := filepath.Join(proj, id+".jsonl")
-			stdout, stderr, err := executeStatusline(t, statusInput(t, transcript, "Opus 5.5"))
+			// The figures are what's compared; TestStatuslineColor pins
+			// the color.
+			stdout, stderr, err := executeStatusline(t, statusInput(t, transcript, "Opus 5.5"), "--no-color")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -220,13 +332,13 @@ func TestStatuslineAgreesWithShowJSON(t *testing.T) {
 
 	// Pin the parts each session must show, so the comparison above can't
 	// pass on two lines that both leave everything out.
-	full, _, _ := executeStatusline(t, statusInput(t, filepath.Join(proj, statusID+".jsonl"), "Opus 5.5"))
+	full, _, _ := executeStatusline(t, statusInput(t, filepath.Join(proj, statusID+".jsonl"), "Opus 5.5"), "--no-color")
 	for _, part := range []string{" · ctx ", "/msg ▲ · $", " (agents $"} {
 		if !strings.Contains(full, part) {
 			t.Errorf("seven climbing messages and an agent: %q lacks %q", full, part)
 		}
 	}
-	short, _, _ := executeStatusline(t, statusInput(t, filepath.Join(proj, statusSoloID+".jsonl"), "Opus 5.5"))
+	short, _, _ := executeStatusline(t, statusInput(t, filepath.Join(proj, statusSoloID+".jsonl"), "Opus 5.5"), "--no-color")
 	if strings.Contains(short, "/msg") || strings.Contains(short, "agents") {
 		t.Errorf("three messages and no agents: %q", short)
 	}

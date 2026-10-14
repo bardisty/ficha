@@ -30,8 +30,9 @@ CLICOLOR_FORCE
 
 CI
   Any non-empty value turns color off, even on a terminal, and CI=false
-  counts. CI services set it, and CLICOLOR_FORCE=1 keeps color in their
-  logs. If your shell exports it, --no-color=false brings color back.
+  counts. statusline keeps its color, since it always writes to a pipe. CI
+  services set it, and CLICOLOR_FORCE=1 keeps color in their logs. If your
+  shell exports it, --no-color=false brings color back.
 
 COLORFGBG
   The terminal's colors as foreground;background, such as '0;15' for dark
