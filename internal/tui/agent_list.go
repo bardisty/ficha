@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/pricing"
 )
 
 // agentListCap is how many agents watch lists one row each. Above it,
@@ -61,6 +62,13 @@ func agentFinished(agent models.AgentAnalysis, now time.Time) bool {
 	return !agent.EndTime.IsZero() && !agentRunning(agent, now)
 }
 
+// agentLive reports whether agent counts as running in a's list, the rows
+// that carry the dot: it wrote within idleAfter of now, and it isn't in a
+// workflow run that has ended.
+func agentLive(a *models.SessionAnalysis, agent models.AgentAnalysis, now time.Time) bool {
+	return agentRunning(agent, now) && (agent.WorkflowID == "" || !runEnded(a, agent.WorkflowID))
+}
+
 // runningAgentsKey names the agents running at now, so a clock tick can tell
 // whether the list's dots or folds changed without re-rendering it.
 func runningAgentsKey(a *models.SessionAnalysis, now time.Time) string {
@@ -69,11 +77,40 @@ func runningAgentsKey(a *models.SessionAnalysis, now time.Time) string {
 	}
 	var ids []string
 	for _, agent := range a.Agents {
-		if agentRunning(agent, now) && (agent.WorkflowID == "" || !runEnded(a, agent.WorkflowID)) {
+		if agentLive(a, agent, now) {
 			ids = append(ids, agent.AgentID)
 		}
 	}
 	return strings.Join(ids, ",")
+}
+
+// nearestAgent is the running agent nearest ~compaction, when it's in its
+// warning band or past its mark and nearer its own mark than main, the
+// session's reading, is to its own. Each reading measures against its own
+// model's mark, as tokens over the mark, so an agent at 60% of a 200K
+// window outranks a session at 68% of a 1M one. nil when no agent does.
+func nearestAgent(a *models.SessionAnalysis, main *models.ContextUsage, now time.Time) *models.AgentAnalysis {
+	var nearest *models.AgentAnalysis
+	best := markShare(main)
+	for i, agent := range a.Agents {
+		c := agent.Context
+		if c == nil || !agentLive(a, agent, now) || pricing.ContextZoneOf(c.Tokens, c.CompactAt) == pricing.ContextClear {
+			continue
+		}
+		if share := markShare(c); share > best {
+			nearest, best = &a.Agents[i], share
+		}
+	}
+	return nearest
+}
+
+// markShare is how far along to its ~compaction mark a reading is, 1 at the
+// mark, or 0 for a reading with no mark.
+func markShare(c *models.ContextUsage) float64 {
+	if c == nil || c.CompactAt <= 0 {
+		return 0
+	}
+	return float64(c.Tokens) / float64(c.CompactAt)
 }
 
 // agentRows lays out the agent list: plain agents, then each workflow run
@@ -116,7 +153,7 @@ func agentRows(a *models.SessionAnalysis, now time.Time) []agentRow {
 		if foldPlain && agentFinished(agent, now) {
 			continue
 		}
-		rows = append(rows, agentRow{kind: agentRowAgent, agent: agent, running: agentRunning(agent, now)})
+		rows = append(rows, agentRow{kind: agentRowAgent, agent: agent, running: agentLive(a, agent, now)})
 	}
 
 	for _, id := range runOrder {
@@ -129,7 +166,7 @@ func agentRows(a *models.SessionAnalysis, now time.Time) []agentRow {
 			continue
 		}
 		for _, agent := range agents {
-			rows = append(rows, agentRow{kind: agentRowAgent, agent: agent, running: !ended && agentRunning(agent, now)})
+			rows = append(rows, agentRow{kind: agentRowAgent, agent: agent, running: agentLive(a, agent, now)})
 		}
 	}
 	return rows

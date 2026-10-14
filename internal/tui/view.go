@@ -280,10 +280,11 @@ func (m Model) renderContextSection() string {
 		avail = min(avail, m.width-2)
 	}
 	width := avail - 2 - 8
-	line, note := render.ContextGauge(*c, m.analysis.LastMessageModel, width, m.noColor, m.isHighlighted("context_window"))
-	if !m.noColor {
-		note = lipgloss.NewStyle().Foreground(styles.NoteColor).Render(note)
+	var agent *render.ContextAgent
+	if near := nearestAgent(m.analysis, c, m.clock()); near != nil {
+		agent = &render.ContextAgent{ID: near.AgentID, Reading: *near.Context}
 	}
+	line, note := render.ContextGauge(*c, m.analysis.LastMessageModel, agent, width, m.noColor, m.isHighlighted("context_window"))
 	return "    Context " + line + "\n             " + note + "\n"
 }
 

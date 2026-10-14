@@ -499,7 +499,7 @@ func TestContextGaugeColorFollowsTheMark(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			line, _ := ContextGauge(reading(tt.size, tt.max, tt.compactAt), "Opus", 60, false, false)
+			line, _ := ContextGauge(reading(tt.size, tt.max, tt.compactAt), "Opus", nil, 60, false, false)
 			pct := fmt.Sprintf("%3.0f%%", float64(tt.size)/float64(tt.max)*100)
 			want := lipgloss.NewStyle().Foreground(tt.want).Render(pct)
 			if !strings.HasPrefix(line, want) {
@@ -528,7 +528,7 @@ func TestContextGaugeWindowUnknown(t *testing.T) {
 		{10, ""},
 	}
 	for _, tt := range tests {
-		line, note := ContextGauge(c, "claude-mystery-9", tt.width, true, false)
+		line, note := ContextGauge(c, "claude-mystery-9", nil, tt.width, true, false)
 		if line != "680.4K tokens" {
 			t.Errorf("width %d: line = %q, want %q", tt.width, line, "680.4K tokens")
 		}
@@ -536,7 +536,7 @@ func TestContextGaugeWindowUnknown(t *testing.T) {
 			t.Errorf("width %d: note = %q, want %q", tt.width, note, tt.wantNote)
 		}
 	}
-	if line, _ := ContextGauge(c, "claude-mystery-9", 60, false, true); line != styles.HighlightStyle.Render("680.4K tokens") {
+	if line, _ := ContextGauge(c, "claude-mystery-9", nil, 60, false, true); line != styles.HighlightStyle.Render("680.4K tokens") {
 		t.Errorf("highlighted line = %q", line)
 	}
 
@@ -544,7 +544,7 @@ func TestContextGaugeWindowUnknown(t *testing.T) {
 	// knows, so the note says that rather than calling the model unknown.
 	over := models.ContextUsage{Tokens: 1_050_000}
 	for width, want := range map[int]string{60: "over the 1.00M window ficha knows for Opus 5.5", 30: "over the known window", 10: ""} {
-		if _, note := ContextGauge(over, "claude-opus-5-5", width, true, false); note != want {
+		if _, note := ContextGauge(over, "claude-opus-5-5", nil, width, true, false); note != want {
 			t.Errorf("1.05M on Opus 5.5, width %d: note = %q, want %q", width, note, want)
 		}
 	}
@@ -593,11 +593,11 @@ func TestContextNote(t *testing.T) {
 		{200_000, 200_000, 10, ""},
 	}
 	for _, tt := range tests {
-		if got := contextNote(tt.size, tt.compactAt, tt.width); got != tt.want {
-			t.Errorf("contextNote(%d, %d, width %d) = %q, want %q", tt.size, tt.compactAt, tt.width, got, tt.want)
+		if got := firstFit(tt.width, contextNotes(tt.size, tt.compactAt)...); got != tt.want {
+			t.Errorf("contextNotes(%d, %d), width %d: = %q, want %q", tt.size, tt.compactAt, tt.width, got, tt.want)
 		}
 	}
-	if got := contextNote(10, 0, 80); got != "" {
+	if got := firstFit(80, contextNotes(10, 0)...); got != "" {
 		t.Errorf("no mark: note = %q, want none", got)
 	}
 }
@@ -624,7 +624,7 @@ func TestContextGauge(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			line, note := ContextGauge(reading(tt.size, 1_000_000, 967_000), "Opus 5.5", tt.width, true, false)
+			line, note := ContextGauge(reading(tt.size, 1_000_000, 967_000), "Opus 5.5", nil, tt.width, true, false)
 			if line != tt.wantLine {
 				t.Errorf("line = %q, want %q", line, tt.wantLine)
 			}
