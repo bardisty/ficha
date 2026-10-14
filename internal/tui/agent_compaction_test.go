@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 // nearerAgentAnalysis is the golden session, Opus 4.8 at 380K of a 967K
@@ -34,7 +35,8 @@ func TestGoldenWatchAgentNearerCompaction(t *testing.T) {
 }
 
 // The note and footer each name the agent at 80 columns, and the note's
-// agent part goes before the main session's headroom at 40.
+// agent part goes before the main session's headroom at 40. --ascii swaps
+// the note's separator for its own.
 func TestWatchAgentNearerCompactionText(t *testing.T) {
 	frame := goldenWatchViewOf(t, nearerAgentAnalysis(), true, 80, 24)
 	for _, want := range []string{
@@ -44,6 +46,13 @@ func TestWatchAgentNearerCompactionText(t *testing.T) {
 		if !strings.Contains(frame, want) {
 			t.Errorf("80x24 frame lacks %q:\n%s", want, frame)
 		}
+	}
+	styles.SetASCII(true)
+	t.Cleanup(func() { styles.SetASCII(false) })
+	ascii := goldenWatchViewOf(t, nearerAgentAnalysis(), true, 80, 24)
+	styles.SetASCII(false)
+	if want := "587.0K to ~compaction | agent Af6e5d4c 13.0K past ~compaction"; !strings.Contains(ascii, want) {
+		t.Errorf("--ascii 80x24 frame lacks %q:\n%s", want, ascii)
 	}
 	narrow := goldenWatchViewOf(t, nearerAgentAnalysis(), true, 40, 15)
 	if !strings.Contains(narrow, "587.0K to ~compaction") {

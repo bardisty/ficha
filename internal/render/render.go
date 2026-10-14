@@ -577,7 +577,8 @@ func gaugeNote(forms []string, main string, agent *ContextAgent, width int, noCo
 		r := agent.Reading
 		label := "agent A" + ShortAgentID(agent.ID) + " "
 		long, short := label+CompactionWords(r.Tokens, r.CompactAt), label+fmt.Sprintf("%.0f%%", r.Percent)
-		for _, f := range [][2]string{{main + " (main session) · ", long}, {main + " · ", long}, {main + " · ", short}} {
+		sep := " " + styles.FieldSep + " "
+		for _, f := range [][2]string{{main + " (main session)" + sep, long}, {main + sep, long}, {main + sep, short}} {
 			if lipgloss.Width(f[0]+f[1]) <= width {
 				return paint(styles.NoteColor, f[0]) + paint(styles.ContextZoneColor(pricing.ContextZoneOf(r.Tokens, r.CompactAt)), f[1])
 			}
