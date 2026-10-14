@@ -76,6 +76,12 @@ func runStatusline(cfg *config, stdin io.Reader) error {
 	if in.TranscriptPath == "" {
 		return errors.New("no transcript_path in the status line JSON on stdin")
 	}
+	// Claude Code always sends a .jsonl path. Any other file would read as a
+	// session with no messages, and $0.00 on the status line looks like a
+	// real reading where an error leaves it blank.
+	if !strings.EqualFold(filepath.Ext(in.TranscriptPath), ".jsonl") {
+		return fmt.Errorf("transcript_path %s isn't a .jsonl transcript", in.TranscriptPath)
+	}
 	abs, err := filepath.Abs(in.TranscriptPath)
 	if err != nil {
 		return err

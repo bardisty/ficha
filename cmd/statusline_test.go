@@ -246,12 +246,41 @@ func TestStatuslineReadsAWindowsPath(t *testing.T) {
 	}
 }
 
+// A transcript with no line ficha can read is still a transcript, so like
+// show, statusline reports the $0.00 it found and warns that it skipped
+// lines. The extension check ignores case, as show's does.
+func TestStatuslineUnreadableTranscript(t *testing.T) {
+	proj := setupStatusFixture(t)
+	for _, name := range []string{"ffffffff-1111-2222-3333-444444444444.jsonl", "ffffffff-1111-2222-3333-555555555555.JSONL"} {
+		t.Run(filepath.Ext(name), func(t *testing.T) {
+			transcript := filepath.Join(proj, name)
+			if err := os.WriteFile(transcript, []byte("not json\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			stdout, stderr, err := executeStatusline(t, statusInput(t, transcript, "Opus 5.5"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := "Opus 5.5 · $0.00\n"; stdout != want {
+				t.Errorf("stdout = %q, want %q", stdout, want)
+			}
+			if !strings.Contains(stderr, "1 unparseable line(s) skipped") {
+				t.Errorf("stderr = %q, want the skip warning", stderr)
+			}
+		})
+	}
+}
+
 // Claude Code shows whatever reaches stdout, so a failure must leave it
 // empty, with the reason on stderr and the exit status saying which kind.
 func TestStatuslineFailures(t *testing.T) {
 	proj := setupStatusFixture(t)
 	transcript := filepath.Join(proj, statusID+".jsonl")
 	good := statusInput(t, transcript, "Opus 5.5")
+	notes := filepath.Join(t.TempDir(), "notes.md")
+	if err := os.WriteFile(notes, []byte("# Notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
 		name    string
 		stdin   string
@@ -267,6 +296,8 @@ func TestStatuslineFailures(t *testing.T) {
 		{"trailing data", good + " garbage", nil, 1, "reading Claude Code's status line JSON on stdin"},
 		{"an agent's transcript", statusInput(t, filepath.Join(proj, statusID, "subagents", "agent-a1.jsonl"), "Opus 5.5"), nil, 1, "is an agent's transcript, part of session dddddddd"},
 		{"missing transcript", statusInput(t, filepath.Join(proj, "nope.jsonl"), "Opus 5.5"), nil, 1, "can't read transcript"},
+		{"a file that isn't .jsonl", statusInput(t, notes, "Opus 5.5"), nil, 1, "notes.md isn't a .jsonl transcript"},
+		{"a missing file that isn't .jsonl", statusInput(t, filepath.Join(proj, "nope.md"), "Opus 5.5"), nil, 1, "nope.md isn't a .jsonl transcript"},
 		{"-f json", good, []string{"-f", "json"}, 2, "--format json is not supported by statusline"},
 		{"-f csv", good, []string{"-f", "csv"}, 2, "--format csv is not supported by statusline"},
 		{"an argument", good, []string{transcript}, 2, "ficha statusline takes no arguments"},
