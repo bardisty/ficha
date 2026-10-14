@@ -117,10 +117,7 @@ func renderContextSection(analysis *models.SessionAnalysis, width int, noColor b
 	// Fill the section after the "  Context " label; the gauge right-aligns
 	// its percentage, so "Context  95%" and "Context 100%" align.
 	gaugeWidth := width - 10
-	line, note := render.ContextGauge(*c, analysis.LastMessageModel, gaugeWidth, noColor, false)
-	if !noColor {
-		note = lipgloss.NewStyle().Foreground(styles.NoteColor).Render(note)
-	}
+	line, note := render.ContextGauge(*c, analysis.LastMessageModel, nil, gaugeWidth, noColor, false)
 	return "  Context " + line + "\n           " + note + "\n"
 }
 

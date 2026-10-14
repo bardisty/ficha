@@ -176,16 +176,21 @@ func (m Model) renderFooterRule(panelWidth int) string {
 // label goes first, then whole readings from the right; the total always
 // stays.
 func (m Model) renderStatsLine(width int) string {
-	line := m.statsLine(true)
-	if lipgloss.Width(line) <= width {
-		return line
-	}
-	segs := m.statsSegments(false)
 	sep := " " + styles.BoxVerticalSep + " "
 	if !m.noColor {
 		sep = styles.FooterStyle.Render(sep)
 	}
-	line = strings.Join(segs, sep)
+	// A running agent nearer ~compaction rides on the ctx reading. It goes
+	// right after the label, before any whole reading: it adds to the ctx
+	// reading, and the readings it would push out stand on their own. The
+	// note under the gauge keeps it longer.
+	for _, label := range []bool{true, false} {
+		if line := strings.Join(m.statsSegments(label, true), sep); lipgloss.Width(line) <= width {
+			return line
+		}
+	}
+	segs := m.statsSegments(false, false)
+	line := strings.Join(segs, sep)
 	for len(segs) > 1 && lipgloss.Width(line) > width {
 		segs = segs[:len(segs)-1]
 		line = strings.Join(segs, sep)
@@ -193,20 +198,13 @@ func (m Model) renderStatsLine(width int) string {
 	return line
 }
 
-// statsLine joins every stats segment.
-func (m Model) statsLine(label bool) string {
-	sep := " " + styles.BoxVerticalSep + " "
-	if !m.noColor {
-		sep = styles.FooterStyle.Render(sep)
-	}
-	return strings.Join(m.statsSegments(label), sep)
-}
-
 // statsSegments renders the stats line's readings, most important first.
-// label adds "API est." after the total. The message count highlights on
+// label adds "API est." after the total, and agent the running agent
+// nearest ~compaction after the ctx reading, as "(agent 98%)", when one is
+// nearer than the main session. The message count highlights on
 // change but carries no delta: a width that changes for two seconds would
 // make the line jump, or drop a reading at a narrow width.
-func (m Model) statsSegments(label bool) []string {
+func (m Model) statsSegments(label, agent bool) []string {
 	a := m.analysis
 	style := func(st lipgloss.Style, s string) string {
 		if m.noColor {
@@ -236,7 +234,13 @@ func (m Model) statsSegments(label bool) []string {
 			reading = fmt.Sprintf("%.0f%%", c.Percent)
 			ctxStyle = lipgloss.NewStyle().Foreground(styles.ContextZoneColor(pricing.ContextZoneOf(c.Tokens, c.CompactAt)))
 		}
-		segs = append(segs, style(styles.FooterStyle, "ctx ")+style(ctxStyle, reading))
+		seg := style(styles.FooterStyle, "ctx ") + style(ctxStyle, reading)
+		if near := nearestAgent(a, c, m.clock()); agent && near != nil {
+			nc := near.Context
+			nearStyle := lipgloss.NewStyle().Foreground(styles.ContextZoneColor(pricing.ContextZoneOf(nc.Tokens, nc.CompactAt)))
+			seg += style(styles.FooterStyle, " (agent ") + style(nearStyle, fmt.Sprintf("%.0f%%", nc.Percent)) + style(styles.FooterStyle, ")")
+		}
+		segs = append(segs, seg)
 	}
 
 	// Stale data gives the rate when it went stale, until that is a whole

@@ -508,7 +508,11 @@ const minContextBar = 10
 //
 //	680.4K tokens
 //	window unknown for claude-mystery-9
-func ContextGauge(c models.ContextUsage, model string, width int, noColor, highlight bool) (line, note string) {
+//
+// agent, when set, is a running agent nearer ~compaction than c, and the
+// note names it after the main reading, in its own zone's color. It sheds
+// before the main reading does. The note comes styled unless noColor.
+func ContextGauge(c models.ContextUsage, model string, agent *ContextAgent, width int, noColor, highlight bool) (line, note string) {
 	style := func(st lipgloss.Style, s string) string {
 		if noColor {
 			return s
@@ -520,7 +524,8 @@ func ContextGauge(c models.ContextUsage, model string, width int, noColor, highl
 		if highlight {
 			line = style(styles.HighlightStyle, line)
 		}
-		return line, windowUnknownNote(model, width-1)
+		forms := windowUnknownNotes(model)
+		return line, gaugeNote(forms, forms[len(forms)-1], agent, width-1, noColor)
 	}
 
 	contextSize, maxContext, compactAt := c.Tokens, c.Window, c.CompactAt
@@ -546,7 +551,41 @@ func ContextGauge(c models.ContextUsage, model string, width int, noColor, highl
 		line = pctStyled
 	}
 
-	return line, contextNote(contextSize, compactAt, width-1)
+	forms := contextNotes(contextSize, compactAt)
+	return line, gaugeNote(forms, CompactionWords(contextSize, compactAt), agent, width-1, noColor)
+}
+
+// ContextAgent is a running agent nearer ~compaction than the reading a
+// gauge shows, for the note under watch's gauge.
+type ContextAgent struct {
+	ID      string              // AgentAnalysis.AgentID
+	Reading models.ContextUsage // its last request; has a window
+}
+
+// gaugeNote fits the note under the gauge to width: the main reading's
+// forms, longest first, led by forms that add agent after main, the main
+// reading without its scope. The agent part carries its own label, so the
+// unlabeled reading before it reads as the main session's; the panel is too
+// narrow to keep the scope as well. The agent part goes before the main
+// reading's headroom does. Only the agent's reading takes its zone's color,
+// as only the gauge's percentage takes the main reading's.
+func gaugeNote(forms []string, main string, agent *ContextAgent, width int, noColor bool) string {
+	paint := func(col color.Color, s string) string {
+		if noColor || s == "" {
+			return s
+		}
+		return lipgloss.NewStyle().Foreground(col).Render(s)
+	}
+	if agent != nil {
+		r := agent.Reading
+		lead := main + " " + styles.FieldSep + " agent A" + ShortAgentID(agent.ID) + " "
+		for _, reading := range []string{CompactionWords(r.Tokens, r.CompactAt), fmt.Sprintf("%.0f%%", r.Percent)} {
+			if lipgloss.Width(lead+reading) <= width {
+				return paint(styles.NoteColor, lead) + paint(styles.ContextZoneColor(pricing.ContextZoneOf(r.Tokens, r.CompactAt)), reading)
+			}
+		}
+	}
+	return paint(styles.NoteColor, firstFit(width, forms...))
 }
 
 // AgentContextWidth is the width of AgentContextCell: "100% ctx".
@@ -580,40 +619,47 @@ func AgentContextCell(c *models.ContextUsage, noColor bool) string {
 	}
 }
 
-// contextNote is the line under the gauge, laid out one column in (under
-// the percentage's digits) within width. It counts tokens to or past
-// compactAt rather than naming the mark's share of the window, which differs
-// from model to model. It sheds the scope before the reading, and a shorter
-// reading before nothing at all, so a narrow terminal never cuts the
-// headroom figure or the warning mid-word. The headroom has no shorter form:
-// "288.8K left" beside "678.2K / 1.00M" reads as room in the window.
-func contextNote(contextSize int64, compactAt, width int) string {
+// contextNotes are the forms of the line under the gauge, longest first.
+// It's laid out one column in, under the percentage's digits. The forms
+// count tokens to or past compactAt rather than naming the mark's share of
+// the window, which differs from model to model. They shed the scope before
+// the reading, and a shorter reading before nothing at all, so a narrow
+// terminal never cuts the headroom figure or the warning mid-word. The
+// headroom has no shorter form: "288.8K left" beside "678.2K / 1.00M" reads
+// as room in the window.
+func contextNotes(contextSize int64, compactAt int) []string {
 	if compactAt <= 0 {
-		return ""
+		return nil
 	}
 	const scope = " (main session, last request)"
-	var forms []string
-	switch headroom := int64(compactAt) - contextSize; {
-	case headroom > 0:
-		reading := Number(headroom) + " to ~compaction"
-		forms = []string{reading + scope, reading}
-	case headroom == 0:
-		forms = []string{"at ~compaction" + scope, "at ~compaction"}
-	default:
-		reading := Number(-headroom) + " past ~compaction"
-		forms = []string{reading + scope, reading, "past ~compaction"}
+	reading := CompactionWords(contextSize, compactAt)
+	if contextSize > int64(compactAt) {
+		return []string{reading + scope, reading, "past ~compaction"}
 	}
-	return firstFit(width, forms...)
+	return []string{reading + scope, reading}
 }
 
-// windowUnknownNote says why a reading on model has no window, fitted to
-// width. A model the catalog knows has a window; the reading outgrew it.
-func windowUnknownNote(model string, width int) string {
+// CompactionWords says how far tokens are from compactAt: "288.8K to
+// ~compaction", "at ~compaction" or "13.0K past ~compaction".
+func CompactionWords(tokens int64, compactAt int) string {
+	switch headroom := int64(compactAt) - tokens; {
+	case headroom > 0:
+		return Number(headroom) + " to ~compaction"
+	case headroom == 0:
+		return "at ~compaction"
+	default:
+		return Number(-headroom) + " past ~compaction"
+	}
+}
+
+// windowUnknownNotes says why a reading on model has no window, longest
+// first. A model the catalog knows has a window; the reading outgrew it.
+func windowUnknownNotes(model string) []string {
 	name := pricing.GetModelDisplayName(model)
 	if largest := pricing.LargestWindow(model); largest > 0 {
-		return firstFit(width, "over the "+Number(int64(largest))+" window ficha knows for "+name, "over the known window")
+		return []string{"over the " + Number(int64(largest)) + " window ficha knows for " + name, "over the known window"}
 	}
-	return firstFit(width, "window unknown for "+name, "window unknown")
+	return []string{"window unknown for " + name, "window unknown"}
 }
 
 // firstFit returns the first of forms that fits in width columns, or "".
