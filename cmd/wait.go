@@ -1,12 +1,13 @@
 package cmd
 
 import (
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/paths"
 	"github.com/bardisty/ficha/internal/tui"
@@ -15,88 +16,133 @@ import (
 // waitForFirstSession opens a live view in a waiting state when the project
 // has no session yet, so the panes can be laid out before Claude Code
 // starts. open builds the waiting model from the project directory to wait
-// on and the path Claude Code will run in. waited is false when there is
+// on, the path Claude Code will run in, and the waiting screen's hint line
+// in its forms from longest to shortest. waited is false when there is
 // nothing to wait for, and the caller reports its own error instead.
-func waitForFirstSession(cfg *config, open func(dir, projectPath string) tea.Model) (waited bool, err error) {
+func waitForFirstSession(cfg *config, open func(dir, projectPath string, hint []string) tea.Model) (waited bool, err error) {
 	// A script is better served by the error than by a wait.
 	if !isTerminal(cfg.stdout) {
 		return false, nil
 	}
-	dir, projectPath, ok := waitingProject(cfg)
+	dir, projectPath, hint, ok := waitingProject(cfg)
 	if !ok {
 		return false, nil
 	}
 	cfg.tracef("no session yet; waiting in %s", filepath.Base(dir))
-	return true, runTUI(cfg, func() tea.Model { return open(dir, tildePath(projectPath)) })
+	return true, runTUI(cfg, func() tea.Model { return open(dir, tildePath(projectPath), hint) })
 }
 
 // waitingWatch opens watch waiting for a first session.
-func waitingWatch(cfg *config) func(dir, projectPath string) tea.Model {
-	return func(dir, projectPath string) tea.Model {
-		return tui.NewWaitingModel(dir, projectPath, cfg.noColor, !cfg.noFollow)
+func waitingWatch(cfg *config) func(dir, projectPath string, hint []string) tea.Model {
+	return func(dir, projectPath string, hint []string) tea.Model {
+		return tui.NewWaitingModel(dir, projectPath, hint, cfg.noColor, !cfg.noFollow)
 	}
 }
 
 // waitingBreakdown opens breakdown waiting for a first session.
-func waitingBreakdown(cfg *config) func(dir, projectPath string) tea.Model {
-	return func(dir, projectPath string) tea.Model {
-		return tui.NewWaitingBreakdownModel(dir, projectPath, cfg.noColor, !cfg.noFollow)
+func waitingBreakdown(cfg *config) func(dir, projectPath string, hint []string) tea.Model {
+	return func(dir, projectPath string, hint []string) tea.Model {
+		return tui.NewWaitingBreakdownModel(dir, projectPath, hint, cfg.noColor, !cfg.noFollow)
 	}
 }
 
 // waitingProject returns the project directory to wait on: the exact one for
 // the path ficha runs in (the cwd, or -p), which may not exist until Claude
-// Code first runs there. ok is false when waiting would hide a real problem
-// or a better answer: an explicit --project-dir, a missing or empty projects
-// directory (usually a wrong CLAUDE_CONFIG_DIR), a path that isn't a
-// directory, a path that resolves to some other project by name, a -p path
-// with similarly named projects (a likely typo), a subdirectory of a project
-// with sessions, or a directory inside WSL seen from the Windows build's
-// default config, whose sessions will never show up there. A repository or
-// worktree root nested in such a project still waits: Claude Code records
-// sessions under the directory it starts in, and that is where it would
-// start.
-func waitingProject(cfg *config) (dir, projectPath string, ok bool) {
+// Code first runs there. Other projects that only share its name don't stop
+// the wait: whatever Claude Code starts here is recorded under this path, so
+// a live view following one of them would never see it. hint names them, so
+// someone who meant one can switch. ok is false when waiting would hide a
+// real problem or a better answer: an explicit --project-dir, a missing or
+// empty projects directory (usually a wrong CLAUDE_CONFIG_DIR), a path that
+// isn't a directory, a project that recorded this path as its own, a
+// same-named project recorded from the other OS (it may be this directory),
+// a -p path with similarly named projects and none of the same name (a likely
+// typo), a subdirectory of a project with sessions, or a directory inside WSL
+// seen from the Windows build's default config, whose sessions will never
+// show up there. A repository or worktree root nested in such a project still
+// waits: Claude Code records sessions under the directory it starts in, and
+// that is where it would start.
+func waitingProject(cfg *config) (dir, projectPath string, hint []string, ok bool) {
 	if cfg.projectDir != "" {
-		return "", "", false
+		return "", "", nil, false
 	}
 	projectsDir, err := paths.GetProjectsDir()
 	if err != nil || !isDir(projectsDir) {
-		return "", "", false
+		return "", "", nil, false
 	}
 	projPath, err := getProjectPath(cfg)
 	if err != nil {
-		return "", "", false
+		return "", "", nil, false
 	}
 	if !isDir(projPath) {
-		return "", "", false
+		return "", "", nil, false
 	}
 	canonical, err := paths.CanonicalizePath(projPath)
 	if err != nil {
-		return "", "", false
+		return "", "", nil, false
 	}
 	if windowsDefaultInWSL(canonical) {
-		return "", "", false
+		return "", "", nil, false
 	}
 	if !isRepoRoot(canonical) && ancestorWithProject(canonical, projectsDir) != "" {
-		return "", "", false
+		return "", "", nil, false
 	}
 	dir = filepath.Join(projectsDir, paths.PathToProjectDir(canonical))
 	if isDir(dir) {
-		sessions, err := parser.DiscoverSessionsFromDisk(dir)
-		return dir, canonical, err == nil && len(sessions) == 0
+		// hasTranscripts can't tell an unreadable directory from an empty one
+		_, err := os.ReadDir(dir)
+		return dir, canonical, nil, err == nil && !hasTranscripts(dir)
 	}
 	all, err := parser.DiscoverAllProjects()
 	if err != nil || len(all) == 0 {
-		return "", "", false
+		return "", "", nil, false
 	}
-	if _, err := paths.FindProjectDir(projPath, all); !errors.Is(err, paths.ErrNoProjectFound) {
-		return "", "", false
+	var sameName []models.ProjectInfo
+	for _, p := range all {
+		// A folder name Claude Code shortened is found by its recorded path,
+		// and that project is this directory's own.
+		if p.OriginalPath == canonical {
+			return "", "", nil, false
+		}
+		if p.OriginalPath == "" || !strings.EqualFold(paths.BasenameCrossOS(p.OriginalPath), filepath.Base(canonical)) {
+			continue
+		}
+		// A path from the other OS, such as Windows' Claude Code seen through
+		// a shared config from WSL, may well be this directory under another
+		// name, and the name match is how the README says to reach it.
+		if !filepath.IsAbs(p.OriginalPath) {
+			return "", "", nil, false
+		}
+		sameName = append(sameName, p)
 	}
-	if cfg.projectPath != "" && len(similarProjects(canonical, all)) > 0 {
-		return "", "", false
+	// Refusing with a same-named project would hand the view to it.
+	if cfg.projectPath != "" && len(sameName) == 0 && len(similarProjects(canonical, all)) > 0 {
+		return "", "", nil, false
 	}
-	return dir, canonical, true
+	return dir, canonical, sameNameHint(cfg, filepath.Base(canonical), sameName), true
+}
+
+// sameNameHint is the waiting screen's line naming the projects that share
+// the waiting directory's name, longest form first: the one project with the
+// command that opens it, or how many there are.
+func sameNameHint(cfg *config, name string, sameName []models.ProjectInfo) []string {
+	switch len(sameName) {
+	case 0:
+		return nil
+	case 1:
+		p := sameName[0]
+		where, arg := tildePath(p.OriginalPath), projectArgs(p)
+		// "~" expands only unquoted
+		if shellQuote(where) == where {
+			arg = "-p " + where
+		}
+		return []string{
+			fmt.Sprintf("%s has sessions: %s %s", where, cfg.command(), arg),
+			where + " has sessions",
+		}
+	}
+	others := fmt.Sprintf("%d projects named %s", len(sameName), name)
+	return []string{others + " have sessions: ficha global", others + " have sessions", others}
 }
 
 // isRepoRoot reports whether dir is the root of a git repository or

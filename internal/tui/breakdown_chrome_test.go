@@ -260,7 +260,7 @@ func TestBreakdownFollowToggle(t *testing.T) {
 // With no session yet, breakdown waits and says where, then opens the first
 // session to appear, pinned or not.
 func TestBreakdownWaitingForFirstSession(t *testing.T) {
-	m := NewWaitingBreakdownModel("/projects/-work-webapp", "~/work/webapp", true, false)
+	m := NewWaitingBreakdownModel("/projects/-work-webapp", "~/work/webapp", nil, true, false)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(BreakdownModel)
 	out := frameOf(m)

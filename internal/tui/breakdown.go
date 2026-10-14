@@ -81,7 +81,8 @@ type BreakdownModel struct {
 	// Header state: project name, and the newest message timestamp (else the
 	// session file's mtime, with activityFromFile set) that the header ages.
 	project          string
-	waitingIn        string // the directory a waiting model waits for a session in
+	waitingIn        string   // the directory a waiting model waits for a session in
+	waitingHint      []string // the line under the waiting text; see waitingLines
 	lastActivity     time.Time
 	activityFromFile bool
 	now              func() time.Time // tests pin the clock; nil means time.Now
@@ -210,11 +211,13 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 // NewWaitingBreakdownModel opens breakdown before its project has any
 // session, as watch's NewWaitingModel does. It waits on projectDir, which may
 // not exist yet, and opens the first session created there. projectPath is
-// the directory Claude Code will run in, for the header and the waiting line.
-func NewWaitingBreakdownModel(projectDir, projectPath string, noColor, followMode bool) BreakdownModel {
+// the directory Claude Code will run in, for the header and the waiting line,
+// and hint the line under it, as in NewWaitingModel.
+func NewWaitingBreakdownModel(projectDir, projectPath string, hint []string, noColor, followMode bool) BreakdownModel {
 	m := NewBreakdownModel("", "", noColor, projectDir, followMode)
 	m.loading = false
 	m.waitingIn = projectPath
+	m.waitingHint = hint
 	m.project = paths.BasenameCrossOS(projectPath)
 	return m
 }

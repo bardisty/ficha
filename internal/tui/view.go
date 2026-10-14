@@ -874,19 +874,16 @@ func (m Model) renderEmptyState() string {
 	sb.WriteString("\n\n")
 
 	// Awaiting message, centered under the rule
-	msg := "Awaiting first message..."
+	lines := []string{"Awaiting first message..."}
 	if m.waiting() {
-		msg = "Waiting for a Claude Code session in " + m.waitingIn + styles.Ellipsis
-		if lipgloss.Width(msg) > sectionWidth {
-			msg = "Waiting for a Claude Code session" + styles.Ellipsis
-		}
+		lines = waitingLines(m.waitingIn, m.waitingHint, sectionWidth)
 	}
-	pad := strings.Repeat(" ", 2+max((sectionWidth-lipgloss.Width(msg))/2, 0))
-
-	if m.noColor {
-		sb.WriteString(pad + msg + "\n")
-	} else {
-		sb.WriteString(pad + styles.DimStyle.Render(msg) + "\n")
+	for _, line := range lines {
+		pad := strings.Repeat(" ", 2+max((sectionWidth-lipgloss.Width(line))/2, 0))
+		if !m.noColor {
+			line = styles.DimStyle.Render(line)
+		}
+		sb.WriteString(pad + line + "\n")
 	}
 
 	return sb.String()

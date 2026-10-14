@@ -109,8 +109,10 @@ type Model struct {
 	windowTitle     string          // Terminal title, once a session has loaded
 
 	// waitingIn is the directory a waiting model (no session yet) waits for
-	// Claude Code to start in; see NewWaitingModel.
-	waitingIn string
+	// Claude Code to start in, and waitingHint the line under it; see
+	// NewWaitingModel.
+	waitingIn   string
+	waitingHint []string
 
 	// ticking is set while the 100ms highlight tick is scheduled; it runs
 	// only while a highlight is fading, so an idle view doesn't redraw ten
@@ -211,17 +213,36 @@ func NewModel(sessionPath, sessionID string, noColor bool, projectDir string, fo
 // NewWaitingModel opens watch before its project has any session. It waits
 // on projectDir, which may not exist yet, and follows the first session
 // created there. projectPath is the directory Claude Code will run in, for
-// the header and the waiting message.
-func NewWaitingModel(projectDir, projectPath string, noColor, followMode bool) Model {
+// the header and the waiting message. hint is a line for under that message
+// in its forms from longest to shortest, or nil; see waitingLines.
+func NewWaitingModel(projectDir, projectPath string, hint []string, noColor, followMode bool) Model {
 	m := NewModel("", "", noColor, projectDir, followMode)
 	m.loading = false
 	m.waitingIn = projectPath
+	m.waitingHint = hint
 	m.project = paths.BasenameCrossOS(projectPath)
 	return m
 }
 
 // waiting reports whether watch has no session yet.
 func (m Model) waiting() bool { return m.sessionPath == "" }
+
+// waitingLines is a waiting view's message and the hint under it, fitted to
+// width columns. The message drops the directory when it doesn't fit, and
+// the hint takes its first form that fits or is left out: wrapped, either
+// would push the frame out of shape.
+func waitingLines(in string, hint []string, width int) []string {
+	msg := "Waiting for a Claude Code session in " + in + styles.Ellipsis
+	if in == "" || lipgloss.Width(msg) > width {
+		msg = "Waiting for a Claude Code session" + styles.Ellipsis
+	}
+	for _, h := range hint {
+		if lipgloss.Width(h) <= width {
+			return []string{msg, h}
+		}
+	}
+	return []string{msg}
+}
 
 // projectName is the last element of the project's real directory, or ""
 // when the storage directory doesn't record it.
