@@ -3,6 +3,7 @@ agent_message_count number
 agents array
 agents[] object
 agents[].agent_id string
+agents[].agent_type string
 agents[].context object
 agents[].context.percent number
 agents[].context.tokens number
@@ -16,6 +17,7 @@ agents[].cost_by_model.*.cache_write_5m_cost number
 agents[].cost_by_model.*.input_cost number
 agents[].cost_by_model.*.output_cost number
 agents[].cost_by_model.*.total_cost number
+agents[].description string
 agents[].duration string
 agents[].duration_seconds number
 agents[].end_time string

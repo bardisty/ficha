@@ -147,35 +147,80 @@ func agentMsgsWidth(agents []models.AgentAnalysis) int {
 }
 
 // formatAgentBreakdownContent renders agent breakdown rows (content only, no header)
-// Layout: [A<id>] model msgs ctx cost
+// Layout: [A<id>] task model msgs ctx cost
 // All rows align costs at column 45 (2 indent + 43 content), further right
-// when a workflow heading needs the room and width has it, or further left
-// when the rows would be wider than width
+// when a task, or a workflow heading, needs the room and width has it, or
+// further left when the rows would be wider than width
 // Example:
 //
-//	Parent session                              $1.14
-//	[Aa0b184d] Opus 4.5      14 msgs  38% ctx   $0.3588
-//	Agents subtotal                             $5.11
+//	Parent session                                         $1.14
+//	[Aa0b184d] Find the auth middleware Opus 4.5   14 msgs  38% ctx   $0.3588
+//	Agents subtotal                                        $5.11
 func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, noColor bool) string {
 	var sb strings.Builder
 
 	// labelWidth is the room before the cost column, less the indent and a
 	// 3-space gap: 40, or as wide as the widest workflow heading with its
-	// status. It narrows to fit width, but never so far that an agent row's
-	// marker, model and message count (10+1+11+1+msgs, then a space) would
-	// reach the cost. Past width, headings are cut as workflowStatuses says.
+	// status, or the agent rows. It narrows to fit width, but never so far
+	// that an agent row's marker, model and message count (10+1+11+1+msgs,
+	// then a space) would reach the cost. Past width, headings are cut as
+	// workflowStatuses says.
 	msgsWidth := agentMsgsWidth(analysis.Agents)
-	labelWidth := 40
+	taskWant := agentTaskWidth(analysis.Agents)
+	headingWidth := 40
 	for _, agent := range analysis.Agents {
 		if agent.WorkflowID != "" {
 			heading := styles.GroupRule + " " + workflowLabel(analysis.WorkflowByID(agent.WorkflowID))
-			labelWidth = max(labelWidth, runewidth.StringWidth(heading))
+			headingWidth = max(headingWidth, runewidth.StringWidth(heading))
 		}
 	}
-	labelWidth = max(min(labelWidth, width-2-3-11), msgsWidth+21)
+	// labelFor is labelWidth for agent rows with a rowMsgs-wide count (none
+	// when negative) and a rowTask-wide task. Rows without a task never
+	// widen it, so their count gives way as it would with no task at all.
+	labelFor := func(rowMsgs, rowTask int) int {
+		want := headingWidth
+		if rowTask > 0 {
+			want = max(want, agentRowWidth(rowMsgs, rowTask)-2)
+		}
+		return max(min(want, width-2-3-11), msgsWidth+21)
+	}
+	labelWidth := labelFor(msgsWidth, taskWant)
+
+	// Each agent with [A<id>] task Model msgs ctx cost format — the marker
+	// carries the abbreviated real agent ID, matching the breakdown TUI's
+	// scheme. The task, the flexible part, is in a column as wide as the
+	// widest one, and there only when some agent has one.
+	// Format: 2(indent) + 10(marker) + 1 + task + 1 + 11(model) + msgs + ctx + gap + cost
+	// where everything from the marker to the gap fills labelWidth + 3,
+	// keeping cost aligned with parent and subtotal. Where a task wouldn't
+	// fit whole, the message count goes first, then the task is cut, and
+	// cut below minTaskWidth it goes too, leaving the row as it is without
+	// one. A task shorter than that is never cut, so it stays.
+	// Where the context reading, " 38% ctx", would leave no gap, it takes
+	// the count's place, as in watch; labelWidth's floor always leaves it
+	// room there.
+	// Workflow agents are grouped after regular agents; a dim header line marks
+	// each run's start.
+	showMsgs := agentRowWidth(msgsWidth, taskWant) < labelWidth+3
+	taskWidth := taskWant
+	if !showMsgs {
+		taskWidth = min(taskWant, labelWidth+3-agentRowWidth(-1, 0)-2)
+		if taskWidth < min(taskWant, minTaskWidth) {
+			taskWidth = 0
+			labelWidth = labelFor(msgsWidth, 0)
+			showMsgs = agentRowWidth(msgsWidth, 0) < labelWidth+3
+		}
+	}
+	rowMsgs := -1
+	if showMsgs {
+		rowMsgs = msgsWidth
+	}
+	// Whatever went from the rows hands its room back, so the cost column
+	// sits no further right than the rows need.
+	labelWidth = labelFor(rowMsgs, taskWidth)
 
 	// Parent session cost, after 2(indent) + labelWidth + 3(spaces): column 45
-	// unless a workflow heading or the width moved it
+	// unless a workflow heading, a task or the width moved it
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	if noColor {
 		sb.WriteString(fmt.Sprintf("  %-*s   %s\n", labelWidth, "Parent session", render.CostCell(analysis.ParentCost.TotalCost, 11)))
@@ -183,23 +228,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 		paddedLabel := fmt.Sprintf("%-*s", labelWidth, "Parent session")
 		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedLabel, formatCostStyled(analysis.ParentCost.TotalCost, 11, noColor)))
 	}
-
-	// Each agent with [A<id>] Model msgs ctx cost format — the marker carries
-	// the abbreviated real agent ID, matching the breakdown TUI's scheme.
-	// Format: 2(indent) + 10(marker) + 1 + 11(model) + 1 + msgs + ctx + gap + cost
-	// where msgs + ctx + gap = labelWidth - 20 (normally 8 + 9 + 3; the gap
-	// shrinks as the msgs column grows to fit an oversized count), keeping
-	// cost at 45 chars (aligned with parent and subtotal). Where the context
-	// reading, " 38% ctx", would leave no gap, it takes the count's place,
-	// as in watch; labelWidth's floor always leaves it room there.
-	// Workflow agents are grouped after regular agents; a dim header line marks
-	// each run's start.
-	gapWidth := labelWidth - 20 - msgsWidth - 1 - render.AgentContextWidth
-	showMsgs := gapWidth >= 1
-	if !showMsgs {
-		gapWidth += 1 + msgsWidth
-	}
-	msgsGap := strings.Repeat(" ", max(1, gapWidth))
+	msgsGap := strings.Repeat(" ", max(1, labelWidth+3-agentRowWidth(rowMsgs, taskWidth)))
 	status := workflowStatuses(styles.GroupRule+" ", labelWidth, analysis)
 	prevWorkflow := ""
 	for _, agent := range analysis.Agents {
@@ -234,10 +263,14 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 			msgStr = fmt.Sprintf(" %*s", msgsWidth, agentMsgs(agent.MessageCount))
 		}
 		ctx := " " + render.AgentContextCell(agent.Context, noColor)
+		task := ""
+		if taskWidth > 0 {
+			task = " " + padTask(agent.TaskLabel(), taskWidth)
+		}
 
 		if noColor {
-			sb.WriteString(fmt.Sprintf("  %-10s %-11s%s%s%s%s\n",
-				marker, modelLabel, msgStr, ctx, msgsGap, render.CostCell(agent.TotalCost.TotalCost, 11)))
+			sb.WriteString(fmt.Sprintf("  %-10s%s %-11s%s%s%s%s\n",
+				marker, task, modelLabel, msgStr, ctx, msgsGap, render.CostCell(agent.TotalCost.TotalCost, 11)))
 		} else {
 			// Color the marker by hashing the full agent ID (matches breakdown)
 			agentColor := styles.GetAgentColor(agent.AgentID)
@@ -255,8 +288,8 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 
 			costStr := formatCostStyled(agent.TotalCost.TotalCost, 11, noColor)
 
-			sb.WriteString(fmt.Sprintf("  %s %s%s%s%s%s\n",
-				markerStyled, modelStyled, msgStyled, ctx, msgsGap, costStr))
+			sb.WriteString(fmt.Sprintf("  %s%s %s%s%s%s%s\n",
+				markerStyled, task, modelStyled, msgStyled, ctx, msgsGap, costStr))
 		}
 	}
 
@@ -270,6 +303,47 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	}
 
 	return sb.String()
+}
+
+// minTaskWidth is as narrow as an agent row's task gets before it goes from
+// every row: two short words and an ellipsis, as in "Find the au…", and
+// enough to tell most tasks apart.
+const minTaskWidth = 12
+
+// agentTaskWidth is the width of the widest task among agents, or 0 when
+// none has one.
+func agentTaskWidth(agents []models.AgentAnalysis) int {
+	width := 0
+	for _, a := range agents {
+		width = max(width, runewidth.StringWidth(a.TaskLabel()))
+	}
+	return width
+}
+
+// agentRowWidth is how wide show's agent row is from the marker through its
+// context reading: with a msgsWidth message count (none when negative), and
+// with a taskWidth task (none when 0).
+func agentRowWidth(msgsWidth, taskWidth int) int {
+	width := 10 + 1 + 11 + 1 + render.AgentContextWidth
+	if msgsWidth >= 0 {
+		width += 1 + msgsWidth
+	}
+	if taskWidth > 0 {
+		width += 1 + taskWidth
+	}
+	return width
+}
+
+// padTask fits an agent's task into width display columns, padded with
+// spaces, or cut with an ellipsis that never follows a space. Tasks are
+// transcript text and can hold wide characters, which fmt's padding would
+// count as one column.
+func padTask(task string, width int) string {
+	if runewidth.StringWidth(task) > width {
+		cut := strings.TrimSuffix(truncateRight(task, width), styles.Ellipsis)
+		task = strings.TrimRight(cut, " ") + styles.Ellipsis
+	}
+	return task + strings.Repeat(" ", width-runewidth.StringWidth(task))
 }
 
 // workflowCost sums the cost of a workflow run's agents.

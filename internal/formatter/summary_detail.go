@@ -93,7 +93,8 @@ func FormatSummaryDetailJSON(summary *models.SessionAnalysis, results []models.S
 // empty on agent rows. agent_id holds the agent's real ID — the same key `show
 // --messages` and the json agents[] array use, so the exports join.
 // skipped_agents says how many agents a session row's agent_count does not
-// include, and is empty on agent rows.
+// include, and is empty on agent rows. agent_type and description are the
+// agent's meta file's, raw, and empty on session rows.
 func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
@@ -123,6 +124,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 		"parent_cost",
 		"agents_cost",
 		"unpriced_models",
+		"agent_type",
+		"description",
 	}
 	if err := w.Write(header); err != nil {
 		return "", fmt.Errorf("writing summary detail CSV header: %w", err)
@@ -158,6 +161,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 			fmt.Sprintf("%.6f", a.ParentCost.TotalCost),
 			fmt.Sprintf("%.6f", a.AgentsCost.TotalCost),
 			unpricedModelsCell(a.UnpricedModels),
+			"", // agent_type and description name an agent
+			"",
 		}
 		if err := w.Write(sessionRow); err != nil {
 			return "", fmt.Errorf("writing summary detail session row: %w", err)
@@ -192,6 +197,8 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 				"", // parent_cost and agents_cost split a session row's total
 				"",
 				unpricedModelsCell(agent.UnpricedModels),
+				csvCell(agent.AgentType),
+				csvCell(agent.Description),
 			}
 			if err := w.Write(agentRow); err != nil {
 				return "", fmt.Errorf("writing summary detail agent row: %w", err)

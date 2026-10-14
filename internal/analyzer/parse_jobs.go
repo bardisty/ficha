@@ -70,6 +70,9 @@ type agentParse struct {
 	messages []models.MessageAnalysis
 	skips    models.FileSkips
 	err      error
+	// agentType and description are from the agent's meta file, which isn't
+	// cached: Claude Code may write it after the transcript's first lines.
+	agentType, description string
 }
 
 // sessionAgents is a session's agent files as one directory listing found
@@ -98,6 +101,7 @@ func (a *sessionAgents) jobs(cache *AgentParseCache) []parseJob {
 		p := &a.parses[i]
 		jobs[i] = newParseJob(path, func() {
 			p.messages, p.skips, p.err = loadAgentMessages(path, cache)
+			p.agentType, p.description = parser.ParseAgentMeta(path)
 		})
 	}
 	return jobs

@@ -176,7 +176,7 @@ func renderPanel(lead string, fields []string, giveWay []int, width int, noColor
 	}
 	inner := width - 6 // 2 for borders, 2 for padding on each side
 	sep := "  " + styles.BoxVerticalSep + "  "
-	lead = stripControl(lead)
+	lead = models.StripControl(lead)
 	shown := make([]bool, len(fields))
 	for i := range shown {
 		shown[i] = true

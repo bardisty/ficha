@@ -124,6 +124,8 @@ func goldenShowAnalysis() *models.SessionAnalysis {
 		Agents: []models.AgentAnalysis{
 			{
 				AgentID:      "a1b2c3d4e5f6",
+				AgentType:    "Explore",
+				Description:  "Find the auth middleware",
 				MessageCount: 12,
 				TotalCost:    models.CostBreakdown{TotalCost: 0.42},
 				CostByModel: map[string]models.CostBreakdown{
@@ -136,7 +138,9 @@ func goldenShowAnalysis() *models.SessionAnalysis {
 				Context: &models.ContextUsage{Tokens: 200000, Window: 200000, Percent: 100, CompactAt: 200000},
 			},
 			{
+				// No description, so the row shows the type
 				AgentID:      "f6e5d4c3b2a1",
+				AgentType:    "code-reviewer",
 				MessageCount: 1,
 				TotalCost:    models.CostBreakdown{TotalCost: 1.58},
 				CostByModel: map[string]models.CostBreakdown{
@@ -466,6 +470,8 @@ func summaryDetailsFixture(t *testing.T) []models.SessionEntry {
 		msg("2026-01-12T18:05:00Z", "g1", "claude-sonnet-5", 2000, 1200, 5000, 0, 0),
 		msg("2026-01-12T18:08:00Z", "g2", "claude-sonnet-5", 100, 400, 0, 0, 7000),
 	}, "\n")+"\n")
+	writeFixture(filepath.Join(goldenBetaID, "subagents", "agent-gld1.meta.json"),
+		`{"agentType":"general-purpose","description":"Summarize the failing tests","spawnDepth":1}`)
 
 	return []models.SessionEntry{
 		{
@@ -531,8 +537,11 @@ func goldenShowWorkflowAnalysis() *models.SessionAnalysis {
 	a := goldenShowAnalysis()
 	a.Agents = append(a.Agents,
 		models.AgentAnalysis{
-			AgentID:      "w1a2b3c4d5e6",
-			WorkflowID:   "wf_2e7850b6-b19",
+			AgentID:    "w1a2b3c4d5e6",
+			WorkflowID: "wf_2e7850b6-b19",
+			// As long as a description gets, so the row cuts it
+			AgentType:    "general-purpose",
+			Description:  "Check every query in the billing module for N+1 calls",
 			MessageCount: 21,
 			TotalCost:    models.CostBreakdown{TotalCost: 1.10},
 			CostByModel: map[string]models.CostBreakdown{
@@ -658,6 +667,8 @@ func summaryWorkflowFixture(t *testing.T) []models.SessionEntry {
 
 	writeFixture(filepath.Join(goldenWfSessionID, "subagents", "agent-reg1.jsonl"),
 		msg("2026-01-20T09:05:00Z", "r1", "claude-haiku-4-5", 2000, 1000)+"\n")
+	writeFixture(filepath.Join(goldenWfSessionID, "subagents", "agent-reg1.meta.json"),
+		`{"agentType":"Explore","description":"Find the auth middleware"}`)
 
 	wfRun := filepath.Join(goldenWfSessionID, "subagents", "workflows", "wf_golden-run")
 	writeFixture(filepath.Join(wfRun, "agent-wf1.jsonl"),
@@ -665,6 +676,11 @@ func summaryWorkflowFixture(t *testing.T) []models.SessionEntry {
 	writeFixture(filepath.Join(wfRun, "agent-wf2.jsonl"),
 		msg("2026-01-20T09:12:00Z", "w2", "claude-sonnet-5", 4000, 2000)+"\n")
 	writeFixture(filepath.Join(wfRun, "journal.jsonl"), `{"type":"started","key":"v2:x","agentId":"wf1"}`+"\n")
+	// wf1's task is as long as one gets, wf2 has only a type, and wf3 below
+	// has no meta file.
+	writeFixture(filepath.Join(wfRun, "agent-wf1.meta.json"),
+		`{"agentType":"general-purpose","description":"Check every query in the billing module for N+1 calls"}`)
+	writeFixture(filepath.Join(wfRun, "agent-wf2.meta.json"), `{"agentType":"general-purpose"}`)
 
 	writeFixture(filepath.Join(goldenWfSessionID, "workflows", "wf_golden-run.json"),
 		`{"runId":"wf_golden-run","workflowName":"audit-codebase","status":"completed","script":"export const meta = {}"}`)

@@ -239,9 +239,15 @@ type MessageAnalysis struct {
 
 // AgentAnalysis represents the analysis of a single agent sub-session
 type AgentAnalysis struct {
-	AgentID      string                   `json:"agent_id"`
-	FullPath     string                   `json:"full_path"`
-	WorkflowID   string                   `json:"workflow_id,omitempty"` // Workflow run ID; "" for regular subagents
+	AgentID    string `json:"agent_id"`
+	FullPath   string `json:"full_path"`
+	WorkflowID string `json:"workflow_id,omitempty"` // Workflow run ID; "" for regular subagents
+	// AgentType and Description are the agent's agentType ("Explore", a
+	// custom agent's name) and the task label its parent gave it, as Claude
+	// Code wrote them to agent-<id>.meta.json; "" when unknown. They're raw
+	// transcript text: print them through TaskLabel.
+	AgentType    string                   `json:"agent_type,omitempty"`
+	Description  string                   `json:"description,omitempty"`
 	MessageCount int                      `json:"message_count"`
 	TotalUsage   TokenUsage               `json:"total_usage"`
 	TotalCost    CostBreakdown            `json:"total_cost"`
@@ -258,6 +264,17 @@ type AgentAnalysis struct {
 	// How full the agent's own context window was at its last request; nil
 	// when it has none
 	Context *ContextUsage `json:"context,omitempty"`
+}
+
+// TaskLabel is what an agent row shows of the agent's task: its description,
+// else its agent type, else "" when Claude Code recorded neither. It's safe
+// to print on one line: control characters, escape sequences' ESC among
+// them, and newlines become spaces, and runs of whitespace collapse.
+func (a AgentAnalysis) TaskLabel() string {
+	if d := OneLine(a.Description); d != "" {
+		return d
+	}
+	return OneLine(a.AgentType)
 }
 
 // WorkflowMeta identifies a workflow run whose agents appear in a session's

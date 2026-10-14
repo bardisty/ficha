@@ -390,3 +390,25 @@ func TestJSONTimesAreUTCSeconds(t *testing.T) {
 		t.Errorf("window decodes to %+v (err %v)", w, err)
 	}
 }
+
+func TestAgentTaskLabel(t *testing.T) {
+	tests := []struct {
+		name, agentType, description, want string
+	}{
+		{"description", "Explore", "Find the auth middleware", "Find the auth middleware"},
+		{"type when no description", "code-reviewer", "", "code-reviewer"},
+		{"type when description is blank", "Explore", " \n\t", "Explore"},
+		{"neither", "", "", ""},
+		{"escape sequence and newline", "", "\x1b[31mRed\x1b[0m task\nline  two\r", "[31mRed [0m task line two"},
+		{"C1 control", "", "Find\u009b2Jit", "Find 2Jit"},
+		{"control-only type", "\x1b\x07", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := AgentAnalysis{AgentType: tt.agentType, Description: tt.description}
+			if got := a.TaskLabel(); got != tt.want {
+				t.Errorf("TaskLabel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

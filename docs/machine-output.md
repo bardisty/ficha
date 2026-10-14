@@ -74,6 +74,17 @@ Two fields name where a record came from. `project_path` is the Claude project d
 
 `agents` lists plain agents first, then each workflow run's agents together. Each group goes by first message, and runs go by their first agent's start. An agent with no timestamped message yet comes last in its group. `workflows` lists runs in the same order. The tables and `ficha watch` list agents this way too. The order is for reading and isn't part of the json contract. A script that needs a fixed order should sort by `start_time` or `agent_id` itself.
 
+## Agent tasks
+
+Each entry in `agents` names what the agent was for, as Claude Code recorded it in `agent-<id>.meta.json` beside the agent's transcript:
+
+| Key | Meaning |
+| --- | --- |
+| `agent_type` | the agent's type: `Explore`, `general-purpose`, or a custom agent's name |
+| `description` | the short task label the parent session gave the agent |
+
+Either is absent when Claude Code didn't record it, as for agents from versions that wrote no meta file. Both are raw text: escape them before you print them to a terminal. The tables show `description`, or `agent_type` when there's none.
+
 ## Per-session rows (`summary -d` csv)
 
 `summary -d -f csv` writes one row per session. `row_type` says which kind of row it is: `session`, or `agent` for the rows `--expand-agents` adds after each session.
@@ -84,6 +95,8 @@ A session row's `total_cost` already includes its agents, so summing the whole c
 - Sum `agent` rows for agent spend.
 
 Each session row also carries `parent_cost` and `agents_cost`, which add up to its `total_cost`, so the file reconciles against itself. Agent rows leave both empty, as they leave `cumulative_cost`, `project_path` and `session_file`. Join an agent row to its session through `session_id`.
+
+The last two columns, `agent_type` and `description`, are the agent's, as in json's [agent records](#agent-tasks). Session rows leave them empty, and so does an agent Claude Code recorded neither for.
 
 ## Session list (`list`)
 
@@ -232,7 +245,7 @@ Use json when you need any of these.
 
 Costs are floats, and csv prints six decimals. Reconcile a sum against a total with a tolerance, never with `==`.
 
-A cell that would open as a spreadsheet formula (`=`, `+`, `-`, `@`) is prefixed with an apostrophe in csv. No real model or agent ID starts with one. `global`'s `encoded_path` does on macOS and Linux, where encoded names start with `-`, so it reads `'-home-you-work-webapp` in csv. On Windows it starts with the drive letter (`C--Users-you-work-webapp`) and gets no apostrophe. Strip a leading apostrophe only when there is one before comparing it with json, or join on `full_path` instead.
+A cell that would open as a spreadsheet formula (`=`, `+`, `-`, `@`) is prefixed with an apostrophe in csv. No real model or agent ID starts with one, but an agent's `description` or `agent_type` can, since both are free text. `global`'s `encoded_path` does on macOS and Linux, where encoded names start with `-`, so it reads `'-home-you-work-webapp` in csv. On Windows it starts with the drive letter (`C--Users-you-work-webapp`) and gets no apostrophe. Strip a leading apostrophe only when there is one before comparing it with json, or join on `full_path` instead.
 
 ## Canonical model IDs
 

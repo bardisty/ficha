@@ -112,28 +112,47 @@ def ago(**kw):
 write_jsonl(os.path.join(wp, big + ".jsonl"),
             convo(ago(seconds=12), 240, ["claude-opus-5-5"], big, wd, ctx_cap=1_000_000, growth=5000))
 
+
+def write_meta(path, agent_type, description=None):
+    """Write the agent-<id>.meta.json Claude Code keeps beside an agent's transcript."""
+    meta = {"agentType": agent_type}
+    if description:
+        meta["description"] = description
+    meta["spawnDepth"] = 1
+    with open(path[:-len(".jsonl")] + ".meta.json", "w") as fh:
+        json.dump(meta, fh)
+
+
 # Plain subagents: three from earlier in the session, and one still working, so
 # the bottom of breakdown interleaves agent rows with the main conversation.
-for end, n, model in [(ago(hours=2, minutes=20), 25, "claude-sonnet-5-5"), (ago(hours=1, minutes=45), 32, "claude-haiku-4-5-20251001"),
-                      (ago(hours=1, minutes=5), 14, "claude-sonnet-5-5"), (ago(seconds=40), 22, "claude-sonnet-5-5")]:
-    write_jsonl(os.path.join(wp, big, "subagents", "agent-a%016x.jsonl" % rng.getrandbits(64)),
-                convo(end, n, [model], big, wd))
+# The third has no meta file, as an agent from an older Claude Code would.
+for end, n, model, meta in [(ago(hours=2, minutes=20), 25, "claude-sonnet-5-5", ("Explore", "Find the auth middleware")),
+                            (ago(hours=1, minutes=45), 32, "claude-haiku-4-5-20251001", ("general-purpose", "Summarize the failing tests")),
+                            (ago(hours=1, minutes=5), 14, "claude-sonnet-5-5", None),
+                            (ago(seconds=40), 22, "claude-sonnet-5-5", ("general-purpose", "Move session storage to Redis"))]:
+    path = os.path.join(wp, big, "subagents", "agent-a%016x.jsonl" % rng.getrandbits(64))
+    write_jsonl(path, convo(end, n, [model], big, wd))
+    if meta:
+        write_meta(path, *meta)
 
 # One finished workflow run and one still running. Each agent is (end, message
 # count, growth); a count of None draws a short run. The running run's agents
 # are long and grow fast through their 1M windows, to 78% and 68%. Both stay
 # short of the band before the ~967K compaction mark, so their readings are
 # dim like the plain agent's.
-runs = [("wf_7f3a9c", "review-changes", "completed", [(ago(hours=1, minutes=30), None, 6000), (ago(hours=1, minutes=25), None, 6000), (ago(hours=1, minutes=18), None, 6000)]),
-        ("wf_91bd02", "audit-codebase", "running", [(ago(seconds=25), 128, 10_600), (ago(minutes=1, seconds=10), 109, 11_400)])]
+# Each agent's last field is its task; the last review agent's meta file has
+# none, so its row falls back to the agent type.
+runs = [("wf_7f3a9c", "review-changes", "completed", [(ago(hours=1, minutes=30), None, 6000, "Review the parser changes"),
+                                                       (ago(hours=1, minutes=25), None, 6000, "Check error handling in the API layer"),
+                                                       (ago(hours=1, minutes=18), None, 6000, None)]),
+        ("wf_91bd02", "audit-codebase", "running", [(ago(seconds=25), 128, 10_600, "Audit the billing module for rounding errors"),
+                                                    (ago(minutes=1, seconds=10), 109, 11_400, "Trace every query in the data layer")])]
 for run, name, status, agents in runs:
     rd = os.path.join(wp, big, "subagents", "workflows", run)
-    for end, n, growth in agents:
-        aid = "a%016x" % rng.getrandbits(64)
-        write_jsonl(os.path.join(rd, "agent-%s.jsonl" % aid),
-                    convo(end, n or rng.randint(8, 22), [rng.choice(["claude-fable-5-1", "claude-opus-5-5"])], big, wd, ctx_cap=1_000_000, growth=growth))
-        with open(os.path.join(rd, "agent-%s.meta.json" % aid), "w") as fh:
-            json.dump({"agentType": "general-purpose", "spawnDepth": 1}, fh)
+    for end, n, growth, task in agents:
+        path = os.path.join(rd, "agent-a%016x.jsonl" % rng.getrandbits(64))
+        write_jsonl(path, convo(end, n or rng.randint(8, 22), [rng.choice(["claude-fable-5-1", "claude-opus-5-5"])], big, wd, ctx_cap=1_000_000, growth=growth))
+        write_meta(path, "general-purpose", task)
     os.makedirs(os.path.join(wp, big, "workflows"), exist_ok=True)
     with open(os.path.join(wp, big, "workflows", run + ".json"), "w") as fh:
         json.dump({"runId": run, "workflowName": name, "status": status}, fh)
