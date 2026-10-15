@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
@@ -27,21 +28,36 @@ func checkNested(cfg *config) error {
 }
 
 // writeNestedNote tells a report without --nested what the projects under
-// its directory hold, in window. Pricing them costs a parse of each session.
-func writeNestedNote(w io.Writer, cfg *config, nested nestedSessions, window models.TimeWindow, project string) {
+// its directory would add to it, in window. own are the report's sessions
+// and ownTotal their total cost.
+//
+// A worktree session can resume one of the directory's own and start with a
+// copy of its history, which --nested counts once. So the note prices the
+// report as --nested would and takes away what the report already counts,
+// at the cost of a second parse of every session.
+func writeNestedNote(w io.Writer, cfg *config, own []models.SessionEntry, ownTotal float64, nested nestedSessions, window models.TimeWindow, project string) {
 	if len(nested.sessions) == 0 {
 		return
 	}
-	aggregate, results, err := analyzer.AnalyzeMultipleSessionsInWindow(nested.sessions, window)
-	if err != nil || aggregate.SessionCount == 0 {
+	combined := append(slices.Clip(own), nested.sessions...)
+	aggregate, results, err := analyzer.AnalyzeMultipleSessionsInWindow(combined, window)
+	if err != nil {
 		return
 	}
+	sessions := 0
 	projects := map[string]bool{}
 	for _, r := range results {
-		if r.Analysis != nil {
-			projects[filepath.Dir(r.Entry.FullPath)] = true
+		dir := filepath.Dir(r.Entry.FullPath)
+		if _, ok := nested.projects[dir]; ok && r.Analysis != nil {
+			sessions++
+			projects[dir] = true
 		}
 	}
+	if sessions == 0 {
+		return
+	}
+	// Floating-point sums in two orders can leave a hair below zero.
+	added := max(aggregate.TotalCost.TotalCost-ownTotal, 0)
 	have := "have"
 	if len(projects) == 1 {
 		have = "has"
@@ -51,8 +67,8 @@ func writeNestedNote(w io.Writer, cfg *config, nested nestedSessions, window mod
 		inWindow = " in the window"
 	}
 	fmt.Fprintf(w, "Note: %s under %s %s %s%s, %s. Add --nested to count them in.\n",
-		plural(len(projects), "project"), render.NoBreak(project), have, plural(aggregate.SessionCount, "session"),
-		inWindow, render.Cost(aggregate.TotalCost.TotalCost))
+		plural(len(projects), "project"), render.NoBreak(project), have, plural(sessions, "session"),
+		inWindow, render.Cost(added))
 }
 
 // nestedLabel names a --nested report's project in its header: the

@@ -118,7 +118,7 @@ func runList(cfg *config) error {
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
 	if !cfg.nested {
-		writeNestedNote(&warnings, cfg, nested, window, root.name)
+		writeNestedNote(&warnings, cfg, sessions, ownTotal(aggregate), nested, window, root.name)
 	}
 
 	// Cleaned as each transcript's directory is, which --project-dir isn't.
@@ -211,7 +211,7 @@ func runListTable(cfg *config, window models.TimeWindow) error {
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
 	if !cfg.nested {
-		writeNestedNote(&warnings, cfg, nested, window, root.name)
+		writeNestedNote(&warnings, cfg, sessions, ownTotal(aggregate), nested, window, root.name)
 	}
 
 	opts := formatter.ListTableOptions{
@@ -224,6 +224,15 @@ func runListTable(cfg *config, window models.TimeWindow) error {
 	output := formatter.FormatSessionListTable(results, cfg.noColor, opts)
 	printReport(cfg, &warnings, output)
 	return nil
+}
+
+// ownTotal is a list's total cost, for writeNestedNote. aggregate is nil
+// when no session could be read.
+func ownTotal(aggregate *models.SessionAnalysis) float64 {
+	if aggregate == nil {
+		return 0
+	}
+	return aggregate.TotalCost.TotalCost
 }
 
 // windowSkips is the skip warning under a window, the aggregate's as summary

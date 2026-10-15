@@ -88,15 +88,20 @@ func loadProjectAndNestedSessions(cfg *config) ([]models.SessionEntry, reportRoo
 	if err != nil {
 		return nil, reportRoot{}, nestedSessions{}, err
 	}
+	if cfg.nested && project.path == "" {
+		return nil, reportRoot{}, nestedSessions{}, usageErrorf("--nested looks under the directory Claude Code ran in, and ficha found %s by its name instead, so it can't tell which directories are under it. Give the directory with -p.", project.label)
+	}
 	var sessions []models.SessionEntry
 	if isDir(project.dir) {
-		if sessions, err = readProjectSessions(cfg, project.dir); err != nil {
+		if sessions, err = readProjectSessions(cfg, project.dir, false); err != nil {
 			return nil, reportRoot{}, nestedSessions{}, err
 		}
 	}
 	nested := nestedSessions{projects: map[string]nestedProject{}}
 	for _, p := range nestedProjects(project) {
-		found, err := readProjectSessions(cfg, p.dir)
+		// Only --nested reads these for the report itself. Without it they
+		// feed a note, and a problem with one isn't the report's to warn of.
+		found, err := readProjectSessions(cfg, p.dir, !cfg.nested)
 		if err != nil {
 			if cfg.nested {
 				writeWarning(cfg, "left out %s: %v", p.name, err)
@@ -150,7 +155,7 @@ func onlyNestedError(cfg *config, project resolvedProject, nested nestedSessions
 // projectSessionsIn is readProjectSessions for the project a command reads,
 // which has to have sessions.
 func projectSessionsIn(cfg *config, project resolvedProject) ([]models.SessionEntry, error) {
-	sessions, err := readProjectSessions(cfg, project.dir)
+	sessions, err := readProjectSessions(cfg, project.dir, false)
 	if err != nil {
 		return nil, err
 	}
@@ -163,8 +168,9 @@ func projectSessionsIn(cfg *config, project resolvedProject) ([]models.SessionEn
 }
 
 // readProjectSessions lists the sessions in a Claude project directory, from
-// its transcripts and the index when there is one.
-func readProjectSessions(cfg *config, projDir string) ([]models.SessionEntry, error) {
+// its transcripts and the index when there is one. quiet leaves out what it
+// would say about the index.
+func readProjectSessions(cfg *config, projDir string, quiet bool) ([]models.SessionEntry, error) {
 	// Scan disk for session files
 	diskSessions, err := parser.DiscoverSessionsFromDisk(projDir)
 	if err != nil {
@@ -183,7 +189,7 @@ func readProjectSessions(cfg *config, projDir string) ([]models.SessionEntry, er
 	// Try to load index (may fail or be incomplete)
 	indexPath := paths.GetSessionsIndexPath(projDir)
 	index, indexErr := parser.ParseSessionsIndex(indexPath)
-	if indexErr != nil && !errors.Is(indexErr, fs.ErrNotExist) {
+	if indexErr != nil && !errors.Is(indexErr, fs.ErrNotExist) && !quiet {
 		// The sessions on disk still load without the index.
 		writeWarning(cfg, "%s", ignoredIndexMessage(indexPath, indexErr))
 	}
@@ -194,7 +200,7 @@ func readProjectSessions(cfg *config, projDir string) ([]models.SessionEntry, er
 	// Sessions missing from an index are only worth a note when there is an
 	// index: current Claude Code doesn't write one, so without it every
 	// session would count.
-	if orphanCount > 0 && cfg.verbose && index != nil {
+	if orphanCount > 0 && cfg.verbose && index != nil && !quiet {
 		writeNote(cfg, "Found %d session(s) not in sessions-index.json", orphanCount)
 	}
 

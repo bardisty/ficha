@@ -102,7 +102,7 @@ func runSummary(cfg *config) error {
 	}
 	warnUnknownModels(&warnings, analysis.UnpricedModels)
 	if !cfg.nested {
-		writeNestedNote(&warnings, cfg, nested, window, root.name)
+		writeNestedNote(&warnings, cfg, sessions, analysis.TotalCost.TotalCost, nested, window, root.name)
 	}
 
 	// Mark as summary (don't overwrite SessionID). SessionCount is already the
