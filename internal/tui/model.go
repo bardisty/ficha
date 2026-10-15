@@ -30,9 +30,6 @@ const highlightDuration = 2 * time.Second
 // watchDebounce coalesces rapid fsnotify write events into a single reload.
 const watchDebounce = 50 * time.Millisecond
 
-// Duration to show "Switched to new session" notification
-const switchNotifyDuration = 5 * time.Second
-
 // Chart display constants
 const (
 	chartHeight = 6           // Height of the sparkline chart in characters
@@ -107,7 +104,8 @@ type Model struct {
 	prevSessionID   string          // Session watched before the last switch
 	prevSessionPath string          // Its file, for the go-back key (-)
 	sessionWatcher  *SessionWatcher // Watches for other sessions' files
-	switched        *switchNotice   // Shown until the next keypress
+	switched        *switchNotice   // Shown until a key or a newer hint
+	seen            sessionsSeen    // Other sessions' last writes, for what's news
 	keysOpen        bool            // The ? key list covers the frame
 	hint            *sessionHint    // Another session's activity, not followed
 	windowTitle     string          // Terminal title, once a session has loaded
@@ -545,6 +543,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if outcome == activitySwitch {
 			return m.switchTo(msg.path, msg.id, true)
 		}
+		if outcome == activityHint && m.seen.news(msg, m.clock()) {
+			m.switched = nil
+		}
 		m.hint = hint
 		return m, m.waitForNewSession()
 
@@ -594,6 +595,7 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 		notice.hadTotal = true
 	}
 	m.switched = notice
+	m.seen.left(m.sessionID, m.lastActivity, m.clock())
 	m.prevSessionID, m.prevSessionPath = m.sessionID, m.sessionPath
 	m.sessionID, m.sessionPath = id, path
 	if m.hint != nil && m.hint.id == id {

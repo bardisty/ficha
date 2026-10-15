@@ -378,3 +378,26 @@ func TestBreakdownViewportDoesNotWrapRowsOnNarrowTerminal(t *testing.T) {
 		t.Errorf("viewport holds %d lines for %d messages — overlong rows were wrapped, not clipped", got, len(msgs))
 	}
 }
+
+// After a switch, p is a key: it drops the notice and its selection takes
+// the notify row. A hint that's news then takes the row from the selection,
+// the same rule the notice follows.
+func TestBreakdownSwitchNoticeAndSelection(t *testing.T) {
+	m := loadedBreakdown(t, 80, 24, sortRows(40))
+	m.followMode = true
+	updated, _ := m.Update(sessionActivityMsg{path: "/fixture/new.jsonl", id: "new", created: true})
+	m = updated.(BreakdownModel)
+	updated, _ = m.Update(breakdownMsgsMsg{messages: sortRows(40), insights: &models.MessageInsights{}, sessionPath: "/fixture/new.jsonl"})
+	m = updated.(BreakdownModel)
+	if got := m.renderNotifyRow(); !strings.Contains(got, "→ new session new") {
+		t.Fatalf("after the switch and its load: %q", got)
+	}
+	if m = press(t, m, "p"); m.switched != nil || !strings.HasPrefix(m.renderNotifyRow(), "  top 1 of 5") {
+		t.Errorf("p after a switch: notice kept %v, notify row %q", m.switched != nil, m.renderNotifyRow())
+	}
+	m.followMode = false
+	updated, _ = m.Update(sessionActivityMsg{path: "/fixture/third.jsonl", id: "third", created: true})
+	if m = updated.(BreakdownModel); !strings.Contains(m.renderNotifyRow(), "new session third started") {
+		t.Errorf("a new session after p: %q", m.renderNotifyRow())
+	}
+}

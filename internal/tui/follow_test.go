@@ -403,7 +403,8 @@ func TestExpiredHintIgnoredByN(t *testing.T) {
 }
 
 // followView drives watch and breakdown through the same session-following
-// cases. Both open on sessA at 80x24 with a total of $30.05.
+// cases. Both open on sessA at 80x24 with a total of $30.05, its last write
+// a minute before their pinned clock.
 type followView struct {
 	name   string
 	open   func(t *testing.T, follow bool) tea.Model
@@ -414,8 +415,15 @@ type followView struct {
 
 var followViews = []followView{
 	{
-		name:   "watch",
-		open:   func(t *testing.T, follow bool) tea.Model { return followModel(t, follow) },
+		name: "watch",
+		open: func(t *testing.T, follow bool) tea.Model {
+			t.Helper()
+			m := NewModel("/p/"+sessA+".jsonl", sessA, true, "", follow)
+			m.now = func() time.Time { return goldenTime(10, 2, 0) }
+			a := tallAnalysis(30.05)
+			a.EndTime = goldenTime(10, 1, 0)
+			return load(t, sized(t, m, 80, 24), a)
+		},
 		id:     func(m tea.Model) string { return m.(Model).sessionID },
 		follow: func(m tea.Model) bool { return m.(Model).followMode },
 		notify: func(m tea.Model) string { return m.(Model).renderNotifyRow(80) },
@@ -425,6 +433,7 @@ var followViews = []followView{
 		open: func(t *testing.T, follow bool) tea.Model {
 			t.Helper()
 			m := NewBreakdownModel("/p/"+sessA+".jsonl", sessA, true, "", follow)
+			m.now = func() time.Time { return goldenTime(10, 2, 0) }
 			rows := chromeRows(goldenTime(10, 0, 0), 2)
 			rows[0].Cost.TotalCost, rows[1].Cost.TotalCost = 30, 0.05
 			var model tea.Model = m
@@ -505,6 +514,182 @@ func TestFollowKeyOverHint(t *testing.T) {
 			m = press(t, m, "f")
 			if v.id(m) != sessA || !v.follow(m) {
 				t.Errorf("f over an activity hint: session %s following %v, want %s following", v.id(m), v.follow(m), sessA)
+			}
+		})
+	}
+}
+
+const sessC = "cccccccc-0000-0000-0000-000000000000"
+
+var (
+	createdC  = sessionActivityMsg{path: "/p/" + sessC + ".jsonl", id: sessC, created: true}
+	activityC = sessionActivityMsg{path: "/p/" + sessC + ".jsonl", id: sessC}
+)
+
+// In both views the switch notice stays until a key when nothing newer
+// arrives: a clock tick and ? leave it, and any other key drops it.
+func TestSwitchNoticeLastsUntilAKey(t *testing.T) {
+	const notice = "→ new session bbbbbbbb (previous aaaaaaaa: $30.05) • - to go back"
+	for _, v := range followViews {
+		t.Run(v.name, func(t *testing.T) {
+			m, _ := v.open(t, true).Update(createdB)
+			if v.id(m) != sessB {
+				t.Fatal("setup: a following view didn't take the new session")
+			}
+			m, _ = m.Update(clockMsg{})
+			m = press(t, m, "?", "?")
+			if got := v.notify(m); !strings.Contains(got, notice) {
+				t.Errorf("with nothing newer the notice should stay: %q", got)
+			}
+			if m = press(t, m, "k"); v.notify(m) != "" {
+				t.Errorf("a key should drop the notice: %q", v.notify(m))
+			}
+		})
+	}
+}
+
+// In both views a hint that arrives after a switch takes the notify row at
+// once: a session that starts, or another written to. Writes to the session
+// just left aren't news, since the notice names it and the key back, and
+// nor are more writes to a session hinted before the switch.
+func TestHintAfterSwitchReplacesNotice(t *testing.T) {
+	for _, v := range followViews {
+		t.Run(v.name, func(t *testing.T) {
+			m, _ := v.open(t, false).Update(createdB)
+			m = press(t, m, "n")
+			m, _ = m.Update(createdC)
+			if got, want := v.notify(m), "new session cccccccc started • n to switch"; !strings.Contains(got, want) {
+				t.Errorf("a new session after a switch: notify row %q, want %q", got, want)
+			}
+
+			m, _ = v.open(t, false).Update(createdB)
+			m = press(t, m, "n")
+			m, _ = m.Update(activityC)
+			if got, want := v.notify(m), "newer activity in cccccccc • n to switch"; !strings.Contains(got, want) {
+				t.Errorf("activity after a switch: notify row %q, want %q", got, want)
+			}
+
+			m, _ = v.open(t, false).Update(createdB)
+			m = press(t, m, "n")
+			for range 2 {
+				m, _ = m.Update(sessionActivityMsg{path: "/p/" + sessA + ".jsonl", id: sessA})
+				if got, want := v.notify(m), "→ switched to bbbbbbbb"; !strings.Contains(got, want) {
+					t.Errorf("a write to the session just left took the row: %q", got)
+				}
+			}
+
+			m, _ = v.open(t, true).Update(activityC)
+			m, _ = m.Update(createdB)
+			if v.id(m) != sessB {
+				t.Fatal("setup: a following view didn't take the new session")
+			}
+			// The session left and the one hinted before both stay live.
+			for _, msg := range []sessionActivityMsg{activityC, {path: "/p/" + sessA + ".jsonl", id: sessA}, activityC} {
+				m, _ = m.Update(msg)
+				if got, want := v.notify(m), "→ new session bbbbbbbb"; !strings.Contains(got, want) {
+					t.Errorf("a write to %s took the row: %q", msg.id[:8], got)
+				}
+			}
+		})
+	}
+}
+
+// A session already writing before a key switch isn't news after it, even
+// though opening the hinted session empties the view's hint.
+func TestLiveSessionsKeepNoticeAfterKeySwitch(t *testing.T) {
+	const sessD = "dddddddd-0000-0000-0000-000000000000"
+	activityA := sessionActivityMsg{path: "/p/" + sessA + ".jsonl", id: sessA}
+	activityD := sessionActivityMsg{path: "/p/" + sessD + ".jsonl", id: sessD}
+	for _, v := range followViews {
+		t.Run(v.name, func(t *testing.T) {
+			// Pinned, C writing, B starts, n to B.
+			m, _ := v.open(t, false).Update(activityC)
+			m, _ = m.Update(createdB)
+			m = press(t, m, "n")
+			m, _ = m.Update(activityC)
+			if got := v.notify(m); !strings.Contains(got, "→ switched to bbbbbbbb") {
+				t.Errorf("C, then n to B: %q", got)
+			}
+
+			// Pinned, C and D writing, n to C.
+			m, _ = v.open(t, false).Update(activityD)
+			m, _ = m.Update(activityC)
+			m = press(t, m, "n")
+			m, _ = m.Update(activityD)
+			if got := v.notify(m); !strings.Contains(got, "→ switched to cccccccc") {
+				t.Errorf("D and C, then n to C: %q", got)
+			}
+
+			// Following, C writing, B starts, A writes, - back to A.
+			m, _ = v.open(t, true).Update(activityC)
+			for _, msg := range []tea.Msg{createdB, activityC, activityA} {
+				m, _ = m.Update(msg)
+			}
+			m = press(t, m, "-")
+			m, _ = m.Update(activityC)
+			if got := v.notify(m); !strings.Contains(got, "→ switched to aaaaaaaa") {
+				t.Errorf("- back to A with C writing: %q", got)
+			}
+		})
+	}
+}
+
+// A write is news when its session just started or hadn't written within
+// idleAfter; the session a view leaves counts as writing.
+func TestSessionsSeenNews(t *testing.T) {
+	now := goldenTime(12, 0, 0)
+	var seen sessionsSeen
+	write := func(id string, created bool, at time.Time) bool {
+		return seen.news(sessionActivityMsg{id: id, created: created}, at)
+	}
+	if !write("c", false, now) {
+		t.Error("a session's first write should be news")
+	}
+	if write("c", false, now.Add(time.Second)) {
+		t.Error("a second write shouldn't be")
+	}
+	if !write("c", false, now.Add(time.Second+idleAfter)) {
+		t.Error("a write after idleAfter's quiet should be")
+	}
+	if !write("d", true, now) {
+		t.Error("a session that just started should be")
+	}
+	seen.left("a", now.Add(-time.Minute), now)
+	if write("a", false, now.Add(time.Minute)) {
+		t.Error("the session a view left while it was writing shouldn't be")
+	}
+	seen.left("b", now.Add(-time.Hour), now)
+	if !write("b", false, now.Add(time.Minute)) {
+		t.Error("the session a view left after an hour's quiet should be when it wakes")
+	}
+}
+
+// atClock pins a followView's clock to now.
+func atClock(m tea.Model, now time.Time) tea.Model {
+	switch v := m.(type) {
+	case Model:
+		v.now = func() time.Time { return now }
+		return v
+	case BreakdownModel:
+		v.now = func() time.Time { return now }
+		return v
+	}
+	return m
+}
+
+// The session a view leaves after hours of quiet is news when it wakes, as
+// any other session would be.
+func TestQuietLeftSessionIsNewsWhenItWakes(t *testing.T) {
+	activityA := sessionActivityMsg{path: "/p/" + sessA + ".jsonl", id: sessA}
+	for _, v := range followViews {
+		t.Run(v.name, func(t *testing.T) {
+			m, _ := atClock(v.open(t, true), goldenTime(12, 0, 0)).Update(createdB)
+			if v.id(m) != sessB {
+				t.Fatal("setup: a following view didn't take the new session")
+			}
+			m, _ = atClock(m, goldenTime(12, 1, 0)).Update(activityA)
+			if got, want := v.notify(m), "newer activity in aaaaaaaa • n to switch"; !strings.Contains(got, want) {
+				t.Errorf("notify row %q, want %q", got, want)
 			}
 		})
 	}

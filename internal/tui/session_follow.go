@@ -55,6 +55,50 @@ func onSessionActivity(msg sessionActivityMsg, currentID string, waiting, follow
 	return activityHint, &sessionHint{path: msg.path, id: msg.id, created: created, at: now}
 }
 
+// sessionsSeen is when each other session in the project last wrote, as a
+// view saw it. It decides what's news on the notify row: the switch notice
+// and breakdown's p selection give way only to a hint about a session that
+// wasn't already writing. The view's one hint can't tell: it names only the
+// latest session to write, and empties when the view opens that session.
+type sessionsSeen map[string]time.Time
+
+// news records a write to another session and reports whether it's news:
+// the session just started, or hadn't written within idleAfter, the time a
+// hint takes to fade. A live session writes every few hundred milliseconds,
+// so counting each write would take the row before it could be read.
+func (s *sessionsSeen) news(msg sessionActivityMsg, now time.Time) bool {
+	last, ok := (*s)[msg.id]
+	s.saw(msg.id, now)
+	return msg.created || !ok || now.Sub(last) >= idleAfter
+}
+
+// left records the session a view leaves in a switch at last, its newest
+// write. If that was recent, the session's next write isn't news: the switch
+// notice names it and the key back to it. One quiet for idleAfter or longer
+// is news when it wakes, like any other.
+func (s *sessionsSeen) left(id string, last, now time.Time) {
+	if now.Sub(last) < idleAfter {
+		s.saw(id, last)
+	}
+}
+
+// saw records that session id was writing at now, and forgets the sessions
+// quiet for longer than news looks back.
+func (s *sessionsSeen) saw(id string, now time.Time) {
+	if id == "" {
+		return
+	}
+	if *s == nil {
+		*s = sessionsSeen{}
+	}
+	for other, at := range *s {
+		if now.Sub(at) >= idleAfter {
+			delete(*s, other)
+		}
+	}
+	(*s)[id] = now
+}
+
 // hintShowing reports whether a hint is still on screen: it fades once the
 // other session has been quiet for idleAfter, and n stops acting on it.
 func hintShowing(h *sessionHint, now time.Time) bool {

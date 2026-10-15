@@ -364,10 +364,12 @@ func clipRows(rows []string, width int) []string {
 
 // renderNotifyRow renders the row under the header, or "" when there is
 // nothing to say. An error wins over the switch notice, then a hint about
-// another session, then a missing watcher. The switch notice outranks the
-// rest because it lasts only until the next key, and answers one. The hint
-// outranks the watcher notice because n acts on it and it fades on its own,
-// and an inotify limit that stops one watcher usually stops the other.
+// another session, then a missing watcher. The switch notice and the hint go
+// by the newest: the notice lasts until a key, and a hint that's news clears
+// it (see sessionsSeen), so a notice still standing is newer than any hint.
+// The hint outranks the watcher notice because n acts on it and it fades on
+// its own, and an inotify limit that stops one watcher usually stops the
+// other.
 func (m Model) renderNotifyRow(width int) string {
 	style := func(c color.Color, s string) string {
 		if m.noColor {
