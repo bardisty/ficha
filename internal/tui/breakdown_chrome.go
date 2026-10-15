@@ -53,7 +53,8 @@ func (m BreakdownModel) tooSmall() bool {
 	return m.width > 0 && m.width < m.minWidth()
 }
 
-// minWidth is the narrowest layout's width, for tooSmall.
+// minWidth is the narrowest layout's width, for tooSmall. It never counts
+// the weekday: layout leaves that out rather than need the column.
 func (m BreakdownModel) minWidth() int {
 	return breakdownLayout{indexWidth: m.table.indexWidth}.width()
 }

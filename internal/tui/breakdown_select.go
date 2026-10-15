@@ -104,11 +104,13 @@ func (m *BreakdownModel) toggleSort() {
 		m.timeYOffset, m.timeFollow = m.viewport.YOffset(), m.autoScroll
 		m.setFollow(false)
 		m.sortByCost = true
+		m.relayout()
 		m.refreshViewport()
 		m.viewport.GotoTop()
 		return
 	}
 	m.sortByCost = false
+	m.relayout()
 	m.refreshViewport()
 	if m.timeFollow {
 		m.viewport.GotoBottom()
