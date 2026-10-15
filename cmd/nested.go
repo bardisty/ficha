@@ -28,6 +28,11 @@ func checkNested(cfg *config) error {
 
 // writeNestedNote tells a report without --nested what the projects under
 // its directory hold, in window. Pricing them costs a parse of each session.
+//
+// The cost is an upper bound. A worktree session can resume one of the
+// directory's own and start with a copy of its history, which --nested
+// counts once, under the directory's session. Pricing exactly what --nested
+// adds would mean analyzing the directory's sessions again.
 func writeNestedNote(w io.Writer, cfg *config, nested nestedSessions, window models.TimeWindow, project string) {
 	if len(nested.sessions) == 0 {
 		return
@@ -50,7 +55,7 @@ func writeNestedNote(w io.Writer, cfg *config, nested nestedSessions, window mod
 	if !window.IsZero() {
 		inWindow = " in the window"
 	}
-	fmt.Fprintf(w, "Note: %s under %s %s %s%s, %s. Add --nested to count them in.\n",
+	fmt.Fprintf(w, "Note: %s under %s %s %s%s, up to %s. Add --nested to count them in.\n",
 		plural(len(projects), "project"), render.NoBreak(project), have, plural(aggregate.SessionCount, "session"),
 		inWindow, render.Cost(aggregate.TotalCost.TotalCost))
 }
