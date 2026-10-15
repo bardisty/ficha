@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 )
 
 // Breakdown column widths, in display columns. Every cell but an agent's
@@ -236,4 +237,14 @@ func workflowRunTag(name string) string {
 		return words[0][:min(2, len(words[0]))]
 	}
 	return string(words[0][0]) + string(words[1][0])
+}
+
+// agentColumnCell is the AGENT cell padded to its column: agentCell, then,
+// when the layout has room, the agent's task.
+func (m BreakdownModel) agentColumnCell(msg models.BreakdownMessage, layout breakdownLayout) string {
+	cell := fmt.Sprintf("%-*s", layout.agentWidth, m.agentCell(msg, layout.runTags))
+	if layout.taskWidth == 0 {
+		return cell
+	}
+	return cell + strings.Repeat(" ", bdGap) + render.FitTask(m.tasks[msg.AgentID], layout.taskWidth)
 }

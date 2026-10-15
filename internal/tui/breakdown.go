@@ -1268,16 +1268,6 @@ func (m BreakdownModel) agentCell(msg models.BreakdownMessage, withTag bool) str
 	return marker
 }
 
-// agentColumnCell is the AGENT cell padded to its column: agentCell, then,
-// when the layout has room, the agent's task.
-func (m BreakdownModel) agentColumnCell(msg models.BreakdownMessage, layout breakdownLayout) string {
-	cell := fmt.Sprintf("%-*s", layout.agentWidth, m.agentCell(msg, layout.runTags))
-	if layout.taskWidth == 0 {
-		return cell
-	}
-	return cell + strings.Repeat(" ", bdGap) + render.FitTask(m.tasks[msg.AgentID], layout.taskWidth)
-}
-
 // relayout works out the table's layout again. Call it whenever the rows,
 // the run tags or the width change, or columns misalign.
 func (m *BreakdownModel) relayout() { m.table = m.layout() }
