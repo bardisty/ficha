@@ -235,6 +235,12 @@ func subagentTreeSignature(projectDir, sessionID string) string {
 		if info, err := os.Stat(path); err == nil {
 			addFile(path, info)
 		}
+		// The agent's task comes from its meta file, which Claude Code can
+		// write while the transcript stays quiet.
+		meta := strings.TrimSuffix(path, ".jsonl") + ".meta.json"
+		if info, err := os.Stat(meta); err == nil {
+			addFile(meta, info)
+		}
 	}
 	// A directory turning (un)readable changes the surfaces' skipped-agent
 	// accounting even when no discovered path does, so it flips the signature.

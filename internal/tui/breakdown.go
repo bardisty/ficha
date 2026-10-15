@@ -1275,7 +1275,7 @@ func (m BreakdownModel) agentColumnCell(msg models.BreakdownMessage, layout brea
 	if layout.taskWidth == 0 {
 		return cell
 	}
-	return cell + " " + render.FitTask(m.tasks[msg.AgentID], layout.taskWidth)
+	return cell + strings.Repeat(" ", bdGap) + render.FitTask(m.tasks[msg.AgentID], layout.taskWidth)
 }
 
 // relayout works out the table's layout again. Call it whenever the rows,

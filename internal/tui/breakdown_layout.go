@@ -5,11 +5,11 @@ import (
 	"strings"
 
 	"github.com/bardisty/ficha/internal/models"
-	"github.com/bardisty/ficha/internal/render"
 )
 
-// Breakdown column widths, in display columns. Every cell is ASCII or
-// single-width, so padding by byte or rune count is padding by column.
+// Breakdown column widths, in display columns. Every cell but an agent's
+// task is ASCII or single-width, so padding by byte or rune count is padding
+// by column; render.FitTask pads a task by display width.
 const (
 	bdMinIndexWidth = 3
 	bdTimeWidth     = 8
@@ -95,29 +95,39 @@ func (l breakdownLayout) widenModel(want, termWidth int) breakdownLayout {
 	return l
 }
 
+// bdMinTaskWidth and bdMaxTaskWidth bound AGENT's task. A task repeats on
+// every one of its agent's rows, so a stub that only show's one row per
+// agent could live with says too little here, and past the cap the parent
+// rows, blank in AGENT, would carry a wide gap for one long task.
+const (
+	bdMinTaskWidth = 20
+	bdMaxTaskWidth = 40
+)
+
 // widenAgent gives AGENT room for the agents' tasks after their markers,
 // want columns at most, from whatever the row leaves spare, as widenModel
 // does for MODEL. A task is a nicety beside a cost, so it never takes a
-// column from the others, and with less room than render.MinTaskWidth (or
-// the whole task, if shorter) it doesn't show at all.
+// column from the others, and with less room than bdMinTaskWidth (or the
+// whole task, if shorter) it doesn't show at all.
 func (l breakdownLayout) widenAgent(want, termWidth int) breakdownLayout {
 	if l.agentWidth == 0 || want == 0 {
 		return l
 	}
-	room := want
+	room := min(want, bdMaxTaskWidth)
 	if termWidth > 0 {
-		room = min(want, termWidth-l.width()-1)
+		room = min(room, termWidth-l.width()-bdGap)
 	}
-	if room >= min(want, render.MinTaskWidth) {
+	if room >= min(want, bdMinTaskWidth) {
 		l.taskWidth = room
 	}
 	return l
 }
 
-// agentColumn is AGENT's width: its markers, and the tasks after them.
+// agentColumn is AGENT's width: its markers, and the tasks after them, a
+// column gap apart.
 func (l breakdownLayout) agentColumn() int {
 	if l.taskWidth > 0 {
-		return l.agentWidth + 1 + l.taskWidth
+		return l.agentWidth + bdGap + l.taskWidth
 	}
 	return l.agentWidth
 }
