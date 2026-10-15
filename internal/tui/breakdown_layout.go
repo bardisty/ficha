@@ -36,6 +36,11 @@ type breakdownLayout struct {
 	modelExtra int  // columns MODEL gets past bdModelWidth, for unknown model IDs
 	runTags    bool // AGENT cells carry workflow run tags
 	timeFmt    timeFormat
+	// agents is set when a row came from an agent, so the full layout has
+	// AGENT, for hidden. fullWidth is the full layout's width, TIME at the
+	// form the session asks for. BreakdownModel.layout sets both.
+	agents     bool
+	fullWidth  int
 	in, out    bool
 	cacheWrite bool
 	cacheRead  bool
@@ -87,6 +92,21 @@ func newBreakdownLayout(indexWidth, markerWidth, cellWidth, termWidth int, timeF
 		l.agentWidth = 0
 	}
 	return l
+}
+
+// hidden names the columns this layout leaves out for width, in the order
+// they go. Run tags aren't a column of their own.
+func (l breakdownLayout) hidden() []string {
+	var names []string
+	for _, c := range []struct {
+		name  string
+		drawn bool
+	}{{"IN", l.in}, {"C_WR", l.cacheWrite}, {"C_RD", l.cacheRead}, {"OUT", l.out}, {"AGENT", !l.agents || l.agentWidth > 0}} {
+		if !c.drawn {
+			names = append(names, c.name)
+		}
+	}
+	return names
 }
 
 // timeWidth is the TIME column's width. Every form is a fixed width.

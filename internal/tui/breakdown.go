@@ -807,7 +807,7 @@ func (m BreakdownModel) frame() string {
 		return renderTooSmall(m.width, m.height, m.minWidth(), tooSmallHeight)
 	}
 	if m.keysOpen {
-		lines := append(keyList("breakdown", BreakdownKeys(), m.width, m.height-1, m.noColor), m.renderHelpLine())
+		lines := append(keyList("breakdown", BreakdownKeys(), m.width, m.height-1, m.noColor, m.hiddenColumnsLine()), m.renderHelpLine())
 		return clipToWidth(strings.Join(lines, "\n"), m.width)
 	}
 	layout := m.table
@@ -1213,13 +1213,22 @@ func (m BreakdownModel) peakAgentMarker() string {
 	return agentMarker(row.AgentID)
 }
 
-// renderTableHeader renders the table header row
+// renderTableHeader renders the column header row. Past its last column, in
+// cells the frame has spare, a dim "+N" counts the columns hidden at this
+// width; the ? list names them.
 func (m BreakdownModel) renderTableHeader(layout breakdownLayout) string {
 	header := layout.header()
-	if !m.noColor {
-		return styles.HeaderStyle.Render(header)
+	more := ""
+	if n := len(layout.hidden()); n > 0 && layout.width()+1+len(fmt.Sprintf("+%d", n)) <= m.width {
+		more = fmt.Sprintf(" +%d", n)
 	}
-	return header
+	if m.noColor {
+		return header + more
+	}
+	if more != "" {
+		more = styles.DimStyle.Render(more)
+	}
+	return styles.HeaderStyle.Render(header) + more
 }
 
 // renderTableSeparator renders the table separator rule, dimmed unless color
@@ -1414,10 +1423,36 @@ func (m BreakdownModel) layout() breakdownLayout {
 	case m.sortByCost && m.dated:
 		timeFmt = timeWeekday
 	}
+	full := newBreakdownLayout(indexWidth, markerWidth, cellWidth, 0, timeFmt).width()
 	for m.width > 0 && timeFmt > timeClock && (breakdownLayout{indexWidth: max(indexWidth, bdMinIndexWidth), timeFmt: timeFmt}).width() > m.width {
 		timeFmt--
 	}
-	return newBreakdownLayout(indexWidth, markerWidth, cellWidth, m.width, timeFmt).widenModel(modelWant, m.width).widenAgent(taskWant, m.width)
+	l := newBreakdownLayout(indexWidth, markerWidth, cellWidth, m.width, timeFmt).widenModel(modelWant, m.width).widenAgent(taskWant, m.width)
+	l.agents = markerWidth > 0
+	l.fullWidth = full
+	return l
+}
+
+// hiddenColumnsLine ends the ? list when the table hides columns at this
+// width: what's hidden and the width that shows it all, in the longest form
+// that fits, down to the names alone. Those fit the narrowest frame drawn,
+// all five names in 36 columns. It must always show, as nothing else says
+// columns are missing. "" when none are.
+func (m BreakdownModel) hiddenColumnsLine() string {
+	hidden := m.table.hidden()
+	if len(hidden) == 0 {
+		return ""
+	}
+	names := strings.Join(hidden, ", ")
+	for _, line := range []string{
+		fmt.Sprintf("hidden at this width: %s; widen to %d for all", names, m.table.fullWidth),
+		fmt.Sprintf("hidden: %s; widen to %d", names, m.table.fullWidth),
+	} {
+		if m.width <= 0 || 2+lipgloss.Width(line) <= m.width {
+			return line
+		}
+	}
+	return "hidden: " + names
 }
 
 // renderRow renders a single message row

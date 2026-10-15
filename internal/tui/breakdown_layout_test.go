@@ -407,3 +407,47 @@ func TestBreakdownRunTagKey_PrintableNames(t *testing.T) {
 		t.Errorf("frame is %d rows, want 24", rows)
 	}
 }
+
+// A narrow terminal hides columns whole. The ? list names them, and the
+// header counts them after its last column when the frame has the cells
+// spare, without moving a column. The fixture's full width is 85.
+func TestBreakdownHiddenColumns(t *testing.T) {
+	msgs, runs := runTagRows(40)
+	for _, tt := range []struct {
+		width int
+		line  string
+		more  string // what follows the header's columns
+	}{
+		{100, "", ""},
+		{80, "hidden at this width: IN; widen to 85 for all", " +1"},
+		{60, "hidden: IN, C_WR, C_RD, OUT; widen to 85", " +4"},
+		{40, "hidden: IN, C_WR, C_RD, OUT, AGENT", ""},
+	} {
+		for _, noColor := range []bool{true, false} {
+			m := loadedBreakdown(t, tt.width, 24, nil)
+			m.noColor = noColor
+			updated, _ := m.Update(breakdownMsgsMsg{messages: msgs, workflows: runs, insights: &models.MessageInsights{}})
+			m = updated.(BreakdownModel)
+			if got := m.hiddenColumnsLine(); got != tt.line {
+				t.Errorf("width %d: hidden line %q, want %q", tt.width, got, tt.line)
+			}
+			header := stripANSI(m.renderTableHeader(m.table))
+			if got := strings.TrimPrefix(header, m.table.header()); got != tt.more || lipgloss.Width(header) > tt.width {
+				t.Errorf("width %d, noColor %v: header %q, want the columns then %q", tt.width, noColor, header, tt.more)
+			}
+		}
+	}
+}
+
+// "widen to" names the width that shows every column with TIME as the
+// session asks for it, not as a narrow terminal cut it: sorted, a week-old
+// session's 40 columns hold only the bare clock.
+func TestBreakdownHiddenColumns_FullWidthKeepsTheDate(t *testing.T) {
+	msgs, _ := runTagRows(40)
+	m := press(t, datedBreakdown(t, 40, 15, goldenTime(12, 0, 0).AddDate(0, 0, 9), msgs), "s")
+	wide := m
+	wide.width = 0
+	if want := wide.layout().width(); m.table.fullWidth != want || m.table.timeFmt == timeDate {
+		t.Errorf("fullWidth %d with TIME %v, want %d", m.table.fullWidth, m.table.timeFmt, want)
+	}
+}

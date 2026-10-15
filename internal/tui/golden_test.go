@@ -352,6 +352,12 @@ func goldenBreakdownView(t *testing.T, noColor bool) string {
 
 func goldenBreakdownViewSized(t *testing.T, noColor bool, width, height int) string {
 	t.Helper()
+	return frameOf(goldenBreakdownModel(t, noColor, width, height))
+}
+
+// goldenBreakdownModel is the model goldenBreakdownViewSized draws.
+func goldenBreakdownModel(t *testing.T, noColor bool, width, height int) BreakdownModel {
+	t.Helper()
 	m := NewBreakdownModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", noColor, "", false)
 	// 5s after the last fixture message, so the header reads "last msg 5s ago"
 	m.now = func() time.Time { return goldenTime(11, 30, 0) }
@@ -385,7 +391,7 @@ func goldenBreakdownViewSized(t *testing.T, noColor bool, width, height int) str
 	})
 	m = updated.(BreakdownModel)
 	m.lastUpdated = goldenTime(11, 30, 0)
-	return frameOf(m)
+	return m
 }
 
 func TestGoldenBreakdownView(t *testing.T) {

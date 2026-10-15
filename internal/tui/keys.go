@@ -131,8 +131,10 @@ func helpLine(keys []Key, width int, listOpen, pinned, noColor bool) string {
 // would read as one more key. When the rows are short that goes first,
 // then the title, and past that it cuts the list with a pointer to
 // --help, which has all of it. A terminal too narrow for every row whole
-// gets each row's first keys only, and --help has the others.
-func keyList(view string, keys []Key, width, rows int, noColor bool) []string {
+// gets each row's first keys only, and --help has the others. A trailing
+// line, such as breakdown's hidden columns, takes the pointer's place, and
+// outranks the title and the last key rows: it says what nothing else does.
+func keyList(view string, keys []Key, width, rows int, noColor bool, trailing string) []string {
 	var shown []Key
 	for _, k := range keys {
 		if !k.suspend || canSuspend() {
@@ -163,11 +165,19 @@ func keyList(view string, keys []Key, width, rows int, noColor bool) []string {
 		entries = append(entries, "  "+style(styles.SectionHeaderStyle, k.Keys)+pad+"  "+k.Does)
 	}
 
+	tail := "Terms: ficha help output"
+	if trailing != "" {
+		tail = trailing
+	}
 	var lines []string
 	switch {
 	case len(entries)+2 < rows:
 		lines = append([]string{"  " + style(styles.HeaderStyle, "Keys")}, entries...)
-		lines = append(lines, "", style(styles.DimStyle, "  Terms: ficha help output"))
+		lines = append(lines, "", style(styles.DimStyle, "  "+tail))
+	case trailing != "" && len(entries)+2 == rows:
+		lines = append(entries, "", style(styles.DimStyle, "  "+tail))
+	case trailing != "":
+		lines = append(keyList(view, keys, width, rows-1, noColor, ""), style(styles.DimStyle, "  "+tail))
 	case len(entries) < rows:
 		lines = append([]string{"  " + style(styles.HeaderStyle, "Keys")}, entries...)
 	case len(entries) <= rows:
