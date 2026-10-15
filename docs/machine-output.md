@@ -107,7 +107,7 @@ The last two columns, `agent_type` and `description`, are the agent's, as in jso
 - `modified` is the transcript file's mtime, which can be later than the last message, so it doesn't always descend down the list. A session with no messages sorts by it.
 - `total_cost` is the same breakdown object as on `show` and `summary`, so `.total_cost.total_cost` reads the same on all three. csv has only the total.
 - `model`, `start_time`, `duration_seconds` and `total_cost` come from the same analysis as the session's `summary -d` record and the list table. That analysis counts a message repeated across sessions once, under the session it first appeared in. So for a resumed or forked session, which starts with a copy of earlier history, these fields describe what it added: `start_time` is its first new message, and its `total_cost` can be lower than `show`'s, which analyzes the session alone.
-- `title` is the transcript's latest `ai-title` record, as on `show`. A fork that hasn't been retitled yet carries the original's title.
+- `title` is the session's title, as on `show`. A fork that hasn't been retitled yet carries the original's title.
 - `message_count` and `agent_count` come from the same parse as `show`'s, so the two agree, repeated history included.
 - `model` is the session's costliest model in the parent transcript, spelled as a `cost_by_model` key, like `summary -d` csv's `model`.
 - A session that fails to parse is still listed, with `skipped_sessions: 1`. It has no `title`, `model`, `start_time`, `duration_seconds` or `total_cost`, and csv leaves those cells empty. A session that holds nothing but repeated history parses fine, so it has `total_cost` (zero) and `duration_seconds`, but no `start_time` or `model`.
@@ -134,7 +134,7 @@ Each entry in `workflows` (on `show` json and each per-session record in `summar
 
 ## Session titles
 
-`title` on `show` json and on each per-session record in `summary -d` json is the session's latest `ai-title` record, as Claude Code wrote it. Claude Code rewrites the title as a session goes on, and the key is undocumented, so `title` is absent when a transcript has none. It's raw transcript text: escape it before you print it to a terminal.
+`title` on `show` json and on each per-session record in `summary -d` json is the session's title as Claude Code shows it: the name `/rename` gave it, or else the latest title Claude Code generated (the transcript's last `ai-title` record). Claude Code rewrites the generated title as a session goes on, but a `/rename` title wins over it, and renaming to an empty name brings the generated one back. The generated title's key is undocumented, so `title` is absent when a transcript has neither. It's raw transcript text: escape it before you print it to a terminal.
 
 ## Cost insights
 

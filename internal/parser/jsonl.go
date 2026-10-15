@@ -33,8 +33,11 @@ type ParseResult struct {
 	Messages     []models.JSONLMessage
 	SkippedLines int                  // Number of lines skipped (malformed JSON or longer than maxLineBytes)
 	SkippedAt    []models.SkippedLine // The skipped lines and why, capped at maxSkippedLineNumbers
-	// Title is the last "ai-title" record's title. Claude Code writes a new
-	// one as the session's topic shifts, so the last is the current one.
+	// Title is the session's name as Claude Code shows it: the last
+	// "custom-title" record's, which /rename writes, else the last
+	// "ai-title" record's. Claude Code writes a new ai-title as the topic
+	// shifts, so the last is the current one, but none of them replaces a
+	// rename. A rename to "" clears it, and the generated title shows again.
 	Title string
 }
 
@@ -63,6 +66,7 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 	result := &ParseResult{}
 	reader := newLineReader(r)
 
+	var aiTitle, customTitle string
 	lineNum := 0
 	for {
 		line, oversized, err := reader.next(maxLineBytes)
@@ -101,10 +105,16 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 		case msg.Type == "assistant" && msg.Message != nil:
 			result.Messages = append(result.Messages, msg)
 		case msg.Type == "ai-title" && msg.AITitle != "":
-			result.Title = msg.AITitle
+			aiTitle = msg.AITitle
+		case msg.Type == "custom-title":
+			customTitle = msg.CustomTitle
 		}
 	}
 
+	result.Title = aiTitle
+	if customTitle != "" {
+		result.Title = customTitle
+	}
 	result.Messages = DeduplicateMessages(result.Messages)
 	return result, nil
 }

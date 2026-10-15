@@ -622,6 +622,73 @@ func TestParseJSONLTitle(t *testing.T) {
 	}
 }
 
+// A /rename title wins over every generated one, before or after it, and
+// a rename to "" brings the generated title back.
+func TestParseJSONLCustomTitle(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{
+			name: "rename between generated titles",
+			lines: []string{
+				`{"type":"ai-title","aiTitle":"Investigate the auth refactor","sessionId":"s"}`,
+				`{"type":"custom-title","customTitle":"auth-refactor","sessionId":"s"}`,
+				`{"type":"ai-title","aiTitle":"Investigate the auth refactor and token storage","sessionId":"s"}`,
+			},
+			want: "auth-refactor",
+		},
+		{
+			name: "rename before any generated title",
+			lines: []string{
+				`{"type":"custom-title","customTitle":"auth-refactor","sessionId":"s"}`,
+				`{"type":"ai-title","aiTitle":"Investigate the auth refactor","sessionId":"s"}`,
+			},
+			want: "auth-refactor",
+		},
+		{
+			name: "the last rename wins",
+			lines: []string{
+				`{"type":"custom-title","customTitle":"auth","sessionId":"s"}`,
+				`{"type":"custom-title","customTitle":"auth-refactor","sessionId":"s"}`,
+			},
+			want: "auth-refactor",
+		},
+		{
+			name: "an empty rename clears it",
+			lines: []string{
+				`{"type":"ai-title","aiTitle":"Investigate the auth refactor","sessionId":"s"}`,
+				`{"type":"custom-title","customTitle":"auth-refactor","sessionId":"s"}`,
+				`{"type":"custom-title","customTitle":"","sessionId":"s"}`,
+			},
+			want: "Investigate the auth refactor",
+		},
+		{
+			name: "an empty rename with no generated title",
+			lines: []string{
+				`{"type":"custom-title","customTitle":"auth-refactor","sessionId":"s"}`,
+				`{"type":"custom-title","customTitle":"","sessionId":"s"}`,
+			},
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ParseJSONLWithResult(strings.NewReader(strings.Join(tt.lines, "\n")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Title != tt.want {
+				t.Errorf("Title = %q, want %q", result.Title, tt.want)
+			}
+			if len(result.Messages) != 0 {
+				t.Errorf("got %d messages, want none: title records aren't messages", len(result.Messages))
+			}
+		})
+	}
+}
+
 // Each skipped line records why, so -v can tell a bad line from a huge one.
 func TestParseJSONLWithResult_SkipReasons(t *testing.T) {
 	good := `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","message":{"id":"msg_1","model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":50}}}`

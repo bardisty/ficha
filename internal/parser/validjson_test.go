@@ -12,7 +12,9 @@ import (
 
 // kept is the parse's own rule for which decoded records it holds on to.
 func kept(msg models.JSONLMessage) bool {
-	return (msg.Type == "assistant" && msg.Message != nil) || (msg.Type == "ai-title" && msg.AITitle != "")
+	return (msg.Type == "assistant" && msg.Message != nil) ||
+		(msg.Type == "ai-title" && msg.AITitle != "") ||
+		msg.Type == "custom-title"
 }
 
 // scanCases are lines the scan could get wrong, each with whether it is
@@ -31,6 +33,8 @@ var scanCases = []struct {
 	{"assistant", `{"type":"assistant","message":{"id":"m"}}`, true, false},
 	{"assistant without a message", `{"type":"assistant"}`, true, false},
 	{"ai-title", `{"type":"ai-title","aiTitle":"Fix the parser"}`, true, false},
+	{"custom-title", `{"type":"custom-title","customTitle":"parser-fix"}`, true, false},
+	{"empty custom-title", `{"type":"custom-title","customTitle":""}`, true, false},
 
 	// Only the line's own type counts
 	{"type nested in message", `{"type":"user","message":{"type":"assistant"}}`, true, true},
@@ -205,6 +209,7 @@ func FuzzScanLineAgreesWithJSONValid(f *testing.F) {
 // json.Unmarshal, and every line it fails on counts as malformed.
 func decodeEveryLine(data []byte) *ParseResult {
 	result := &ParseResult{}
+	var aiTitle, customTitle string
 	reader := newLineReader(bytes.NewReader(data))
 	for lineNum := 1; ; lineNum++ {
 		line, oversized, err := reader.next(maxLineBytes)
@@ -227,8 +232,14 @@ func decodeEveryLine(data []byte) *ParseResult {
 		case msg.Type == "assistant" && msg.Message != nil:
 			result.Messages = append(result.Messages, msg)
 		case msg.Type == "ai-title" && msg.AITitle != "":
-			result.Title = msg.AITitle
+			aiTitle = msg.AITitle
+		case msg.Type == "custom-title":
+			customTitle = msg.CustomTitle
 		}
+	}
+	result.Title = aiTitle
+	if customTitle != "" {
+		result.Title = customTitle
 	}
 	result.Messages = DeduplicateMessages(result.Messages)
 	return result
@@ -248,7 +259,7 @@ func FuzzDroppedLinesAreNeverKept(f *testing.F) {
 			}
 			var msg models.JSONLMessage
 			_ = json.Unmarshal(line, &msg)
-			if kept(msg) || msg.Type == "assistant" || msg.Type == "ai-title" {
+			if kept(msg) || msg.Type == "assistant" || msg.Type == "ai-title" || msg.Type == "custom-title" {
 				t.Fatalf("dropped a line that decodes to type %q: %q", msg.Type, line)
 			}
 		}
