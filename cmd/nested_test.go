@@ -248,3 +248,91 @@ func TestNestedProjectsNotAtHome(t *testing.T) {
 		t.Errorf("stderr = %q", stderr)
 	}
 }
+
+// A repo where only claude --worktree ever ran has no sessions of its own:
+// either no project directory at all, or one that holds no transcript.
+func TestNestedProjectsWithoutOwnSessions(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		remove func(repoProject string) error
+	}{
+		{"no project directory", os.RemoveAll},
+		{"an empty project directory", func(repoProject string) error {
+			return os.Remove(filepath.Join(repoProject, "aaaaaaaa-0000-4000-8000-000000000001.jsonl"))
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repo, projectsDir, _ := setupNestedFixture(t)
+			repoProject := filepath.Join(projectsDir, paths.PathToProjectDir(repo))
+			if err := tt.remove(repoProject); err != nil {
+				t.Fatal(err)
+			}
+
+			for _, command := range []string{"summary", "list"} {
+				_, _, err := executeCLISplit(t, command)
+				want := "Claude Code has no sessions for " + repo + " itself, but 2 projects under it have: fix-auth, packages/api. Run: ficha " + command + " --nested"
+				if exitCode(err) != 1 || err.Error() != want {
+					t.Errorf("%s: exit %d, error %v, want %q", command, exitCode(err), err, want)
+				}
+			}
+
+			out, _, err := executeCLISplit(t, "summary", "--nested", "-f", "json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got nestedSummaryJSON
+			mustJSON(t, out, &got)
+			if got.SessionCount != 2 || got.ProjectPath != repoProject {
+				t.Errorf("summary --nested: %+v, want 2 sessions under the repo's own %q", got, repoProject)
+			}
+			out, _, err = executeCLISplit(t, "list", "--nested", "--no-color")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, "~/work/repo +2 projects") {
+				t.Errorf("list --nested names the repo some other way:\n%s", out)
+			}
+		})
+	}
+
+	// show, watch and breakdown read one project, so the projects under the
+	// directory don't stand in for its own.
+	t.Run("show is unchanged", func(t *testing.T) {
+		repo, projectsDir, _ := setupNestedFixture(t)
+		if err := os.RemoveAll(filepath.Join(projectsDir, paths.PathToProjectDir(repo))); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := executeCLISplit(t, "show")
+		if err == nil || strings.Contains(err.Error(), "--nested") {
+			t.Errorf("show: %v", err)
+		}
+	})
+
+	t.Run("a directory with neither gets the usual error", func(t *testing.T) {
+		repo, _, _ := setupNestedFixture(t)
+		src := filepath.Join(repo, "src")
+		if err := os.MkdirAll(src, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Chdir(src)
+		_, _, err := executeCLISplit(t, "summary", "--nested")
+		want := "Claude Code has no sessions for " + src + ". Sessions are recorded per directory Claude Code was started in.\nFound sessions for parent directory " + repo + ". Run: ficha summary -p " + shellQuote(repo)
+		if err == nil || !strings.HasPrefix(err.Error(), want) {
+			t.Errorf("error %v, want it to start %q", err, want)
+		}
+	})
+
+	// Under ~, every project is nested, so home doesn't stand in for them.
+	t.Run("not at home", func(t *testing.T) {
+		repo, projectsDir, _ := setupNestedFixture(t)
+		if err := os.RemoveAll(filepath.Join(projectsDir, paths.PathToProjectDir(repo))); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("HOME", repo)
+		t.Setenv("USERPROFILE", repo)
+		_, _, err := executeCLISplit(t, "summary", "--nested")
+		if err == nil || strings.Contains(err.Error(), "projects under it") {
+			t.Errorf("error %v", err)
+		}
+	})
+}

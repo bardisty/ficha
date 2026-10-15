@@ -3,11 +3,11 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
-	"github.com/bardisty/ficha/internal/parser"
 	"github.com/spf13/cobra"
 )
 
@@ -67,7 +67,7 @@ func runSummary(cfg *config) error {
 		return err
 	}
 
-	sessions, projectDir, nested, err := loadProjectAndNestedSessions(cfg)
+	sessions, root, nested, err := loadProjectAndNestedSessions(cfg)
 	if err != nil {
 		return err
 	}
@@ -102,14 +102,19 @@ func runSummary(cfg *config) error {
 	}
 	warnUnknownModels(&warnings, analysis.UnpricedModels)
 	if !cfg.nested {
-		writeNestedNote(&warnings, cfg, nested, window, parser.ProjectDisplayName(projectDir))
+		writeNestedNote(&warnings, cfg, nested, window, root.name)
 	}
 
 	// Mark as summary (don't overwrite SessionID). SessionCount is already the
 	// skip-adjusted count — AnalyzeMultipleSessions sets it where the totals
 	// are summed.
 	analysis.IsSummary = true
-	analysis.Project = nestedLabel(parser.ProjectDisplayName(projectDir), results)
+	analysis.Project = nestedLabel(root.name, results)
+	if cfg.nested {
+		// The directory's own, though the first session read may be a
+		// nested project's, and though it may have no project of its own.
+		analysis.ProjectPath = filepath.Clean(root.dir)
+	}
 
 	// Output in requested format. --details/--expand-agents add per-session and
 	// per-agent records to json/csv (not just the table); without --details the
@@ -140,7 +145,7 @@ func runSummary(cfg *config) error {
 			// for debugging.
 			storageDir := ""
 			if cfg.verbose {
-				storageDir = projectDir
+				storageDir = root.dir
 			}
 			output = formatter.FormatSummaryTableWithDetails(analysis, results, storageDir, cfg.noColor, cfg.expandAgents, terminalWidth(cfg.stdout))
 		} else {

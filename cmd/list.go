@@ -63,7 +63,7 @@ func runList(cfg *config) error {
 		return runListTable(cfg, window)
 	}
 
-	sessions, projectDir, nested, err := loadProjectAndNestedSessions(cfg)
+	sessions, root, nested, err := loadProjectAndNestedSessions(cfg)
 	if err != nil {
 		return err
 	}
@@ -118,11 +118,11 @@ func runList(cfg *config) error {
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
 	if !cfg.nested {
-		writeNestedNote(&warnings, cfg, nested, window, parser.ProjectDisplayName(projectDir))
+		writeNestedNote(&warnings, cfg, nested, window, root.name)
 	}
 
 	// Cleaned as each transcript's directory is, which --project-dir isn't.
-	originalPaths := map[string]string{filepath.Clean(projectDir): parser.ProjectOriginalPath(projectDir)}
+	originalPaths := map[string]string{filepath.Clean(root.dir): parser.ProjectOriginalPath(root.dir)}
 	for dir, p := range nested.projects {
 		originalPaths[dir] = p.path
 	}
@@ -173,7 +173,7 @@ func countedEntry(r models.SessionResult, windowed bool) models.SessionEntry {
 // session duplicates attributed once, so a session's cost here matches its
 // row there.
 func runListTable(cfg *config, window models.TimeWindow) error {
-	sessions, projectDir, nested, err := loadProjectAndNestedSessions(cfg)
+	sessions, root, nested, err := loadProjectAndNestedSessions(cfg)
 	if err != nil {
 		return err
 	}
@@ -211,11 +211,11 @@ func runListTable(cfg *config, window models.TimeWindow) error {
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
 	if !cfg.nested {
-		writeNestedNote(&warnings, cfg, nested, window, parser.ProjectDisplayName(projectDir))
+		writeNestedNote(&warnings, cfg, nested, window, root.name)
 	}
 
 	opts := formatter.ListTableOptions{
-		Project: nestedLabel(parser.ProjectDisplayName(projectDir), results),
+		Project: nestedLabel(root.name, results),
 		Width:   terminalWidth(cfg.stdout),
 	}
 	if !window.IsZero() {

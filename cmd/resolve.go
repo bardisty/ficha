@@ -155,6 +155,18 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 		}
 	}
 
+	// A directory where only claude --worktree ever ran has no project of
+	// its own, just projects under it. For summary and list, which read
+	// those, it stands for itself, before a parent or a same-named project
+	// elsewhere can claim it.
+	if cfg.readsNested {
+		root := resolvedProject{dir: exactDir, label: canonical, path: canonical}
+		if len(nestedProjects(root)) > 0 {
+			cfg.tracef("projects under %s", canonical)
+			return root, nil
+		}
+	}
+
 	// A parent directory's project is far likelier to be the one meant than a
 	// project elsewhere that shares this directory's name, and common names
 	// ("src", "api") make such matches easy. So the parent hint comes first,
