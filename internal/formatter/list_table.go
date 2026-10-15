@@ -120,9 +120,21 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	}
 
 	var sb strings.Builder
+	// The count is of sessions read, as summary counts them, so the two
+	// agree; the rest are named apart, since their rows still show.
+	readable := 0
+	for _, r := range results {
+		if r.Analysis != nil {
+			readable++
+		}
+	}
+	count := fmt.Sprintf("%d %s", readable, sessionsWord(readable))
+	fields := []string{count}
+	if unreadable := len(results) - readable; unreadable > 0 {
+		fields[0] += fmt.Sprintf(", %d unreadable", unreadable)
+	}
 	// A window stays in the header when nothing else fits: without it the
 	// rows read as all-time.
-	fields := []string{fmt.Sprintf("%d %s", len(results), sessionsWord(len(results)))}
 	giveWay := []int{panelLead}
 	if opts.Window != nil {
 		when := spanOrWindow(opts.Window, time.Time{}, time.Time{})
@@ -131,6 +143,20 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		}
 		fields = append(fields, when)
 		giveWay = []int{panelLead, 0}
+	}
+	// A box too narrow for the unreadable sessions' count drops it where
+	// that keeps the project, or the session count, which would otherwise
+	// go; their rows still name them. The project needs the room
+	// renderPanel keeps for it.
+	fits := func(head string, project bool) bool {
+		need := append([]string{head}, fields[1:]...)
+		if project && opts.Project != "" {
+			need = append(need, strings.Repeat(" ", min(lipgloss.Width(models.StripControl(opts.Project)), minProjectWidth)))
+		}
+		return lipgloss.Width(strings.Join(need, "  "+styles.BoxVerticalSep+"  ")) <= width-6
+	}
+	if !fits(fields[0], true) && (fits(count, true) || !fits(fields[0], false)) {
+		fields[0] = count
 	}
 	sb.WriteString(renderPanel(opts.Project, fields, giveWay, width, noColor))
 	sb.WriteString("\n\n")

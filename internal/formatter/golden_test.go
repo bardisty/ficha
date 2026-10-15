@@ -412,6 +412,34 @@ func TestSessionListEmptyWindow(t *testing.T) {
 	}
 }
 
+// list's header counts the sessions it read, as summary does, and names the
+// unreadable ones apart. A box too narrow for both keeps the project and
+// the session count, but where the project goes beside a window anyway,
+// the unreadable count stays.
+func TestSessionListCountsUnreadableApart(t *testing.T) {
+	windowed := goldenListOptions
+	windowed.Project = "~/source/webapp-api"
+	windowed.Window = &models.TimeWindow{Since: time.Date(2026, 1, 8, 0, 0, 0, 0, time.Local)}
+	for width, want := range map[int]string{
+		80: "~/src/app  │  3 sessions, 1 unreadable  ",
+		40: "~/src/app  │  3 sessions  ",
+		55: "║  3 sessions, 1 unreadable  │  Window: Jan 08 → now  ║",
+	} {
+		opts := goldenListOptions
+		if width == 55 {
+			opts = windowed
+		}
+		opts.Width = width
+		out := FormatSessionListTable(goldenListResults(), true, opts)
+		if !strings.Contains(out, want) {
+			t.Errorf("width %d: want %q in the header:\n%s", width, want, out)
+		}
+		if w := maxLineWidth(out); w > width {
+			t.Errorf("width %d: widest line is %d:\n%s", width, w, out)
+		}
+	}
+}
+
 func TestGoldenSessionListColor(t *testing.T) {
 	checkGolden(t, "session_list_color", FormatSessionListTable(goldenListResults(), false, goldenListOptions))
 }
