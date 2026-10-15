@@ -452,6 +452,7 @@ func TestGoldenGlobalTableDetails(t *testing.T) {
 
 const goldenAlphaID = "aaaa1111-2222-3333-4444-555566667777"
 const goldenBetaID = "bbbb2222-3333-4444-5555-666677778888"
+const goldenEmptyID = "eeee4444-5555-6666-7777-888899990000"
 const goldenGhostID = "cccc3333-4444-5555-6666-777788889999"
 
 func summaryDetailsFixture(t *testing.T) []models.SessionEntry {
@@ -546,6 +547,29 @@ func TestGoldenSummaryDetailsColor(t *testing.T) {
 	entries := summaryDetailsFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
 	checkGolden(t, "summary_details_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, false, 0))
+}
+
+// A session with no replies yet reads as list shows it, dashes and no cost,
+// and its 0 doesn't color the other sessions' costs as if they stood out.
+func TestGoldenSummaryDetailsNoReplies(t *testing.T) {
+	entries := summaryDetailsFixture(t)
+	path := filepath.Join(t.TempDir(), goldenEmptyID+".jsonl")
+	user := `{"type":"user","timestamp":"2026-01-15T08:00:00Z","sessionId":"` + goldenEmptyID + `","message":{"role":"user","content":"hi"}}` + "\n"
+	if err := os.WriteFile(path, []byte(user), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	empty := models.SessionEntry{
+		SessionID: goldenEmptyID,
+		FullPath:  path,
+		Created:   time.Date(2026, 1, 15, 8, 0, 0, 0, time.UTC),
+		Modified:  time.Date(2026, 1, 15, 8, 0, 0, 0, time.UTC),
+	}
+	analysis, results := summaryDetailsAnalysis(t, append(entries, empty))
+	checkGolden(t, "summary_details_no_replies", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, 0))
+	// Beside one priced session, a 0 would make that session the costliest
+	// of a range and color it red.
+	analysis, results = summaryDetailsAnalysis(t, []models.SessionEntry{entries[1], empty})
+	checkGolden(t, "summary_details_no_replies_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, false, 0))
 }
 
 // --- golden tests: workflow agent grouping ---
