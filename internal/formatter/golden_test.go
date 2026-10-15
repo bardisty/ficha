@@ -412,6 +412,26 @@ func TestSessionListEmptyWindow(t *testing.T) {
 	}
 }
 
+// list's header counts the sessions it read, as summary does, and names the
+// unreadable ones apart. A box too narrow for both keeps the project and
+// the session count.
+func TestSessionListCountsUnreadableApart(t *testing.T) {
+	opts := goldenListOptions
+	for width, want := range map[int]string{
+		80: "~/src/app  │  3 sessions, 1 unreadable  ",
+		40: "~/src/app  │  3 sessions  ",
+	} {
+		opts.Width = width
+		out := FormatSessionListTable(goldenListResults(), true, opts)
+		if !strings.Contains(out, want) {
+			t.Errorf("width %d: want %q in the header:\n%s", width, want, out)
+		}
+		if w := maxLineWidth(out); w > width {
+			t.Errorf("width %d: widest line is %d:\n%s", width, w, out)
+		}
+	}
+}
+
 func TestGoldenSessionListColor(t *testing.T) {
 	checkGolden(t, "session_list_color", FormatSessionListTable(goldenListResults(), false, goldenListOptions))
 }
