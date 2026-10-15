@@ -590,39 +590,6 @@ func TestIsKnownModel(t *testing.T) {
 	}
 }
 
-func TestContextWindowFunctions(t *testing.T) {
-	pricing := ModelPricing{
-		InputRate:        5.00,
-		OutputRate:       25.00,
-		MaxContextTokens: 200000,
-	}
-
-	// Test context percentage
-	contextPct := GetContextPercentage(pricing, 100000) // 50% usage
-	if contextPct < 49.9 || contextPct > 50.1 {
-		t.Errorf("GetContextPercentage: got %f, want 50.0", contextPct)
-	}
-
-	// Test free space (200k - 100k usage = 100k)
-	freeSpace := GetFreeSpace(pricing, 100000)
-	if freeSpace != 100000 {
-		t.Errorf("GetFreeSpace: got %d, want 100000", freeSpace)
-	}
-
-	// Test free space when usage exceeds max (should return 0, not negative)
-	freeSpaceExceeded := GetFreeSpace(pricing, 250000)
-	if freeSpaceExceeded != 0 {
-		t.Errorf("GetFreeSpace (exceeded): got %d, want 0", freeSpaceExceeded)
-	}
-
-	// Test context percentage with zero max context
-	zeroPricing := ModelPricing{MaxContextTokens: 0}
-	zeroPct := GetContextPercentage(zeroPricing, 100000)
-	if zeroPct != 0 {
-		t.Errorf("GetContextPercentage (zero max): got %f, want 0", zeroPct)
-	}
-}
-
 func TestModelCatalogIntegrity(t *testing.T) {
 	seen := make(map[string]bool, len(modelCatalog))
 	for _, m := range modelCatalog {
@@ -722,7 +689,9 @@ func TestGetModelPricingContextWindow(t *testing.T) {
 		{"claude-haiku-5-5-20261001", 1000000},
 		{"claude-haiku-5-5[1m]", 1000000},
 		{"claude-opus-4-8", 1000000},
-		{"claude-sonnet-4-6", 1000000},
+		{"claude-sonnet-4-6", 200000},
+		{"claude-opus-4-6", 200000},
+		{"claude-opus-4-6[1m]", 1000000},
 		{"claude-opus-4-5", 200000},
 		{"claude-haiku-4-5", 200000},
 		{"claude-opus-4-9", 200000}, // unknown -> default
@@ -759,8 +728,7 @@ func TestGetModelPricingContextWindow(t *testing.T) {
 }
 
 // Claude Code compacts a native 1M model at about 967K and any other model
-// when its window fills; Opus 4.6 and Sonnet 4.6 compact at 200K unless "[1m]"
-// widens them.
+// when its window fills.
 func TestGetModelPricingCompactAt(t *testing.T) {
 	tests := []struct {
 		modelID string
@@ -802,9 +770,9 @@ func TestGetModelPricingCompactAt(t *testing.T) {
 }
 
 // The transcript's model ID never carries "[1m]", so a reading too big for a
-// 200K row, or past Opus 4.6's or Sonnet 4.6's 200K mark, reads against the
-// 1M window with the mark at its end. A reading no known window holds, or one
-// on a model the catalog doesn't know, has no window.
+// 200K row reads against the 1M window with the mark at its end. A reading
+// no known window holds, or one on a model the catalog doesn't know, has no
+// window.
 func TestContextWindow(t *testing.T) {
 	tests := []struct {
 		modelID       string
@@ -821,9 +789,11 @@ func TestContextWindow(t *testing.T) {
 		{"claude-sonnet-4-5-20250929", 687300, 1000000, 1000000},
 		{"claude-sonnet-4-5[1m]", 150000, 1000000, 1000000},
 		{"claude-sonnet-4-5", 1200000, 0, 0},
-		{"claude-opus-4-6", 150000, 1000000, 200000},
-		{"claude-opus-4-6", 200000, 1000000, 200000},
+		{"claude-opus-4-6", 150000, 200000, 200000},
+		{"claude-opus-4-6", 200000, 200000, 200000},
 		{"claude-opus-4-6", 500000, 1000000, 1000000},
+		{"claude-opus-4-6[1m]", 150000, 1000000, 1000000},
+		{"claude-sonnet-4-6", 150000, 200000, 200000},
 		{"claude-sonnet-4-6-20260101", 200001, 1000000, 1000000},
 		{"claude-mystery-9", 680400, 0, 0},
 		{"claude-mystery-9", 50000, 0, 0},

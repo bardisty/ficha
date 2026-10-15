@@ -41,12 +41,11 @@ func (p ModelPricing) ForPrompt(promptTokens int64) ModelPricing {
 //
 // Claude Code writes a model ID without its "[1m]" marker, so a transcript
 // doesn't say whether a model ran on the 1M window. A reading past a 200K
-// row's window, or past Opus 4.6's and Sonnet 4.6's 200K mark, says it did,
-// since the request couldn't fit or Claude Code would have compacted it
-// there. The mark then moves to the end of the 1M window. Only that reading
-// counts: a 1M session that compacted and is climbing again reads against
-// 200K until it passes it, since the reading alone can't tell it from a 200K
-// session.
+// row's window says it did, since the request couldn't fit, and Claude Code
+// would have compacted it there. The mark then moves to the end of the 1M
+// window. Only that reading counts: a 1M session that compacted and is
+// climbing again reads against 200K until it passes it, since the reading
+// alone can't tell it from a 200K session.
 func ContextWindow(modelID string, tokens int64) (window, compactAt int) {
 	if tokens > int64(LargestWindow(modelID)) {
 		return 0, 0
@@ -54,9 +53,7 @@ func ContextWindow(modelID string, tokens int64) (window, compactAt int) {
 	p := GetModelPricing(modelID)
 	if tokens > int64(p.MaxContextTokens) && p.MaxContextTokens < longContextTokens {
 		p.MaxContextTokens = longContextTokens
-	}
-	if tokens > int64(p.CompactAtTokens) && p.CompactAtTokens < min(p.MaxContextTokens, nativeLongContextCompactAt) {
-		p.CompactAtTokens = p.MaxContextTokens
+		p.CompactAtTokens = longContextTokens
 	}
 	return p.MaxContextTokens, p.CompactAtTokens
 }
@@ -89,10 +86,6 @@ type ModelInfo struct {
 	OutputRate       float64 // Cost per million output tokens
 	CacheReadRate    float64 // Absolute cache-read rate; 0 = InputRate * CacheReadMultiplier
 	MaxContextTokens int
-	// Where Claude Code auto-compacts the model by default. 0 = derived: a
-	// native 1M window compacts at nativeLongContextCompactAt, any other
-	// window when it fills.
-	CompactAtTokens int
 
 	// Rates for prompts over LongPromptTokens; see ModelPricing.ForPrompt
 	LongPromptTokens     int64
@@ -122,9 +115,9 @@ var modelCatalog = []ModelInfo{
 	// Opus 4.x
 	{ID: "claude-opus-4-8", DisplayName: "Opus 4.8", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
 	{ID: "claude-opus-4-7", DisplayName: "Opus 4.7", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000},
-	// Opus 4.6 and Sonnet 4.6 reach 1M only through "[1m]", so Claude Code
-	// compacts them at 200K without it; see ContextWindow.
-	{ID: "claude-opus-4-6", DisplayName: "Opus 4.6", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 1000000, CompactAtTokens: 200000},
+	// Opus 4.6 and Sonnet 4.6 reach 1M only through "[1m]", which Claude
+	// Code leaves out of the transcript; see ContextWindow.
+	{ID: "claude-opus-4-6", DisplayName: "Opus 4.6", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 200000},
 	{ID: "claude-opus-4-5", DisplayName: "Opus 4.5", InputRate: 5.00, OutputRate: 25.00, MaxContextTokens: 200000},
 	{ID: "claude-opus-4-1", DisplayName: "Opus 4.1", InputRate: 15.00, OutputRate: 75.00, MaxContextTokens: 200000},
 	// "claude-opus-4-0" / "claude-sonnet-4-0" are the official aliases for
@@ -133,7 +126,7 @@ var modelCatalog = []ModelInfo{
 	{ID: "claude-opus-4-0", DisplayName: "Opus 4", InputRate: 15.00, OutputRate: 75.00, MaxContextTokens: 200000},
 	{ID: "claude-opus-4", DisplayName: "Opus 4", InputRate: 15.00, OutputRate: 75.00, MaxContextTokens: 200000},
 	// Sonnet 4.x
-	{ID: "claude-sonnet-4-6", DisplayName: "Sonnet 4.6", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 1000000, CompactAtTokens: 200000},
+	{ID: "claude-sonnet-4-6", DisplayName: "Sonnet 4.6", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 200000},
 	{ID: "claude-sonnet-4-5", DisplayName: "Sonnet 4.5", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 200000},
 	{ID: "claude-sonnet-4-0", DisplayName: "Sonnet 4", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 200000},
 	{ID: "claude-sonnet-4", DisplayName: "Sonnet 4", InputRate: 3.00, OutputRate: 15.00, MaxContextTokens: 200000},
@@ -183,17 +176,12 @@ func init() {
 // Every other model compacts when its window fills.
 const nativeLongContextCompactAt = 967000
 
-// compactAt is a catalog row's compaction point: its own when set, else
-// derived from its window.
+// compactAt is a catalog row's compaction point, derived from its window.
 func compactAt(m ModelInfo) int {
-	switch {
-	case m.CompactAtTokens > 0:
-		return m.CompactAtTokens
-	case m.MaxContextTokens >= longContextTokens:
+	if m.MaxContextTokens >= longContextTokens {
 		return nativeLongContextCompactAt
-	default:
-		return m.MaxContextTokens
 	}
+	return m.MaxContextTokens
 }
 
 // Default pricing for unknown models: the Sonnet 4.x rates. The real rate can
@@ -442,23 +430,6 @@ func GetCacheReadRate(pricing ModelPricing) float64 {
 		return pricing.CacheReadRate
 	}
 	return pricing.InputRate * CacheReadMultiplier
-}
-
-// GetFreeSpace returns the free space in tokens given current context usage
-func GetFreeSpace(pricing ModelPricing, currentUsage int64) int64 {
-	free := int64(pricing.MaxContextTokens) - currentUsage
-	if free < 0 {
-		return 0
-	}
-	return free
-}
-
-// GetContextPercentage returns the percentage of context used (0-100)
-func GetContextPercentage(pricing ModelPricing, currentUsage int64) float64 {
-	if pricing.MaxContextTokens == 0 {
-		return 0
-	}
-	return float64(currentUsage) / float64(pricing.MaxContextTokens) * 100
 }
 
 // ContextZone places a context reading against its model's compaction point.
