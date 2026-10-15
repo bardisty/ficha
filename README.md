@@ -12,7 +12,7 @@ ficha only reads the transcripts Claude Code keeps on your machine. It makes no 
     <td width="50%" valign="top"><a href="docs/ficha-breakdown.webp"><img src="docs/ficha-breakdown.webp" alt="ficha breakdown, the per-message cost table"></a></td>
   </tr>
   <tr>
-    <td valign="top"><em><code>ficha watch</code> is the live dashboard: cost by token type, context-window use, cache savings, the cost trend, and cost per model and per agent.</em></td>
+    <td valign="top"><em><code>ficha watch</code> is the live dashboard: cost by token type, cache savings, context-window use, cost per agent and per model, and the cost trend.</em></td>
     <td valign="top"><em><code>ficha breakdown</code> is a live, scrollable table of every message, with its cost, its tokens and the agent it belongs to. Rows from the main conversation and its agents interleave in time order.</em></td>
   </tr>
 </table>
