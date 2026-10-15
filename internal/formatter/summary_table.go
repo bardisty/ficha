@@ -349,13 +349,14 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		project = dim(truncateRight(project, projectWidth))
 
 		// A session with no replies yet has nothing to price, so it reads
-		// as list shows it rather than as a session that ran for free.
+		// as list shows it, dimmed whole, rather than as a session that ran
+		// for free. One that couldn't be read is dimmed the same way.
 		if r.Analysis == nil || r.Analysis.MessageCount == 0 {
 			costText := "-"
 			if r.Analysis == nil {
 				costText = "(error)"
 			}
-			sb.WriteString(row(num, id, when,
+			sb.WriteString(row(num, dim(id), when,
 				dim(pad("-", modelWidth)),
 				dim(fmt.Sprintf("%*s", len("AGENTS"), "-")),
 				dim(fmt.Sprintf("%*s", costWidth, costText)), project) + "\n")
