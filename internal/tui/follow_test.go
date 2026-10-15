@@ -654,11 +654,11 @@ func TestSessionsSeenNews(t *testing.T) {
 	if !write("d", true, now) {
 		t.Error("a session that just started should be")
 	}
-	seen.left("a", now.Add(-time.Minute), now)
+	seen.left("a", now.Add(-time.Minute), time.Time{}, now)
 	if write("a", false, now.Add(time.Minute)) {
 		t.Error("the session a view left while it was writing shouldn't be")
 	}
-	seen.left("b", now.Add(-time.Hour), now)
+	seen.left("b", now.Add(-time.Hour), time.Time{}, now)
 	if !write("b", false, now.Add(time.Minute)) {
 		t.Error("the session a view left after an hour's quiet should be when it wakes")
 	}
@@ -689,6 +689,86 @@ func TestQuietLeftSessionIsNewsWhenItWakes(t *testing.T) {
 			}
 			m, _ = atClock(m, goldenTime(12, 1, 0)).Update(activityA)
 			if got, want := v.notify(m), "newer activity in aaaaaaaa • n to switch"; !strings.Contains(got, want) {
+				t.Errorf("notify row %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// loadAt lands a load of a followView's current session whose newest priced
+// message is at lastMsg and whose file last changed at mtime.
+func loadAt(t *testing.T, m tea.Model, lastMsg, mtime time.Time) tea.Model {
+	t.Helper()
+	switch v := m.(type) {
+	case Model:
+		a := tallAnalysis(1)
+		a.EndTime = lastMsg
+		u, _ := v.Update(analysisMsg{analysis: a, modTime: mtime})
+		return u
+	case BreakdownModel:
+		u, _ := v.Update(breakdownMsgsMsg{messages: chromeRows(lastMsg, 1), insights: &models.MessageInsights{}, modTime: mtime})
+		return u
+	}
+	return m
+}
+
+// A prompt is a write with no priced message. Following on A, quiet six
+// minutes until its user sends one, then B starts: A's reply 20s later isn't
+// news.
+func TestLeftSessionPromptCountsAsWrite(t *testing.T) {
+	activityA := sessionActivityMsg{path: "/p/" + sessA + ".jsonl", id: sessA}
+	for _, v := range followViews {
+		t.Run(v.name, func(t *testing.T) {
+			m := atClock(v.open(t, true), goldenTime(10, 7, 0))
+			m = loadAt(t, m, goldenTime(10, 1, 0), goldenTime(10, 7, 0))
+			if m, _ = m.Update(createdB); v.id(m) != sessB {
+				t.Fatal("setup: a following view didn't take the new session")
+			}
+			m, _ = atClock(m, goldenTime(10, 7, 20)).Update(activityA)
+			if got := v.notify(m); !strings.Contains(got, "→ new session bbbbbbbb") {
+				t.Errorf("A wrote 20s before the switch, yet its next write took the row: %q", got)
+			}
+		})
+	}
+}
+
+// Leaving a session never moves its last seen write back. Pinned on A, B
+// writes a prompt (its last priced message is older); n to B, then - back:
+// B's reply 40s after its prompt isn't news.
+func TestLeftSessionKeepsNewerSeenWrite(t *testing.T) {
+	for _, v := range followViews {
+		t.Run(v.name, func(t *testing.T) {
+			m, _ := atClock(v.open(t, false), goldenTime(10, 6, 0)).Update(activityB)
+			if m = press(t, atClock(m, goldenTime(10, 6, 2)), "n"); v.id(m) != sessB {
+				t.Fatal("setup: n didn't switch to B")
+			}
+			m = loadAt(t, m, goldenTime(10, 1, 30), time.Time{})
+			if m = press(t, atClock(m, goldenTime(10, 6, 20)), "-"); v.id(m) != sessA {
+				t.Fatal("setup: - didn't go back to A")
+			}
+			m, _ = atClock(m, goldenTime(10, 6, 40)).Update(activityB)
+			if got := v.notify(m); !strings.Contains(got, "→ switched to aaaaaaaa") {
+				t.Errorf("B was seen writing 40s ago, yet took the row: %q", got)
+			}
+		})
+	}
+}
+
+// A switch drops the old session's file time: leaving B before its first
+// load lands mustn't record B at A's, which would hide B's first write.
+func TestLeftSessionBeforeItsLoad(t *testing.T) {
+	for _, v := range followViews {
+		t.Run(v.name, func(t *testing.T) {
+			m := atClock(v.open(t, true), goldenTime(10, 7, 0))
+			m = loadAt(t, m, goldenTime(10, 1, 0), goldenTime(10, 7, 0))
+			if m, _ = m.Update(createdB); v.id(m) != sessB {
+				t.Fatal("setup: a following view didn't take the new session")
+			}
+			if m = press(t, m, "-"); v.id(m) != sessA {
+				t.Fatal("setup: - didn't go back to A")
+			}
+			m, _ = atClock(m, goldenTime(10, 7, 30)).Update(activityB)
+			if got, want := v.notify(m), "newer activity in bbbbbbbb"; !strings.Contains(got, want) {
 				t.Errorf("notify row %q, want %q", got, want)
 			}
 		})

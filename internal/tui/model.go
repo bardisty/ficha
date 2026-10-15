@@ -132,6 +132,7 @@ type Model struct {
 	// the session file's mtime (activityFromFile); the header ages it.
 	lastActivity     time.Time
 	activityFromFile bool
+	fileWrite        time.Time // the session file's mtime at the last load; see sessionsSeen.left
 
 	// runningAgents is runningAgentsKey as of the last content render; a
 	// clock tick that sees it change re-renders the agent list's dots and
@@ -419,6 +420,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		slowClock := m.clockInterval() > time.Second
 		m.lastActivity, m.activityFromFile = lastActivity(msg.analysis, msg.modTime)
+		m.fileWrite = msg.modTime
 		// A message after an idle stretch: the pending clock tick is up to
 		// 15s out, so start a 1s chain now for the seconds count and let the
 		// slow one lapse.
@@ -606,7 +608,7 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 		notice.hadTotal = true
 	}
 	m.switched = notice
-	m.seen.left(m.sessionID, m.lastActivity, m.clock())
+	m.seen.left(m.sessionID, m.lastActivity, m.fileWrite, m.clock())
 	m.prevSessionID, m.prevSessionPath = m.sessionID, m.sessionPath
 	m.sessionID, m.sessionPath = id, path
 	if m.hint != nil && m.hint.id == id {
@@ -618,7 +620,7 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	// load window (parity with breakdown's session-switch reset).
 	m.analysis = nil
 	m.err, m.staleSince = nil, time.Time{}
-	m.lastActivity = time.Time{}
+	m.lastActivity, m.fileWrite = time.Time{}, time.Time{}
 	m.changedAt = make(map[string]time.Time)
 	m.deltaTokens = make(map[string]int64)
 	m.deltaCount = 0
