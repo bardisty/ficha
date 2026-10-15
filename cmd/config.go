@@ -33,6 +33,9 @@ type config struct {
 	showDetails  bool
 	expandAgents bool
 
+	// --nested (summary, list): count in the projects under the directory.
+	nested bool
+
 	// Window flags (summary, global): --since and --until as typed.
 	since string
 	until string

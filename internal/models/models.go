@@ -296,8 +296,9 @@ type SessionAnalysis struct {
 	// (~/.claude/projects/<encoded>), the value `summary -d -v` prints as
 	// "Storage:". It is uniform across show, the summary aggregate, and every
 	// per-session record (all derived from a transcript in that dir), so
-	// machine outputs join on it. Set by the analyzer; the human table names
-	// the project by Project instead.
+	// machine outputs join on it, except under --nested, where a session's is
+	// its own project's and the aggregate's the report's. Set by the
+	// analyzer; the human table names the project by Project instead.
 	ProjectPath string `json:"project_path"`
 	// SessionFile is the session's transcript .jsonl path. Empty on the summary
 	// aggregate, which spans many files; use project_path to name the project.
@@ -438,6 +439,10 @@ func (w TimeWindow) Contains(t time.Time) bool {
 type SessionResult struct {
 	Entry    SessionEntry
 	Analysis *SessionAnalysis
+	// Nested names the project under the report's directory the session
+	// ran in, as in "fix-auth", when --nested counts those in; "" for the
+	// directory's own sessions.
+	Nested string
 }
 
 // LastActive is the session's last message time, the one show prints as

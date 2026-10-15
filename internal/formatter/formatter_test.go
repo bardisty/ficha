@@ -324,12 +324,21 @@ func sampleListResults() ([]models.SessionResult, string) {
 		"/home/u/work/proj"
 }
 
+// originalPaths maps every result's project directory to path.
+func originalPaths(results []models.SessionResult, path string) map[string]string {
+	m := map[string]string{}
+	for _, r := range results {
+		m[filepath.Dir(r.Entry.FullPath)] = path
+	}
+	return m
+}
+
 func TestFormatSessionListCSV(t *testing.T) {
 	results, originalPath := sampleListResults()
 	// The transcript's own directory, spelled the way this OS spells it.
 	projectPath := filepath.Dir(results[0].Entry.FullPath)
 
-	output, err := FormatSessionListCSV(results, originalPath)
+	output, err := FormatSessionListCSV(results, originalPaths(results, originalPath))
 	if err != nil {
 		t.Fatalf("FormatSessionListCSV returned error: %v", err)
 	}
@@ -507,7 +516,7 @@ func TestFormatSessionJSON_Pretty(t *testing.T) {
 func TestFormatSessionListJSON(t *testing.T) {
 	results, originalPath := sampleListResults()
 
-	output, err := FormatSessionListJSON(results, originalPath, true)
+	output, err := FormatSessionListJSON(results, originalPaths(results, originalPath), true)
 	if err != nil {
 		t.Fatalf("FormatSessionListJSON returned error: %v", err)
 	}

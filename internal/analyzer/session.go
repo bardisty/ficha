@@ -534,10 +534,11 @@ func analyzeSessionParses(entries []models.SessionEntry, window models.TimeWindo
 		SessionID:         "aggregate",
 		CostByModel:       make(map[string]models.CostBreakdown),
 		ParentCostByModel: make(map[string]models.CostBreakdown),
-		// Every entry resolves to the one project directory (all discovered under
-		// it); the aggregate names that project, matching what each per-session
-		// result derives from its own transcript path. SessionFile stays empty —
-		// the aggregate spans many files. The caller checked that entries is non-empty.
+		// The aggregate names the first entry's project, which each
+		// per-session result also derives from its own transcript path. Most
+		// callers pass one project's sessions; summary --nested passes the
+		// report's own first. SessionFile stays empty — the aggregate spans
+		// many files. The caller checked that entries is non-empty.
 		ProjectPath: filepath.Dir(entries[0].FullPath),
 	}
 

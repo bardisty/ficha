@@ -3,6 +3,7 @@ package formatter
 import (
 	"fmt"
 	"image/color"
+	"slices"
 	"sort"
 	"strings"
 
@@ -181,26 +182,51 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	modelWidth := 10
 	costCol := func() int { return lead() + modelWidth + 2 }
 	showAgents := !expandAgents
+	// Under --nested, PROJECT names the project each session ran in, "." for
+	// the report's own, after COST. projectRoom is the room it takes, with
+	// its gap: at least its header's, and up to its longest name in the room
+	// the other columns leave.
+	projectWant, projectRoom := 0, 0
+	if slices.ContainsFunc(sorted, func(r models.SessionResult) bool { return r.Nested != "" }) {
+		projectWant = len("PROJECT")
+		for _, r := range sorted {
+			projectWant = max(projectWant, runewidth.StringWidth(r.Nested))
+		}
+		projectRoom = 2 + len("PROJECT")
+	}
 	rowWidth := func() int {
 		if showAgents {
-			return costCol() + len("AGENTS") + 2 + costWidth
+			return costCol() + len("AGENTS") + 2 + costWidth + projectRoom
 		}
-		return costCol() + costWidth
+		return costCol() + costWidth + projectRoom
 	}
 	// When the rows or the agent trees under them don't fit width, WHEN
 	// loses its time, then AGENTS (a count the expanded tree replaces) goes,
 	// with the time back if that makes room for it, and then MODEL narrows,
-	// down to a stub.
+	// down to a stub. PROJECT, the point of --nested, goes last.
 	fits := func() bool { return rowWidth() <= width && deepestTree+2+costWidth <= width }
 	layouts := [][2]bool{{false, true}, {true, true}, {false, false}, {true, false}}
-	for i, l := range layouts {
-		dateOnly = l[0]
-		showAgents = !expandAgents && l[1]
-		if fits() || i == len(layouts)-1 {
-			break
+	layout := func() {
+		for i, l := range layouts {
+			dateOnly = l[0]
+			showAgents = !expandAgents && l[1]
+			if fits() || i == len(layouts)-1 {
+				break
+			}
 		}
+		modelWidth = 10
+		modelWidth = max(modelWidth-max(rowWidth()-width, 0), minModelWidth)
 	}
-	modelWidth = max(modelWidth-max(rowWidth()-width, 0), minModelWidth)
+	layout()
+	if projectRoom > 0 && rowWidth() > width {
+		projectRoom = 0
+		layout()
+	}
+	projectWidth := 0
+	if projectRoom > 0 {
+		projectWidth = min(projectWant, width-rowWidth()+len("PROJECT"))
+		projectRoom = 2 + projectWidth
+	}
 
 	// treeMsgs is whether agent rows show their message count, and treeTask
 	// how wide their task is (0 for none). The count goes from every row
@@ -268,14 +294,18 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	}
 	treeStatus := workflowStatuses("", costCol()-treeIndent-treeStep-2, analyses...)
 
-	row := func(num, id, when, model, agents, cost string) string {
+	pad := func(s string, w int) string { return s + strings.Repeat(" ", max(w-lipgloss.Width(s), 0)) }
+	row := func(num, id, when, model, agents, cost, project string) string {
 		line := fmt.Sprintf("  %s %s  %s  %s", num, id, when, model)
 		if showAgents {
 			line += "  " + agents
 		}
-		return line + "  " + cost
+		line += "  " + cost
+		if projectWidth > 0 {
+			line += "  " + project
+		}
+		return line
 	}
-	pad := func(s string, w int) string { return s + strings.Repeat(" ", max(w-lipgloss.Width(s), 0)) }
 	headerRow := row(
 		fmt.Sprintf("%4s", "#"),
 		fmt.Sprintf("%-8s", "SESSION"),
@@ -283,6 +313,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		fmt.Sprintf("%-*s", modelWidth, "MODEL"),
 		fmt.Sprintf("%*s", len("AGENTS"), "AGENTS"),
 		fmt.Sprintf("%*s", costWidth, "COST"),
+		"PROJECT",
 	)
 	contentWidth := max(width-4, lipgloss.Width(headerRow)-2)
 	rule := "  " + strings.Repeat(styles.LineHorizontal, contentWidth)
@@ -307,12 +338,17 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 			whenAt = render.Date(r.LastActive(), now())
 		}
 		when := dim(pad(whenAt, whenWidth()))
+		project := r.Nested
+		if project == "" {
+			project = "."
+		}
+		project = dim(truncateRight(project, projectWidth))
 
 		if r.Analysis == nil {
 			sb.WriteString(row(num, id, when,
 				dim(pad("-", modelWidth)),
 				dim(fmt.Sprintf("%*s", len("AGENTS"), "-")),
-				dim(fmt.Sprintf("%*s", costWidth, "(error)"))) + "\n")
+				dim(fmt.Sprintf("%*s", costWidth, "(error)")), project) + "\n")
 			continue
 		}
 		a := r.Analysis
@@ -331,7 +367,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 			agents = styles.DimStyle.Render(agents)
 			costStr = render.CostColored(cost, styles.GetCostGradientColor(cost, minCost, maxCost), costWidth)
 		}
-		sb.WriteString(row(num, id, when, model, agents, costStr) + "\n")
+		sb.WriteString(row(num, id, when, model, agents, costStr, project) + "\n")
 
 		if expandAgents && a.HasAgents && len(a.Agents) > 0 {
 			sb.WriteString(renderAgentTreeRows(a, noColor, treeLayout{

@@ -1,0 +1,250 @@
+package cmd
+
+import (
+	"encoding/csv"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/bardisty/ficha/internal/paths"
+	"github.com/bardisty/ficha/internal/render"
+)
+
+// setupNestedFixture builds a repo project with two projects under it, one a
+// claude --worktree worktree and one a package, and a sibling whose encoded
+// name starts like the repo's but which isn't under it. Each session has
+// its own message IDs, as separate sessions do. It returns the repo's
+// directory, the projects dir, and home.
+func setupNestedFixture(t *testing.T) (repo, projectsDir, home string) {
+	t.Helper()
+	home, err := paths.CanonicalizePath(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	config := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", config)
+	projectsDir = filepath.Join(config, "projects")
+	repo = filepath.Join(home, "work", "repo")
+
+	write := func(dir, id, ts string, out int64) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		project := filepath.Join(projectsDir, paths.PathToProjectDir(dir))
+		if err := os.MkdirAll(project, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		line := strings.Replace(e2eMsg(ts, id[:8], "claude-opus-4-8", 1000, out, 0, 0, 0),
+			`{"type":"assistant",`, `{"type":"assistant","cwd":`+jsonString(dir)+`,`, 1)
+		if err := os.WriteFile(filepath.Join(project, id+".jsonl"), []byte(line+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(repo, "aaaaaaaa-0000-4000-8000-000000000001", "2026-02-01T10:00:00Z", 100)
+	write(filepath.Join(repo, ".claude", "worktrees", "fix-auth"), "bbbbbbbb-0000-4000-8000-000000000002", "2026-02-02T10:00:00Z", 2000)
+	write(filepath.Join(repo, "packages", "api"), "cccccccc-0000-4000-8000-000000000003", "2026-02-03T10:00:00Z", 3000)
+	write(filepath.Join(home, "work", "repo-old"), "dddddddd-0000-4000-8000-000000000004", "2026-02-04T10:00:00Z", 4000)
+	t.Chdir(repo)
+	return repo, projectsDir, home
+}
+
+type nestedSummaryJSON struct {
+	ProjectPath string `json:"project_path"`
+	TotalCost   struct {
+		TotalCost float64 `json:"total_cost"`
+	} `json:"total_cost"`
+	SessionCount int `json:"session_count"`
+}
+
+func TestNestedProjects(t *testing.T) {
+	repo, projectsDir, _ := setupNestedFixture(t)
+	repoProject := filepath.Join(projectsDir, paths.PathToProjectDir(repo))
+	worktree := filepath.Join(repo, ".claude", "worktrees", "fix-auth")
+	pkg := filepath.Join(repo, "packages", "api")
+
+	costOf := func(args ...string) nestedSummaryJSON {
+		t.Helper()
+		out, _, err := executeCLISplit(t, append([]string{"summary", "-f", "json"}, args...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var s nestedSummaryJSON
+		mustJSON(t, out, &s)
+		return s
+	}
+	own := costOf()
+	nestedCost := costOf("-p", worktree).TotalCost.TotalCost + costOf("-p", pkg).TotalCost.TotalCost
+
+	t.Run("summary notes the nested projects", func(t *testing.T) {
+		stdout, stderr, err := executeCLISplit(t, "summary", "--no-color")
+		if err != nil {
+			t.Fatal(err)
+		}
+		note := "have 2 sessions, " + render.Cost(nestedCost) + ". Add --nested to count them in."
+		if !strings.Contains(stderr, "Note: 2 projects under ") || !strings.Contains(stderr, note) {
+			t.Errorf("stderr = %q, want a note ending %q", stderr, note)
+		}
+		if strings.Contains(stdout, "--nested") || !strings.Contains(stdout, "Sessions: 1") {
+			t.Errorf("stdout:\n%s", stdout)
+		}
+	})
+
+	t.Run("--nested totals them in", func(t *testing.T) {
+		got := costOf("--nested")
+		if math.Abs(got.TotalCost.TotalCost-(own.TotalCost.TotalCost+nestedCost)) > 1e-9 || got.SessionCount != 3 {
+			t.Errorf("--nested: %+v, want $%v over 3 sessions", got, own.TotalCost.TotalCost+nestedCost)
+		}
+		if got.ProjectPath != repoProject {
+			t.Errorf("aggregate project_path %q, want the repo's %q", got.ProjectPath, repoProject)
+		}
+		_, stderr, err := executeCLISplit(t, "summary", "--nested")
+		if err != nil || strings.Contains(stderr, "Note:") {
+			t.Errorf("--nested still notes: %v %q", err, stderr)
+		}
+	})
+
+	t.Run("each record names its own project", func(t *testing.T) {
+		want := map[string]string{
+			"aaaaaaaa-0000-4000-8000-000000000001": repoProject,
+			"bbbbbbbb-0000-4000-8000-000000000002": filepath.Join(projectsDir, paths.PathToProjectDir(worktree)),
+			"cccccccc-0000-4000-8000-000000000003": filepath.Join(projectsDir, paths.PathToProjectDir(pkg)),
+		}
+		out, _, err := executeCLISplit(t, "summary", "-d", "--nested", "-f", "json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var detail struct {
+			Sessions []struct {
+				SessionID   string `json:"session_id"`
+				ProjectPath string `json:"project_path"`
+			} `json:"sessions"`
+		}
+		mustJSON(t, out, &detail)
+		if len(detail.Sessions) != 3 {
+			t.Fatalf("summary -d --nested json has %d sessions:\n%s", len(detail.Sessions), out)
+		}
+		for _, s := range detail.Sessions {
+			if s.ProjectPath != want[s.SessionID] {
+				t.Errorf("json %s: project_path %q, want %q", s.SessionID, s.ProjectPath, want[s.SessionID])
+			}
+		}
+
+		out, _, err = executeCLISplit(t, "summary", "-d", "--nested", "-f", "csv")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, err := csv.NewReader(strings.NewReader(out)).ReadAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		col := map[string]int{}
+		for i, name := range rows[0] {
+			col[name] = i
+		}
+		for _, row := range rows[1:] {
+			if id := row[col["session_id"]]; row[col["project_path"]] != want[id] {
+				t.Errorf("csv %s: project_path %q, want %q", id, row[col["project_path"]], want[id])
+			}
+		}
+
+		out, _, err = executeCLISplit(t, "list", "--nested", "-f", "json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var listed []struct {
+			SessionID    string `json:"session_id"`
+			ProjectPath  string `json:"project_path"`
+			OriginalPath string `json:"original_path"`
+		}
+		mustJSON(t, out, &listed)
+		recorded := map[string]string{
+			"aaaaaaaa-0000-4000-8000-000000000001": repo,
+			"bbbbbbbb-0000-4000-8000-000000000002": worktree,
+			"cccccccc-0000-4000-8000-000000000003": pkg,
+		}
+		if len(listed) != 3 {
+			t.Fatalf("list --nested json has %d records:\n%s", len(listed), out)
+		}
+		for _, s := range listed {
+			if s.ProjectPath != want[s.SessionID] || s.OriginalPath != recorded[s.SessionID] {
+				t.Errorf("list %s: %q, %q", s.SessionID, s.ProjectPath, s.OriginalPath)
+			}
+		}
+	})
+
+	t.Run("the tables name each session's project", func(t *testing.T) {
+		out, _, err := executeCLISplit(t, "list", "--nested", "--no-color")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"fix-auth", "packages/api"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("list --nested doesn't name %s:\n%s", want, out)
+			}
+		}
+		if !strings.Contains(out, "+2 projects") || strings.Contains(out, "repo-old") || strings.Contains(out, "dddddddd") {
+			t.Errorf("list --nested took in a sibling:\n%s", out)
+		}
+		out, _, err = executeCLISplit(t, "summary", "-d", "--nested", "--no-color")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"+2 projects", "PROJECT", "fix-auth", "packages/api", "  .\n"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("summary -d --nested lacks %q:\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("a window counts what's inside it", func(t *testing.T) {
+		_, stderr, err := executeCLISplit(t, "list", "--since", "2026-02-02T12:00:00Z")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(stderr, "has 1 session in the window") {
+			t.Errorf("stderr = %q", stderr)
+		}
+		_, stderr, err = executeCLISplit(t, "summary", "--until", "2026-02-01T23:00:00Z")
+		if err != nil || strings.Contains(stderr, "Note:") {
+			t.Errorf("a window with no nested session notes: %v %q", err, stderr)
+		}
+	})
+
+	// The formatter looks a record's original_path up by its transcript's
+	// directory, which a --project-dir typed with a trailing slash isn't.
+	t.Run("original_path with a trailing slash", func(t *testing.T) {
+		out, _, err := executeCLISplit(t, "list", "-f", "json", "--project-dir="+repoProject+string(filepath.Separator))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, `"original_path": `+jsonString(repo)) {
+			t.Errorf("original_path lost:\n%s", out)
+		}
+	})
+
+	t.Run("--project-dir has no directory to look under", func(t *testing.T) {
+		_, _, err := executeCLISplit(t, "summary", "--nested", "--project-dir="+paths.PathToProjectDir(repo))
+		if exitCode(err) != 2 || !strings.Contains(err.Error(), "--project-dir") {
+			t.Errorf("error %v, exit %d", err, exitCode(err))
+		}
+	})
+}
+
+// Under ~, every project is nested, so home gets no note.
+func TestNestedProjectsNotAtHome(t *testing.T) {
+	_, _, home := setupNestedFixture(t)
+	t.Setenv("HOME", filepath.Join(home, "work", "repo"))
+	t.Setenv("USERPROFILE", filepath.Join(home, "work", "repo"))
+	_, stderr, err := executeCLISplit(t, "summary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stderr, "Note:") {
+		t.Errorf("stderr = %q", stderr)
+	}
+}

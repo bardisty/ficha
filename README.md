@@ -197,6 +197,7 @@ The rest belong to particular commands:
 | `--sort-by <key>` | `global` | Sort by `cost` (the default), `sessions`, `name` or `activity` |
 | `--since <when>` | `list`, `summary`, `global` | Count only messages from then on: `2026-09-01`, `today`, `7d`, `12h` |
 | `--until <when>` | `list`, `summary`, `global` | Count only messages before then; a date includes that whole day |
+| `--nested` | `list`, `summary` | Include the projects under this directory at any depth, such as the worktrees `claude --worktree` makes |
 
 Bare `ficha` works like `show` and takes the same project flags. A flag on a command that doesn't use it is an error. `--no-follow` and `--messages` print a warning where they'd have no effect.
 

@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -25,12 +26,17 @@ message's time, the one show calls "Last active".
 Examples:
   ficha list                    List all sessions
   ficha list --since 7d         Sessions with messages in the last 7 days
+  ficha list --nested           Include the repo's worktrees
   ficha list -f json            Output as JSON
   ficha list -f csv             Output as CSV
 
 --since and --until keep the sessions with a message inside the window, as
 summary --details does. WHEN, LENGTH and COST cover only the messages
-inside it, and so do message_count and the agent counts in json and csv.`,
+inside it, and so do message_count and the agent counts in json and csv.
+
+A worktree under the repo, from claude --worktree or git worktree add, is a
+project of its own. list notes when projects under this directory have
+sessions, and --nested lists them too, each titled with its project.`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -40,11 +46,15 @@ inside it, and so do message_count and the agent counts in json and csv.`,
 
 	addProjectFlags(listCmd, cfg)
 	addWindowFlags(listCmd, cfg)
+	addNestedFlag(listCmd, cfg)
 
 	return listCmd
 }
 
 func runList(cfg *config) error {
+	if err := checkNested(cfg); err != nil {
+		return err
+	}
 	window, err := cfg.timeWindow(time.Now())
 	if err != nil {
 		return err
@@ -53,9 +63,12 @@ func runList(cfg *config) error {
 		return runListTable(cfg, window)
 	}
 
-	sessions, projectDir, err := loadProjectSessionsWithDir(cfg)
+	sessions, projectDir, nested, err := loadProjectAndNestedSessions(cfg)
 	if err != nil {
 		return err
+	}
+	if cfg.nested {
+		sessions = append(sessions, nested.sessions...)
 	}
 
 	// Priced the way the table is, so costs match summary -d.
@@ -66,6 +79,7 @@ func runList(cfg *config) error {
 			results[i] = models.SessionResult{Entry: s}
 		}
 	}
+	nested.mark(results)
 	sortByLastActive(results)
 	for i := range results {
 		results[i].Entry = countedEntry(results[i], !window.IsZero())
@@ -103,14 +117,21 @@ func runList(cfg *config) error {
 		warnEstimatedCosts(&warnings, aggregate.EstimatedCostMessages)
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
+	if !cfg.nested {
+		writeNestedNote(&warnings, cfg, nested, window, parser.ProjectDisplayName(projectDir))
+	}
 
-	originalPath := parser.ProjectOriginalPath(projectDir)
+	// Cleaned as each transcript's directory is, which --project-dir isn't.
+	originalPaths := map[string]string{filepath.Clean(projectDir): parser.ProjectOriginalPath(projectDir)}
+	for dir, p := range nested.projects {
+		originalPaths[dir] = p.path
+	}
 	var output string
 	switch cfg.format {
 	case "json":
-		output, err = formatter.FormatSessionListJSON(results, originalPath, true)
+		output, err = formatter.FormatSessionListJSON(results, originalPaths, true)
 	case "csv":
-		output, err = formatter.FormatSessionListCSV(results, originalPath)
+		output, err = formatter.FormatSessionListCSV(results, originalPaths)
 	}
 	if err != nil {
 		return fmt.Errorf("formatting output: %w", err)
@@ -152,9 +173,12 @@ func countedEntry(r models.SessionResult, windowed bool) models.SessionEntry {
 // session duplicates attributed once, so a session's cost here matches its
 // row there.
 func runListTable(cfg *config, window models.TimeWindow) error {
-	sessions, projectDir, err := loadProjectSessionsWithDir(cfg)
+	sessions, projectDir, nested, err := loadProjectAndNestedSessions(cfg)
 	if err != nil {
 		return err
+	}
+	if cfg.nested {
+		sessions = append(sessions, nested.sessions...)
 	}
 	pickPalette(cfg)
 
@@ -166,6 +190,7 @@ func runListTable(cfg *config, window models.TimeWindow) error {
 			results[i] = models.SessionResult{Entry: s}
 		}
 	}
+	nested.mark(results)
 	sortByLastActive(results)
 
 	skips := skipWarning{counts: "costs", details: labelSkips("", analyzer.SkipDetails(results))}
@@ -185,9 +210,12 @@ func runListTable(cfg *config, window models.TimeWindow) error {
 		warnEstimatedCosts(&warnings, aggregate.EstimatedCostMessages)
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
+	if !cfg.nested {
+		writeNestedNote(&warnings, cfg, nested, window, parser.ProjectDisplayName(projectDir))
+	}
 
 	opts := formatter.ListTableOptions{
-		Project: parser.ProjectDisplayName(projectDir),
+		Project: nestedLabel(parser.ProjectDisplayName(projectDir), results),
 		Width:   terminalWidth(cfg.stdout),
 	}
 	if !window.IsZero() {

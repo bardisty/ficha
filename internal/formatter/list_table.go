@@ -66,7 +66,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		idWidth = max(idWidth, len(ids[i]))
 		if r.Analysis != nil {
 			costs = append(costs, r.Analysis.TotalCost.TotalCost)
-			titleWidth = max(titleWidth, runewidth.StringWidth(models.OneLine(r.Analysis.Title)))
+			titleWidth = max(titleWidth, runewidth.StringWidth(nestedTitle(r, models.OneLine(r.Analysis.Title))))
 		}
 	}
 	costWidth := render.CostCellWidth(len("COST"), costs...)
@@ -187,7 +187,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 				fmt.Sprintf("%-*s", listModelWidth, "-"),
 				fmt.Sprintf("%*s", listAgentsWidth, "-"),
 				fmt.Sprintf("%*s", costWidth, "-"),
-				truncateRight(title, titleCol))
+				truncateRight(nestedTitle(r, title), titleCol))
 			if !noColor {
 				row = styles.DimStyle.Render(row)
 			}
@@ -202,11 +202,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		if a.AgentCount > 0 {
 			agents = fmt.Sprintf("%*d", listAgentsWidth, a.AgentCount)
 		}
-		title := models.OneLine(a.Title)
-		if title == "" {
-			title = "-"
-		}
-		title = truncateRight(title, titleCol)
+		title := truncateRight(nestedTitle(r, models.OneLine(a.Title)), titleCol)
 
 		if noColor {
 			sb.WriteString(join(id, when, duration, model, agents, render.CostCell(a.TotalCost.TotalCost, costWidth), title) + "\n")
@@ -276,4 +272,16 @@ func truncateRight(s string, width int) string {
 		return ""
 	}
 	return runewidth.Truncate(s, width, styles.Ellipsis)
+}
+
+// nestedTitle is a row's TITLE: the session's title, "-" for none, after the
+// name of the nested project the session ran in, when it ran in one.
+func nestedTitle(r models.SessionResult, title string) string {
+	if title == "" {
+		title = "-"
+	}
+	if r.Nested == "" {
+		return title
+	}
+	return r.Nested + " " + styles.FieldSep + " " + title
 }
