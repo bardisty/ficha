@@ -143,6 +143,7 @@ func (m *BreakdownModel) selectNextTop() {
 	rank := (m.selectedRank(top) + 1) % len(top)
 	msg := m.messages[top[rank]]
 	m.selectedKey = breakdownMsgKey(msg)
+	m.selectionNotice = true
 	m.setFollow(false)
 	m.refreshViewport()
 	for line, index := range m.lineRows {
@@ -153,13 +154,10 @@ func (m *BreakdownModel) selectNextTop() {
 	}
 }
 
-// clearSelection drops the p highlight, re-rendering only when there was one.
+// clearSelection drops p's selection.
 func (m *BreakdownModel) clearSelection() {
-	if m.selectedKey == "" {
-		return
-	}
 	m.selectedKey = ""
-	m.refreshViewport()
+	m.selectionNotice = false
 }
 
 // minSplitShare is the least share of a row's cost that selectionText names
@@ -167,8 +165,9 @@ func (m *BreakdownModel) clearSelection() {
 // and "Cache read $0.0001" would only take room from the ones that are.
 const minSplitShare = 0.05
 
-// selectionText describes the row p selected for the notify row, with its
-// cost split by component in dollars, largest first:
+// selectionText describes the row p selected for the notify row while
+// selectionNotice holds, with its cost split by component in dollars,
+// largest first:
 //
 //	top 4 of 5: #547 $0.3479 • Cache write 1h $0.1487, Cache read $0.1222, Output $0.0757 • p next
 //
@@ -178,8 +177,8 @@ const minSplitShare = 0.05
 // from the smallest end, then the split, before p next: without the hint,
 // p's next press is a guess.
 func (m BreakdownModel) selectionText() string {
-	// Runs on every frame; don't sort the rows when there's no selection
-	if m.selectedKey == "" {
+	// Runs on every frame; don't sort the rows when there's nothing to say
+	if !m.selectionNotice || m.selectedKey == "" {
 		return ""
 	}
 	top := m.topByCost()

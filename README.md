@@ -159,7 +159,7 @@ Press `?` in either view for the keys. `breakdown` has all of `watch`'s keys, pl
 | `space/b`, `pgdn/pgup` | scroll a page |
 | `d/u`, `ctrl+d/u` | scroll half a page |
 | `g/G`, `home/end` | go to the top or bottom |
-| `p` | breakdown: go to the next costliest row |
+| `p` | breakdown: next costliest; esc clears |
 | `s` | breakdown: sort by cost on/off |
 | `f` | follow new sessions on/off |
 | `n` | switch to the newer session |
