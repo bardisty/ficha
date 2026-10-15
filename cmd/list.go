@@ -18,7 +18,8 @@ func newListCmd(cfg *config) *cobra.Command {
 		Short: "List available sessions",
 		Long: `List all Claude Code sessions for the current project.
 
-Sessions are sorted by modification time (most recent first).
+Sessions are sorted by their last message, most recent first. WHEN is that
+message's time, the one show calls "Last active".
 
 Examples:
   ficha list                    List all sessions
@@ -46,9 +47,6 @@ func runList(cfg *config) error {
 		return err
 	}
 
-	// Sort sessions by modified time (most recent first)
-	sortSessionsByModified(sessions)
-
 	// Priced the way the table is, so costs match summary -d.
 	aggregate, results, err := analyzer.AnalyzeMultipleSessions(sessions)
 	if err != nil {
@@ -57,6 +55,7 @@ func runList(cfg *config) error {
 			results[i] = models.SessionResult{Entry: s}
 		}
 	}
+	sortByLastActive(results)
 	for i := range results {
 		results[i].Entry = countedEntry(results[i])
 	}
@@ -137,7 +136,6 @@ func runListTable(cfg *config) error {
 	if err != nil {
 		return err
 	}
-	sortSessionsByModified(sessions)
 	pickPalette(cfg)
 
 	aggregate, results, err := analyzer.AnalyzeMultipleSessions(sessions)
@@ -148,6 +146,7 @@ func runListTable(cfg *config) error {
 			results[i] = models.SessionResult{Entry: s}
 		}
 	}
+	sortByLastActive(results)
 
 	skips := skipWarning{counts: "costs", details: labelSkips("", analyzer.SkipDetails(results))}
 	for _, d := range skips.details {
@@ -170,6 +169,20 @@ func runListTable(cfg *config) error {
 	})
 	printReport(cfg, &warnings, output)
 	return nil
+}
+
+// sortByLastActive sorts results by their last message, most recent first,
+// with SessionID as the tiebreaker. It runs after the analysis, which gives
+// each session its time: the analysis's results don't depend on the order
+// its input came in.
+func sortByLastActive(results []models.SessionResult) {
+	sort.SliceStable(results, func(i, j int) bool {
+		a, b := results[i].LastActive(), results[j].LastActive()
+		if a.Equal(b) {
+			return results[i].Entry.SessionID < results[j].Entry.SessionID
+		}
+		return a.After(b)
+	})
 }
 
 // sortSessionsByModified sorts sessions by modified time (most recent first).

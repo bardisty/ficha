@@ -15,9 +15,9 @@
 
 ──────────────[ SESSION BREAKDOWN ]───────────────
 
-     # SESSION   MODIFIED  MODEL              COST
+     # SESSION   WHEN    MODEL                COST
   ────────────────────────────────────────────────
-     1 dddd4444  Jan 20    Opus 4.8        $0.1100
+     1 dddd4444  Jan 20  Opus 4.8          $0.1100
        ├─ [Areg1]    Haiku 4.5             $0.0070
        ├─ workflow: audit-codebase         $0.0805
        │  ├─ [Awf1]     Opus 4.8           $0.0525

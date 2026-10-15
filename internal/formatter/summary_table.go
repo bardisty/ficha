@@ -109,18 +109,18 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	sorted := make([]models.SessionResult, len(results))
 	copy(sorted, results)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		return sorted[i].Entry.Modified.Before(sorted[j].Entry.Modified)
+		return sorted[i].LastActive().Before(sorted[j].LastActive())
 	})
 
 	var chartCosts, costs []float64
 	var totalCost float64
 	valid := 0
-	// MODIFIED is a date and time, or just the date when the table would
-	// otherwise be too wide.
-	timeWidth, dateWidth := len("MODIFIED"), len("MODIFIED")
+	// WHEN is the last message's date and time, or just the date when the
+	// table would otherwise be too wide.
+	timeWidth, dateWidth := len("WHEN"), len("WHEN")
 	for _, r := range sorted {
-		timeWidth = max(timeWidth, len(render.DateTime(r.Entry.Modified, now())))
-		dateWidth = max(dateWidth, len(render.Date(r.Entry.Modified, now())))
+		timeWidth = max(timeWidth, len(render.DateTime(r.LastActive(), now())))
+		dateWidth = max(dateWidth, len(render.Date(r.LastActive(), now())))
 		if r.Analysis == nil {
 			continue
 		}
@@ -169,15 +169,15 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	}
 
 	dateOnly := false
-	modifiedWidth := func() int {
+	whenWidth := func() int {
 		if dateOnly {
 			return dateWidth
 		}
 		return timeWidth
 	}
-	// lead is the room before MODEL: the indent, #, SESSION and MODIFIED,
-	// with their gaps.
-	lead := func() int { return 2 + 4 + 1 + 8 + 2 + modifiedWidth() + 2 }
+	// lead is the room before MODEL: the indent, #, SESSION and WHEN, with
+	// their gaps.
+	lead := func() int { return 2 + 4 + 1 + 8 + 2 + whenWidth() + 2 }
 	modelWidth := 10
 	costCol := func() int { return lead() + modelWidth + 2 }
 	showAgents := !expandAgents
@@ -187,7 +187,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		}
 		return costCol() + costWidth
 	}
-	// When the rows or the agent trees under them don't fit width, MODIFIED
+	// When the rows or the agent trees under them don't fit width, WHEN
 	// loses its time, then AGENTS (a count the expanded tree replaces) goes,
 	// with the time back if that makes room for it, and then MODEL narrows,
 	// down to a stub.
@@ -268,8 +268,8 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	}
 	treeStatus := workflowStatuses("", costCol()-treeIndent-treeStep-2, analyses...)
 
-	row := func(num, id, modified, model, agents, cost string) string {
-		line := fmt.Sprintf("  %s %s  %s  %s", num, id, modified, model)
+	row := func(num, id, when, model, agents, cost string) string {
+		line := fmt.Sprintf("  %s %s  %s  %s", num, id, when, model)
 		if showAgents {
 			line += "  " + agents
 		}
@@ -279,7 +279,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	headerRow := row(
 		fmt.Sprintf("%4s", "#"),
 		fmt.Sprintf("%-8s", "SESSION"),
-		fmt.Sprintf("%-*s", modifiedWidth(), "MODIFIED"),
+		fmt.Sprintf("%-*s", whenWidth(), "WHEN"),
 		fmt.Sprintf("%-*s", modelWidth, "MODEL"),
 		fmt.Sprintf("%*s", len("AGENTS"), "AGENTS"),
 		fmt.Sprintf("%*s", costWidth, "COST"),
@@ -302,14 +302,14 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		r := sorted[i]
 		num := dim(fmt.Sprintf("%4d", len(sorted)-i))
 		id := fmt.Sprintf("%-8s", render.TruncateID(r.Entry.SessionID, 8))
-		modifiedAt := render.DateTime(r.Entry.Modified, now())
+		whenAt := render.DateTime(r.LastActive(), now())
 		if dateOnly {
-			modifiedAt = render.Date(r.Entry.Modified, now())
+			whenAt = render.Date(r.LastActive(), now())
 		}
-		modified := dim(pad(modifiedAt, modifiedWidth()))
+		when := dim(pad(whenAt, whenWidth()))
 
 		if r.Analysis == nil {
-			sb.WriteString(row(num, id, modified,
+			sb.WriteString(row(num, id, when,
 				dim(pad("-", modelWidth)),
 				dim(fmt.Sprintf("%*s", len("AGENTS"), "-")),
 				dim(fmt.Sprintf("%*s", costWidth, "(error)"))) + "\n")
@@ -331,7 +331,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 			agents = styles.DimStyle.Render(agents)
 			costStr = render.CostColored(cost, styles.GetCostGradientColor(cost, minCost, maxCost), costWidth)
 		}
-		sb.WriteString(row(num, id, modified, model, agents, costStr) + "\n")
+		sb.WriteString(row(num, id, when, model, agents, costStr) + "\n")
 
 		if expandAgents && a.HasAgents && len(a.Agents) > 0 {
 			sb.WriteString(renderAgentTreeRows(a, noColor, treeLayout{

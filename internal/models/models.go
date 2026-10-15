@@ -440,6 +440,17 @@ type SessionResult struct {
 	Analysis *SessionAnalysis
 }
 
+// LastActive is the session's last message time, the one show prints as
+// "Last active". Claude Code goes on writing records that aren't messages
+// after the last reply, so the file's mtime can be days later. It's the
+// fallback for a session with no analysis or no timestamped message.
+func (r SessionResult) LastActive() time.Time {
+	if r.Analysis != nil && !r.Analysis.EndTime.IsZero() {
+		return r.Analysis.EndTime
+	}
+	return r.Entry.Modified
+}
+
 // SummaryDetail is the JSON shape of `summary --details`: the aggregate plus a
 // per-session breakdown. Each session nests its agent sub-sessions only when
 // --expand-agents is set (otherwise the agents array is omitted and the summary

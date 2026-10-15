@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1833,5 +1834,107 @@ func TestE2EJSONKeysAreSnakeCase(t *testing.T) {
 	}
 	if len(show.Agents) == 0 || show.Agents[0].DurationSeconds == nil {
 		t.Errorf("agents should carry duration_seconds: %s", out)
+	}
+}
+
+// Claude Code goes on writing records that aren't messages after a session's
+// last reply, so a file's mtime can be days past it. list and summary -d date
+// and order sessions by the last message instead, and a session with no
+// messages by its mtime. list's modified stays the file's time.
+func TestE2EListOrdersByLastMessage(t *testing.T) {
+	root := setupE2EFixture(t)
+	proj := filepath.Join(root, "projects", e2eProjDir)
+	const emptyID = "dddddddd-1111-2222-3333-444444444444"
+	if err := os.WriteFile(filepath.Join(proj, emptyID+".jsonl"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Alpha's last message is the oldest, but its file was written last.
+	mtimes := map[string]time.Time{
+		e2eAlphaID: time.Now(),
+		e2eBetaID:  time.Date(2026, 2, 2, 9, 10, 0, 0, time.UTC),
+		emptyID:    time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC),
+	}
+	for id, mtime := range mtimes {
+		if err := os.Chtimes(filepath.Join(proj, id+".jsonl"), mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	newestFirst := []string{e2eBetaID, emptyID, e2eAlphaID}
+
+	out, _, err := executeCLISplit(t, "list", projFlag, "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed []struct {
+		SessionID string    `json:"session_id"`
+		Modified  time.Time `json:"modified"`
+	}
+	mustJSON(t, out, &listed)
+	var ids []string
+	for _, s := range listed {
+		ids = append(ids, s.SessionID)
+		if s.Modified.Sub(mtimes[s.SessionID]).Abs() > time.Second {
+			t.Errorf("%s: modified %v, want the file's mtime %v", s.SessionID, s.Modified, mtimes[s.SessionID])
+		}
+	}
+	if !slices.Equal(ids, newestFirst) {
+		t.Errorf("list -f json order %v, want %v", ids, newestFirst)
+	}
+
+	table, _, err := executeCLISplit(t, "list", projFlag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(table, "just now") {
+		t.Errorf("list dates alpha by its mtime:\n%s", table)
+	}
+	if b, a := strings.Index(table, "bbbbbbbb"), strings.Index(table, "aaaaaaaa"); b < 0 || a < b {
+		t.Errorf("list table puts alpha before beta:\n%s", table)
+	}
+
+	out, _, err = executeCLISplit(t, "summary", projFlag, "-d", "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detail struct {
+		Sessions []struct {
+			SessionID string `json:"session_id"`
+		} `json:"sessions"`
+	}
+	mustJSON(t, out, &detail)
+	ids = nil
+	for _, s := range detail.Sessions {
+		ids = append(ids, s.SessionID)
+	}
+	oldestFirst := slices.Clone(newestFirst)
+	slices.Reverse(oldestFirst)
+	if !slices.Equal(ids, oldestFirst) {
+		t.Errorf("summary -d json order %v, want %v", ids, oldestFirst)
+	}
+
+	out, _, err = executeCLISplit(t, "summary", projFlag, "-d", "-f", "csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := csv.NewReader(strings.NewReader(out)).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	col := map[string]int{}
+	for i, name := range rows[0] {
+		col[name] = i
+	}
+	ids = nil
+	cumulative := 0.0
+	for _, row := range rows[1:] {
+		ids = append(ids, row[col["session_id"]])
+		cost, _ := strconv.ParseFloat(row[col["total_cost"]], 64)
+		cumulative += cost
+		if got, _ := strconv.ParseFloat(row[col["cumulative_cost"]], 64); math.Abs(got-cumulative) > 1e-6 {
+			t.Errorf("%s: cumulative_cost %v, want %v", row[col["session_id"]], got, cumulative)
+		}
+	}
+	if !slices.Equal(ids, oldestFirst) {
+		t.Errorf("summary -d csv order %v, want %v", ids, oldestFirst)
 	}
 }
