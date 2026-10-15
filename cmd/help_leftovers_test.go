@@ -189,7 +189,7 @@ func TestRootFlagHintNamesTheCommand(t *testing.T) {
 		{[]string{"-f", "csv", "--messages"},
 			"unknown flag: --messages. --messages is a show flag: ficha show -f csv --messages"},
 		{[]string{"--since", "7d"},
-			"unknown flag: --since. --since is a summary and global flag: ficha summary --since 7d"},
+			"unknown flag: --since. --since is a list and summary and global flag: ficha list --since 7d"},
 		// cobra reads the command after an unknown flag as its value.
 		{[]string{"--details", "summary"},
 			"unknown flag: --details. --details is a summary and global flag: ficha summary --details"},

@@ -2,6 +2,7 @@ package formatter
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,6 +23,9 @@ type ListTableOptions struct {
 	Now time.Time
 	// Project is the project's display name for the header.
 	Project string
+	// Window is the --since/--until range the results were analyzed in, or
+	// nil for none.
+	Window *models.TimeWindow
 }
 
 // Column widths of the list table that don't depend on the data.
@@ -47,6 +51,11 @@ const (
 func FormatSessionListTable(results []models.SessionResult, noColor bool, opts ListTableOptions) string {
 	if opts.Now.IsZero() {
 		opts.Now = now()
+	}
+	if opts.Window != nil && !slices.ContainsFunc(results, func(r models.SessionResult) bool {
+		return r.Analysis != nil && r.Analysis.MessageCount > 0
+	}) {
+		return emptyWindow(*opts.Window)
 	}
 
 	ids := shortSessionIDs(results)
@@ -104,7 +113,19 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	}
 
 	var sb strings.Builder
-	sb.WriteString(renderPanel(opts.Project, []string{fmt.Sprintf("%d %s", len(results), sessionsWord(len(results)))}, []int{panelLead}, width, noColor))
+	// A window stays in the header when nothing else fits: without it the
+	// rows read as all-time.
+	fields := []string{fmt.Sprintf("%d %s", len(results), sessionsWord(len(results)))}
+	giveWay := []int{panelLead}
+	if opts.Window != nil {
+		when := spanOrWindow(opts.Window, time.Time{}, time.Time{})
+		if lipgloss.Width(when) > width-6 {
+			when = strings.TrimPrefix(when, "Window: ")
+		}
+		fields = append(fields, when)
+		giveWay = []int{panelLead, 0}
+	}
+	sb.WriteString(renderPanel(opts.Project, fields, giveWay, width, noColor))
 	sb.WriteString("\n\n")
 
 	join := func(id, when, length, model, agents, cost, title string) string {
