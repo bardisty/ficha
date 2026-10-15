@@ -63,8 +63,7 @@ Context
 ~compaction
   The context bar's tick marks where Claude Code auto-compacts the
   conversation by default: about 967K tokens on models with a native 1M
-  window, and the end of the window on the rest, except that Opus 4.6 and
-  Sonnet 4.6 compact at 200K until a request goes past it, per
+  window, and the end of the window on the rest, per
   code.claude.com/docs/en/model-config. It's approximate, and your Claude
   Code settings can move it. The reading turns orange 85% of the way to
   the mark and red at it, and the note under the bar counts the tokens to

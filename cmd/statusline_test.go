@@ -90,9 +90,9 @@ func TestStatusLineCompaction(t *testing.T) {
 		{"200K below the band", reading(150_000, 200_000, 200_000), "ctx 75%"},
 		{"200K in the band", reading(180_000, 200_000, 200_000), "ctx 90%, 20.0K to ~compaction"},
 		{"200K at the mark", reading(200_000, 200_000, 200_000), "ctx 100%, at ~compaction"},
-		// A request past 200K on a 200K model reads against 1M, and Opus 4.6
-		// past its 200K mark compacts at the end of its 1M window.
-		{"Opus 4.6 past 200K", reading(250_000, 1_000_000, 1_000_000), "ctx 25%"},
+		// A request past 200K on a 200K model reads against 1M, with the
+		// mark at the end of it.
+		{"200K model past 200K", reading(250_000, 1_000_000, 1_000_000), "ctx 25%"},
 		{"window unknown", &models.ContextUsage{Tokens: 680_400}, "ctx 680.4K"},
 	}
 	for _, tt := range tests {
