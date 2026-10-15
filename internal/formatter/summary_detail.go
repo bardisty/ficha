@@ -11,10 +11,11 @@ import (
 	"github.com/bardisty/ficha/internal/render"
 )
 
-// sortedSuccessfulResults returns the results that parsed, ordered by modified
-// time to match the SESSION BREAKDOWN table. Failed sessions (nil Analysis) are
-// dropped: machine formats export only sessions that could be analyzed, and the
-// aggregate's skipped_sessions plus the stderr warning account for the rest.
+// sortedSuccessfulResults returns the results that parsed, ordered by last
+// message time to match the SESSION BREAKDOWN table. Failed sessions (nil
+// Analysis) are dropped: machine formats export only sessions that could be
+// analyzed, and the aggregate's skipped_sessions plus the stderr warning
+// account for the rest.
 func sortedSuccessfulResults(results []models.SessionResult) []models.SessionResult {
 	sorted := make([]models.SessionResult, 0, len(results))
 	for _, r := range results {
@@ -23,7 +24,7 @@ func sortedSuccessfulResults(results []models.SessionResult) []models.SessionRes
 		}
 	}
 	sort.SliceStable(sorted, func(i, j int) bool {
-		return sorted[i].Entry.Modified.Before(sorted[j].Entry.Modified)
+		return sorted[i].LastActive().Before(sorted[j].LastActive())
 	})
 	return sorted
 }
@@ -89,9 +90,10 @@ func FormatSummaryDetailJSON(summary *models.SessionAnalysis, results []models.S
 // rows break out each agent — do not sum across row types: sum session rows for
 // totals, agent rows for agent spend. On session rows parent_cost + agents_cost
 // = total_cost, so the file reconciles against itself; agent rows leave both
-// empty. cumulative_cost is the running session total in modified order and is
-// empty on agent rows. agent_id holds the agent's real ID — the same key `show
-// --messages` and the json agents[] array use, so the exports join.
+// empty. cumulative_cost is the running session total in the rows' order, by
+// last message, and is empty on agent rows. agent_id holds the agent's real
+// ID — the same key `show --messages` and the json agents[] array use, so the
+// exports join.
 // skipped_agents says how many agents a session row's agent_count does not
 // include, and is empty on agent rows. agent_type and description are the
 // agent's meta file's, raw, and empty on session rows.

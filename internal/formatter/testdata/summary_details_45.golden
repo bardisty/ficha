@@ -19,11 +19,11 @@
 
 ────────────[ SESSION BREAKDOWN ]────────────
 
-     # SESSION   MODIFIED  MODEL         COST
+     # SESSION   WHEN    MODEL           COST
   ───────────────────────────────────────────
-     1 cccc3333  Jan 14    -          (error)
-     2 bbbb2222  Jan 12    Haiku…     $0.0704
-     3 aaaa1111  Jan 10    Opus 4.8   $0.1587
+     1 cccc3333  Jan 14  -            (error)
+     2 bbbb2222  Jan 12  Haiku 4.5    $0.0704
+     3 aaaa1111  Jan 10  Opus 4.8     $0.1587
   ───────────────────────────────────────────
   Sum (2 sessions):                   $0.2291
 

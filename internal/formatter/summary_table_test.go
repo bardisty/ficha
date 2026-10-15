@@ -188,7 +188,7 @@ func TestSummaryTableSumAlignsUnderCost(t *testing.T) {
 			var headerWidth, sumWidth int
 			var sumLine string
 			for _, line := range strings.Split(out, "\n") {
-				if strings.Contains(line, "MODIFIED") {
+				if strings.Contains(line, "WHEN") {
 					headerWidth = lipgloss.Width(line)
 				}
 				if strings.Contains(line, "Sum (") {

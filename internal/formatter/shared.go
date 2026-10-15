@@ -50,7 +50,7 @@ var now = time.Now
 // redirected output doesn't depend on the terminal it came from. On a
 // narrower terminal they fit it, and from 50 columns up nothing in them runs
 // past the frame. Below that the frame follows the terminal down to
-// minReportWidth, which most reports fit, though a year in MODIFIED, a wide
+// minReportWidth, which most reports fit, though a year in WHEN, a wide
 // cost or a four-digit message count can still run past it. Narrower than
 // that, the frame stays put rather than draw narrower than what's in it. A
 // wider terminal keeps staticReportWidth, since nothing here needs the room.

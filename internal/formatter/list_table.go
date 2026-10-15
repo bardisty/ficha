@@ -147,7 +147,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 
 	for i, r := range results {
 		id := fmt.Sprintf("%-*s", idWidth, ids[i])
-		when := fmt.Sprintf("%-*s", listWhenWidth, render.Ago(r.Entry.Modified, opts.Now))
+		when := fmt.Sprintf("%-*s", listWhenWidth, render.Ago(r.LastActive(), opts.Now))
 		a := r.Analysis
 
 		// A session with no replies yet, or one that couldn't be read, has
