@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/render"
@@ -13,7 +14,6 @@ import (
 // by column; render.FitTask pads a task by display width.
 const (
 	bdMinIndexWidth = 3
-	bdTimeWidth     = 8 // "15:04:05"; "Mon 15:04" when the layout has weekday
 	bdModelWidth    = 10
 	bdCostWidth     = 10 // fits "$9999.99  "; see render.CostCell
 	bdInWidth       = 6
@@ -35,11 +35,20 @@ type breakdownLayout struct {
 	taskWidth  int  // columns AGENT gets past agentWidth for agents' tasks; 0 for none
 	modelExtra int  // columns MODEL gets past bdModelWidth, for unknown model IDs
 	runTags    bool // AGENT cells carry workflow run tags
-	weekday    bool // TIME reads "Mon 15:04"; see BreakdownModel.layout
+	timeFmt    timeFormat
 	in, out    bool
 	cacheWrite bool
 	cacheRead  bool
 }
+
+// timeFormat is how TIME reads; see BreakdownModel.layout.
+type timeFormat int
+
+const (
+	timeClock   timeFormat = iota // "15:04:05"
+	timeWeekday                   // "Mon 15:04"
+	timeDate                      // "02 Jan 15:04"
+)
 
 // breakdownCells holds one row's cells, padded to width and possibly styled.
 type breakdownCells struct {
@@ -49,14 +58,14 @@ type breakdownCells struct {
 
 // newBreakdownLayout fits the columns to termWidth. markerWidth is the
 // widest agent marker and cellWidth the widest marker plus run tag, both 0
-// when no row came from an agent. weekday puts the day in TIME. The token
+// when no row came from an agent. timeFmt is how TIME reads. The token
 // columns go first: IN (a few tokens per message, rarely what a reader is
 // after), then C_WR, C_RD and OUT. Then the run tags, then AGENT itself.
 // termWidth <= 0 means unknown, and keeps every column.
-func newBreakdownLayout(indexWidth, markerWidth, cellWidth, termWidth int, weekday bool) breakdownLayout {
+func newBreakdownLayout(indexWidth, markerWidth, cellWidth, termWidth int, timeFmt timeFormat) breakdownLayout {
 	l := breakdownLayout{
 		indexWidth: max(indexWidth, bdMinIndexWidth),
-		weekday:    weekday,
+		timeFmt:    timeFmt,
 		in:         true, out: true, cacheWrite: true, cacheRead: true,
 	}
 	if markerWidth > 0 {
@@ -80,12 +89,18 @@ func newBreakdownLayout(indexWidth, markerWidth, cellWidth, termWidth int, weekd
 	return l
 }
 
-// timeWidth is the TIME column's width.
-func (l breakdownLayout) timeWidth() int {
-	if l.weekday {
-		return len("Mon 15:04")
+// timeWidth is the TIME column's width. Every form is a fixed width.
+func (l breakdownLayout) timeWidth() int { return len(l.clock(time.Unix(0, 0))) }
+
+// clock is the TIME cell's text for t.
+func (l breakdownLayout) clock(t time.Time) string {
+	switch l.timeFmt {
+	case timeWeekday:
+		return render.WeekdayClockShort(t)
+	case timeDate:
+		return render.DateClockShort(t)
 	}
-	return bdTimeWidth
+	return render.Clock(t)
 }
 
 // modelWidth is the MODEL column's width.

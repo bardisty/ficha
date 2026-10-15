@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -111,8 +112,10 @@ type BreakdownModel struct {
 	table breakdownLayout
 	// dated is set when a row is from before today, as of datedOn's local
 	// day: every row then sits under a day divider, and the times the table
-	// can't divide carry their weekday. See isDated.
+	// can't divide carry their weekday, or from weekOld their date. See
+	// isDated.
 	dated   bool
+	weekOld bool
 	datedOn time.Time
 
 	spinner   spinner.Model
@@ -574,7 +577,11 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // superseded by a faster chain; see breakdownMsgsMsg
 		}
 		if !render.SameLocalDay(m.datedOn, m.clock()) {
+			wasDated := m.dated
 			m.relayout()
+			if !wasDated && m.dated {
+				m.keepLineWhenDated()
+			}
 			m.refreshViewport()
 		}
 		return m, clockCmd(m.clockInterval(), m.clockGen)
@@ -1061,10 +1068,10 @@ const (
 //	main conversation + agents │ Peak: #231 $0.4419 @ 20:44:29 [Aa499eb9] (5.9x avg) │ Trend: ═ flat
 //
 // When the line doesn't fit, detail goes in this order: the long scope label
-// for the short one, the Peak's multiplier, its time and agent marker, then
-// the Trend, then the scope. The Trend goes late because nothing else on
-// screen says it, and it never shows without the scope, since the scope is
-// why it can differ from watch's.
+// for the short one, the Peak's multiplier, its date, weekday, time and agent
+// marker, then the Trend, then the scope. The Trend goes late because nothing
+// else on screen says it, and it never shows without the scope, since the
+// scope is why it can differ from watch's.
 func (m BreakdownModel) renderCompactInsights() string {
 	// The scope qualifies the figures; with neither figure it says nothing.
 	if m.insights == nil || (m.insights.HighestCost == nil && !m.insights.HasTrend()) {
@@ -1083,16 +1090,22 @@ func (m BreakdownModel) renderCompactInsights() string {
 	peaks := []string{""}
 	if peak := m.insights.HighestCost; peak != nil {
 		short := fmt.Sprintf("Peak: #%d %s", peak.Index, render.Cost(peak.Cost))
-		clock := render.Clock(peak.Timestamp)
-		if m.dated {
-			clock = render.WeekdayClock(peak.Timestamp)
+		clocks := []string{render.WeekdayDateClock(peak.Timestamp), render.WeekdayClock(peak.Timestamp), render.Clock(peak.Timestamp)}
+		switch {
+		case !m.dated:
+			clocks = clocks[2:]
+		case !m.weekOld:
+			clocks = clocks[1:]
 		}
-		timed := short + " @ " + clock
-		if marker := m.peakAgentMarker(); marker != "" {
-			timed += " " + marker
+		marker := ""
+		if agent := m.peakAgentMarker(); agent != "" {
+			marker = " " + agent
 		}
-		full := timed + fmt.Sprintf(" (%.1fx avg)", m.insights.CostMultiplier())
-		peaks = []string{full, timed, short}
+		peaks = []string{short + " @ " + clocks[0] + marker + fmt.Sprintf(" (%.1fx avg)", m.insights.CostMultiplier())}
+		for _, clock := range clocks {
+			peaks = append(peaks, short+" @ "+clock+marker)
+		}
+		peaks = append(peaks, short)
 		for i := range peaks {
 			peaks[i] = style(peaks[i], styles.WarningColor)
 		}
@@ -1318,28 +1331,53 @@ func (m BreakdownModel) agentCell(msg models.BreakdownMessage, withTag bool) str
 // misalign.
 func (m *BreakdownModel) relayout() {
 	m.datedOn = m.clock()
-	m.dated = m.isDated(m.datedOn)
+	m.dated, m.weekOld = m.isDated(m.datedOn)
 	m.table = m.layout()
 }
 
-// isDated reports whether any row is from a local day before now's. A row
-// later than now counts as today: a clock a little behind the transcript's
-// shouldn't date a session that's live.
-func (m BreakdownModel) isDated(now time.Time) bool {
+// isDated reports whether any row is from a local day before now's, and
+// whether one is six or more days before it, where a weekday could name a day
+// this week too. A row later than now counts as today: a clock a little
+// behind the transcript's shouldn't date a session that's live.
+func (m BreakdownModel) isDated(now time.Time) (dated, weekOld bool) {
+	// Local dates compared as UTC midnights: a zone that skips midnight has
+	// no local one to compare against.
+	day := func(t time.Time) time.Time {
+		y, mo, d := t.Local().Date()
+		return time.Date(y, mo, d, 0, 0, 0, 0, time.UTC)
+	}
+	today := day(now)
 	for _, msg := range m.messages {
-		if !msg.Timestamp.IsZero() && !msg.Timestamp.After(now) && !render.SameLocalDay(msg.Timestamp, now) {
-			return true
+		if !msg.Timestamp.IsZero() {
+			dated = dated || day(msg.Timestamp).Before(today)
+			weekOld = weekOld || day(msg.Timestamp).Before(today.AddDate(0, 0, -5))
 		}
 	}
-	return false
+	return dated, weekOld
+}
+
+// keepLineWhenDated moves the reader's time-order line down past the divider
+// that turning dated puts above the first timed row, the one line it adds,
+// since every row was today's. At the top it stays, so the divider shows, as
+// g shows it. Sorted, it moves the line s returns to.
+func (m *BreakdownModel) keepLineWhenDated() {
+	first := slices.IndexFunc(m.messages, func(msg models.BreakdownMessage) bool { return !msg.Timestamp.IsZero() })
+	y := &m.chosenY
+	if m.sortByCost {
+		y = &m.timeYOffset
+	}
+	if *y > 0 && *y >= first && (m.sortByCost || !m.autoScroll) {
+		*y++
+	}
 }
 
 // layout picks the columns the table draws. See breakdownLayout. It walks
 // every row; View reads the copy in m.table. A dated session's TIME carries
-// the weekday in cost order, where no divider says the day, unless the
-// terminal is too narrow for even the narrowest layout with it: there the
-// day goes, as the Peak's time does, rather than s turning a frame that
-// fits into the too-small screen.
+// the weekday in cost order, where no divider says the day, or the date once
+// weekOld, unless the terminal is too narrow for even the narrowest layout
+// with it: there the date gives way to the weekday and that to the clock, as
+// the Peak's do, rather than s turning a frame that fits into the too-small
+// screen.
 func (m BreakdownModel) layout() breakdownLayout {
 	markerWidth, cellWidth, lastIndex, modelWant, taskWant := 0, 0, 0, 0, 0
 	for _, msg := range m.messages {
@@ -1352,9 +1390,17 @@ func (m BreakdownModel) layout() breakdownLayout {
 		}
 	}
 	indexWidth := len(strconv.Itoa(lastIndex))
-	weekday := m.sortByCost && m.dated &&
-		(m.width <= 0 || breakdownLayout{indexWidth: max(indexWidth, bdMinIndexWidth), weekday: true}.width() <= m.width)
-	return newBreakdownLayout(indexWidth, markerWidth, cellWidth, m.width, weekday).widenModel(modelWant, m.width).widenAgent(taskWant, m.width)
+	timeFmt := timeClock
+	switch {
+	case m.sortByCost && m.weekOld:
+		timeFmt = timeDate
+	case m.sortByCost && m.dated:
+		timeFmt = timeWeekday
+	}
+	for m.width > 0 && timeFmt > timeClock && (breakdownLayout{indexWidth: max(indexWidth, bdMinIndexWidth), timeFmt: timeFmt}).width() > m.width {
+		timeFmt--
+	}
+	return newBreakdownLayout(indexWidth, markerWidth, cellWidth, m.width, timeFmt).widenModel(modelWant, m.width).widenAgent(taskWant, m.width)
 }
 
 // renderRow renders a single message row
@@ -1368,13 +1414,9 @@ func (m BreakdownModel) renderRow(msg models.BreakdownMessage, isNew bool, layou
 	}
 	marker := agentMarker(msg.AgentID)
 
-	clock := render.Clock(msg.Timestamp)
-	if layout.weekday {
-		clock = render.WeekdayClockShort(msg.Timestamp)
-	}
 	c := breakdownCells{
 		index: fmt.Sprintf("%-*d", layout.indexWidth, msg.Index),
-		time:  fmt.Sprintf("%-*s", layout.timeWidth(), clock),
+		time:  fmt.Sprintf("%-*s", layout.timeWidth(), layout.clock(msg.Timestamp)),
 		agent: m.agentColumnCell(msg, layout),
 		model: fmt.Sprintf("%-*s", layout.modelWidth(), modelLabel),
 		cost:  render.CostCell(msg.Cost.TotalCost, bdCostWidth),
