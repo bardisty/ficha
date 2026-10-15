@@ -128,7 +128,11 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		c := r.Analysis.TotalCost.TotalCost
 		valid++
 		totalCost += c
-		costs = append(costs, c)
+		// A session with no replies prints a dash, as in list, and its 0
+		// doesn't set the floor the color gradient runs from.
+		if r.Analysis.MessageCount > 0 {
+			costs = append(costs, c)
+		}
 		if c > 0 {
 			chartCosts = append(chartCosts, c)
 		}
@@ -344,11 +348,18 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		}
 		project = dim(truncateRight(project, projectWidth))
 
-		if r.Analysis == nil {
-			sb.WriteString(row(num, id, when,
+		// A session with no replies yet has nothing to price, so it reads
+		// as list shows it, dimmed whole, rather than as a session that ran
+		// for free. One that couldn't be read is dimmed the same way.
+		if r.Analysis == nil || r.Analysis.MessageCount == 0 {
+			costText := "-"
+			if r.Analysis == nil {
+				costText = "(error)"
+			}
+			sb.WriteString(row(num, dim(id), when,
 				dim(pad("-", modelWidth)),
 				dim(fmt.Sprintf("%*s", len("AGENTS"), "-")),
-				dim(fmt.Sprintf("%*s", costWidth, "(error)")), project) + "\n")
+				dim(fmt.Sprintf("%*s", costWidth, costText)), project) + "\n")
 			continue
 		}
 		a := r.Analysis

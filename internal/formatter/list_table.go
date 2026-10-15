@@ -65,7 +65,11 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	for i, r := range results {
 		idWidth = max(idWidth, len(ids[i]))
 		if r.Analysis != nil {
-			costs = append(costs, r.Analysis.TotalCost.TotalCost)
+			// A session with no replies prints a dash, not a cost, so its 0
+			// doesn't set the floor the color gradient runs from.
+			if r.Analysis.MessageCount > 0 {
+				costs = append(costs, r.Analysis.TotalCost.TotalCost)
+			}
 			titleWidth = max(titleWidth, runewidth.StringWidth(nestedTitle(r, models.OneLine(r.Analysis.Title))))
 		}
 	}
