@@ -769,6 +769,10 @@ func (m Model) headerParams(width int) liveHeaderParams {
 	if m.followMode {
 		mode = "FOLLOWING"
 	}
+	var title string
+	if m.analysis != nil {
+		title = models.OneLine(m.analysis.Title)
+	}
 	return liveHeaderParams{
 		sessionID:    m.sessionID,
 		loading:      m.showLoading(),
@@ -777,6 +781,7 @@ func (m Model) headerParams(width int) liveHeaderParams {
 		noColor:      m.noColor,
 		width:        width,
 		project:      m.project,
+		title:        title,
 		mode:         mode,
 		lastActivity: m.lastActivity,
 		noMessages:   m.activityFromFile,

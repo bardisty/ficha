@@ -47,6 +47,7 @@ type BreakdownModel struct {
 	runNames       map[string]string // AGENT-column run tag -> workflow name
 	runOrder       []string          // AGENT-column run tags, in run start order
 	tasks          map[string]string // Agent ID -> its task, for agents that have one
+	title          string            // the session's title, on one line; "" for none
 	err            error
 	loading        bool
 	loaded         bool // a load has landed for this session; see showLoading
@@ -177,6 +178,7 @@ type (
 		hasAgents      bool
 		workflows      []models.WorkflowMeta
 		tasks          map[string]string
+		title          string    // the session's title, on one line
 		modTime        time.Time // session file mtime at load; zero if unknown
 		// sessionPath identifies the session this load was started for. In
 		// follow mode a slow in-flight load for the previous session can land
@@ -414,6 +416,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.hasAgents = msg.hasAgents
 		m.runTags = workflowRunTags(msg.workflows)
 		m.tasks = msg.tasks
+		m.title = msg.title
 		m.runNames = make(map[string]string, len(msg.workflows))
 		m.runOrder = nil
 		for _, run := range msg.workflows {
@@ -640,6 +643,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.runNames = nil
 	m.runOrder = nil
 	m.tasks = nil
+	m.title = ""
 	m.totalCost = 0
 	m.minCost = 0
 	m.maxCost = 0
@@ -1056,6 +1060,7 @@ func (m BreakdownModel) headerParams(width int) liveHeaderParams {
 		noColor:      m.noColor,
 		width:        width,
 		project:      m.project,
+		title:        m.title,
 		mode:         mode,
 		waiting:      m.waiting(),
 		blind:        m.followMode && m.sessionFallback.blind != nil,
@@ -1538,6 +1543,7 @@ func (m BreakdownModel) loadBreakdown() tea.Msg {
 		hasAgents:      hasAgents,
 		workflows:      result.Workflows,
 		tasks:          result.Tasks,
+		title:          models.OneLine(result.Title),
 		modTime:        modTime,
 		sessionPath:    m.sessionPath,
 	}
