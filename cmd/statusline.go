@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,6 +97,16 @@ func runStatusline(cfg *config, stdin io.Reader) error {
 	// doesn't take.
 	if sessionDir := agentSessionDir(abs); sessionDir != "" {
 		return fmt.Errorf("transcript_path %s is an agent's transcript, part of session %s", in.TranscriptPath, shortSessionID(filepath.Base(sessionDir)))
+	}
+
+	// Claude Code runs the command as a session starts, before it writes the
+	// transcript, and a blank status line looks like a broken setup. A
+	// missing file in a directory that's there is a session with no
+	// messages yet. A missing directory is still bad input.
+	if _, err := os.Stat(abs); errors.Is(err, fs.ErrNotExist) && isDir(filepath.Dir(abs)) {
+		cfg.tracef("no transcript at %s yet", abs)
+		fmt.Fprintln(cfg.stdout, statusLine(in.Model.DisplayName, &models.SessionAnalysis{}, cfg.noColor))
+		return nil
 	}
 
 	session, _, err := sessionFromPath(cfg, in.TranscriptPath)

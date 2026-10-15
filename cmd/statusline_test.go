@@ -392,6 +392,29 @@ func TestStatuslineUnreadableTranscript(t *testing.T) {
 	}
 }
 
+// Claude Code runs the command as a session starts, before the transcript
+// exists. That's a session with no messages yet, as an empty file is, while
+// show still fails on the same path.
+func TestStatuslineTranscriptNotWrittenYet(t *testing.T) {
+	proj := setupStatusFixture(t)
+	transcript := filepath.Join(proj, "00000000-0000-4000-8000-000000000001.jsonl")
+	stdout, stderr, err := executeStatusline(t, statusInput(t, transcript, "Opus 5.5"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "Opus 5.5 · $0.00\n"; stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q", stderr)
+	}
+
+	_, _, err = executeCLISplit(t, "show", transcript)
+	if err == nil || !strings.Contains(err.Error(), "can't read transcript") {
+		t.Errorf("show error = %v, want can't read transcript", err)
+	}
+}
+
 // Claude Code shows whatever reaches stdout, so a failure must leave it
 // empty, with the reason on stderr and the exit status saying which kind.
 func TestStatuslineFailures(t *testing.T) {
@@ -416,7 +439,7 @@ func TestStatuslineFailures(t *testing.T) {
 		{"an array", `[1,2]`, nil, 1, "unexpected array at the top level"},
 		{"trailing data", good + " garbage", nil, 1, "reading Claude Code's status line JSON on stdin"},
 		{"an agent's transcript", statusInput(t, filepath.Join(proj, statusID, "subagents", "agent-a1.jsonl"), "Opus 5.5"), nil, 1, "is an agent's transcript, part of session dddddddd"},
-		{"missing transcript", statusInput(t, filepath.Join(proj, "nope.jsonl"), "Opus 5.5"), nil, 1, "can't read transcript"},
+		{"a transcript in a missing directory", statusInput(t, filepath.Join(proj, "gone", "nope.jsonl"), "Opus 5.5"), nil, 1, "can't read transcript"},
 		{"a file that isn't .jsonl", statusInput(t, notes, "Opus 5.5"), nil, 1, "notes.md isn't a .jsonl transcript"},
 		{"a missing file that isn't .jsonl", statusInput(t, filepath.Join(proj, "nope.md"), "Opus 5.5"), nil, 1, "nope.md isn't a .jsonl transcript"},
 		{"-f json", good, []string{"-f", "json"}, 2, "--format json is not supported by statusline"},
