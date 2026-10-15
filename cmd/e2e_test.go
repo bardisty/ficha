@@ -1271,6 +1271,9 @@ func TestE2EUsageErrors(t *testing.T) {
 		{"uppercase hex is a session lookup", []string{projFlag, "ABC123"}, "session not found: ABC123. Run 'ficha list " + projFlag + "' to see this project's sessions."},
 		{"pasted filename is a session lookup", []string{projFlag, "abc123.jsonl"}, "session not found: abc123.jsonl. Run 'ficha list " + projFlag + "' to see this project's sessions."},
 		{"stray arg on a no-arg command", []string{"list", "extra"}, `ficha list takes no arguments, got "extra"`},
+		{"directory on list points at -p", []string{"list", dir}, "ficha list takes no arguments. For that directory's sessions, run: ficha list -p " + shellQuote(dir)},
+		{"directory on global has no -p", []string{"global", dir}, "ficha global takes no arguments, got " + strconv.Quote(dir)},
+		{"directory on show points at -p", []string{"show", dir}, strconv.Quote(dir) + " is a directory, not a session. To show that directory's latest session, run: ficha show -p " + shellQuote(dir)},
 		{"non-numeric int flag", []string{"global", "--top", "abc"}, `invalid --top value "abc": must be a whole number`},
 		{"overflowing int flag", []string{"global", "--top", "99999999999999999999"}, `invalid --top value "99999999999999999999": is out of range`},
 		{"non-boolean bool flag", []string{"global", "--details=maybe"}, `invalid --details value "maybe": must be true or false`},
@@ -1287,6 +1290,73 @@ func TestE2EUsageErrors(t *testing.T) {
 				t.Errorf("error:\n got: %s\nwant: %s", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// A directory where a command takes a session ID, or takes nothing, is a
+// project the user meant to pass with -p. The check runs before any project
+// lookup, so the error names the directory given, not the current one.
+func TestE2EDirectoryArgument(t *testing.T) {
+	setupE2EFixture(t)
+	work := filepath.Join(t.TempDir(), "work")
+	if err := os.MkdirAll(filepath.Join(work, "api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(work)
+	hints := map[string]string{
+		"show":      "%q is a directory, not a session. To show that directory's latest session, run: ficha show -p %s",
+		"watch":     "%q is a directory, not a session. To watch that directory's sessions, run: ficha watch -p %s",
+		"breakdown": "%q is a directory, not a session. To break down that directory's sessions, run: ficha breakdown -p %s",
+		"list":      "ficha list takes no arguments. For that directory's sessions, run: ficha list -p %[2]s",
+		"summary":   "ficha summary takes no arguments. For that directory's sessions, run: ficha summary -p %[2]s",
+	}
+	for command, hint := range hints {
+		for _, dir := range []string{".", "api", filepath.Join(work, "api")} {
+			t.Run(command+" "+dir, func(t *testing.T) {
+				_, err := executeLikeMain(t, command, dir)
+				if want := fmt.Sprintf(hint, dir, shellQuote(dir)); err == nil || err.Error() != want {
+					t.Errorf("error:\n got: %v\nwant: %s", err, want)
+				}
+				if code := exitCode(err); code != 2 {
+					t.Errorf("exit status %d, want 2", code)
+				}
+			})
+		}
+	}
+
+	// The suggestion keeps the rest of the line, with -p after the command
+	// in place of any project flag already there.
+	lines := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--no-color", "watch", "-f", "json", "-p", "elsewhere", "."}, "run: ficha --no-color watch -p . -f json"},
+		{[]string{"show", "-vf", "json", "api"}, "run: ficha show -p api -vf json"},
+		{[]string{"show", "-vp", "elsewhere", "api"}, "run: ficha show -p api -v"},
+		{[]string{"show", "-vpelsewhere", "api"}, "run: ficha show -p api -v"},
+		{[]string{"summary", "--project-dir=x", ".", "-d"}, "run: ficha summary -p . -d"},
+		{[]string{"breakdown", "--", "api"}, "run: ficha breakdown -p api"},
+		{[]string{"list", "my dir"}, "run: ficha list -p 'my dir'"},
+	}
+	if err := os.Mkdir("my dir", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range lines {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			_, err := executeLikeMain(t, tt.args...)
+			if err == nil || !strings.HasSuffix(err.Error(), tt.want) {
+				t.Errorf("error = %v, want it to end in %q", err, tt.want)
+			}
+		})
+	}
+
+	// A word that could be a session ID is looked up as one, even when a
+	// directory has that name.
+	if err := os.Mkdir("abc123", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeLikeMain(t, "show", projFlag, "abc123"); err == nil || !strings.HasPrefix(err.Error(), "session not found: abc123") {
+		t.Errorf("hex-named directory: error = %v, want a session lookup", err)
 	}
 }
 

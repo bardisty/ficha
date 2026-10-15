@@ -37,6 +37,19 @@ func TestSubcommandsRejectExtraArgs(t *testing.T) {
 	}
 }
 
+// Commands without -p have nowhere to point a directory, so they keep the
+// plain error.
+func TestNoProjectFlagCommandsRejectADirectoryPlainly(t *testing.T) {
+	for _, name := range []string{"global", "statusline", "version"} {
+		t.Run(name, func(t *testing.T) {
+			_, err := executeCLI(t, name, ".")
+			if want := "ficha " + name + ` takes no arguments, got "."`; err == nil || err.Error() != want {
+				t.Errorf("error = %v, want %s", err, want)
+			}
+		})
+	}
+}
+
 // cobra only registers a --version flag when rootCmd.Version is set.
 func TestVersionFlag(t *testing.T) {
 	out, err := executeCLI(t, "--version")

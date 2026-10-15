@@ -34,7 +34,7 @@ Examples:
   ficha breakdown abc123       Show breakdown for specific session (pinned)
 
 ` + keysHelp(tui.BreakdownKeys()),
-		Args:              cobra.MaximumNArgs(1),
+		Args:              sessionArgs,
 		ValidArgsFunction: completeSessionIDs(cfg),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runBreakdown(cfg, args)

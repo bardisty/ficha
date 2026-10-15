@@ -121,13 +121,123 @@ func joinQuoted(items []string, conj string) string {
 	return strings.Join(quoted[:len(quoted)-1], ", ") + " " + conj + " " + quoted[len(quoted)-1]
 }
 
-// noArgs replaces cobra.NoArgs, whose `unknown command "x" for "ficha list"`
-// reads as if list had subcommands.
-func noArgs(cmd *cobra.Command, args []string) error {
-	if len(args) > 0 {
-		return fmt.Errorf("%s takes no arguments, got %q", cmd.CommandPath(), args[0])
+// sessionArgs validates `ficha show|watch|breakdown [session-id]`. People
+// pass a project directory there before they find -p, and as a session ID it
+// would end in an error about a different directory. As in rootArgs, a
+// transcript path and a hex word stay a session lookup, so a directory named
+// like an ID is still read as one.
+func sessionArgs(cmd *cobra.Command, args []string) error {
+	if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
+		return err
 	}
-	return nil
+	if len(args) == 0 || looksLikeSessionID(args[0]) || isTranscriptPath(args[0]) || !isDir(args[0]) {
+		return nil
+	}
+	todo := map[string]string{
+		"show":      "show that directory's latest session",
+		"watch":     "watch that directory's sessions",
+		"breakdown": "break down that directory's sessions",
+	}[cmd.Name()]
+	return fmt.Errorf("%q is a directory, not a session. To %s, run: %s", args[0], todo, projectCommand(cmd, args[0]))
+}
+
+// noArgs replaces cobra.NoArgs, whose `unknown command "x" for "ficha list"`
+// reads as if list had subcommands. A command that takes -p points a
+// directory at it.
+func noArgs(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	if cmd.Flags().Lookup("project") != nil && isDir(args[0]) {
+		return fmt.Errorf("%s takes no arguments. For that directory's sessions, run: %s", cmd.CommandPath(), projectCommand(cmd, args[0]))
+	}
+	return fmt.Errorf("%s takes no arguments, got %q", cmd.CommandPath(), args[0])
+}
+
+// projectCommand is the command line ficha was run with, with dir moved
+// from an argument to -p right after the command's name. A project flag
+// already on the line is dropped, since -p replaces it.
+func projectCommand(cmd *cobra.Command, dir string) string {
+	line, ok := commandLine(cmd.Context())
+	if !ok {
+		return cmd.CommandPath() + " -p " + shellQuote(dir)
+	}
+	out := []string{cmd.Root().Name()}
+	named, moved, afterDashes := false, false, false
+	for i := 0; i < len(line); i++ {
+		a := line[i]
+		if !afterDashes {
+			if a == "--" {
+				afterDashes = true
+				out = append(out, a)
+				continue
+			}
+			if f, takesNext := lineFlag(cmd, a); f != nil {
+				n := 1
+				if takesNext && i+1 < len(line) {
+					n = 2
+				}
+				switch {
+				case f.Name != "project" && f.Name != "project-dir":
+					out = append(out, line[i:i+n]...)
+				case !strings.HasPrefix(a, "--"):
+					// In a bundle such as -vp, the flags before p stay.
+					if before, _, _ := strings.Cut(a, "p"); len(before) > 1 {
+						out = append(out, before)
+					}
+				}
+				i += n - 1
+				continue
+			}
+			if !named && (a == cmd.Name() || slices.Contains(cmd.Aliases, a)) {
+				named = true
+				out = append(out, a, "-p", dir)
+				continue
+			}
+		}
+		if !moved && a == dir {
+			moved = true
+			continue
+		}
+		out = append(out, a)
+	}
+	if out[len(out)-1] == "--" {
+		out = out[:len(out)-1]
+	}
+	for i, a := range out {
+		out[i] = shellQuote(a)
+	}
+	return strings.Join(out, " ")
+}
+
+// lineFlag is the flag a command line token sets, if any, and whether its
+// value is the next token. For a bundle of shorthands it's the one that
+// takes a value, or else the first.
+func lineFlag(cmd *cobra.Command, token string) (f *pflag.Flag, takesNext bool) {
+	switch {
+	case strings.HasPrefix(token, "--") && len(token) > 2:
+		name, _, hasValue := strings.Cut(token[2:], "=")
+		f = cmd.Flags().Lookup(name)
+		return f, f != nil && !hasValue && f.NoOptDefVal == ""
+	case strings.HasPrefix(token, "-") && len(token) > 1:
+		// Shorthands combine, as in -vf json: the first one that takes a
+		// value takes the rest of the token, or the next token.
+		var first *pflag.Flag
+		for j, r := range token[1:] {
+			sf := cmd.Flags().ShorthandLookup(string(r))
+			if sf == nil {
+				return first, false
+			}
+			if first == nil {
+				first = sf
+			}
+			if sf.NoOptDefVal == "" {
+				return sf, j == len(token)-2
+			}
+		}
+		return first, false
+	}
+	return nil, false
 }
 
 // flagError rewrites pflag's value-parse errors, which quote Go's strconv
