@@ -129,7 +129,7 @@ def write_meta(path, agent_type, description=None):
 for end, n, model, meta in [(ago(hours=2, minutes=20), 25, "claude-sonnet-5-5", ("Explore", "Find the auth middleware")),
                             (ago(hours=1, minutes=45), 32, "claude-haiku-4-5-20251001", ("general-purpose", "Summarize the failing tests")),
                             (ago(hours=1, minutes=5), 14, "claude-sonnet-5-5", None),
-                            (ago(seconds=40), 22, "claude-sonnet-5-5", ("general-purpose", "Move session storage to Redis"))]:
+                            (ago(seconds=40), 22, "claude-sonnet-5-5", ("general-purpose", "Move sessions to Redis"))]:
     path = os.path.join(wp, big, "subagents", "agent-a%016x.jsonl" % rng.getrandbits(64))
     write_jsonl(path, convo(end, n, [model], big, wd))
     if meta:
@@ -137,16 +137,17 @@ for end, n, model, meta in [(ago(hours=2, minutes=20), 25, "claude-sonnet-5-5", 
 
 # One finished workflow run and one still running. Each agent is (end, message
 # count, growth); a count of None draws a short run. The running run's agents
-# are long and grow fast through their 1M windows, to 78% and 68%. Both stay
-# short of the band before the ~967K compaction mark, so their readings are
-# dim like the plain agent's.
+# are long and grow fast through their 1M windows. The first ends near 92%,
+# inside the warning band before the ~967K compaction mark and nearer it than
+# the main session, so watch names it under the gauge and in the footer. The
+# second ends near 69%, short of the band, so its reading stays dim.
 # Each agent's last field is its task; the last review agent's meta file has
 # none, so its row falls back to the agent type.
 runs = [("wf_7f3a9c", "review-changes", "completed", [(ago(hours=1, minutes=30), None, 6000, "Review the parser changes"),
                                                        (ago(hours=1, minutes=25), None, 6000, "Check error handling in the API layer"),
                                                        (ago(hours=1, minutes=18), None, 6000, None)]),
-        ("wf_91bd02", "audit-codebase", "running", [(ago(seconds=25), 128, 10_600, "Audit the billing module for rounding errors"),
-                                                    (ago(minutes=1, seconds=10), 109, 11_400, "Trace every query in the data layer")])]
+        ("wf_91bd02", "audit-codebase", "running", [(ago(seconds=25), 128, 11_800, "Audit billing for rounding"),
+                                                    (ago(minutes=1, seconds=10), 109, 11_400, "Trace data-layer queries")])]
 for run, name, status, agents in runs:
     rd = os.path.join(wp, big, "subagents", "workflows", run)
     for end, n, growth, task in agents:
