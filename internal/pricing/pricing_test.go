@@ -770,8 +770,9 @@ func TestGetModelPricingCompactAt(t *testing.T) {
 }
 
 // The transcript's model ID never carries "[1m]", so a reading too big for a
-// 200K row reads against the 1M window with the mark at its end. A reading no known window holds, or one
-// on a model the catalog doesn't know, has no window.
+// 200K row reads against the 1M window with the mark at its end. A reading
+// no known window holds, or one on a model the catalog doesn't know, has no
+// window.
 func TestContextWindow(t *testing.T) {
 	tests := []struct {
 		modelID       string
