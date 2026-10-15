@@ -141,7 +141,8 @@ func TestBreakdownSelection_HintTakesNotifyRow(t *testing.T) {
 	if selectedIndex(m) != 6 {
 		t.Errorf("the hint dropped the selection: selected #%d", selectedIndex(m))
 	}
-	if m = press(t, m, "p"); !strings.HasPrefix(m.renderNotifyRow(), "  top 2 of 5: #13 ") {
+	updated, _ = m.Update(sessionActivityMsg{path: "/fixture/third.jsonl", id: "third"})
+	if m = press(t, updated.(BreakdownModel), "p"); !strings.HasPrefix(m.renderNotifyRow(), "  top 2 of 5: #13 ") {
 		t.Errorf("p after the hint: %q", m.renderNotifyRow())
 	}
 	// More writes to sessions already active aren't news, even when two of
@@ -167,6 +168,35 @@ func TestBreakdownSelection_HintTakesNotifyRow(t *testing.T) {
 	}
 	if m = press(t, m, "n"); m.selectedKey != "" {
 		t.Error("a session switch should clear the selection")
+	}
+
+	// The session left in a switch, writing in turn with another already
+	// hinted, isn't news either, once the switch notice is gone.
+	m = loadedBreakdown(t, 80, 24, sortRows(40))
+	updated, _ = m.Update(sessionActivityMsg{path: "/fixture/other.jsonl", id: "other"})
+	m = press(t, updated.(BreakdownModel), "n")
+	updated, _ = m.Update(breakdownMsgsMsg{messages: sortRows(40), insights: &models.MessageInsights{}, sessionPath: "/fixture/other.jsonl"})
+	updated, _ = updated.Update(sessionActivityMsg{path: "/fixture/third.jsonl", id: "third"})
+	m = press(t, updated.(BreakdownModel), "p")
+	for _, id := range []string{"0a1b2c3d", "third", "0a1b2c3d", "third"} {
+		updated, _ = m.Update(sessionActivityMsg{path: "/fixture/" + id + ".jsonl", id: id})
+		if m = updated.(BreakdownModel); !strings.HasPrefix(m.renderNotifyRow(), "  top 1 of 5") {
+			t.Errorf("a write to %s took the row from the selection: %q", id, m.renderNotifyRow())
+		}
+	}
+
+	// Nor does the session left, live on its own: its writes during the
+	// notice are its hint, so the ones after p aren't news.
+	m = loadedBreakdown(t, 80, 24, sortRows(40))
+	updated, _ = m.Update(sessionActivityMsg{path: "/fixture/other.jsonl", id: "other"})
+	m = press(t, updated.(BreakdownModel), "n")
+	updated, _ = m.Update(breakdownMsgsMsg{messages: sortRows(40), insights: &models.MessageInsights{}, sessionPath: "/fixture/other.jsonl"})
+	left := sessionActivityMsg{path: "/fixture/0a1b2c3d.jsonl", id: "0a1b2c3d"}
+	updated, _ = updated.Update(left)
+	m = press(t, updated.(BreakdownModel), "p")
+	updated, _ = m.Update(left)
+	if m = updated.(BreakdownModel); !strings.HasPrefix(m.renderNotifyRow(), "  top 1 of 5") {
+		t.Errorf("the session left took the row from p: %q", m.renderNotifyRow())
 	}
 }
 

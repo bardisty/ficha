@@ -141,8 +141,8 @@ type BreakdownModel struct {
 	prevSessionID   string          // Session open before the last switch
 	prevSessionPath string          // Its file, for the go-back key (-)
 	sessionWatcher  *SessionWatcher // Watches for new session files
-	switchNotifyAt  time.Time       // When session switch notification started
-	switched        *switchNotice   // The last switch, for the notify row
+	switched        *switchNotice   // The last switch, until a key or a newer hint
+	seen            sessionsSeen    // Other sessions' last writes, for what's news
 	hint            *sessionHint    // Another session's activity; n switches to it
 	keysOpen        bool            // The ? key list covers the frame
 
@@ -177,10 +177,7 @@ type (
 		sessionPath string
 	}
 	// fadeMsg fires when the earliest highlight expires.
-	fadeMsg struct{}
-	// notifyExpiredMsg fires when the switch notice's time is up. Bubble
-	// Tea redraws after every message, and that redraw is all it's for.
-	notifyExpiredMsg  struct{}
+	fadeMsg           struct{}
 	breakdownErrorMsg struct {
 		err error
 		// sessionPath as in breakdownMsgsMsg: a stale load error for the old
@@ -265,8 +262,11 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// The mark holds the row through scrolling and sorting; the notify
 		// row's text gives way, so a held selection can't hide a hint or, in
-		// the compact frame, the insights.
+		// the compact frame, the insights. The switch notice explains a total
+		// that changed under the reader, and any key acknowledges it, as in
+		// watch.
 		m.selectionNotice = false
+		m.switched = nil
 		switch msg.String() {
 		case "q", "ctrl+c":
 			shutdownWatchers(m.closeOnce, m.closing, m.done, m.watcher, m.sessionWatcher, m.wg)
@@ -539,12 +539,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if outcome == activitySwitch {
 			return m.switchTo(msg.path, msg.id, true)
 		}
-		// A hint is newer than the selection, and takes the notify row, when
-		// none was showing or a session just started. More writes to sessions
-		// already active aren't news: a live one writes every few hundred
-		// milliseconds, and would wipe p's text before it could be read.
-		if outcome == activityHint && (!m.hintVisible() || msg.created) {
+		if outcome == activityHint && m.seen.news(msg, m.clock()) {
 			m.selectionNotice = false
+			m.switched = nil
 		}
 		m.hint = hint
 		return m, m.waitForNewSession()
@@ -574,9 +571,6 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshViewport()
 		}
 		return m, clockCmd(m.clockInterval(), m.clockGen)
-
-	case notifyExpiredMsg:
-		return m, nil
 
 	case subagentPollMsg:
 		if m.waiting() {
@@ -610,10 +604,10 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 		prevTotal += msg.Cost.TotalCost
 	}
 	m.switched = &switchNotice{auto: auto, prevTotal: prevTotal, hadTotal: len(m.messages) > 0}
+	m.seen.left(m.sessionID, m.lastActivity, m.clock())
 	m.prevSessionID, m.prevSessionPath = m.sessionID, m.sessionPath
 	m.sessionID = id
 	m.sessionPath = path
-	m.switchNotifyAt = time.Now()
 	if m.hint != nil && m.hint.id == id {
 		m.hint = nil
 	}
@@ -679,7 +673,6 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	load := m.startLoad()
 	cmds := []tea.Cmd{
 		load, func() tea.Msg { return m.watchFile() }, m.spinnerCmd(),
-		tea.Tick(switchNotifyDuration, func(time.Time) tea.Msg { return notifyExpiredMsg{} }),
 	}
 	// An automatic switch was reported by the session waiter, which has
 	// exited, so start another. A key press leaves that waiter blocked;
@@ -838,10 +831,12 @@ func (m BreakdownModel) frame() string {
 }
 
 // renderNotifyRow is a load error in words, then p's selection, the switch
-// notice for a few seconds after a switch, a hint about another session, or
-// a missing watcher, and blank otherwise. The switch notice and the
-// selection come first because they're brief and answer something the reader
-// just did. The hint outranks the watcher notice, as in watch: a watcher
+// notice, a hint about another session, or a missing watcher, and blank
+// otherwise. The selection, the switch notice and the hint follow watch's
+// rule, newest wins: the first two last until a key, and a hint that's news
+// clears both (see sessionsSeen), so whichever shows is the latest. A switch
+// clears the selection and a key clears the notice, so the two never stand
+// together. The hint outranks the watcher notice, as in watch: a watcher
 // usually fails for an inotify limit that takes the other with it, and the
 // hint, which fades once the other session goes quiet, is what n acts on.
 func (m BreakdownModel) renderNotifyRow() string {
@@ -858,7 +853,7 @@ func (m BreakdownModel) renderNotifyRow() string {
 		}
 		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Render(text)
 	}
-	if m.switched != nil && time.Since(m.switchNotifyAt) < switchNotifyDuration {
+	if m.switched != nil {
 		text := withinWidth(switchNoticeText(*m.switched, m.sessionID, m.prevSessionID, m.prevSessionPath != ""), m.panelWidth())
 		if m.noColor {
 			return "  " + text
