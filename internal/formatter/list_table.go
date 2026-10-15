@@ -149,7 +149,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	// renderPanel keeps for it.
 	fits := func(head string, project bool) bool {
 		need := append([]string{head}, fields[1:]...)
-		if project && opts.Project != "" {
+		if project && models.StripControl(opts.Project) != "" {
 			need = append(need, strings.Repeat(" ", min(lipgloss.Width(models.StripControl(opts.Project)), minProjectWidth)))
 		}
 		return lipgloss.Width(strings.Join(need, "  "+styles.BoxVerticalSep+"  ")) <= width-6
