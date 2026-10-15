@@ -1008,8 +1008,8 @@ func TestWrapHangingMarkedPathLongerThanWidth(t *testing.T) {
 	}
 }
 
-// A task fits by display columns, so a wide character counts twice, and a
-// cut never leaves a space before its ellipsis.
+// A task fits by display columns, so a wide character counts twice, a cut
+// never splits an emoji, and it never leaves a space before its ellipsis.
 func TestFitTask(t *testing.T) {
 	tests := []struct {
 		task  string
@@ -1020,6 +1020,8 @@ func TestFitTask(t *testing.T) {
 		{"Find the auth middleware", 14, "Find the auth…"},
 		{"Find the auth middleware", 15, "Find the auth… "},
 		{"認証ミドルウェアを探す", 12, "認証ミドル… "},
+		{"Check \u2600\ufe0f weather", 8, "Check…  "},
+		{"Pair \U0001F469\u200d\U0001F4BB review", 8, "Pair \U0001F469\u200d\U0001F4BB…"},
 		{"", 4, "    "},
 	}
 	for _, tt := range tests {
@@ -1107,5 +1109,14 @@ func TestTruncateRightAndTail(t *testing.T) {
 	}
 	if got := TruncateRight("whole", -1); got != "whole" {
 		t.Errorf("a negative width should leave the string whole, got %q", got)
+	}
+}
+
+// A workflow's name comes from the transcript, so a bidi override or a
+// newline in it doesn't reach the heading.
+func TestWorkflowLabelCleansName(t *testing.T) {
+	got := WorkflowLabel(models.WorkflowMeta{Name: "deploy \u202erollback\nnow", Status: "completed"})
+	if want := "workflow: deploy rollback now (completed)"; got != want {
+		t.Errorf("WorkflowLabel = %q, want %q", got, want)
 	}
 }

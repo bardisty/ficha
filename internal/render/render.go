@@ -308,9 +308,10 @@ func TruncateID(id string, maxLen int) string {
 func WorkflowLabel(meta models.WorkflowMeta) string {
 	const maxLen = 48
 
-	name := meta.Name
+	// The run's name is transcript text, like an agent's task.
+	name := models.OneLine(meta.Name)
 	if name == "" {
-		name = meta.RunID
+		name = models.OneLine(meta.RunID)
 	}
 	label := "workflow: " + name
 	if meta.Status != "" {
@@ -666,11 +667,8 @@ const MinTaskWidth = 12
 // so it counts display columns, not bytes or runes.
 func FitTask(task string, width int) string {
 	if lipgloss.Width(task) > width {
-		r := []rune(task)
-		for len(r) > 0 && lipgloss.Width(string(r))+lipgloss.Width(styles.Ellipsis) > width {
-			r = r[:len(r)-1]
-		}
-		task = strings.TrimRight(string(r), " ") + styles.Ellipsis
+		cut := strings.TrimSuffix(TruncateRight(task, width), styles.Ellipsis)
+		task = strings.TrimRight(cut, " ") + styles.Ellipsis
 	}
 	return task + strings.Repeat(" ", max(width-lipgloss.Width(task), 0))
 }
