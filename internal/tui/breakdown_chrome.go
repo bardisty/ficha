@@ -143,7 +143,11 @@ func (m *BreakdownModel) setFollow(on bool) {
 }
 
 // refreshViewport re-renders the viewport content: the table, or the empty
-// state once a load has found no messages. Auto-scroll keeps it at the bottom.
+// state once a load has found no messages. Auto-scroll keeps it at the
+// bottom; otherwise it shows the offset the reader chose, clamped to the
+// content. The clamp isn't kept: the viewport clamps on every SetContent,
+// and a window that grows and shrinks back, as a zoomed tmux pane does,
+// would otherwise come back rows away from the reader's line.
 func (m *BreakdownModel) refreshViewport() {
 	if !m.ready {
 		return
@@ -163,7 +167,26 @@ func (m *BreakdownModel) refreshViewport() {
 	m.viewport.SetContent(content)
 	if m.autoScroll {
 		m.viewport.GotoBottom()
+		return
 	}
+	m.viewport.SetYOffset(m.chosenY)
+}
+
+// scrollTo moves the view to line y as the reader's choice, which
+// refreshViewport keeps through reloads and resizes. Only the reader's own
+// actions go through it: scroll keys, p, s and a switch.
+func (m *BreakdownModel) scrollTo(y int) {
+	m.viewport.SetYOffset(y)
+	m.chosenY = m.viewport.YOffset()
+}
+
+// returnTo shows line y, a line the reader chose before: the sort anchor
+// after a reload, or the time-order line s goes back to. Unlike scrollTo it
+// keeps y as the choice even where this size clamps it, so a window grown
+// meanwhile still gives the line back when it shrinks.
+func (m *BreakdownModel) returnTo(y int) {
+	m.chosenY = y
+	m.viewport.SetYOffset(y)
 }
 
 // emptyStateText stands in for the table while the session has no replies.

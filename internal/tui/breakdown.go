@@ -54,8 +54,11 @@ type BreakdownModel struct {
 	// parent-file write doesn't re-parse every unchanged agent.
 	agentCache *analyzer.AgentParseCache
 
-	// Viewport for scrolling
+	// Viewport for scrolling. chosenY is the offset the reader last chose,
+	// which only their actions set (see scrollTo); refreshViewport returns to
+	// it when not following.
 	viewport   viewport.Model
+	chosenY    int
 	autoScroll bool
 	ready      bool // viewport initialized
 	// pausedAt is the message count when auto-scroll last turned off; rows
@@ -317,10 +320,11 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "g", "home":
 			m.setFollow(false)
-			m.viewport.GotoTop()
+			m.scrollTo(0)
 
 		case "G", "end":
 			m.viewport.GotoBottom()
+			m.scrollTo(m.viewport.YOffset())
 			m.setFollow(true)
 
 		default:
@@ -330,6 +334,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			before := m.viewport.YOffset()
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
+			// A key that moves nothing leaves the choice alone, as in watch.
+			if m.viewport.YOffset() != before {
+				m.scrollTo(m.viewport.YOffset())
+			}
 			// A downward key at the bottom moves nothing but still means
 			// "take me to the newest", so it resumes following too.
 			if m.viewport.YOffset() != before || (m.viewport.AtBottom() && isDownKey(m.viewport.KeyMap, msg)) {
@@ -362,9 +370,6 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetHeight(vpHeight)
 		}
 		m.refreshViewport()
-		// A taller viewport can leave the old offset past the end of the
-		// content; re-setting it clamps it.
-		m.viewport.SetYOffset(m.viewport.YOffset())
 
 	case spinner.TickMsg:
 		// Let the spinner stop once nothing shows it; spinnerCmd restarts it.
@@ -645,8 +650,8 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.relayout()
 	if m.ready {
 		m.viewport.SetContent("")
-		m.viewport.GotoTop()
 	}
+	m.scrollTo(0)
 	// Drop the previous session's cached agent parses
 	m.agentCache = analyzer.NewAgentParseCache()
 	// Fingerprint the new session's subagent tree; the pending reload
