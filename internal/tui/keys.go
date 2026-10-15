@@ -60,7 +60,7 @@ func WatchKeys() []Key {
 // carries the help-line hint for both.
 func BreakdownKeys() []Key {
 	return []Key{quitKey, listKey, lineKey, pageKey, halfKey, endsKey,
-		{Keys: "p", Does: "go to the next costliest row", hint: "p/s peak/sort"},
+		{Keys: "p", Does: "next costliest; esc clears", hint: "p/s peak/sort"},
 		{Keys: "s", Does: "sort by cost on/off"},
 		followKey, hintedKey, backKey, reloadKey, stopKey}
 }

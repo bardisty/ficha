@@ -64,9 +64,12 @@ type BreakdownModel struct {
 	// pausePending: auto-scroll went off before any load landed, so the next
 	// load's rows are the baseline, not new arrivals.
 	pausePending bool
-	// selectedKey is the row p last jumped to (breakdownMsgKey), highlighted
-	// until another key is pressed; "" when none.
-	selectedKey string
+	// selectedKey is the row p last jumped to (breakdownMsgKey), marked
+	// until esc or a session switch; "" when none. selectionNotice is set
+	// while the notify row describes it: from p until the next key, or until
+	// a hint about another session takes the row.
+	selectedKey     string
+	selectionNotice bool
 	// lineRows maps each viewport content line to the display Index of the
 	// message on it, or 0 for a day divider; linePos to the message's
 	// position in messages. See tableLines.
@@ -255,9 +258,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.keysOpen, done = toggleKeyList(m.keysOpen, msg); done {
 			return m, nil
 		}
-		if msg.String() != "p" {
-			m.clearSelection()
-		}
+		// The mark holds the row through scrolling and sorting; the notify
+		// row's text gives way, so a held selection can't hide a hint or, in
+		// the compact frame, the insights.
+		m.selectionNotice = false
 		switch msg.String() {
 		case "q", "ctrl+c":
 			shutdownWatchers(m.closeOnce, m.closing, m.done, m.watcher, m.sessionWatcher, m.wg)
@@ -280,6 +284,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "p":
 			m.selectNextTop()
+
+		case "esc":
+			m.clearSelection()
 
 		case "s":
 			m.toggleSort()
@@ -527,6 +534,13 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if outcome == activitySwitch {
 			return m.switchTo(msg.path, msg.id, true)
 		}
+		// A hint is newer than the selection, and takes the notify row, when
+		// none was showing or a session just started. More writes to sessions
+		// already active aren't news: a live one writes every few hundred
+		// milliseconds, and would wipe p's text before it could be read.
+		if outcome == activityHint && (!m.hintVisible() || msg.created) {
+			m.selectionNotice = false
+		}
 		m.hint = hint
 		return m, m.waitForNewSession()
 
@@ -621,7 +635,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.autoScroll = true
 	m.pausedAt = 0
 	m.pausePending = false
-	m.selectedKey = ""
+	m.clearSelection()
 	m.lineRows, m.linePos = nil, nil
 	m.sortByCost = false
 	m.relayout()
@@ -1201,8 +1215,18 @@ func (m BreakdownModel) renderLine(i int) string {
 	if m.lineRows[i] == 0 {
 		return m.renderDayMarker(msg.Timestamp)
 	}
-	highlight := m.isNewMessage(msg) || (m.selectedKey != "" && !m.noColor && breakdownMsgKey(msg) == m.selectedKey)
-	return m.renderRow(msg, highlight, m.table)
+	selected := m.selectedKey != "" && breakdownMsgKey(msg) == m.selectedKey
+	row := m.renderRow(msg, m.isNewMessage(msg) || (selected && !m.noColor), m.table)
+	if !selected {
+		return row
+	}
+	// The mark goes in the indent, which every row leaves blank, so no
+	// column moves; it's what marks the row when color is off.
+	mark := styles.Pointer
+	if !m.noColor {
+		mark = styles.HighlightStyle.Render(mark)
+	}
+	return mark + strings.Repeat(" ", bdIndent-1) + row[bdIndent:]
 }
 
 // tableView draws the table rows in the viewport's window. The viewport

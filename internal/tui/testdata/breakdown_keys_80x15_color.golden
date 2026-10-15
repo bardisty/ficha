@@ -5,7 +5,7 @@
   [38;5;43mspace/b, pgdn/pgup[m  scroll a page                                            
   [38;5;43md/u, ctrl+d/u[m       scroll half a page                                       
   [38;5;43mg/G, home/end[m       go to the top or bottom                                  
-  [38;5;43mp[m                   go to the next costliest row                             
+  [38;5;43mp[m                   next costliest; esc clears                               
   [38;5;43ms[m                   sort by cost on/off                                      
   [38;5;43mf[m                   follow new sessions on/off                               
   [38;5;43mn[m                   switch to the newer session                              

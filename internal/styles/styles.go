@@ -49,6 +49,7 @@ var (
 	MoreAbove      string // ↑ content hidden above a viewport
 	MoreBelow      string // ↓ content hidden below a viewport
 	Ellipsis       string // … truncation marker
+	Pointer        string // ▸ marks the selected row in a table's indent
 )
 
 var asciiGlyphs bool
@@ -71,7 +72,7 @@ func SetASCII(ascii bool) {
 		TreeBranch, TreeLast, TreeRail, GroupRule = "+-", "`-", "|", "--"
 		ScrollKeys, Ellipsis = "j/k", "..."
 		MoreAbove, MoreBelow = "^", "v"
-		IdleDot = "o"
+		IdleDot, Pointer = "o", ">"
 		return
 	}
 	BoxTopLeft, BoxTopRight, BoxBottomLeft, BoxBottomRight = "╔", "╗", "╚", "╝"
@@ -83,7 +84,7 @@ func SetASCII(ascii bool) {
 	TreeBranch, TreeLast, TreeRail, GroupRule = "├─", "└─", "│", "──"
 	ScrollKeys, Ellipsis = "↑↓", "…"
 	MoreAbove, MoreBelow = "↑", "↓"
-	IdleDot = "○"
+	IdleDot, Pointer = "○", "▸"
 }
 
 // ASCII reports whether the ASCII glyph set is active.
