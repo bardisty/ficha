@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -93,5 +95,48 @@ func TestSubagentSignatureSeesMetaFile(t *testing.T) {
 	}
 	if subagentTreeSignature(dir, sessionID) == before {
 		t.Error("signature unchanged after the meta file appeared")
+	}
+}
+
+// Every row's cost lines up, the "N finished agents" fold's included, even
+// where a very short task takes the count's place and leaves the fold less
+// room than its label and count need.
+func TestWatchFoldStaysAlignedBesideShortTasks(t *testing.T) {
+	// The cost's decimal point, in display columns: the cells align it.
+	decimal := func(line string) int {
+		i := strings.LastIndex(line, "$")
+		if i < 0 {
+			return -1
+		}
+		return lipgloss.Width(line[:i+strings.IndexByte(line[i:], '.')])
+	}
+	for _, finished := range []int{3, 12} {
+		for taskWidth := 1; taskWidth <= 4; taskWidth++ {
+			for width := 53; width <= 57; width++ {
+				a := foldAnalysis()
+				for i := 3; i < finished; i++ { // more finished plain agents, ahead of the running one
+					extra := foldAgent(fmt.Sprintf("e%010d", i), "", foldNow.Add(-5*time.Hour), foldNow.Add(-4*time.Hour), 3, 0.10)
+					a.Agents = append([]models.AgentAnalysis{extra}, a.Agents...)
+				}
+				for i := range a.Agents {
+					if a.Agents[i].AgentID == "a2000000000" {
+						a.Agents[i].AgentType = strings.Repeat("Q", taskWidth)
+					}
+				}
+				frame := watchAt(t, a, width)
+				want := -1
+				for _, line := range strings.Split(frame, "\n") {
+					if !strings.Contains(line, "$") || !(strings.Contains(line, "[A") || strings.Contains(line, "finished agents") ||
+						strings.Contains(line, "Parent session") || strings.Contains(line, "Agents subtotal")) {
+						continue
+					}
+					if want < 0 {
+						want = decimal(line)
+					} else if got := decimal(line); got != want {
+						t.Errorf("%d finished, %d-column task, width %d: cost at %d, want %d:\n%s", finished, taskWidth, width, got, want, line)
+					}
+				}
+			}
+		}
 	}
 }

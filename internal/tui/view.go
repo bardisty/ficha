@@ -425,14 +425,17 @@ func (m Model) renderAgentBreakdownContent() string {
 			}
 		case agentRowFinished:
 			// The fold has no task, so where the agents' count makes way for
-			// theirs it keeps its own, in the room its task cell leaves.
-			labelWidth := 22 + tasks.cell()
-			if tasks.noMsgs {
-				labelWidth -= agentMsgsWidth
+			// theirs it keeps its own, in the room its task cell leaves. A
+			// task cell too narrow for the label and the count leaves the
+			// label alone, as the agents' rows are.
+			text := fmt.Sprintf("%d finished agents", row.count)
+			labelWidth, noMsgs := 22+tasks.cell(), tasks.noMsgs
+			if noMsgs && lipgloss.Width(text) <= labelWidth-agentMsgsWidth {
+				labelWidth, noMsgs = labelWidth-agentMsgsWidth, false
 			}
-			label := fmt.Sprintf("%-*s", labelWidth, fmt.Sprintf("%d finished agents", row.count))
+			label := fmt.Sprintf("%-*s", labelWidth, text)
 			costStr := render.CostStyled(row.cost, 11, false, m.noColor)
-			msgs, ctx, gap := m.agentColumns(row.msgs, nil, false, m.agentShrink(tasks))
+			msgs, ctx, gap := m.agentColumns(row.msgs, nil, noMsgs, m.agentShrink(tasks))
 			if m.noColor {
 				sb.WriteString("    " + label + msgs + ctx + gap + costStr + "\n")
 			} else {
