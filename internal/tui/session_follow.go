@@ -72,12 +72,19 @@ func (s *sessionsSeen) news(msg sessionActivityMsg, now time.Time) bool {
 	return msg.created || !ok || now.Sub(last) >= idleAfter
 }
 
-// left records the session a view leaves in a switch at last, its newest
-// write. If that was recent, the session's next write isn't news: the switch
-// notice names it and the key back to it. One quiet for idleAfter or longer
-// is news when it wakes, like any other.
-func (s *sessionsSeen) left(id string, last, now time.Time) {
-	if now.Sub(last) < idleAfter {
+// left records the session a view leaves in a switch at its newest write:
+// lastMsg, its newest priced message, or fileWrite, when its file last
+// changed, whichever is later. A prompt or a tool result is a write too, and
+// adds no priced message. If that was recent, the session's next write isn't
+// news: the switch notice names it and the key back to it. One quiet for
+// idleAfter or longer is news when it wakes, like any other. left never moves
+// an entry back, since news may have seen the session write since then.
+func (s *sessionsSeen) left(id string, lastMsg, fileWrite, now time.Time) {
+	last := lastMsg
+	if fileWrite.After(last) {
+		last = fileWrite
+	}
+	if now.Sub(last) < idleAfter && last.After((*s)[id]) {
 		s.saw(id, last)
 	}
 }

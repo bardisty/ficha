@@ -92,6 +92,7 @@ type BreakdownModel struct {
 	waitingHint      []string // the line under the waiting text; see waitingLines
 	lastActivity     time.Time
 	activityFromFile bool
+	fileWrite        time.Time        // the session file's mtime at the last load; see sessionsSeen.left
 	now              func() time.Time // tests pin the clock; nil means time.Now
 
 	// Change tracking for highlight animation. Keyed by message identity, not
@@ -416,6 +417,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.relayout()
 		slowClock := m.clockInterval() > time.Second
 		m.lastActivity, m.activityFromFile = breakdownLastActivity(msg.messages, msg.modTime)
+		m.fileWrite = msg.modTime
 		// A message after an idle stretch: the pending clock tick is up to
 		// 15s out, so start a 1s chain now for the seconds count and let the
 		// slow one lapse.
@@ -609,7 +611,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 		prevTotal += msg.Cost.TotalCost
 	}
 	m.switched = &switchNotice{auto: auto, prevTotal: prevTotal, hadTotal: len(m.messages) > 0}
-	m.seen.left(m.sessionID, m.lastActivity, m.clock())
+	m.seen.left(m.sessionID, m.lastActivity, m.fileWrite, m.clock())
 	m.prevSessionID, m.prevSessionPath = m.sessionID, m.sessionPath
 	m.sessionID = id
 	m.sessionPath = path
@@ -637,7 +639,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.loaded = false
 	m.err = nil
 	m.newMsgKeys = make(map[string]time.Time)
-	m.lastActivity = time.Time{}
+	m.lastActivity, m.fileWrite = time.Time{}, time.Time{}
 	m.activityFromFile = false
 	// The new session opens following its newest row, whatever the
 	// reader had scrolled to in the old one.
