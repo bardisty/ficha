@@ -123,7 +123,7 @@ ficha shows the sessions of the project you're in, so run it from the directory 
 | `ficha [show]` | The latest session, or the one you name: cost, tokens, context and agents |
 | `ficha watch` | The latest session as a live dashboard, switching to each new session as it starts |
 | `ficha breakdown` | Every message, live, with its agent, model, cost and tokens. Sort by cost or step through the costliest to see what drove the total |
-| `ficha list` | This project's sessions: when, length, model, agents, cost and title |
+| `ficha list` | This project's sessions: when, length, model, agents, cost and title. `--since` and `--until` keep the ones active in a window |
 | `ficha summary` | Totals across this project's sessions |
 | `ficha global` | Totals across every project |
 | `ficha statusline` | A line for Claude Code's status line: model, context, recent cost per message and the session's total |
@@ -195,8 +195,8 @@ The rest belong to particular commands:
 | `-d, --details` | `global` | Show every project in the table, with a cumulative column when sorted by cost |
 | `-n, --top <n>` | `global` | How many projects the table shows (default 10) |
 | `--sort-by <key>` | `global` | Sort by `cost` (the default), `sessions`, `name` or `activity` |
-| `--since <when>` | `summary`, `global` | Count only messages from then on: `2026-09-01`, `today`, `7d`, `12h` |
-| `--until <when>` | `summary`, `global` | Count only messages before then; a date includes that whole day |
+| `--since <when>` | `list`, `summary`, `global` | Count only messages from then on: `2026-09-01`, `today`, `7d`, `12h` |
+| `--until <when>` | `list`, `summary`, `global` | Count only messages before then; a date includes that whole day |
 
 Bare `ficha` works like `show` and takes the same project flags. A flag on a command that doesn't use it is an error. `--no-follow` and `--messages` print a warning where they'd have no effect.
 

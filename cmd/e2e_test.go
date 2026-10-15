@@ -1938,3 +1938,92 @@ func TestE2EListOrdersByLastMessage(t *testing.T) {
 		t.Errorf("summary -d csv order %v, want %v", ids, oldestFirst)
 	}
 }
+
+// list --since keeps the sessions summary -d --since keeps, with the same
+// windowed cost and message count, so the two can be read side by side.
+func TestE2EListWindowAgreesWithSummaryDetails(t *testing.T) {
+	setupE2EFixture(t)
+	type session struct {
+		ID       string
+		Messages int
+		Cost     float64
+	}
+	for _, window := range [][]string{
+		{"--since", "2026-02-02"},
+		{"--since", "2026-02-01T10:03Z"},
+		{"--until", "2026-02-01T23:00Z"},
+		{"--since", "2026-02-01T10:03Z", "--until", "2026-02-02T09:06Z"},
+	} {
+		t.Run(strings.Join(window, " "), func(t *testing.T) {
+			out, _, err := executeCLISplit(t, append([]string{"list", projFlag, "-f", "json"}, window...)...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var listed []struct {
+				SessionID    string `json:"session_id"`
+				MessageCount int    `json:"message_count"`
+				TotalCost    struct {
+					TotalCost float64 `json:"total_cost"`
+				} `json:"total_cost"`
+			}
+			mustJSON(t, out, &listed)
+			var fromList []session
+			for _, s := range listed {
+				fromList = append(fromList, session{s.SessionID, s.MessageCount, s.TotalCost.TotalCost})
+			}
+
+			out, _, err = executeCLISplit(t, append([]string{"summary", projFlag, "-d", "-f", "json"}, window...)...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var detail struct {
+				Sessions []struct {
+					SessionID    string `json:"session_id"`
+					MessageCount int    `json:"message_count"`
+					TotalCost    struct {
+						TotalCost float64 `json:"total_cost"`
+					} `json:"total_cost"`
+				} `json:"sessions"`
+			}
+			mustJSON(t, out, &detail)
+			var fromSummary []session
+			// summary -d lists oldest first, list newest first.
+			for _, s := range slices.Backward(detail.Sessions) {
+				fromSummary = append(fromSummary, session{s.SessionID, s.MessageCount, s.TotalCost.TotalCost})
+			}
+			if len(fromList) == 0 || !slices.Equal(fromList, fromSummary) {
+				t.Errorf("list:\n%+v\nsummary -d:\n%+v", fromList, fromSummary)
+			}
+		})
+	}
+
+	out, _, err := executeCLISplit(t, "list", projFlag, "--until", "2026-01-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "No messages in start "+styles.Arrow+" Jan 01") {
+		t.Errorf("empty window: %q", out)
+	}
+}
+
+// A session the window leaves out still counts its unreadable lines, which
+// could have been inside it, in list's warning as in summary's.
+func TestE2EListWindowWarnsAsSummaryDoes(t *testing.T) {
+	root := setupE2EFixture(t)
+	early := filepath.Join(root, "projects", e2eProjDir, "eeeeeeee-1111-2222-3333-444444444444.jsonl")
+	line := e2eMsg("2026-01-15T10:00:00Z", "e1", "claude-opus-4-8", 100, 50, 0, 0, 0)
+	if err := os.WriteFile(early, []byte(line+"\nnot json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"list"}, {"list", "-f", "json"}, {"summary", "-d"},
+	} {
+		_, stderr, err := executeCLISplit(t, append(args, projFlag, "--since", "2026-02-01")...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(stderr, "1 unparseable line(s) skipped") {
+			t.Errorf("%v: stderr %q, want the skipped line", args, stderr)
+		}
+	}
+}

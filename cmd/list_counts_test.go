@@ -81,7 +81,7 @@ func listEntries(t *testing.T, proj string) (got, want []models.SessionEntry) {
 		t.Fatal(err)
 	}
 	for _, r := range results {
-		got = append(got, countedEntry(r))
+		got = append(got, countedEntry(r, false))
 	}
 	return got, want
 }

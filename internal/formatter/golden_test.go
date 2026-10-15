@@ -392,6 +392,26 @@ func TestGoldenSessionList(t *testing.T) {
 	checkGolden(t, "session_list", FormatSessionListTable(goldenListResults(), true, goldenListOptions))
 }
 
+// A window adds its range to the header, which keeps it when the box is too
+// narrow for the project.
+func TestGoldenSessionListWindow(t *testing.T) {
+	opts := goldenListOptions
+	opts.Window = &models.TimeWindow{Since: time.Date(2026, 1, 8, 0, 0, 0, 0, time.Local)}
+	checkGolden(t, "session_list_window", FormatSessionListTable(goldenListResults()[:2], true, opts))
+	opts.Width = 40
+	checkGolden(t, "session_list_window_40", FormatSessionListTable(goldenListResults()[:2], true, opts))
+}
+
+// A window with no messages in it prints the line summary prints.
+func TestSessionListEmptyWindow(t *testing.T) {
+	opts := goldenListOptions
+	opts.Window = &models.TimeWindow{Since: time.Date(2026, 1, 8, 0, 0, 0, 0, time.Local)}
+	got := FormatSessionListTable(goldenListResults()[2:], true, opts)
+	if want := emptyWindow(*opts.Window); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestGoldenSessionListColor(t *testing.T) {
 	checkGolden(t, "session_list_color", FormatSessionListTable(goldenListResults(), false, goldenListOptions))
 }

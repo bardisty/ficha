@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
@@ -23,8 +24,13 @@ message's time, the one show calls "Last active".
 
 Examples:
   ficha list                    List all sessions
+  ficha list --since 7d         Sessions with messages in the last 7 days
   ficha list -f json            Output as JSON
-  ficha list -f csv             Output as CSV`,
+  ficha list -f csv             Output as CSV
+
+--since and --until keep the sessions with a message inside the window, as
+summary --details does. WHEN, LENGTH and COST cover only the messages
+inside it, and so do message_count and the agent counts in json and csv.`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -33,13 +39,18 @@ Examples:
 	}
 
 	addProjectFlags(listCmd, cfg)
+	addWindowFlags(listCmd, cfg)
 
 	return listCmd
 }
 
 func runList(cfg *config) error {
+	window, err := cfg.timeWindow(time.Now())
+	if err != nil {
+		return err
+	}
 	if cfg.format == "table" {
-		return runListTable(cfg)
+		return runListTable(cfg, window)
 	}
 
 	sessions, projectDir, err := loadProjectSessionsWithDir(cfg)
@@ -48,7 +59,7 @@ func runList(cfg *config) error {
 	}
 
 	// Priced the way the table is, so costs match summary -d.
-	aggregate, results, err := analyzer.AnalyzeMultipleSessions(sessions)
+	aggregate, results, err := analyzer.AnalyzeMultipleSessionsInWindow(sessions, window)
 	if err != nil {
 		results = make([]models.SessionResult, len(sessions))
 		for i, s := range sessions {
@@ -57,7 +68,7 @@ func runList(cfg *config) error {
 	}
 	sortByLastActive(results)
 	for i := range results {
-		results[i].Entry = countedEntry(results[i])
+		results[i].Entry = countedEntry(results[i], !window.IsZero())
 	}
 
 	// Warn about the inputs the parse dropped — otherwise a session whose
@@ -83,6 +94,9 @@ func runList(cfg *config) error {
 		}
 	}
 	skips.details = labelSkips("", details)
+	if !window.IsZero() && aggregate != nil {
+		skips = windowSkips(skips.counts, aggregate)
+	}
 	var warnings bytes.Buffer
 	skips.write(&warnings, cfg.verbose)
 	if aggregate != nil {
@@ -112,14 +126,20 @@ func runList(cfg *config) error {
 // those out of its totals as already billed. Agents are never copied, so
 // their figures are the analysis's own.
 //
+// Under a window, the message count is the window's share, as summary -d
+// counts it, so the two agree.
+//
 // A session whose transcript can't be read has no analysis. Its agents still
 // count, so they are parsed here for it.
-func countedEntry(r models.SessionResult) models.SessionEntry {
+func countedEntry(r models.SessionResult, windowed bool) models.SessionEntry {
 	if r.Analysis == nil {
 		return parser.CountSessionMessages(r.Entry)
 	}
 	entry := r.Entry
 	entry.MessageCount = r.Analysis.TranscriptMessages + r.Analysis.AgentMessageCount
+	if windowed {
+		entry.MessageCount = r.Analysis.MessageCount
+	}
 	entry.AgentCount = r.Analysis.AgentCount
 	entry.AgentMessageCount = r.Analysis.AgentMessageCount
 	entry.SkippedAgents = r.Analysis.SkippedAgents
@@ -131,14 +151,14 @@ func countedEntry(r models.SessionResult) models.SessionEntry {
 // runListTable prices every session the way summary --details does, cross-
 // session duplicates attributed once, so a session's cost here matches its
 // row there.
-func runListTable(cfg *config) error {
+func runListTable(cfg *config, window models.TimeWindow) error {
 	sessions, projectDir, err := loadProjectSessionsWithDir(cfg)
 	if err != nil {
 		return err
 	}
 	pickPalette(cfg)
 
-	aggregate, results, err := analyzer.AnalyzeMultipleSessions(sessions)
+	aggregate, results, err := analyzer.AnalyzeMultipleSessionsInWindow(sessions, window)
 	if err != nil {
 		// Every transcript failed to parse. List them anyway, as unreadable.
 		results = make([]models.SessionResult, len(sessions))
@@ -156,6 +176,9 @@ func runListTable(cfg *config) error {
 		skips.agents += d.Agents
 		skips.lines += d.Lines
 	}
+	if !window.IsZero() && aggregate != nil {
+		skips = windowSkips(skips.counts, aggregate)
+	}
 	var warnings bytes.Buffer
 	skips.write(&warnings, cfg.verbose)
 	if aggregate != nil {
@@ -163,12 +186,30 @@ func runListTable(cfg *config) error {
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
 
-	output := formatter.FormatSessionListTable(results, cfg.noColor, formatter.ListTableOptions{
+	opts := formatter.ListTableOptions{
 		Project: parser.ProjectDisplayName(projectDir),
 		Width:   terminalWidth(cfg.stdout),
-	})
+	}
+	if !window.IsZero() {
+		opts.Window = &window
+	}
+	output := formatter.FormatSessionListTable(results, cfg.noColor, opts)
 	printReport(cfg, &warnings, output)
 	return nil
+}
+
+// windowSkips is the skip warning under a window, the aggregate's as summary
+// gives it. A session with nothing inside the window drops out of the rows,
+// but what couldn't be read in it still counts: ficha can't tell whether it
+// fell inside.
+func windowSkips(counts string, aggregate *models.SessionAnalysis) skipWarning {
+	return skipWarning{
+		counts:   counts,
+		sessions: aggregate.SkippedSessions,
+		agents:   aggregate.SkippedAgents,
+		lines:    aggregate.SkippedLines,
+		details:  labelSkips("", aggregate.SkipDetails),
+	}
 }
 
 // sortByLastActive sorts results by their last message, most recent first,
