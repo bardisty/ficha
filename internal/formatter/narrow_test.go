@@ -152,6 +152,24 @@ func TestHeaderWindowFitsNarrowBox(t *testing.T) {
 	}
 }
 
+// A project shorter than the room reserved for a cut one keeps its place
+// beside a window with times on both ends. One that won't fit even cut to
+// that room still gives way.
+func TestGoldenHeaderTwoEndedWindow(t *testing.T) {
+	a := goldenSummaryAnalysis()
+	a.Project = "/srv/proj0"
+	a.SessionCount = 5
+	a.Window = &models.TimeWindow{
+		Since: time.Date(2026, 1, 13, 14, 30, 0, 0, time.UTC),
+		Until: time.Date(2026, 1, 19, 14, 30, 0, 0, time.UTC),
+	}
+	checkGolden(t, "header_two_ended_window", renderHeaderPanel(a, reportWidth(0), true))
+	a.Project = "~/source/claude-code-usage"
+	if out := renderHeaderPanel(a, reportWidth(0), true); strings.Contains(out, "usage") || !strings.Contains(out, "5 sessions") {
+		t.Errorf("want the long project dropped and the count kept:\n%s", out)
+	}
+}
+
 // A workflow's status goes whole before its name is cut, and a cut never
 // leaves a space before the ellipsis, piped or narrowed alike.
 func TestFitWorkflowLabel(t *testing.T) {
