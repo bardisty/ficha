@@ -9,7 +9,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/render"
-	"github.com/mattn/go-runewidth"
 )
 
 // narrowReports renders every show and summary fixture at a terminal width,
@@ -234,7 +233,7 @@ func TestShowAgentCostsAlignAsLabelColumnGrows(t *testing.T) {
 			for line := range strings.SplitSeq(section, "\n") {
 				plain := ansiRe.ReplaceAllString(line, "")
 				if i := strings.LastIndex(plain, "$"); i >= 0 {
-					dots = append(dots, runewidth.StringWidth(plain[:i+strings.Index(plain[i:], ".")]))
+					dots = append(dots, lipgloss.Width(plain[:i+strings.Index(plain[i:], ".")]))
 				}
 			}
 			if len(dots) != 9 {
@@ -262,7 +261,7 @@ func TestWorkflowLabelKeepsStatusPastTheCap(t *testing.T) {
 	if want := "workflow: review-changes-across-the-b… (running)"; got != want {
 		t.Errorf("long name: got %q, want %q", got, want)
 	}
-	if w, limit := runewidth.StringWidth(got), runewidth.StringWidth(render.WorkflowLabel(long)); w != limit {
+	if w, limit := lipgloss.Width(got), lipgloss.Width(render.WorkflowLabel(long)); w != limit {
 		t.Errorf("long name: %d wide, want the cap's %d", w, limit)
 	}
 	// Cut at the cap as one string, this would end in "(co…".

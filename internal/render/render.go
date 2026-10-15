@@ -20,6 +20,7 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/styles"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Cost formats a dollar amount for human output: two decimals from $1 up
@@ -672,6 +673,37 @@ func FitTask(task string, width int) string {
 		task = strings.TrimRight(string(r), " ") + styles.Ellipsis
 	}
 	return task + strings.Repeat(" ", max(width-lipgloss.Width(task), 0))
+}
+
+// TruncateRight fits s into width display columns, ending in an ellipsis
+// when it's cut. A negative width leaves s whole, and a zero width, with no
+// room even for the ellipsis, leaves nothing. It measures and cuts whole
+// graphemes as lipgloss.Width does, so an emoji with a variation selector
+// counts the two columns terminals draw it in.
+func TruncateRight(s string, width int) string {
+	if width < 0 || lipgloss.Width(s) <= width {
+		return s
+	}
+	if width == 0 {
+		return ""
+	}
+	return ansi.Truncate(s, width, styles.Ellipsis)
+}
+
+// Tail is the longest end of s, in whole graphemes, that fits width display
+// columns. ansi.TruncateLeft keeps a wide character the cut falls inside,
+// which would overrun width, so Tail cuts the head with ansi.Truncate, which
+// drops it.
+func Tail(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	for n := max(lipgloss.Width(s)-width, 0); ; n++ {
+		head := ansi.Truncate(s, n, "")
+		if tail := s[len(head):]; lipgloss.Width(tail) <= width {
+			return tail
+		}
+	}
 }
 
 // AgentContextWidth is the width of AgentContextCell: "100% ctx".

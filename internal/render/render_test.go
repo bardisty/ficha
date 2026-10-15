@@ -1073,3 +1073,38 @@ func TestWeekdayClock(t *testing.T) {
 		}
 	}
 }
+
+// TruncateRight and Tail measure as lipgloss.Width does and cut whole
+// graphemes: an emoji with a variation selector is two columns, a ZWJ
+// sequence is never split, and a wide character the cut falls inside goes.
+func TestTruncateRightAndTail(t *testing.T) {
+	sun := "☀️"
+	coder := "\U0001F469‍\U0001F4BB"
+	for _, tt := range []struct {
+		s           string
+		width       int
+		right, tail string
+	}{
+		{"short", 10, "short", "short"},
+		{"ab" + sun + "cd", 4, "ab…", sun + "cd"},
+		{"ab" + sun + "cd", 3, "ab…", "cd"},
+		{"x" + coder + "y", 3, "x…", coder + "y"},
+		{"日本語", 3, "日…", "語"},
+		{"日本語", 0, "", ""},
+	} {
+		if got := TruncateRight(tt.s, tt.width); got != tt.right {
+			t.Errorf("TruncateRight(%q, %d) = %q, want %q", tt.s, tt.width, got, tt.right)
+		}
+		if got := Tail(tt.s, tt.width); got != tt.tail {
+			t.Errorf("Tail(%q, %d) = %q, want %q", tt.s, tt.width, got, tt.tail)
+		}
+		for _, got := range []string{TruncateRight(tt.s, tt.width), Tail(tt.s, tt.width)} {
+			if w := lipgloss.Width(got); w > tt.width {
+				t.Errorf("%q is %d columns, wider than %d", got, w, tt.width)
+			}
+		}
+	}
+	if got := TruncateRight("whole", -1); got != "whole" {
+		t.Errorf("a negative width should leave the string whole, got %q", got)
+	}
+}

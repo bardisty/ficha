@@ -10,7 +10,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/mattn/go-runewidth"
 )
 
 // globalAnalysisWithProjects builds a minimal GlobalAnalysis for table rendering.
@@ -179,7 +178,7 @@ func TestTruncateLeft(t *testing.T) {
 				if !utf8.ValidString(got) {
 					t.Errorf("%s: result is not valid UTF-8: %q", tt.name, got)
 				}
-				if w := runewidth.StringWidth(got); w > tt.maxWidth {
+				if w := lipgloss.Width(got); w > tt.maxWidth {
 					t.Errorf("%s: display width %d exceeds max %d: %q", tt.name, w, tt.maxWidth, got)
 				}
 			}
@@ -197,7 +196,7 @@ func TestTruncateLeft(t *testing.T) {
 		if !strings.HasSuffix(got, "service/worktrees/fix-invoice-rounding") {
 			t.Errorf("the distinctive tail should survive, got %q", got)
 		}
-		if runewidth.StringWidth(got) != 45 || !strings.HasPrefix(got, "…") {
+		if lipgloss.Width(got) != 45 || !strings.HasPrefix(got, "…") {
 			t.Errorf("want 45 columns starting with the ellipsis, got %q", got)
 		}
 	})

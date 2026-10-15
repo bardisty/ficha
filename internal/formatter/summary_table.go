@@ -11,7 +11,6 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/mattn/go-runewidth"
 )
 
 // FormatSummaryTableWithDetails renders the summary table with per-session
@@ -194,7 +193,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	if slices.ContainsFunc(sorted, func(r models.SessionResult) bool { return r.Nested != "" }) {
 		projectWant = len("PROJECT")
 		for _, r := range sorted {
-			projectWant = max(projectWant, runewidth.StringWidth(r.Nested))
+			projectWant = max(projectWant, lipgloss.Width(r.Nested))
 		}
 		projectRoom = 2 + len("PROJECT")
 	}
@@ -287,7 +286,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 				modelWidth = max(modelWidth, min(full, max(maxModelWidth, cut)))
 			}
 			for _, wf := range r.Analysis.Workflows {
-				label := treeIndent + treeStep + runewidth.StringWidth(workflowLabel(wf)) + 2
+				label := treeIndent + treeStep + lipgloss.Width(workflowLabel(wf)) + 2
 				modelWidth = max(modelWidth, min(label-costCol()+modelWidth, maxModelWidth))
 			}
 		}
@@ -346,7 +345,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		if project == "" {
 			project = "."
 		}
-		project = dim(truncateRight(project, projectWidth))
+		project = dim(render.TruncateRight(project, projectWidth))
 
 		// A session with no replies yet has nothing to price, so it reads
 		// as list shows it, dimmed whole, rather than as a session that ran
@@ -500,7 +499,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 		if last {
 			return strings.Repeat(" ", treeStep)
 		}
-		return styles.TreeRail + strings.Repeat(" ", treeStep-runewidth.StringWidth(styles.TreeRail))
+		return styles.TreeRail + strings.Repeat(" ", treeStep-lipgloss.Width(styles.TreeRail))
 	}
 	// line pads left out to costCol and appends the cost cell.
 	line := func(left string, cost float64, costColor color.Color) string {
@@ -573,13 +572,13 @@ func workflowLabel(meta models.WorkflowMeta) string {
 		return label
 	}
 	// Cut, the label is as wide as the cap allows.
-	room := runewidth.StringWidth(label) - runewidth.StringWidth(suffix)
+	room := lipgloss.Width(label) - lipgloss.Width(suffix)
 	meta.Status = ""
 	name := render.WorkflowLabel(meta)
-	if room <= runewidth.StringWidth("workflow: ") {
+	if room <= lipgloss.Width("workflow: ") {
 		return name
 	}
-	cut := strings.TrimSuffix(truncateRight(name, room), styles.Ellipsis)
+	cut := strings.TrimSuffix(render.TruncateRight(name, room), styles.Ellipsis)
 	return strings.TrimRight(cut, " ") + styles.Ellipsis + suffix
 }
 
@@ -600,7 +599,7 @@ func workflowStatuses(prefix string, width int, analyses ...*models.SessionAnaly
 			meta := a.WorkflowByID(agent.WorkflowID)
 			label := workflowLabel(meta)
 			statusCut := meta.Status != "" && !strings.HasSuffix(label, " ("+meta.Status+")")
-			if statusCut || runewidth.StringWidth(prefix+label) > width {
+			if statusCut || lipgloss.Width(prefix+label) > width {
 				return false
 			}
 		}
@@ -616,9 +615,9 @@ func fitWorkflowLabel(prefix string, meta models.WorkflowMeta, width int, status
 		meta.Status = ""
 	}
 	label := prefix + workflowLabel(meta)
-	if runewidth.StringWidth(label) <= width {
+	if lipgloss.Width(label) <= width {
 		return label
 	}
-	cut := strings.TrimSuffix(truncateRight(label, width), styles.Ellipsis)
+	cut := strings.TrimSuffix(render.TruncateRight(label, width), styles.Ellipsis)
 	return strings.TrimRight(cut, " ") + styles.Ellipsis
 }

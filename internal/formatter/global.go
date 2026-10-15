@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/mattn/go-runewidth"
 )
 
 // GlobalTableOptions shapes FormatGlobalTable. json and csv ignore it and
@@ -155,7 +155,7 @@ func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOption
 		sum += p.TotalCost.TotalCost
 		costs = append(costs, p.TotalCost.TotalCost)
 		running = append(running, sum)
-		nameWidth = max(nameWidth, runewidth.StringWidth(models.StripControl(p.DisplayName)))
+		nameWidth = max(nameWidth, lipgloss.Width(models.StripControl(p.DisplayName)))
 	}
 	l.cost = render.CostCellWidth(costMinWidth, costs...)
 	if opts.Details && opts.SortBy == "cost" {
@@ -337,7 +337,7 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 		// display width: fmt's %-Ns counts runes, so a wide (CJK/emoji) name
 		// would under-pad and shift every column to its right.
 		name := truncateLeft(models.StripControl(p.DisplayName), layout.project)
-		name += strings.Repeat(" ", layout.project-runewidth.StringWidth(name))
+		name += strings.Repeat(" ", layout.project-lipgloss.Width(name))
 
 		rank := fmt.Sprintf("%*d", rankWidth, i+1)
 		sessions := fmt.Sprintf("%*d", sessionsWidth, p.SessionCount)
@@ -389,28 +389,19 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 // separator moves to it, so "…/work/api-server" doesn't read "…rk/api-server".
 // A cut further into a long directory name stays put: the partial name it
 // leaves ("…ing-service/worktrees/x") is often what tells two rows apart.
-// Operates on runes and display width, so wide (CJK) characters are never
-// split.
+// It cuts whole graphemes, so a wide character or an emoji is never split.
 func truncateLeft(s string, maxWidth int) string {
-	if runewidth.StringWidth(s) <= maxWidth {
+	if lipgloss.Width(s) <= maxWidth {
 		return s
 	}
 	ell := styles.Ellipsis
-	available := maxWidth - runewidth.StringWidth(ell)
+	available := maxWidth - lipgloss.Width(ell)
 	if available < 1 {
-		return runewidth.Truncate(s, maxWidth, "")
+		return render.Tail(s, maxWidth)
 	}
 
 	runes := []rune(s)
-	start, w := len(runes), 0
-	for i := len(runes) - 1; i >= 0; i-- {
-		rw := runewidth.RuneWidth(runes[i])
-		if w+rw > available {
-			break
-		}
-		w += rw
-		start = i
-	}
+	start := len(runes) - utf8.RuneCountInString(render.Tail(s, available))
 	const snapWindow = 3
 	if start > 0 && runes[start-1] != '/' {
 		for j := start; j < min(start+snapWindow, len(runes)-1); j++ {
