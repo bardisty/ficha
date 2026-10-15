@@ -189,14 +189,15 @@ func TestRootFlagHintNamesTheCommand(t *testing.T) {
 		{[]string{"-f", "csv", "--messages"},
 			"unknown flag: --messages. --messages is a show flag: ficha show -f csv --messages"},
 		{[]string{"--since", "7d"},
-			"unknown flag: --since. --since is a list and summary and global flag: ficha list --since 7d"},
+			"unknown flag: --since. --since is a list, summary and global flag: ficha list --since 7d"},
 		// cobra reads the command after an unknown flag as its value.
 		{[]string{"--details", "summary"},
 			"unknown flag: --details. --details is a summary and global flag: ficha summary --details"},
 		{[]string{"--messages", "show", "-f", "csv"},
 			"unknown flag: --messages. --messages is a show flag: ficha show --messages -f csv"},
+		// A command that doesn't own the flag gives way to one that does.
 		{[]string{"--messages", "list"},
-			"unknown flag: --messages. --messages is a show flag."},
+			"unknown flag: --messages. --messages is a show flag: ficha show --messages"},
 		{[]string{"-n", "3"},
 			"unknown shorthand flag: 'n' in -n. -n is a global flag: ficha global -n 3"},
 		{[]string{"--messages", "-p", "my dir"},
@@ -220,10 +221,89 @@ func TestRootFlagHintNamesTheCommand(t *testing.T) {
 	if want := "unknown flag: --messages. --messages is a show flag."; err == nil || err.Error() != want {
 		t.Errorf("got %v, want %s", err, want)
 	}
-	// Only bare ficha gets the hint: `list` has no show to point at.
 	_, err = executeCLI(t, "list", "--messages")
-	if want := "unknown flag: --messages"; err == nil || err.Error() != want {
+	if want := "ficha list doesn't take --messages. --messages is a show flag."; err == nil || err.Error() != want {
 		t.Errorf("got %v, want %s", err, want)
+	}
+}
+
+// A flag on a command that doesn't take it names the commands that do, and
+// suggests the line with one of them in its place.
+func TestSubcommandFlagHintNamesTheOwners(t *testing.T) {
+	tests := []struct {
+		args    []string
+		wantErr string
+	}{
+		{[]string{"show", "--since", "today"},
+			"ficha show doesn't take --since. --since is a list, summary and global flag: ficha list --since today"},
+		{[]string{"summary", "--top", "5"},
+			"ficha summary doesn't take --top. --top is a global flag: ficha global --top 5"},
+		{[]string{"summary", "-n", "5", "-f", "json"},
+			"ficha summary doesn't take -n. -n is a global flag: ficha global -n 5 -f json"},
+		{[]string{"--no-color", "watch", "--messages"},
+			"ficha watch doesn't take --messages. --messages is a show flag: ficha show --no-color --messages"},
+		{[]string{"global", "-p", "my dir"},
+			"ficha global covers every project and doesn't take -p. summary covers one project: ficha summary -p 'my dir'"},
+		{[]string{"global", "--project-dir=x", "--since", "7d"},
+			"ficha global covers every project and doesn't take --project-dir. summary covers one project: ficha summary --project-dir=x --since 7d"},
+		{[]string{"statusline", "-p", "."},
+			"ficha statusline doesn't take -p: it reads the session from the JSON Claude Code writes on stdin."},
+		// No line that would fail in turn: global doesn't take -p, and list
+		// takes no session ID.
+		{[]string{"summary", "-p", ".", "--top", "5"},
+			"ficha summary doesn't take --top. --top is a global flag."},
+		{[]string{"show", "abc", "--since", "today"},
+			"ficha show doesn't take --since. --since is a list, summary and global flag."},
+		// list doesn't take --details, so the line goes to summary.
+		{[]string{"show", "--since", "7d", "--details"},
+			"ficha show doesn't take --since. --since is a list, summary and global flag: ficha summary --since 7d --details"},
+		{[]string{"summary", "--top"},
+			"ficha summary doesn't take --top. --top is a global flag."},
+		{[]string{"summary", "--details", "--messages"},
+			"ficha summary doesn't take --messages. --messages is a show flag."},
+		// The live views print only a table.
+		{[]string{"summary", "-f", "json", "--no-follow"},
+			"ficha summary doesn't take --no-follow. --no-follow is a breakdown and watch flag."},
+		{[]string{"list", "--format=csv", "--no-follow"},
+			"ficha list doesn't take --no-follow. --no-follow is a breakdown and watch flag."},
+		{[]string{"list", "-vfjson", "--no-follow"},
+			"ficha list doesn't take --no-follow. --no-follow is a breakdown and watch flag."},
+		{[]string{"list", "-f", "table", "--no-follow"},
+			"ficha list doesn't take --no-follow. --no-follow is a breakdown and watch flag: ficha breakdown -f table --no-follow"},
+		// pflag panics on a shorthand that isn't one byte.
+		{[]string{"list", "-é"}, "unknown shorthand flag: 'Ã' in -é"},
+		{[]string{"summary", "--top", "5", "-é"}, "ficha summary doesn't take --top. --top is a global flag."},
+		{[]string{"-é"}, "unknown shorthand flag: 'Ã' in -é"},
+		{[]string{"list", "--bogus"}, "unknown flag: --bogus"},
+		// Hidden everywhere, so no command offers it.
+		{[]string{"list", "--live"}, "unknown flag: --live"},
+		{[]string{"completion", "bash", "--top", "3"}, "unknown flag: --top"},
+		{[]string{"completion", "--top", "3"}, "unknown flag: --top"},
+		{[]string{"version", "--top", "3"}, "unknown flag: --top"},
+		{[]string{"help", "--top", "5"}, "unknown flag: --top"},
+		{[]string{"help", "summary", "--top", "5"}, "unknown flag: --top"},
+		{[]string{"output", "--top"}, "unknown flag: --top"},
+	}
+	setupE2EFixture(t)
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			_, err := executeLikeMain(t, tt.args...)
+			if err == nil || err.Error() != tt.wantErr {
+				t.Fatalf("error:\n got: %v\nwant: %s", err, tt.wantErr)
+			}
+			if got := exitCode(err); got != exitUsage {
+				t.Errorf("exit %d, want %d", got, exitUsage)
+			}
+			// The suggested line parses. It can still fail for want of a
+			// project here, but not on its arguments.
+			_, line, ok := strings.Cut(tt.wantErr, ": ficha ")
+			if !ok {
+				return
+			}
+			if _, err := executeLikeMain(t, strings.Fields(strings.ReplaceAll(line, "'my dir'", "my-dir"))...); exitCode(err) == exitUsage {
+				t.Errorf("suggested line ficha %s: %v", line, err)
+			}
+		})
 	}
 }
 

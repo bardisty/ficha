@@ -212,21 +212,38 @@ func projectCommand(cmd *cobra.Command, dir string) string {
 
 // lineFlag is the flag a command line token sets, if any, and whether its
 // value is the next token. For a bundle of shorthands it's the one that
-// takes a value, or else the first.
+// takes a value, or else the first, and nil when cmd lacks any of them.
 func lineFlag(cmd *cobra.Command, token string) (f *pflag.Flag, takesNext bool) {
+	// A command that hasn't run has its parents' persistent flags apart.
+	lookup := func(name string) *pflag.Flag {
+		if f := cmd.Flags().Lookup(name); f != nil {
+			return f
+		}
+		return cmd.InheritedFlags().Lookup(name)
+	}
+	// pflag panics on a shorthand longer than a byte, and none is.
+	shorthand := func(s string) *pflag.Flag {
+		if len(s) != 1 {
+			return nil
+		}
+		if f := cmd.Flags().ShorthandLookup(s); f != nil {
+			return f
+		}
+		return cmd.InheritedFlags().ShorthandLookup(s)
+	}
 	switch {
 	case strings.HasPrefix(token, "--") && len(token) > 2:
 		name, _, hasValue := strings.Cut(token[2:], "=")
-		f = cmd.Flags().Lookup(name)
+		f = lookup(name)
 		return f, f != nil && !hasValue && f.NoOptDefVal == ""
 	case strings.HasPrefix(token, "-") && len(token) > 1:
 		// Shorthands combine, as in -vf json: the first one that takes a
 		// value takes the rest of the token, or the next token.
 		var first *pflag.Flag
 		for j, r := range token[1:] {
-			sf := cmd.Flags().ShorthandLookup(string(r))
+			sf := shorthand(string(r))
 			if sf == nil {
-				return first, false
+				return nil, false
 			}
 			if first == nil {
 				first = sf
@@ -242,14 +259,17 @@ func lineFlag(cmd *cobra.Command, token string) (f *pflag.Flag, takesNext bool) 
 
 // flagError rewrites pflag's value-parse errors, which quote Go's strconv
 // internals, into the shape ficha's own flag validation uses. An unknown
-// flag on bare `ficha` that a command takes gets pointed at that command.
-// Other flag errors (missing value) already read well and pass through.
-// cobra calls it for every flag parse error, so all of them exit 2.
+// flag that another command takes gets pointed at that command. Other flag
+// errors (missing value) already read well and pass through. cobra calls it
+// for every flag parse error, so all of them exit 2.
 func flagError(cmd *cobra.Command, err error) error {
 	var notExist *pflag.NotExistError
-	if errors.As(err, &notExist) && !cmd.HasParent() {
+	if errors.As(err, &notExist) {
 		if hint := commandFlagHint(cmd, notExist); hint != "" {
-			return usageErrorf("%v. %s", err, hint)
+			if !cmd.HasParent() {
+				return usageErrorf("%v. %s", err, hint)
+			}
+			return usageError(errors.New(hint))
 		}
 	}
 	var invalid *pflag.InvalidValueError
@@ -272,16 +292,28 @@ func flagError(cmd *cobra.Command, err error) error {
 	return usageErrorf("invalid --%s value %q: %s", f.Name, invalid.GetValue(), want)
 }
 
-// commandFlagHint names the commands that take the unknown flag bare
-// `ficha` rejected, as in `ficha -f csv --messages`. Bare ficha is show,
-// but with only the project flags.
-func commandFlagHint(root *cobra.Command, e *pflag.NotExistError) string {
+// commandFlagHint names the commands that take the unknown flag cmd
+// rejected, as in `ficha list --top 5`, and suggests the line with one of
+// them in cmd's place. Bare ficha is show, but with only the project flags.
+// It's "" when no other command takes the flag, and for commands that
+// aren't reports: help and its topics, version, completion and those below
+// it. Swapping a report in for one of those makes a line that fails.
+func commandFlagHint(cmd *cobra.Command, e *pflag.NotExistError) string {
+	root := cmd.Root()
+	if cmd != root && (cmd.Parent() != root || !cmd.IsAvailableCommand() || cmd.Name() == "version" || cmd.Name() == "completion") {
+		return ""
+	}
+	// pflag panics on a shorthand longer than a byte, as -é's is, and no
+	// command has one.
+	if e.GetSpecifiedShortnames() != "" && len(e.GetSpecifiedName()) != 1 {
+		return ""
+	}
 	// Owners that analyze one project, as bare ficha does, come first: they
 	// make the better suggestion for `ficha --since 7d`.
 	var owners, others []string
 	var flag string
 	for _, c := range root.Commands() {
-		if !c.IsAvailableCommand() {
+		if c == cmd || !c.IsAvailableCommand() {
 			continue
 		}
 		// For a shorthand, the name is the one letter pflag didn't know.
@@ -306,37 +338,110 @@ func commandFlagHint(root *cobra.Command, e *pflag.NotExistError) string {
 	if len(owners) == 0 {
 		return ""
 	}
-	hint := fmt.Sprintf("%s is a %s flag", flag, strings.Join(owners, " and "))
+	isProjectFlag := flag == "-p" || flag == "--project" || flag == "--project-dir"
+	switch {
+	case cmd == root:
+		return withSuggestedLine(root, fmt.Sprintf("%s is a %s flag", flag, joinWords(owners)), owners)
+	case isProjectFlag && cmd.Name() == "global":
+		// Of the commands that take -p, summary is the one global narrows to.
+		return withSuggestedLine(root, fmt.Sprintf("%s covers every project and doesn't take %s. summary covers one project", cmd.CommandPath(), flag), []string{"summary"})
+	case isProjectFlag && cmd.Name() == "statusline":
+		return fmt.Sprintf("%s doesn't take %s: it reads the session from the JSON Claude Code writes on stdin.", cmd.CommandPath(), flag)
+	}
+	return withSuggestedLine(root, fmt.Sprintf("%s doesn't take %s. %s is a %s flag", cmd.CommandPath(), flag, flag, joinWords(owners)), owners)
+}
+
+// withSuggestedLine ends hint with the command line ficha was run with,
+// its command swapped for the first of owners that takes the rest of it,
+// unless it's one of owners already. It ends it with a period instead when
+// the line isn't known, or when no owner takes the rest of the line: a
+// suggestion that fails in turn sends the reader in a circle.
+func withSuggestedLine(root *cobra.Command, hint string, owners []string) string {
 	args, ok := commandLine(root.Context())
 	if !ok {
 		return hint + "."
 	}
 	// With the flag first, as in `ficha --details summary`, cobra takes the
 	// command name for the unknown flag's value and never reaches it. A name
-	// that owns the flag moves to the front; any other leaves the fix to the
-	// reader.
-	command := owners[0]
-	var rest []string
+	// that owns the flag moves to the front; any other gives way to one
+	// that does.
+	rest := args
 	for i, a := range args {
 		c := subcommandNamed(root, a)
 		if c == nil || !c.IsAvailableCommand() {
 			continue
 		}
-		if !slices.Contains(owners, c.Name()) {
-			return hint + "."
+		if slices.Contains(owners, c.Name()) {
+			owners = []string{c.Name()}
 		}
-		command = c.Name()
 		rest = append(slices.Clone(args[:i]), args[i+1:]...)
 		break
 	}
-	if rest == nil {
-		rest = args
+	i := slices.IndexFunc(owners, func(name string) bool {
+		return takesLine(subcommandNamed(root, name), rest)
+	})
+	if i < 0 {
+		return hint + "."
 	}
+	command := owners[i]
 	quoted := make([]string, len(rest))
 	for i, a := range rest {
 		quoted[i] = shellQuote(a)
 	}
 	return fmt.Sprintf("%s: %s %s %s", hint, root.Name(), command, strings.Join(quoted, " "))
+}
+
+// takesLine reports whether cmd takes every flag in args, and the
+// arguments left once they're taken out, and whether it can print the
+// format they ask for: the live views and statusline print only a table.
+func takesLine(cmd *cobra.Command, args []string) bool {
+	var positional []string
+	format, live := "", false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			positional = append(positional, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(a, "-") || a == "-" {
+			positional = append(positional, a)
+			continue
+		}
+		f, takesNext := lineFlag(cmd, a)
+		if f == nil {
+			return false
+		}
+		switch {
+		case f.Name == "live":
+			live = true
+		case f.Name == "format" && takesNext && i+1 < len(args):
+			format = args[i+1]
+		case f.Name == "format" && strings.HasPrefix(a, "--"):
+			_, format, _ = strings.Cut(a, "=")
+		case f.Name == "format":
+			_, format, _ = strings.Cut(a, f.Shorthand)
+		}
+		if takesNext {
+			if i+1 == len(args) {
+				return false
+			}
+			i++
+		}
+	}
+	tableOnly := live || cmd.Name() == "watch" || cmd.Name() == "breakdown" || cmd.Name() == "statusline"
+	if tableOnly && format != "" && !strings.EqualFold(format, "table") {
+		return false
+	}
+	return cmd.Args == nil || cmd.Args(cmd, positional) == nil
+}
+
+// joinWords renders ["a"] as "a", ["a", "b"] as "a and b" and
+// ["a", "b", "c"] as "a, b and c".
+func joinWords(words []string) string {
+	if len(words) == 1 {
+		return words[0]
+	}
+	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
 }
 
 type commandLineKey struct{}

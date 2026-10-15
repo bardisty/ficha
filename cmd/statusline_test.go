@@ -445,7 +445,7 @@ func TestStatuslineFailures(t *testing.T) {
 		{"-f json", good, []string{"-f", "json"}, 2, "--format json is not supported by statusline"},
 		{"-f csv", good, []string{"-f", "csv"}, 2, "--format csv is not supported by statusline"},
 		{"an argument", good, []string{transcript}, 2, "ficha statusline takes no arguments"},
-		{"a project flag", good, []string{"-p", proj}, 2, "unknown shorthand flag"},
+		{"a project flag", good, []string{"-p", proj}, 2, "ficha statusline doesn't take -p"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
