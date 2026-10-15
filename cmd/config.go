@@ -35,6 +35,11 @@ type config struct {
 
 	// --nested (summary, list): count in the projects under the directory.
 	nested bool
+	// readsNested is set while summary and list load, since they read the
+	// projects under the directory too. A directory with sessions only in
+	// those then resolves to its own project directory, though it doesn't
+	// exist.
+	readsNested bool
 
 	// Window flags (summary, global): --since and --until as typed.
 	since string

@@ -67,17 +67,32 @@ func (n nestedSessions) mark(results []models.SessionResult) {
 	}
 }
 
+// reportRoot is the directory a summary or list reads: its Claude project
+// directory and the name to call it by. A directory with sessions only in
+// the projects under it has no project directory of its own, and dir is the
+// one Claude Code would give it.
+type reportRoot struct {
+	dir  string
+	name string
+}
+
 // loadProjectAndNestedSessions is loadProjectSessionsWithDir, plus the
 // sessions of the projects nested under the project. A nested project that
 // can't be read is left out, with a warning when --nested counts it in.
-func loadProjectAndNestedSessions(cfg *config) ([]models.SessionEntry, string, nestedSessions, error) {
+//
+// A directory whose sessions are all in the projects under it reads with
+// --nested, and is an error naming them without it.
+func loadProjectAndNestedSessions(cfg *config) ([]models.SessionEntry, reportRoot, nestedSessions, error) {
+	cfg.readsNested = true
 	project, err := resolveProjectDirectory(cfg)
 	if err != nil {
-		return nil, "", nestedSessions{}, err
+		return nil, reportRoot{}, nestedSessions{}, err
 	}
-	sessions, err := projectSessionsIn(cfg, project)
-	if err != nil {
-		return nil, "", nestedSessions{}, err
+	var sessions []models.SessionEntry
+	if isDir(project.dir) {
+		if sessions, err = readProjectSessions(cfg, project.dir); err != nil {
+			return nil, reportRoot{}, nestedSessions{}, err
+		}
 	}
 	nested := nestedSessions{projects: map[string]nestedProject{}}
 	for _, p := range nestedProjects(project) {
@@ -91,7 +106,45 @@ func loadProjectAndNestedSessions(cfg *config) ([]models.SessionEntry, string, n
 		nested.sessions = append(nested.sessions, found...)
 		nested.projects[p.dir] = p
 	}
-	return sessions, project.dir, nested, nil
+	root := reportRoot{dir: project.dir, name: parser.ProjectDisplayName(project.dir)}
+	if len(sessions) == 0 {
+		cfg.tracef("no transcripts in %s", filepath.Base(project.dir))
+		switch {
+		case len(nested.sessions) == 0:
+			return nil, reportRoot{}, nestedSessions{}, noSessionsError(cfg, project)
+		case !cfg.nested:
+			return nil, reportRoot{}, nestedSessions{}, onlyNestedError(cfg, project, nested)
+		}
+		// Nothing in the project directory says what it stands for.
+		root.name = parser.PathDisplayName(project.path)
+	}
+	cfg.tracef("using %s (%d sessions)", filepath.Base(project.dir), len(sessions))
+	return sessions, root, nested, nil
+}
+
+// onlyNestedError explains a directory with no sessions of its own but
+// some in the projects under it, which --nested counts in.
+func onlyNestedError(cfg *config, project resolvedProject, nested nestedSessions) error {
+	const maxNamed = 5
+	seen := map[string]bool{}
+	var names []string
+	for _, s := range nested.sessions {
+		if name := nested.projects[filepath.Dir(s.FullPath)].name; !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	listed := strings.Join(names, ", ")
+	if len(names) > maxNamed {
+		listed = fmt.Sprintf("%s and %d more", strings.Join(names[:maxNamed], ", "), len(names)-maxNamed)
+	}
+	have := "have"
+	if len(names) == 1 {
+		have = "has"
+	}
+	return fmt.Errorf("Claude Code has no sessions for %s itself, but %s under it %s: %s. Run: %s%s --nested",
+		project.label, plural(len(names), "project"), have, listed, cfg.command(), cfg.typedProjectArgs())
 }
 
 // projectSessionsIn is readProjectSessions for the project a command reads,

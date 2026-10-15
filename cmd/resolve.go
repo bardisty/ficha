@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -152,6 +153,19 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 		if p.OriginalPath == canonical {
 			cfg.tracef("found project directory %s by its recorded path", p.EncodedPath)
 			return resolvedProject{dir: p.FullPath, label: p.OriginalPath, path: canonical}, nil
+		}
+	}
+
+	// A directory where only claude --worktree ever ran has no project of
+	// its own, just projects under it. For summary and list, which read
+	// those, it stands for itself, before a parent or a same-named project
+	// elsewhere can claim it. A project directory can outlive its
+	// transcripts, and one of those has nothing to read.
+	if cfg.readsNested {
+		root := resolvedProject{dir: exactDir, label: canonical, path: canonical}
+		if slices.ContainsFunc(nestedProjects(root), func(p nestedProject) bool { return hasTranscripts(p.dir) }) {
+			cfg.tracef("projects under %s", canonical)
+			return root, nil
 		}
 	}
 

@@ -87,6 +87,12 @@ func ProjectDisplayName(projectDir string) string {
 	return formatDisplayNameFromEncoded(filepath.Base(projectDir))
 }
 
+// PathDisplayName is ProjectDisplayName for the directory Claude Code ran in,
+// for a project directory that holds nothing to read it from.
+func PathDisplayName(path string) string {
+	return formatDisplayNameFromPath(path, homeDir())
+}
+
 // entryIsDir reports whether a projects-dir entry is a directory, following
 // symlinks. os.ReadDir's DirEntry.IsDir() uses lstat semantics and returns
 // false for a symlink pointing at a directory, so a symlinked project dir
