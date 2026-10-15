@@ -82,7 +82,9 @@ func reportWidth(terminal int) int {
 // project, and so does a summary's span on a narrowed report; at the piped
 // width a summary's project goes first, as it always has. A windowed
 // summary loses its project, then its session count, but never the window:
-// without it the figures read as all-time.
+// without it the figures read as all-time. A project shorter than the room
+// it would be cut to asks only for its own width, so it goes only when even
+// that won't fit.
 func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool) string {
 	if analysis.IsSummary {
 		giveWay := []int{panelLead, 1}
@@ -182,7 +184,7 @@ func renderPanel(lead string, fields []string, giveWay []int, width int, noColor
 		shown[i] = true
 	}
 	// need is the room the shown fields take, with the lead cut to its
-	// narrowest.
+	// narrowest: a lead already narrower than that keeps its own width.
 	need := func() int {
 		var parts []string
 		for i, f := range fields {
@@ -191,7 +193,7 @@ func renderPanel(lead string, fields []string, giveWay []int, width int, noColor
 			}
 		}
 		if lead != "" {
-			parts = append(parts, strings.Repeat(" ", minProjectWidth))
+			parts = append(parts, strings.Repeat(" ", min(lipgloss.Width(lead), minProjectWidth)))
 		}
 		return lipgloss.Width(strings.Join(parts, sep))
 	}
