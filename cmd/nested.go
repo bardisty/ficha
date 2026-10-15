@@ -27,10 +27,10 @@ func checkNested(cfg *config) error {
 	return nil
 }
 
-// parseWithNested parses a report's sessions and the nested ones, once, in
-// the order --nested reads them. The report analyzes the sessions it
-// returns, the first of them, and writeNestedNote all of them. They take in
-// the nested ones under --nested.
+// parseWithNested parses a report's sessions and then the nested ones, the
+// order --nested reads them in, so each file is read once. It returns the
+// sessions the report counts, which take in the nested ones under --nested.
+// The report analyzes those, and writeNestedNote analyzes every session.
 func parseWithNested(cfg *config, sessions []models.SessionEntry, nested nestedSessions, window models.TimeWindow) ([]models.SessionEntry, *analyzer.ParsedSessions) {
 	all := append(slices.Clip(sessions), nested.sessions...)
 	if cfg.nested {
@@ -40,8 +40,8 @@ func parseWithNested(cfg *config, sessions []models.SessionEntry, nested nestedS
 }
 
 // writeNestedNote tells a report without --nested what the projects under
-// its directory would add to it, in window. The report analyzed the first
-// own of parsed, for ownTotal.
+// its directory would add to it, in window. The report counts the first own
+// sessions in parsed, which cost ownTotal.
 //
 // A worktree session can resume one of the directory's own and start with a
 // copy of its history, which --nested counts once. So the note analyzes the
