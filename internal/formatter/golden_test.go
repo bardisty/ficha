@@ -416,6 +416,12 @@ func TestGoldenSessionListColor(t *testing.T) {
 	checkGolden(t, "session_list_color", FormatSessionListTable(goldenListResults(), false, goldenListOptions))
 }
 
+// Beside one priced session, a session with no replies leaves the priced
+// one the neutral color a lone session gets, as summary --details does.
+func TestGoldenSessionListNoRepliesColor(t *testing.T) {
+	checkGolden(t, "session_list_no_replies_color", FormatSessionListTable(goldenListResults()[1:3], false, goldenListOptions))
+}
+
 // --- golden tests: FormatGlobalTable ---
 
 // goldenGlobalOptions is the piped (fixed-width) layout, cost order, top 3,
