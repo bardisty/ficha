@@ -68,8 +68,8 @@ func checkTaskRows(t *testing.T, out string, width int) {
 
 // show's agent rows give a task the room the width has: the message count
 // goes before a task is cut, a task is cut by display width with an
-// ellipsis, and below minTaskWidth the tasks go and the rows are as they are
-// without them. Every cost stays in one column.
+// ellipsis, and below render.MinTaskWidth the tasks go and the rows are as
+// they are without them. Every cost stays in one column.
 func TestAgentBreakdownTasks(t *testing.T) {
 	for _, tt := range []struct {
 		width          int
@@ -165,8 +165,8 @@ func TestSummaryTreeTasks(t *testing.T) {
 	}
 }
 
-// A task shorter than minTaskWidth is never cut, so it stays where the
-// message count has to go.
+// A task shorter than render.MinTaskWidth is never cut, so it stays where
+// the message count has to go.
 func TestShortTasksStayWithoutMessageCount(t *testing.T) {
 	agents := taskAgents()[3:]
 	agents[0].AgentType = "Explore"
