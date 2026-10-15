@@ -144,14 +144,18 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		fields = append(fields, when)
 		giveWay = []int{panelLead, 0}
 	}
-	// A box too narrow for the unreadable sessions' count drops it before
-	// the project or the session count goes; their rows still name them.
-	// The project needs the room renderPanel keeps for it.
-	need := slices.Clone(fields)
-	if opts.Project != "" {
-		need = append(need, strings.Repeat(" ", min(lipgloss.Width(models.StripControl(opts.Project)), minProjectWidth)))
+	// A box too narrow for the unreadable sessions' count drops it where
+	// that keeps the project, or the session count, which would otherwise
+	// go; their rows still name them. The project needs the room
+	// renderPanel keeps for it.
+	fits := func(head string, project bool) bool {
+		need := append([]string{head}, fields[1:]...)
+		if project && opts.Project != "" {
+			need = append(need, strings.Repeat(" ", min(lipgloss.Width(models.StripControl(opts.Project)), minProjectWidth)))
+		}
+		return lipgloss.Width(strings.Join(need, "  "+styles.BoxVerticalSep+"  ")) <= width-6
 	}
-	if lipgloss.Width(strings.Join(need, "  "+styles.BoxVerticalSep+"  ")) > width-6 {
+	if !fits(fields[0], true) && (fits(count, true) || !fits(fields[0], false)) {
 		fields[0] = count
 	}
 	sb.WriteString(renderPanel(opts.Project, fields, giveWay, width, noColor))
