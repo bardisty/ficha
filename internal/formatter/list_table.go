@@ -37,7 +37,8 @@ const (
 	// listMinTitleWidth is the room TITLE keeps before MODEL goes. Past
 	// that, TITLE shrinks, to nothing if it must, rather than rows wrap.
 	listMinTitleWidth = 12
-	// listGoodTitleWidth is the room TITLE gets before other columns go.
+	// listGoodTitleWidth is the most room TITLE asks for before other
+	// columns go: a narrower widest title asks for its own width.
 	listGoodTitleWidth = 24
 	// listMaxTitleWidth keeps one long title from stretching the rules
 	// across a wide terminal.
@@ -70,8 +71,8 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 			if r.Analysis.MessageCount > 0 {
 				costs = append(costs, r.Analysis.TotalCost.TotalCost)
 			}
-			titleWidth = max(titleWidth, runewidth.StringWidth(nestedTitle(r, models.OneLine(r.Analysis.Title))))
 		}
+		titleWidth = max(titleWidth, runewidth.StringWidth(rowTitle(r)))
 	}
 	costWidth := render.CostCellWidth(len("COST"), costs...)
 	// LENGTH grows past "12h 34m" for a session left open for days.
@@ -89,9 +90,11 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	// A terminal that would leave TITLE too little room gives up LENGTH, then
 	// AGENTS, keeping what picks a session out: when, model, cost and title.
 	// A narrower one gives up MODEL too, since the ID, when and cost still
-	// tell sessions apart and a title is what names them.
+	// tell sessions apart and a title is what names them. TITLE asks only
+	// for the room its widest title takes, never less than its header, so
+	// short titles keep the columns.
 	showLength, showAgents, showModel := true, true, true
-	tooNarrow := func(title int) bool { return opts.Width > 0 && fixed+title > opts.Width }
+	tooNarrow := func(title int) bool { return opts.Width > 0 && fixed+min(titleWidth, title) > opts.Width }
 	if tooNarrow(listGoodTitleWidth) {
 		showLength = false
 		fixed -= columnGap + listDurationWidth
@@ -179,19 +182,12 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		// nothing to price. Its row stays, dimmed, so the list still accounts
 		// for every transcript.
 		if a == nil || a.MessageCount == 0 {
-			title := "(unreadable)"
-			if a != nil {
-				title = "(no replies yet)"
-				if t := models.OneLine(a.Title); t != "" {
-					title = t
-				}
-			}
 			row := join(id, when,
 				fmt.Sprintf("%*s", listDurationWidth, "-"),
 				fmt.Sprintf("%-*s", listModelWidth, "-"),
 				fmt.Sprintf("%*s", listAgentsWidth, "-"),
 				fmt.Sprintf("%*s", costWidth, "-"),
-				truncateRight(nestedTitle(r, title), titleCol))
+				truncateRight(rowTitle(r), titleCol))
 			if !noColor {
 				row = styles.DimStyle.Render(row)
 			}
@@ -206,7 +202,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		if a.AgentCount > 0 {
 			agents = fmt.Sprintf("%*d", listAgentsWidth, a.AgentCount)
 		}
-		title := truncateRight(nestedTitle(r, models.OneLine(a.Title)), titleCol)
+		title := truncateRight(rowTitle(r), titleCol)
 
 		if noColor {
 			sb.WriteString(join(id, when, duration, model, agents, render.CostCell(a.TotalCost.TotalCost, costWidth), title) + "\n")
@@ -276,6 +272,20 @@ func truncateRight(s string, width int) string {
 		return ""
 	}
 	return runewidth.Truncate(s, width, styles.Ellipsis)
+}
+
+// rowTitle is what a row prints in TITLE before it's cut: the session's
+// title, or a placeholder for a session with nothing to price.
+func rowTitle(r models.SessionResult) string {
+	a := r.Analysis
+	if a == nil {
+		return nestedTitle(r, "(unreadable)")
+	}
+	title := models.OneLine(a.Title)
+	if title == "" && a.MessageCount == 0 {
+		title = "(no replies yet)"
+	}
+	return nestedTitle(r, title)
 }
 
 // nestedTitle is a row's TITLE: the session's title, "-" for none, after the
