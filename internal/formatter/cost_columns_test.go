@@ -207,6 +207,65 @@ func TestListNarrowTerminalDropsColumns(t *testing.T) {
 	}
 }
 
+// At 80 columns TITLE asks only for the room its widest title takes, so
+// short or missing titles keep LENGTH, and so do the placeholders a row
+// prints for a session with no replies or one that couldn't be read, which
+// print whole, even where that costs LENGTH. A 40-column title still costs
+// LENGTH at 80.
+func TestListShortTitlesKeepLength(t *testing.T) {
+	noReplies := listResult("cccccccc-3", "", 0)
+	noReplies.Analysis.MessageCount = 0
+	unreadable := models.SessionResult{Entry: models.SessionEntry{SessionID: "dddddddd-4"}}
+	for _, tc := range []struct {
+		name    string
+		width   int
+		results []models.SessionResult
+		length  bool
+		whole   []string // titles that must print whole
+	}{
+		{"no titles", 80, []models.SessionResult{listResult("aaaaaaaa-1", "", 1.5), listResult("bbbbbbbb-2", "", 0.25)}, true, nil},
+		{"placeholders", 80, []models.SessionResult{listResult("aaaaaaaa-1", "", 1.5), noReplies, unreadable}, true, []string{"(no replies yet)", "(unreadable)"}},
+		{"placeholders at 70", 70, []models.SessionResult{listResult("aaaaaaaa-1", "", 1.5), noReplies, unreadable}, false, []string{"(no replies yet)", "(unreadable)"}},
+		{"40-column title", 80, []models.SessionResult{listResult("aaaaaaaa-1", strings.Repeat("a", 40), 1.5), listResult("bbbbbbbb-2", "", 0.25)}, false, nil},
+	} {
+		out := FormatSessionListTable(tc.results, true, ListTableOptions{Width: tc.width})
+		header := findLine(t, out, "WHEN")
+		if got := strings.Contains(header, "LENGTH"); got != tc.length {
+			t.Errorf("%s: LENGTH shown = %v, want %v:\n%s", tc.name, got, tc.length, out)
+		}
+		if !strings.Contains(header, "AGENTS") || !strings.Contains(header, "MODEL") {
+			t.Errorf("%s: want AGENTS and MODEL:\n%s", tc.name, out)
+		}
+		for _, title := range tc.whole {
+			if !strings.Contains(out, title) {
+				t.Errorf("%s: want %q whole:\n%s", tc.name, title, out)
+			}
+		}
+		if w := maxLineWidth(out); w > tc.width {
+			t.Errorf("%s: widest line is %d:\n%s", tc.name, w, out)
+		}
+	}
+}
+
+// TITLE never asks for less than its header: with every title "-", a
+// terminal a few columns short of the fixed columns plus "TITLE" drops
+// LENGTH rather than cut the header.
+func TestListTitleHeaderIsTheFloor(t *testing.T) {
+	results := []models.SessionResult{listResult("aaaaaaaa-1", "", 1.5), listResult("bbbbbbbb-2", "", 0.25)}
+	full := findLine(t, FormatSessionListTable(results, true, ListTableOptions{Width: 120}), "WHEN")
+	fixed := len(full) - len("TITLE")
+	for width := fixed + 1; width <= fixed+len("TITLE"); width++ {
+		out := FormatSessionListTable(results, true, ListTableOptions{Width: width})
+		header := findLine(t, out, "WHEN")
+		if got, want := strings.Contains(header, "LENGTH"), width == fixed+len("TITLE"); got != want {
+			t.Errorf("width %d: LENGTH shown = %v, want %v:\n%s", width, got, want, out)
+		}
+		if !strings.HasSuffix(strings.TrimRight(header, " "), "TITLE") {
+			t.Errorf("width %d: want the whole TITLE header:\n%s", width, out)
+		}
+	}
+}
+
 // findLine returns the first line of out containing needle.
 func findLine(t *testing.T, out, needle string) string {
 	t.Helper()
