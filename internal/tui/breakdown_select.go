@@ -172,7 +172,7 @@ const minSplitShare = 0.05
 //
 //	top 4 of 5: #547 $0.3479 • Cache write 1h $0.1487, Cache read $0.1222, Output $0.0757 • p next
 //
-// The table's columns are token counts, priced up to 100 times apart, so
+// The table's columns are token counts, priced up to 200 times apart, so
 // they can't say which part made the row expensive; this can. The labels
 // are the ones watch and show use. When the line doesn't fit, components go
 // from the smallest end, then the split, before p next: without the hint,
