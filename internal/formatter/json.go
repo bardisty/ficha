@@ -36,7 +36,7 @@ func FormatSessionJSON(analysis *models.SessionAnalysis, pretty bool) (string, e
 //
 // The analysis fields are those of the session's summary -d record: model,
 // start_time, duration_seconds and total_cost leave out messages repeated
-// from an earlier session, and title is the transcript's latest, as on show.
+// from an earlier session, and title is show's.
 // They are absent on a session that failed to parse, which skipped_sessions
 // marks, and start_time and model on one with nothing of its own.
 // total_cost is the same breakdown object show and summary carry, so

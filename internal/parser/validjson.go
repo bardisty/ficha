@@ -8,7 +8,8 @@ import "bytes"
 const maxJSONDepth = 10000
 
 // droppable reports whether line is valid JSON that the parse would decode
-// and then drop: an object whose type is neither "assistant" nor "ai-title".
+// and then drop: an object whose type isn't "assistant", "ai-title" or
+// "custom-title".
 // Most of a transcript's bytes are such lines (tool results, file snapshots,
 // pasted images), and one pass here costs a fraction of json.Unmarshal, which
 // validates the line and then walks it again to step over every field.
@@ -299,7 +300,11 @@ func (s *lineScanner) topValue(key []byte, escaped bool) bool {
 	}
 	s.sawType = true
 	typ, escaped, ok := s.str()
-	if escaped || string(typ) == "assistant" || string(typ) == "ai-title" {
+	switch string(typ) {
+	case "assistant", "ai-title", "custom-title":
+		s.mayKeep = true
+	}
+	if escaped {
 		s.mayKeep = true
 	}
 	return ok

@@ -310,8 +310,9 @@ type SessionAnalysis struct {
 	// Window is the --since/--until range the analysis covers, when one was
 	// given. Messages outside it aren't counted anywhere.
 	Window *TimeWindow `json:"window,omitempty"`
-	// Title is the session's latest "ai-title" record, raw from the
-	// transcript. Empty when it has none, and on the summary aggregate.
+	// Title is the session's /rename title, else its latest "ai-title"
+	// record, raw from the transcript. Empty when it has neither, and on the
+	// summary aggregate.
 	Title        string        `json:"title,omitempty"`
 	StartTime    time.Time     `json:"start_time"`
 	EndTime      time.Time     `json:"end_time"`
@@ -506,6 +507,9 @@ type JSONLMessage struct {
 	// generates and rewrites as the session goes on. The key is undocumented,
 	// so a transcript without one is normal.
 	AITitle string `json:"aiTitle,omitempty"`
+	// CustomTitle is set on "custom-title" records, the name /rename
+	// gives the session. An empty one clears the rename.
+	CustomTitle string `json:"customTitle,omitempty"`
 }
 
 // AssistantMessage represents the message field for assistant type messages
