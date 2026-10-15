@@ -241,6 +241,25 @@ func WeekdayClockShort(t time.Time) string {
 	return t.Local().Format("Mon 15:04")
 }
 
+// DateClockShort is WeekdayClockShort with the date for the weekday ("29 Sep
+// 15:04"), for a view whose rows span a week, where a weekday can name two
+// days. A zero time keeps Clock's placeholder.
+func DateClockShort(t time.Time) string {
+	if t.IsZero() {
+		return Clock(t)
+	}
+	return t.Local().Format("02 Jan 15:04")
+}
+
+// WeekdayDateClock is WeekdayClock with the date ("Tue 29 Sep 15:04:05"), for
+// the same views as DateClockShort.
+func WeekdayDateClock(t time.Time) string {
+	if t.IsZero() {
+		return Clock(t)
+	}
+	return t.Local().Format("Mon 02 Jan 15:04:05")
+}
+
 // DayMarker labels a local calendar day ("Tue 29 Sep"), for the divider
 // a per-message table draws where the day changes, since its rows show only
 // a time.

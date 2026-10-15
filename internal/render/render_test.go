@@ -1048,8 +1048,8 @@ func TestCostComponents(t *testing.T) {
 	}
 }
 
-// WeekdayClock and its short form put the local weekday before the time,
-// and keep Clock's placeholders for a zero time.
+// WeekdayClock, DateClockShort and their other forms put the local day before
+// the time, and keep Clock's placeholders for a zero time.
 func TestWeekdayClock(t *testing.T) {
 	orig := time.Local
 	time.Local = time.FixedZone("UTC+1", 3600)
@@ -1061,7 +1061,15 @@ func TestWeekdayClock(t *testing.T) {
 	if got := WeekdayClockShort(ts); got != "Wed 00:30" {
 		t.Errorf("WeekdayClockShort = %q", got)
 	}
-	if WeekdayClock(time.Time{}) != Clock(time.Time{}) || WeekdayClockShort(time.Time{}) != Clock(time.Time{}) {
-		t.Error("a zero time should keep Clock's placeholder")
+	if got := DateClockShort(ts); got != "14 Oct 00:30" {
+		t.Errorf("DateClockShort = %q", got)
+	}
+	if got := WeekdayDateClock(ts); got != "Wed 14 Oct 00:30:05" {
+		t.Errorf("WeekdayDateClock = %q", got)
+	}
+	for _, f := range []func(time.Time) string{WeekdayClock, WeekdayClockShort, DateClockShort, WeekdayDateClock} {
+		if f(time.Time{}) != Clock(time.Time{}) {
+			t.Error("a zero time should keep Clock's placeholder")
+		}
 	}
 }
