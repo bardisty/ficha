@@ -23,7 +23,7 @@ Examples:
   ficha watch abc123            Watch one session
 
 ` + keysHelp(tui.WatchKeys()),
-		Args:              cobra.MaximumNArgs(1),
+		Args:              sessionArgs,
 		ValidArgsFunction: completeSessionIDs(cfg),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// watch is show with live mode forced on; derived from the command

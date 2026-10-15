@@ -28,7 +28,7 @@ Examples:
   ficha show abc123             Show specific session
   ficha show -f json            Output as JSON
   ficha show -f csv --messages  Per-message rows as CSV`,
-		Args:              cobra.MaximumNArgs(1),
+		Args:              sessionArgs,
 		ValidArgsFunction: completeSessionIDs(cfg),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runShow(cfg, args, cfg.live)
