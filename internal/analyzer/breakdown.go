@@ -39,6 +39,8 @@ type BreakdownResult struct {
 	// Tasks names each agent's task, keyed by AgentID, for the agents that
 	// have one (see models.AgentAnalysis.TaskLabel).
 	Tasks map[string]string
+	// Title is the session's title (see parser.ParseResult.Title).
+	Title string
 }
 
 // GetBreakdownMessages parses a session and returns all messages (parent + agents)
@@ -185,6 +187,7 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		Insights:              insights,
 		Workflows:             workflows,
 		Tasks:                 tasks,
+		Title:                 result.Title,
 	}, nil
 }
 

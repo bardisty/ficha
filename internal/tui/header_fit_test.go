@@ -9,6 +9,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
 )
 
@@ -181,7 +182,7 @@ func TestLoadingSpinnerIsOneSpaceFromTheStatus(t *testing.T) {
 					statusFull:  glyph + " loading...",
 					statusShort: glyph + " loading",
 				} {
-					got := stripANSI(buildStatusHeader(p, p.project, form))
+					got := stripANSI(buildStatusHeader(p, p.project, "", form))
 					if !strings.HasSuffix(got, " "+want) || strings.HasSuffix(got, "  "+want) {
 						t.Errorf("%s, form %d: %q, want one space before %q", view, form, got, want)
 					}
@@ -206,5 +207,107 @@ func TestLoadingSpinnerNeverDrawsTheSeparator(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The title takes the room the rest leaves at full length, cut with an
+// ellipsis, and goes first as the header narrows: the status and the project
+// read as they do without one.
+func TestHeaderTitleGivesWayFirst(t *testing.T) {
+	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	p := liveHeaderParams{sessionID: sessA, noColor: true, project: "webapp", mode: "FOLLOWING", now: now,
+		lastActivity: now.Add(-12 * time.Second), title: "Refactor the auth middleware to use short-lived JWTs"}
+	for width, want := range map[int]string{
+		120: "webapp │ aaaaaaaa │ Refactor the auth middleware to use short-lived JWTs │ ● FOLLOWING │ last msg 12s ago",
+		76:  "webapp │ aaaaaaaa │ Refactor the auth midd… │ ● FOLLOWING │ last msg 12s ago",
+		60:  "webapp │ aaaaaaaa │ Refact… │ ● FOLLOWING │ last msg 12s ago",
+		57:  "webapp │ aaaaaaaa │ ● FOLLOWING │ last msg 12s ago",
+		40:  "weba… │ aaaaaaaa │ ● FOLLOWING │ 12s ago",
+	} {
+		if got := fitStatusHeader(p, width); got != want {
+			t.Errorf("width %d:\n got %q\nwant %q", width, got, want)
+		}
+		untitled := p
+		untitled.title = ""
+		if got, without := fitStatusHeader(p, width), fitStatusHeader(untitled, width); width < 58 && got != without {
+			t.Errorf("width %d: with no room for the title, %q differs from %q", width, got, without)
+		}
+	}
+
+	// The status ticks between widths every few seconds; the title holds still.
+	title := func(age time.Duration) string {
+		q := p
+		q.lastActivity = now.Add(-age)
+		return strings.Split(fitStatusHeader(q, 76), " │ ")[2]
+	}
+	for _, age := range []time.Duration{9 * time.Second, 59 * time.Second, 4 * time.Minute, 7 * time.Minute} {
+		if got, want := title(age), title(12*time.Second); got != want {
+			t.Errorf("at %v the title reads %q, at 12s %q", age, got, want)
+		}
+	}
+	// Nor does f, which turns FOLLOWING into the shorter PINNED.
+	pinned := p
+	pinned.mode = "PINNED"
+	if got, want := strings.Split(fitStatusHeader(pinned, 76), " │ ")[2], title(12*time.Second); got != want {
+		t.Errorf("pinned, the title reads %q, following %q", got, want)
+	}
+}
+
+// A title is cut by display width, so a wide character never splits, and
+// under --ascii the cut ends in the ASCII ellipsis.
+func TestHeaderTitleCutsByWidth(t *testing.T) {
+	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	for _, ascii := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ascii=%t", ascii), func(t *testing.T) {
+			if ascii {
+				useASCII(t)
+			}
+			for _, title := range []string{"Refactor the auth middleware to use short-lived JWTs", "認証ミドルウェアを短命なJWTに移行する"} {
+				for _, noColor := range []bool{true, false} {
+					p := liveHeaderParams{sessionID: sessA, noColor: noColor, project: "webapp", mode: "FOLLOWING", now: now,
+						lastActivity: now.Add(-12 * time.Second), title: title}
+					for width := 50; width <= 90; width++ {
+						got := stripANSI(fitStatusHeader(p, width))
+						if w := lipgloss.Width(got); w > width {
+							t.Errorf("width %d: %d columns: %q", width, w, got)
+						}
+						if !strings.HasSuffix(got, "FOLLOWING "+styles.BoxVerticalSep+" last msg 12s ago") {
+							t.Errorf("width %d: the status gave way to the title: %q", width, got)
+						}
+						segs := strings.Split(got, " "+styles.BoxVerticalSep+" ")
+						if len(segs) == 5 && segs[2] != title {
+							kept, cut := strings.CutSuffix(segs[2], styles.Ellipsis)
+							if !cut || lipgloss.Width(kept) < 4 {
+								t.Errorf("width %d: title cut to %q, want four columns or more and an ellipsis", width, segs[2])
+							}
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+// A switch leaves no title behind: the new session's header shows none until
+// its own load lands.
+func TestHeaderTitleClearsOnSwitch(t *testing.T) {
+	watch := NewModel("/fixture/a.jsonl", sessA, true, "", true)
+	watch.analysis = &models.SessionAnalysis{Title: "Old\ntitle"}
+	if got := watch.headerParams(defaultPanelWidth).title; got != "Old title" {
+		t.Fatalf("setup: watch's title %q, want it on one line", got)
+	}
+	switched, _ := watch.switchTo("/fixture/b.jsonl", sessB, true)
+	if got := switched.(Model).headerParams(defaultPanelWidth).title; got != "" {
+		t.Errorf("watch kept the previous session's title %q", got)
+	}
+
+	breakdown := NewBreakdownModel("/fixture/a.jsonl", sessA, true, "", true)
+	updated, _ := breakdown.Update(breakdownMsgsMsg{title: "Old title", sessionPath: "/fixture/a.jsonl"})
+	if got := updated.(BreakdownModel).headerParams(defaultPanelWidth).title; got != "Old title" {
+		t.Fatalf("setup: breakdown's title %q", got)
+	}
+	switched, _ = updated.(BreakdownModel).switchTo("/fixture/b.jsonl", sessB, true)
+	if got := switched.(BreakdownModel).headerParams(defaultPanelWidth).title; got != "" {
+		t.Errorf("breakdown kept the previous session's title %q", got)
 	}
 }

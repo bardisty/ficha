@@ -21,7 +21,7 @@ const idleAfter = 5 * time.Minute
 
 // liveHeaderParams is the per-frame state the shared live header renders:
 //
-//	webapp │ 68994c84 │ ● FOLLOWING │ last msg 12s ago
+//	webapp │ 68994c84 │ Refactor the auth… │ ● FOLLOWING │ last msg 12s ago
 //
 // turning to "○ FOLLOWING │ idle 7m" once no message has landed for
 // idleAfter, and to "⚠ FOLLOWING" while nothing can see a new session.
@@ -34,6 +34,7 @@ type liveHeaderParams struct {
 	width       int
 
 	project      string    // project directory name; omitted when ""
+	title        string    // the session's title, on one line; omitted when ""
 	mode         string    // "FOLLOWING" or "PINNED"
 	lastActivity time.Time // newest message timestamp; zero when none yet
 	noMessages   bool      // lastActivity is the file's mtime: no message yet
@@ -140,8 +141,18 @@ const (
 	statusShort                   // "12s ago", "no msgs"
 )
 
+// liveStatusWidth is the widest status the clock ticks the header through,
+// "last msg 59s ago", and liveModeWidth the wider mode f toggles between.
+// The title is sized as if both were this wide, so it doesn't gain and lose
+// columns as "9s ago" turns "10s ago", or on f.
+const (
+	liveStatusWidth = len("last msg 59s ago")
+	liveModeWidth   = len("FOLLOWING")
+)
+
 // fitStatusHeader builds the mode-style header content and fits it to width,
-// giving up detail in order of least value: the status's spare words, then
+// giving up detail in order of least value: the title, which takes only the
+// room the rest leaves at full length, then the status's spare words, then
 // project name characters, then the project name altogether. The status goes
 // first so that the project doesn't come and go with the session's state:
 // "12s ago", "no msgs" and "idle 7m" are one width, where "no messages yet"
@@ -152,10 +163,22 @@ const (
 func fitStatusHeader(p liveHeaderParams, width int) string {
 	form := statusFull
 	project := p.project
-	content := buildStatusHeader(p, project, form)
+	if p.title != "" {
+		status, mode := lipgloss.Width(headerStatus(p, form)), lipgloss.Width(p.mode)
+		room := width - lipgloss.Width(buildStatusHeader(p, project, "", form)) - (max(status, liveStatusWidth) - status) -
+			(max(mode, liveModeWidth) - mode) - lipgloss.Width(" "+styles.BoxVerticalSep+" ")
+		switch {
+		case lipgloss.Width(p.title) <= room:
+			return buildStatusHeader(p, project, p.title, form)
+		// Narrower than four columns and the ellipsis, a title names nothing.
+		case room >= 4+lipgloss.Width(styles.Ellipsis):
+			return buildStatusHeader(p, project, withEllipsis(p.title, room), form)
+		}
+	}
+	content := buildStatusHeader(p, project, "", form)
 	if lipgloss.Width(content) > width {
 		form = statusShort
-		content = buildStatusHeader(p, project, form)
+		content = buildStatusHeader(p, project, "", form)
 	}
 	if over := lipgloss.Width(content) - width; over > 0 && project != "" {
 		// Keep at least a few characters: a stub is still recognizable
@@ -165,19 +188,19 @@ func fitStatusHeader(p liveHeaderParams, width int) string {
 		} else {
 			project = ""
 		}
-		content = buildStatusHeader(p, project, form)
+		content = buildStatusHeader(p, project, "", form)
 		// A dropped project frees up to 6 columns, enough for the dots of
 		// "loading..." or the article of "waiting for a session".
-		if full := buildStatusHeader(p, "", statusFull); project == "" && lipgloss.Width(full) <= width {
+		if full := buildStatusHeader(p, "", "", statusFull); project == "" && lipgloss.Width(full) <= width {
 			content = full
 		}
 	}
 	return content
 }
 
-// buildStatusHeader renders "project │ id │ ● MODE │ status", with the
-// status in the given form.
-func buildStatusHeader(p liveHeaderParams, project string, form statusForm) string {
+// buildStatusHeader renders "project │ id │ title │ ● MODE │ status", with
+// the status in the given form, leaving out an empty project or title.
+func buildStatusHeader(p liveHeaderParams, project, title string, form statusForm) string {
 	style := func(st lipgloss.Style, s string) string {
 		if p.noColor {
 			return s
@@ -202,6 +225,23 @@ func buildStatusHeader(p liveHeaderParams, project string, form statusForm) stri
 		modeStyle = styles.DimStyle
 	}
 
+	var segs []string
+	if project != "" {
+		segs = append(segs, style(styles.SectionHeaderStyle, project))
+	}
+	if p.sessionID != "" {
+		segs = append(segs, render.TruncateID(p.sessionID, sessionIDDisplayLen))
+	}
+	if title != "" {
+		segs = append(segs, title)
+	}
+	segs = append(segs, style(modeStyle, dot+" "+p.mode), headerStatus(p, form))
+	return strings.Join(segs, style(styles.PanelBorderStyle, " "+styles.BoxVerticalSep+" "))
+}
+
+// headerStatus is the header's last segment, in the given form.
+func headerStatus(p liveHeaderParams, form statusForm) string {
+	idle := !p.lastActivity.IsZero() && p.now.Sub(p.lastActivity) >= idleAfter
 	short := form == statusShort
 	var status string
 	switch {
@@ -222,22 +262,16 @@ func buildStatusHeader(p liveHeaderParams, project string, form statusForm) stri
 	case p.lastActivity.IsZero(), p.noMessages && !idle:
 		status = "no messages yet"
 	case idle:
-		status = style(styles.DimStyle, "idle "+strings.TrimSuffix(render.Ago(p.lastActivity, p.now), " ago"))
+		status = "idle " + strings.TrimSuffix(render.Ago(p.lastActivity, p.now), " ago")
+		if !p.noColor {
+			status = styles.DimStyle.Render(status)
+		}
 	case short:
 		status = messageAge(p.lastActivity, p.now)
 	default:
 		status = "last msg " + messageAge(p.lastActivity, p.now)
 	}
-
-	var segs []string
-	if project != "" {
-		segs = append(segs, style(styles.SectionHeaderStyle, project))
-	}
-	if p.sessionID != "" {
-		segs = append(segs, render.TruncateID(p.sessionID, sessionIDDisplayLen))
-	}
-	segs = append(segs, style(modeStyle, dot+" "+p.mode), status)
-	return strings.Join(segs, style(styles.PanelBorderStyle, " "+styles.BoxVerticalSep+" "))
+	return status
 }
 
 // messageAge is render.Ago with seconds under a minute: in a live view,

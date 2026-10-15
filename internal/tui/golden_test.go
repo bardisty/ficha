@@ -254,6 +254,13 @@ func TestGoldenWatchView80x24(t *testing.T) {
 	checkGolden(t, "watch_view_80x24", goldenWatchViewSized(t, true, 80, 24))
 }
 
+// A session's title sits after its ID in the header, cut to the room left.
+func TestGoldenWatchTitle(t *testing.T) {
+	a := goldenViewAnalysis()
+	a.Title = "Refactor the auth middleware to use short-lived JWTs"
+	checkGolden(t, "watch_title_80x24", goldenWatchViewOf(t, a, true, 80, 24))
+}
+
 // The agent rows carry each agent's task after its marker, as show's do:
 // whole while it fits beside the count, then in the count's place, cut to
 // fit, and gone once that would cut it below render.MinTaskWidth.

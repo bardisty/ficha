@@ -833,3 +833,21 @@ func countUntimed(parent []string, agents map[string][]string) int {
 	}
 	return n
 }
+
+// The breakdown carries the session's title for the live header, as the
+// session analysis does.
+func TestGetBreakdownMessages_Title(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "titled.jsonl")
+	writeJSONLFile(t, sessionPath, []string{
+		`{"type":"ai-title","aiTitle":"Refactor the auth middleware"}`,
+		`{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":10,"output_tokens":5}}}`,
+	})
+	result, err := GetBreakdownMessages(sessionPath, "titled")
+	if err != nil {
+		t.Fatalf("GetBreakdownMessages: %v", err)
+	}
+	if result.Title != "Refactor the auth middleware" {
+		t.Errorf("Title = %q", result.Title)
+	}
+}
