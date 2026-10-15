@@ -86,7 +86,7 @@ func TestNestedProjects(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		note := "have 2 sessions, " + render.Cost(nestedCost) + ". Add --nested to count them in."
+		note := "have 2 sessions, up to " + render.Cost(nestedCost) + ". Add --nested to count them in."
 		if !strings.Contains(stderr, "Note: 2 projects under ") || !strings.Contains(stderr, note) {
 			t.Errorf("stderr = %q, want a note ending %q", stderr, note)
 		}
@@ -345,4 +345,99 @@ func TestNestedProjectsWithoutOwnSessions(t *testing.T) {
 			t.Errorf("error %v", err)
 		}
 	})
+}
+
+// A project found by its name, as for a directory moved since Claude Code
+// ran in it, has no directory on record to look under.
+func TestNestedAfterANameMatch(t *testing.T) {
+	_, _, home := setupNestedFixture(t)
+	moved := filepath.Join(home, "moved", "repo-old")
+	if err := os.MkdirAll(moved, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(moved)
+	if _, _, err := executeCLISplit(t, "summary"); err != nil {
+		t.Fatalf("the name match itself fails: %v", err)
+	}
+	for _, command := range []string{"summary", "list"} {
+		_, _, err := executeCLISplit(t, command, "--nested")
+		if exitCode(err) != 2 || !strings.Contains(err.Error(), "by its name") {
+			t.Errorf("%s --nested: exit %d, error %v", command, exitCode(err), err)
+		}
+	}
+}
+
+// A worktree session that resumed one of the repo's own starts with a copy
+// of its history, which --nested counts once. The note prices the nested
+// sessions alone, so its figure is a bound on what --nested adds, and it
+// says so.
+func TestNestedNoteIsAnUpperBound(t *testing.T) {
+	repo, projectsDir, _ := setupNestedFixture(t)
+	own, err := os.ReadFile(filepath.Join(projectsDir, paths.PathToProjectDir(repo), "aaaaaaaa-0000-4000-8000-000000000001.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixAuth := filepath.Join(repo, ".claude", "worktrees", "fix-auth")
+	resumed := filepath.Join(projectsDir, paths.PathToProjectDir(fixAuth), "bbbbbbbb-0000-4000-8000-000000000002.jsonl")
+	worktree, err := os.ReadFile(resumed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The copy is the same message, so --nested counts it once. Its cwd is
+	// the worktree's, where the resumed session runs, which is how ficha
+	// finds the project nested.
+	copied := strings.Replace(string(own), jsonString(repo), jsonString(fixAuth), 1)
+	if err := os.WriteFile(resumed, []byte(copied+string(worktree)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	total := func(args ...string) float64 {
+		t.Helper()
+		out, _, err := executeCLISplit(t, append([]string{"summary", "-f", "json"}, args...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var s nestedSummaryJSON
+		mustJSON(t, out, &s)
+		return s.TotalCost.TotalCost
+	}
+	added := total("--nested") - total()
+	alone := total("-p", fixAuth) + total("-p", filepath.Join(repo, "packages", "api"))
+	if alone <= added {
+		t.Fatalf("the case is wrong: the nested sessions cost $%v alone and add $%v", alone, added)
+	}
+	for _, args := range [][]string{{"summary"}, {"list"}, {"list", "-f", "json"}} {
+		_, stderr, err := executeCLISplit(t, args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		note := "have 2 sessions, up to " + render.Cost(alone) + ". Add --nested to count them in."
+		if !strings.Contains(stderr, note) {
+			t.Errorf("%v: stderr = %q, want a note ending %q", args, stderr, note)
+		}
+	}
+}
+
+// Without --nested, the projects under the directory only feed the note, so
+// what's wrong with their index is no warning of the report's.
+func TestNestedIndexWarningsOnlyWithNested(t *testing.T) {
+	repo, projectsDir, _ := setupNestedFixture(t)
+	index := filepath.Join(projectsDir, paths.PathToProjectDir(filepath.Join(repo, "packages", "api")), "sessions-index.json")
+	writeIndex(t, index, "{broken")
+	for _, command := range []string{"summary", "list"} {
+		_, stderr, err := executeCLISplit(t, command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(stderr, "sessions-index.json") {
+			t.Errorf("%s: stderr = %q", command, stderr)
+		}
+		_, stderr, err = executeCLISplit(t, command, "--nested")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(stderr, "ignoring "+index) {
+			t.Errorf("%s --nested: stderr = %q", command, stderr)
+		}
+	}
 }
