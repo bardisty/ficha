@@ -3,10 +3,12 @@ package tui
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	keybind "charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
@@ -160,12 +162,21 @@ func (m *BreakdownModel) clearSelection() {
 	m.refreshViewport()
 }
 
-// selectionText describes the row p selected for the notify row:
+// minSplitShare is the least share of a row's cost that selectionText names
+// a component for. Below it a component can't be why the row was expensive,
+// and "Cache read $0.0001" would only take room from the ones that are.
+const minSplitShare = 0.05
+
+// selectionText describes the row p selected for the notify row, with its
+// cost split by component in dollars, largest first:
 //
-//	top 1 of 5: #231 $0.4419 • cache write 12.0K 5m + 3.3K 1h • p next
+//	top 4 of 5: #547 $0.3479 • Cache write 1h $0.1487, Cache read $0.1222, Output $0.0757 • p next
 //
-// The cache-write split is what C_WR merges, and often why the row was
-// expensive; it's left off when it doesn't fit, or there was no write.
+// The table's columns are token counts, priced up to 200 times apart, so
+// they can't say which part made the row expensive; this can. The labels
+// are the ones watch and show use. When the line doesn't fit, components go
+// from the smallest end, then the split, before p next: without the hint,
+// p's next press is a guess.
 func (m BreakdownModel) selectionText() string {
 	// Runs on every frame; don't sort the rows when there's no selection
 	if m.selectedKey == "" {
@@ -177,22 +188,21 @@ func (m BreakdownModel) selectionText() string {
 		return ""
 	}
 	msg := m.messages[top[rank]]
-	parts := []string{fmt.Sprintf("top %d of %d: #%d %s", rank+1, len(top), msg.Index, render.Cost(msg.Cost.TotalCost))}
-	switch w5m, w1h := render.CacheTokensByTTL(msg.Usage); {
-	case w5m > 0 && w1h > 0:
-		parts = append(parts, fmt.Sprintf("cache write %s 5m + %s 1h", render.Number(w5m), render.Number(w1h)))
-	case w5m > 0:
-		parts = append(parts, "cache write "+render.Number(w5m)+" 5m")
-	case w1h > 0:
-		parts = append(parts, "cache write "+render.Number(w1h)+" 1h")
+	prefix := fmt.Sprintf("top %d of %d: #%d %s", rank+1, len(top), msg.Index, render.Cost(msg.Cost.TotalCost))
+	var split []string
+	for _, c := range render.CostComponents(msg.Cost) {
+		if c.Cost < minSplitShare*msg.Cost.TotalCost {
+			break
+		}
+		split = append(split, render.CostComponentLabel(c.Name)+" "+render.Cost(c.Cost))
 	}
-	parts = append(parts, "p next")
 	sep := " " + styles.Bullet + " "
-	// The key hint outranks the split: without it, p's next press is a guess.
-	if m.width > 0 && len(parts) == 3 {
-		if full := joinSegments(parts, sep, m.width-2); full != parts[0]+sep+parts[1]+sep+parts[2] {
-			parts = []string{parts[0], parts[2]}
+	width := m.width - 2
+	for n := len(split); n > 0; n-- {
+		line := prefix + sep + strings.Join(split[:n], ", ") + sep + "p next"
+		if m.width <= 0 || lipgloss.Width(line) <= width {
+			return line
 		}
 	}
-	return joinSegments(parts, sep, m.width-2)
+	return joinSegments([]string{prefix, "p next"}, sep, width)
 }

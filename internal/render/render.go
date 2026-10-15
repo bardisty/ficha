@@ -417,6 +417,34 @@ func CostComponentLabel(component string) string {
 	}
 }
 
+// CostComponent is one part of a message's cost: its key, as
+// CostComponentLabel takes it, and its dollars.
+type CostComponent struct {
+	Name string
+	Cost float64
+}
+
+// CostComponents returns the parts of cost that cost anything, largest
+// first. Ties keep the order input, output, cache write 5m, cache write 1h,
+// cache read, so the same row always reads the same way.
+func CostComponents(cost models.CostBreakdown) []CostComponent {
+	all := []CostComponent{
+		{"input", cost.InputCost},
+		{"output", cost.OutputCost},
+		{"cache_write_5m", cost.CacheWrite5mCost},
+		{"cache_write_1h", cost.CacheWrite1hCost},
+		{"cache_read", cost.CacheReadCost},
+	}
+	parts := make([]CostComponent, 0, len(all))
+	for _, c := range all {
+		if c.Cost > 0 {
+			parts = append(parts, c)
+		}
+	}
+	sort.SliceStable(parts, func(a, b int) bool { return parts[a].Cost > parts[b].Cost })
+	return parts
+}
+
 // SectionHeader renders a centered, bracketed section header padded to width
 // with horizontal rules, e.g. "────────[ COST BY MODEL ]────────".
 func SectionHeader(name string, width int, noColor bool) string {

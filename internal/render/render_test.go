@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"image/color"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1029,5 +1030,20 @@ func TestFitTask(t *testing.T) {
 		if w := lipgloss.Width(got); w != tt.width {
 			t.Errorf("FitTask(%q, %d) is %d wide", tt.task, tt.width, w)
 		}
+	}
+}
+
+// CostComponents ranks a cost's parts largest first, leaves out the free
+// ones, and keeps the cache-write TTLs apart.
+func TestCostComponents(t *testing.T) {
+	got := CostComponents(models.CostBreakdown{
+		InputCost: 0.001, OutputCost: 0.05, CacheWrite5mCost: 0.05, CacheWrite1hCost: 0, CacheReadCost: 0.19, TotalCost: 0.291,
+	})
+	want := []CostComponent{{"cache_read", 0.19}, {"output", 0.05}, {"cache_write_5m", 0.05}, {"input", 0.001}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("CostComponents = %v, want %v", got, want)
+	}
+	if got := CostComponents(models.CostBreakdown{}); len(got) != 0 {
+		t.Errorf("a free message has no components, got %v", got)
 	}
 }
