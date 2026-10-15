@@ -193,7 +193,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	if slices.ContainsFunc(sorted, func(r models.SessionResult) bool { return r.Nested != "" }) {
 		projectWant = len("PROJECT")
 		for _, r := range sorted {
-			projectWant = max(projectWant, lipgloss.Width(r.Nested))
+			projectWant = max(projectWant, lipgloss.Width(models.StripControl(r.Nested)))
 		}
 		projectRoom = 2 + len("PROJECT")
 	}
@@ -341,7 +341,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 			whenAt = render.Date(r.LastActive(), now())
 		}
 		when := dim(pad(whenAt, whenWidth()))
-		project := r.Nested
+		project := models.StripControl(r.Nested)
 		if project == "" {
 			project = "."
 		}

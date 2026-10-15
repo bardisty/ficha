@@ -331,13 +331,14 @@ func TestTrimLineEnds(t *testing.T) {
 
 // Titles and project names are transcript text, and can carry a bidi
 // override, which would turn the rest of the row around, or emoji drawn
-// two columns wide. The override goes, emoji are measured and cut as the
-// terminal draws them, and every cost starts in the same column.
+// two columns wide, keycaps among them. The override goes, emoji are
+// measured and cut as the terminal draws them, and every cost starts in
+// the same column.
 func TestBidiAndEmojiStayInColumns(t *testing.T) {
-	sun := strings.Repeat("☀️", 6)
+	sun := strings.Repeat("☀\ufe0f", 6)
 	check := func(name, out string, width int, whole string) {
 		t.Helper()
-		if strings.ContainsRune(out, '‮') {
+		if strings.ContainsRune(out, '\u202e') {
 			t.Errorf("%s: the override reached the output:\n%s", name, out)
 		}
 		if !strings.Contains(out, whole) {
@@ -360,14 +361,18 @@ func TestBidiAndEmojiStayInColumns(t *testing.T) {
 		}
 	}
 
+	nested := listResult("dddddddd-4", "From a worktree", 0.75)
+	nested.Nested = "wt-\u202eevil"
 	list := FormatSessionListTable([]models.SessionResult{
-		listResult("aaaaaaaa-1", "Fix ‮parser tests", 1.5),
+		listResult("aaaaaaaa-1", "Fix \u202eparser tests", 1.5),
 		listResult("bbbbbbbb-2", "Check "+sun+" weather for every region we serve, then the rest", 0.25),
-		listResult("cccccccc-3", "Pair with \U0001F469‍\U0001F4BB on review", 0.5),
+		listResult("cccccccc-3", "Pair with \U0001F469\u200d\U0001F4BB on review", 0.5),
+		listResult("eeeeeeee-5", "Steps "+strings.Repeat("1\ufe0f\u20e3", 40), 0.5),
+		nested,
 	}, true, ListTableOptions{Width: 80})
-	check("list", list, 80, "\U0001F469‍\U0001F4BB")
+	check("list", list, 80, "\U0001F469\u200d\U0001F4BB")
 
-	names := []string{"~/src/‮evil", "~/src/weather-" + sun, "~/src/" + sun + "/a-very-long-path/to-a-project-cut-from-the-left"}
+	names := []string{"~/src/\u202eevil", "~/src/weather-" + sun, "~/src/" + sun + "/a-very-long-path/to-a-project-cut-from-the-left"}
 	global := projectsTable(globalAnalysisWithProjects(map[string]float64{names[0]: 1.5, names[1]: 0.25, names[2]: 0.5}, names), true, GlobalTableOptions{TopN: 10, Width: 80})
 	check("global", global, 80, "weather-"+sun)
 }

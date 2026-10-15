@@ -309,5 +309,5 @@ func nestedTitle(r models.SessionResult, title string) string {
 	if r.Nested == "" {
 		return title
 	}
-	return r.Nested + " " + styles.FieldSep + " " + title
+	return models.StripControl(r.Nested) + " " + styles.FieldSep + " " + title
 }

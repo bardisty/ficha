@@ -1078,8 +1078,8 @@ func TestWeekdayClock(t *testing.T) {
 // graphemes: an emoji with a variation selector is two columns, a ZWJ
 // sequence is never split, and a wide character the cut falls inside goes.
 func TestTruncateRightAndTail(t *testing.T) {
-	sun := "☀️"
-	coder := "\U0001F469‍\U0001F4BB"
+	sun := "☀\ufe0f"
+	coder := "\U0001F469\u200d\U0001F4BB"
 	for _, tt := range []struct {
 		s           string
 		width       int
@@ -1091,6 +1091,7 @@ func TestTruncateRightAndTail(t *testing.T) {
 		{"x" + coder + "y", 3, "x…", coder + "y"},
 		{"日本語", 3, "日…", "語"},
 		{"日本語", 0, "", ""},
+		{"ab1\ufe0f\u20e3cd", 4, "ab…", "1\ufe0f\u20e3cd"},
 	} {
 		if got := TruncateRight(tt.s, tt.width); got != tt.right {
 			t.Errorf("TruncateRight(%q, %d) = %q, want %q", tt.s, tt.width, got, tt.right)

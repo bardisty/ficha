@@ -677,17 +677,21 @@ func FitTask(task string, width int) string {
 
 // TruncateRight fits s into width display columns, ending in an ellipsis
 // when it's cut. A negative width leaves s whole, and a zero width, with no
-// room even for the ellipsis, leaves nothing. It measures and cuts whole
-// graphemes as lipgloss.Width does, so an emoji with a variation selector
-// counts the two columns terminals draw it in.
+// room even for the ellipsis, leaves nothing. It measures as lipgloss.Width
+// does, so an emoji with a variation selector counts the two columns
+// terminals draw it in. ansi.Truncate counts an ASCII character as one
+// column even where it starts a wider cluster, as in a keycap emoji, so a
+// cut that comes out too wide is cut again, shorter.
 func TruncateRight(s string, width int) string {
 	if width < 0 || lipgloss.Width(s) <= width {
 		return s
 	}
-	if width == 0 {
-		return ""
+	for n := width; n > 0; n-- {
+		if cut := ansi.Truncate(s, n, styles.Ellipsis); lipgloss.Width(cut) <= width {
+			return cut
+		}
 	}
-	return ansi.Truncate(s, width, styles.Ellipsis)
+	return ""
 }
 
 // Tail is the longest end of s, in whole graphemes, that fits width display

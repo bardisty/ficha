@@ -235,10 +235,10 @@ func TestNoTasksHugeCountGivesWay(t *testing.T) {
 func TestTasksWithBidiAndEmojiStayInColumns(t *testing.T) {
 	var agents []models.AgentAnalysis
 	for i, task := range []string{
-		"Fix ‮parser tests",
-		"Check ☀️ weather API",
-		"Pair with \U0001F469‍\U0001F4BB on review",
-		"Check ☀️☀️☀️☀️☀️ weather for every region we serve",
+		"Fix \u202eparser tests",
+		"Check ☀\ufe0f weather API",
+		"Pair with \U0001F469\u200d\U0001F4BB on review",
+		"Check ☀\ufe0f☀\ufe0f☀\ufe0f☀\ufe0f☀\ufe0f weather for every region we serve",
 	} {
 		a := taskAgents()[0]
 		a.AgentID = strings.Repeat(string(rune('a'+i)), 12)
@@ -249,10 +249,10 @@ func TestTasksWithBidiAndEmojiStayInColumns(t *testing.T) {
 		t.Helper()
 		checkTaskRows(t, out, width)
 		plain := ansiRe.ReplaceAllString(out, "")
-		if strings.ContainsRune(plain, '‮') {
+		if strings.ContainsRune(plain, '\u202e') {
 			t.Errorf("%s: the override reached the output:\n%s", name, plain)
 		}
-		for _, whole := range []string{"Check ☀️ weather API", "\U0001F469‍\U0001F4BB"} {
+		for _, whole := range []string{"Check ☀\ufe0f weather API", "\U0001F469\u200d\U0001F4BB"} {
 			if !strings.Contains(plain, whole) {
 				t.Errorf("%s: want %q whole:\n%s", name, whole, plain)
 			}
