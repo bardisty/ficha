@@ -335,7 +335,7 @@ func TestBreakdownRunTagKey_NamesVisibleTags(t *testing.T) {
 	if got := m.renderStatsLine(m.layout()); !strings.HasSuffix(got, "│ rc = review-changes") || strings.Contains(got, "ac =") {
 		t.Errorf("at the top: %q", got)
 	}
-	// Both on screen, each named once, in the order they appear.
+	// Both on screen, each named once, in run order.
 	m.viewport.SetHeight(40)
 	if got := m.renderStatsLine(m.layout()); !strings.HasSuffix(got, "│ rc = review-changes, ac = audit-codebase") {
 		t.Errorf("both visible: %q", got)
@@ -345,6 +345,25 @@ func TestBreakdownRunTagKey_NamesVisibleTags(t *testing.T) {
 	m.viewport.SetYOffset(10)
 	if got := m.renderStatsLine(m.layout()); strings.Contains(got, " = ") {
 		t.Errorf("no tag visible: %q", got)
+	}
+}
+
+// The key lists the tags on screen in the order the runs started, so
+// scrolling to rows where audit-codebase's agent sits above review-changes'
+// doesn't swap the entries.
+func TestBreakdownRunTagKey_KeepsRunOrderAcrossScroll(t *testing.T) {
+	msgs, runs := runTagRows(20)
+	msgs[4].AgentID, msgs[4].WorkflowID = "a2222222222222222", "wf_ac"
+	msgs[7].AgentID, msgs[7].WorkflowID = "a1111111111111111", "wf_rc"
+	m := loadedBreakdown(t, 100, 24, nil)
+	updated, _ := m.Update(breakdownMsgsMsg{messages: msgs, workflows: runs, insights: &models.MessageInsights{}})
+	m = updated.(BreakdownModel)
+	m.viewport.SetHeight(6)
+	for _, top := range []int{0, 4} {
+		m.viewport.SetYOffset(top)
+		if got := m.renderStatsLine(m.layout()); !strings.HasSuffix(got, "│ rc = review-changes, ac = audit-codebase") {
+			t.Errorf("rows from %d: %q", top+1, got)
+		}
 	}
 }
 
