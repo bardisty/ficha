@@ -240,9 +240,9 @@ func (m Model) renderAnalysis() string {
 		sb.WriteString(m.renderCostByModelContent())
 	}
 
-	// Cost trend chart (only show if we have 2+ data points). A short
+	// Cost trend chart, from the first timestamped message on. A short
 	// terminal can't spare its nine rows.
-	if len(m.costHistory) >= 2 && !m.compact() {
+	if len(m.costHistory) > 0 && !m.compact() {
 		sb.WriteString("\n")
 		sb.WriteString("  " + render.SectionHeader("COST TREND", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
@@ -979,60 +979,38 @@ func (m Model) isEmptySession() bool {
 	return m.analysis.TotalCost.TotalCost == 0 && m.analysis.MessageCount == 0
 }
 
-// renderCostChart renders the cost trend sparkline with labels. The min/max and
-// count describe exactly the window the sparkline draws — its last chart-width
-// points — so the labels can never advertise a peak that is off-screen. When
-// the whole history fits the chart the count is a plain "(N msgs)"; once it
-// overflows the label discloses the shown/total split as "(last N of M msgs)".
+// renderCostChart renders the cost trend sparkline and its label: what a
+// column is, how long the chart spans, the drawn window's peak minute, and
+// that agents count. The scale runs from zero, so a minimum would read $0
+// on any chart with an idle minute, and the label leaves it out.
 func (m Model) renderCostChart() string {
 	var sb strings.Builder
 
-	// Find min and max over the drawn window only
-	visible := m.visibleCostHistory()
-	var minCost, maxCost float64
-	if len(visible) > 0 {
-		minCost = visible[0]
-		maxCost = visible[0]
-		for _, cost := range visible {
-			if cost < minCost {
-				minCost = cost
-			}
-			if cost > maxCost {
-				maxCost = cost
-			}
-		}
-	}
-
-	// Render the chart with proper indentation
 	chartView := m.costChart.View()
 	if styles.ASCII() {
 		chartView = styles.ASCIIChart(chartView)
 	}
-	chartLines := strings.Split(chartView, "\n")
-	for _, line := range chartLines {
+	for _, line := range strings.Split(chartView, "\n") {
 		if line != "" {
 			sb.WriteString("    " + line + "\n")
 		}
 	}
 
-	// Count label: plain when nothing is truncated, shown/total when it is.
-	// A narrow terminal gets the shorter forms, then no count, then no max:
-	// whole pieces, never half a word.
-	counts := []string{fmt.Sprintf("(%d msgs)", len(visible))}
-	if len(visible) < len(m.costHistory) {
-		counts = []string{
-			fmt.Sprintf("(last %d of %d msgs)", len(visible), len(m.costHistory)),
-			fmt.Sprintf("(last %d msgs)", len(visible)),
-		}
-	}
+	// A narrow terminal shortens the scope, then drops the unit, then the
+	// scope, then the span: whole pieces, never half a word. The scope goes
+	// late because MESSAGE INSIGHTS below says it counts the main
+	// conversation only, and without it the chart would seem to as well.
+	sep := " " + styles.FieldSep + " "
+	span := fmt.Sprintf("last %dm", len(m.costHistory))
+	peak := "max " + render.Cost(maxOf(m.costHistory))
 	const indent = "    "
-	scale := indent + "min: " + render.Cost(minCost)
-	var forms []string
-	for _, c := range counts {
-		forms = append(forms, scale+"  max: "+render.Cost(maxCost)+"  "+c)
-	}
-	forms = append(forms, scale+"  max: "+render.Cost(maxCost), scale)
-	scaleInfo := strings.TrimPrefix(m.firstFit(forms...), indent)
+	scaleInfo := strings.TrimPrefix(m.firstFit(
+		indent+"$ per minute, "+span+sep+peak+sep+"parent and agents",
+		indent+"$ per minute, "+span+sep+peak+sep+"with agents",
+		indent+span+sep+peak+sep+"with agents",
+		indent+span+sep+peak,
+		indent+peak,
+	), indent)
 	if !m.noColor {
 		sb.WriteString("    " + styles.DimStyle.Render(scaleInfo) + "\n")
 	} else {

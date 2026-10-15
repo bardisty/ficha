@@ -31,7 +31,7 @@ const (
 // sessions than that only the newest chartWidth are drawn. The bars, scale,
 // min/max and count must all derive from that same visible tail: pushing the
 // full history would let ntcharts' AutoMaxValue pin the scale to an evicted
-// off-screen peak (same fix as the watch TUI's visibleCostHistory).
+// off-screen peak.
 func renderCostChart(costs []float64, width int, noColor bool) string {
 	if len(costs) < summaryChartMin {
 		return ""

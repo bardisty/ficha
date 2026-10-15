@@ -3,7 +3,6 @@ package tui
 import (
 	"errors"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,6 +12,8 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/NimbleMarkets/ntcharts/v2/canvas"
+	"github.com/NimbleMarkets/ntcharts/v2/canvas/graph"
 	"github.com/NimbleMarkets/ntcharts/v2/sparkline"
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
@@ -34,9 +35,9 @@ const switchNotifyDuration = 5 * time.Second
 
 // Chart display constants
 const (
-	chartHeight        = 6    // Height of the sparkline chart in characters
-	chartWidth         = 60   // Default width of the chart (adjusted on resize)
-	maxCostHistorySize = 1000 // Max entries in cost history to prevent unbounded growth
+	chartHeight = 6           // Height of the sparkline chart in characters
+	chartWidth  = 60          // Default width of the chart (adjusted on resize)
+	chartBucket = time.Minute // The span of one chart column
 )
 
 // Model is the Bubbletea model for the TUI
@@ -137,8 +138,11 @@ type Model struct {
 	runningAgents string
 
 	// Cost trend chart
-	costChart   sparkline.Model // Sparkline chart for cost trend
-	costHistory []float64       // Rolling window of per-message costs (parent + agents, chronological)
+	costChart sparkline.Model // Sparkline chart for cost trend
+	// costHistory is the chart's columns: spend per clock minute, parent
+	// and agents, oldest first, ending with the minute chartMinute.
+	costHistory []float64
+	chartMinute time.Time
 
 	// Last subagent-tree fingerprint; the poll reloads when it changes
 	// (fsnotify never sees subagent/workflow writes — see subagentPollCmd)
@@ -343,10 +347,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetWidth(msg.Width)
 		m.layoutViewport()
 
-		// Re-window the cost chart to the new width. A plain Resize would keep the
-		// old width's pushed points (and its scale), so the drawn window and the
-		// min/max/count labels would disagree with the new width — rebuild from
-		// costHistory so the visible tail, scale, and labels all track the resize.
+		// Re-window the cost chart to the new width. A plain Resize would keep
+		// the old width's pushed points and scale, so the drawn window and the
+		// label would disagree with the new width.
 		m.rebuildCostChart()
 
 		// Re-render content with new dimensions
@@ -366,11 +369,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clockMsg:
 		// The redraw after every message re-reads the clock for the header's
 		// age, the rate and the hint's expiry. The body is rendered content,
-		// so it's redone only when an agent went quiet.
+		// so it's redone only when an agent went quiet or the chart's minute
+		// rolled over. The chart moves on while the session is idle, as the
+		// rate does, so a pause shows as empty columns.
 		if msg.gen != m.clockGen {
 			return m, nil // superseded by a faster chain; see analysisMsg
 		}
-		if m.ready && runningAgentsKey(m.analysis, m.clock()) != m.runningAgents {
+		rolled := m.analysis != nil && !m.clock().Truncate(chartBucket).Equal(m.chartMinute)
+		if rolled {
+			m.rebuildCostChart()
+		}
+		if m.ready && (rolled || runningAgentsKey(m.analysis, m.clock()) != m.runningAgents) {
 			m.refreshContent()
 		}
 		return m, clockCmd(m.clockInterval(), m.clockGen)
@@ -410,8 +419,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			clock = clockCmd(time.Second, m.clockGen)
 		}
 
-		// Update cost chart with new message costs
-		m.updateCostChart()
+		m.rebuildCostChart()
 
 		// Update viewport content
 		if m.ready {
@@ -616,7 +624,7 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	}
 
 	// Reset cost chart for new session
-	m.costHistory = make([]float64, 0)
+	m.costHistory = nil
 	m.costChart = newCostChart(m.getChartWidth(), m.noColor)
 
 	// Stop old file watcher, will be restarted by watchFile. Closing it
@@ -974,10 +982,9 @@ func (m Model) isHighlighted(field string) bool {
 	return m.recentlyChanged(field)
 }
 
-// getChartWidth returns the appropriate chart width based on terminal width
+// getChartWidth returns the chart's width in columns, one minute each: the
+// 76-column panel less a 4-column indent each side, so at most 68 minutes.
 func (m Model) getChartWidth() int {
-	// Chart fits within the 76-char panel with 4-char indent on each side
-	// Leave room for y-axis labels (if we add them later)
 	maxWidth := 68
 	if m.width > 0 && m.width-8 < maxWidth {
 		w := m.width - 8
@@ -989,74 +996,59 @@ func (m Model) getChartWidth() int {
 	return maxWidth
 }
 
-// mergedCostHistory extracts per-message costs in chronological order, keeping
-// at most max entries from the end. The analyzer emits messages as parent
-// block then agent blocks (its documented order — never sorted in place here),
-// so a stable sort both interleaves agent spend where it happened and keeps
-// that order deterministic when timestamps tie.
+// costBuckets sums spend, parent and agents alike, into one bucket per clock
+// minute, oldest first, ending with the minute now is in. That last bucket
+// fills as the minute goes on, and the rest shift only when it rolls over;
+// buckets that ended at now would shift every column on every tick. It
+// returns n buckets, or fewer when the first message is more recent, and
+// none without a timestamped message.
 //
-// A missing timestamp unmarshals to the zero time.Time (real session data does
-// this — see timeRange in analyzer/session.go). Left as-is it sorts before every
-// real timestamp, so a mid-session point without a timestamp would jump to chart
-// position 0 and be the first dropped by the tail-keep truncation even when it is
-// the newest spend. Instead each zero-ts point inherits the previous message's
-// effective timestamp (in file order), so the stable sort leaves it adjacent to
-// its file neighbors. Leading zero-ts points (nothing precedes them) keep the
-// zero time, and an all-zero list falls back to pure file order as before.
-func mergedCostHistory(msgs []models.MessageAnalysis, max int) []float64 {
-	type point struct {
-		ts   time.Time
-		cost float64
-	}
-	points := make([]point, len(msgs))
-	var lastTS time.Time
-	for i, msg := range msgs {
-		ts := msg.Timestamp
-		if ts.IsZero() {
-			ts = lastTS
-		} else {
-			lastTS = ts
+// Messages without a timestamp are skipped, as rollingRate skips them, so
+// the chart and the footer's rate count the same spend. One stamped after
+// now, by a clock running ahead, counts in the newest bucket.
+func costBuckets(msgs []models.MessageAnalysis, now time.Time, n int) []float64 {
+	var first time.Time
+	for _, msg := range msgs {
+		if !msg.Timestamp.IsZero() && (first.IsZero() || msg.Timestamp.Before(first)) {
+			first = msg.Timestamp
 		}
-		points[i] = point{ts: ts, cost: msg.Cost.TotalCost}
 	}
-	sort.SliceStable(points, func(i, j int) bool {
-		return points[i].ts.Before(points[j].ts)
-	})
-	if len(points) > max {
-		points = points[len(points)-max:]
+	if first.IsZero() || n < 1 {
+		return nil
 	}
-	history := make([]float64, len(points))
-	for i, p := range points {
-		history[i] = p.cost
+	end := now.Truncate(chartBucket)
+	span := int(end.Sub(first.Truncate(chartBucket))/chartBucket) + 1
+	n = max(1, min(n, span))
+	start := end.Add(-time.Duration(n-1) * chartBucket)
+	buckets := make([]float64, n)
+	for _, msg := range msgs {
+		if msg.Timestamp.IsZero() || msg.Timestamp.Before(start) {
+			continue
+		}
+		buckets[min(int(msg.Timestamp.Sub(start)/chartBucket), n-1)] += msg.Cost.TotalCost
 	}
-	return history
+	return buckets
 }
 
-// visibleCostHistory returns the tail of costHistory the chart can actually draw
-// at the current width. The sparkline's ring buffer holds only chart-width
-// points, so this is the exact window the bars, scale, and labels must all agree
-// on (see rebuildCostChart / renderCostChart).
-func (m Model) visibleCostHistory() []float64 {
-	w := m.getChartWidth()
-	if len(m.costHistory) <= w {
-		return m.costHistory
-	}
-	return m.costHistory[len(m.costHistory)-w:]
-}
-
-// rebuildCostChart recreates the sparkline at the current width and pushes only
-// the visible window. Pushing the full history would let ntcharts' AutoMaxValue
-// ratchet the scale to a peak that has already rotated out of the ring buffer,
-// flat-lining the visible bars against an off-screen max; pushing only
-// what is drawn keeps the scale honest to the visible bars.
+// rebuildCostChart buckets the analysis at the current width and clock and
+// redraws the sparkline from scratch. It runs on every reload, on resize and
+// when the clock enters a new minute; the analyzer lists agent messages after
+// the parent's, so appending to the last chart wouldn't place them, and
+// bucketing is far cheaper than the re-parse that precedes a reload.
 func (m *Model) rebuildCostChart() {
+	now := m.clock()
+	m.chartMinute = now.Truncate(chartBucket)
+	m.costHistory = nil
+	if m.analysis != nil {
+		m.costHistory = costBuckets(m.analysis.Messages, now, m.getChartWidth())
+	}
 	m.costChart = newCostChart(m.getChartWidth(), m.noColor)
-	visible := m.visibleCostHistory()
-	m.costChart.PushAll(visible)
-	// The sparkline's max starts at 1 and only grows, so sub-dollar messages
-	// (nearly all of them) would draw in the bottom rows. Scale to the
-	// window's own peak so its shape uses the full height.
-	if peak := maxOf(visible); peak > 0 {
+	m.costChart.PushAll(m.costHistory)
+	// The sparkline's max starts at 1 and only grows, so sub-dollar minutes
+	// would draw in the bottom rows. Scale to the window's own peak so its
+	// shape uses the full height; the floor stays at zero.
+	peak := maxOf(m.costHistory)
+	if peak > 0 {
 		m.costChart.SetMax(peak)
 	}
 
@@ -1064,9 +1056,49 @@ func (m *Model) rebuildCostChart() {
 	// the ASCII glyph set draws columns, which renderCostChart maps to ASCII.
 	if styles.ASCII() {
 		m.costChart.Draw()
+		floorEmptyMinutes(&m.costChart, len(m.costHistory))
 	} else {
-		m.costChart.DrawBraille()
+		drawMinuteLine(&m.costChart, m.costHistory, peak)
 	}
+}
+
+// floorEmptyMinutes marks the bottom row of each of the last n columns that
+// drew no block. A minute too cheap for one, or idle, would otherwise leave
+// its column blank, and an idle stretch would read as margin rather than
+// time; the braille line runs along the floor there instead.
+func floorEmptyMinutes(chart *sparkline.Model, n int) {
+	w, h := chart.Width(), chart.Height()
+	for x := w - n; x < w; x++ {
+		p := canvas.Point{X: x, Y: h - 1}
+		if r := chart.Canvas.Cell(p).Rune; r == 0 || r == ' ' {
+			chart.Canvas.SetRuneWithStyle(p, '_', chart.Style)
+		}
+	}
+}
+
+// drawMinuteLine draws vals on chart as a braille line, one minute to a cell
+// on its left dot column, so the newest minute is in the last cell and a
+// rollover moves the line exactly one cell. The sparkline's own DrawBraille
+// spreads a full chart's points unevenly over one cell fewer, which would
+// break the label's one-minute-per-column count.
+func drawMinuteLine(chart *sparkline.Model, vals []float64, peak float64) {
+	w, h := chart.Width(), chart.Height()
+	grid := graph.NewBrailleGrid(w, h, 0, float64(2*w-1), 0, float64(h))
+	at := func(i int) canvas.Point {
+		var y float64
+		if peak > 0 {
+			y = vals[i] / peak * float64(h)
+		}
+		return grid.GridPoint(canvas.Float64Point{X: float64(2 * (w - len(vals) + i)), Y: y})
+	}
+	for i := range vals {
+		for _, p := range graph.GetLinePoints(at(i), at(min(i+1, len(vals)-1))) {
+			grid.Set(p)
+		}
+	}
+	chart.Canvas.Clear()
+	graph.DrawBraillePatterns(&chart.Canvas, canvas.Point{}, grid.BraillePatterns(), chart.Style)
+	chart.Canvas.SetStyle(chart.Style)
 }
 
 // maxOf returns the largest value, or 0 for none.
@@ -1085,18 +1117,4 @@ func newCostChart(width int, noColor bool) sparkline.Model {
 	}
 	chartStyle := lipgloss.NewStyle().Foreground(styles.SuccessColor)
 	return sparkline.New(width, chartHeight, sparkline.WithStyle(chartStyle))
-}
-
-// updateCostChart rebuilds the sparkline from the analysis on every reload.
-// A full rebuild (rather than pushing the new tail) is what lets the list
-// carry agent messages, whose timestamps land mid-list; reloads only happen
-// on real file changes, and the rebuild is far cheaper than the re-parse
-// that precedes it.
-func (m *Model) updateCostChart() {
-	if m.analysis == nil {
-		return
-	}
-
-	m.costHistory = mergedCostHistory(m.analysis.Messages, maxCostHistorySize)
-	m.rebuildCostChart()
 }

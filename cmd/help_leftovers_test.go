@@ -280,7 +280,7 @@ func TestHelpOutputNamesTheLiveViewsTerms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, term := range []string{"IN, OUT, C_WR and C_RD", "/h (10m)", "-/h", "~compaction", "COST TREND", "last 68 of 618 msgs"} {
+	for _, term := range []string{"IN, OUT, C_WR and C_RD", "/h (10m)", "-/h", "~compaction", "COST TREND", "$ per minute, last 68m"} {
 		if !strings.Contains(out, term) {
 			t.Errorf("help output lacks %q", term)
 		}
