@@ -149,7 +149,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	// The project needs the room renderPanel keeps for it.
 	need := slices.Clone(fields)
 	if opts.Project != "" {
-		need = append(need, strings.Repeat(" ", min(lipgloss.Width(opts.Project), minProjectWidth)))
+		need = append(need, strings.Repeat(" ", min(lipgloss.Width(models.StripControl(opts.Project)), minProjectWidth)))
 	}
 	if lipgloss.Width(strings.Join(need, "  "+styles.BoxVerticalSep+"  ")) > width-6 {
 		fields[0] = count
