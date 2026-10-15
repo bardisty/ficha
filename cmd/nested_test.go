@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/csv"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -308,19 +309,28 @@ func TestNestedProjectsWithoutOwnSessions(t *testing.T) {
 		}
 	})
 
-	t.Run("a directory with neither gets the usual error", func(t *testing.T) {
-		repo, _, _ := setupNestedFixture(t)
-		src := filepath.Join(repo, "src")
-		if err := os.MkdirAll(src, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		t.Chdir(src)
-		_, _, err := executeCLISplit(t, "summary", "--nested")
-		want := "Claude Code has no sessions for " + src + ". Sessions are recorded per directory Claude Code was started in.\nFound sessions for parent directory " + repo + ". Run: ficha summary -p " + shellQuote(repo)
-		if err == nil || !strings.HasPrefix(err.Error(), want) {
-			t.Errorf("error %v, want it to start %q", err, want)
-		}
-	})
+	// A project directory left with an index and no transcripts doesn't
+	// count as a project under the directory.
+	for _, leftover := range []bool{false, true} {
+		t.Run(fmt.Sprintf("a directory with neither gets the usual error, leftover %v", leftover), func(t *testing.T) {
+			repo, projectsDir, _ := setupNestedFixture(t)
+			src := filepath.Join(repo, "src")
+			if err := os.MkdirAll(src, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if leftover {
+				old := filepath.Join(src, ".claude", "worktrees", "old")
+				writeIndex(t, filepath.Join(projectsDir, paths.PathToProjectDir(old), "sessions-index.json"),
+					`{"version":1,"entries":[],"originalPath":`+jsonString(old)+`}`)
+			}
+			t.Chdir(src)
+			_, _, err := executeCLISplit(t, "summary", "--nested")
+			want := "Claude Code has no sessions for " + src + ". Sessions are recorded per directory Claude Code was started in.\nFound sessions for parent directory " + repo + ". Run: ficha summary -p " + shellQuote(repo)
+			if err == nil || !strings.HasPrefix(err.Error(), want) {
+				t.Errorf("error %v, want it to start %q", err, want)
+			}
+		})
+	}
 
 	// Under ~, every project is nested, so home doesn't stand in for them.
 	t.Run("not at home", func(t *testing.T) {
