@@ -36,6 +36,9 @@ type BreakdownResult struct {
 	// (see agentOrder): a run with no timestamped message last, ties in
 	// discovery order.
 	Workflows []models.WorkflowMeta
+	// Tasks names each agent's task, keyed by AgentID, for the agents that
+	// have one (see models.AgentAnalysis.TaskLabel).
+	Tasks map[string]string
 }
 
 // GetBreakdownMessages parses a session and returns all messages (parent + agents)
@@ -86,6 +89,7 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 	var workflows []models.WorkflowMeta
 	seenRuns := make(map[string]bool)
 	runStart := make(map[string]time.Time) // earliest message of any of the run's agents
+	tasks := make(map[string]string)
 
 	for i, agentPath := range agents.paths {
 		if agents.parses[i].err != nil {
@@ -98,6 +102,9 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		// Same key space as AgentAnalysis.AgentID, so a marker in the TUI can
 		// be cross-referenced against the machine outputs
 		displayID := parser.ExtractAgentID(agentPath)
+		if task := (models.AgentAnalysis{AgentType: agents.parses[i].agentType, Description: agents.parses[i].description}).TaskLabel(); task != "" {
+			tasks[displayID] = task
+		}
 		// A run is listed only once one of its agents has a message, so a
 		// run with no rows can't claim a run tag.
 		runID := parser.ExtractWorkflowRunID(agentPath)
@@ -174,6 +181,7 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		EstimatedCostMessages: estimatedCostMessages,
 		Insights:              insights,
 		Workflows:             workflows,
+		Tasks:                 tasks,
 	}, nil
 }
 

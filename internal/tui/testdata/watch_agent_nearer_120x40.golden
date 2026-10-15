@@ -31,10 +31,10 @@
                                                                                                                         
   ───────────────────────────[ AGENT SUB-SESSIONS ]───────────────────────────                                          
                                                                                                                         
-    Parent session                                 $7.90                                                                
-  ● [Af6e5d4c] Sonnet 5       1 msg  98% ctx       $1.58                                                                
-    [A1b2c3d4] Haiku 4.5    12 msgs 100% ctx       $0.4200                                                              
-    ── workflow: audit-codebase (completed)        $1.65                                                                
+    Parent session                                                   $7.90                                              
+  ● [Af6e5d4c] Find the auth middleware   Sonnet 5     98% ctx       $1.58                                              
+    [A1b2c3d4] Explore                    Haiku 4.5   100% ctx       $0.4200                                            
+    ── workflow: audit-codebase (completed)                          $1.65                                              
   ══[ ↓ 10 more ]═════════════════════════════════════════════════════════════                                          
   $9.90 API est. │ ctx 38% (agent 98%) │ $6.42/h (10m) │ 37 msgs │ 1h 30m                                               
   q quit • j/k scroll • space/b page • g/G top/bottom • f follow • ? keys                                               

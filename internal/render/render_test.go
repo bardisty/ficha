@@ -1006,3 +1006,28 @@ func TestWrapHangingMarkedPathLongerThanWidth(t *testing.T) {
 		t.Errorf("a path on its own line at 40:\ngot:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// A task fits by display columns, so a wide character counts twice, and a
+// cut never leaves a space before its ellipsis.
+func TestFitTask(t *testing.T) {
+	tests := []struct {
+		task  string
+		width int
+		want  string
+	}{
+		{"Find the auth middleware", 30, "Find the auth middleware      "},
+		{"Find the auth middleware", 14, "Find the auth…"},
+		{"Find the auth middleware", 15, "Find the auth… "},
+		{"認証ミドルウェアを探す", 12, "認証ミドル… "},
+		{"", 4, "    "},
+	}
+	for _, tt := range tests {
+		got := FitTask(tt.task, tt.width)
+		if got != tt.want {
+			t.Errorf("FitTask(%q, %d) = %q, want %q", tt.task, tt.width, got, tt.want)
+		}
+		if w := lipgloss.Width(got); w != tt.width {
+			t.Errorf("FitTask(%q, %d) is %d wide", tt.task, tt.width, w)
+		}
+	}
+}

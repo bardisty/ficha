@@ -136,6 +136,7 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 				TotalCost:   models.CostBreakdown{TotalCost: 1.58},
 				CostByModel: map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 1.58}},
 				Context:     &models.ContextUsage{Tokens: 380000, Window: 1000000, Percent: 38, CompactAt: 967000},
+				Description: "Find the auth middleware",
 			},
 			{
 				AgentID:      "a1b2c3d4e5f6",
@@ -144,6 +145,8 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 				EndTime:      goldenTime(10, 40, 0),
 				TotalCost:    models.CostBreakdown{TotalCost: 0.42},
 				CostByModel:  map[string]models.CostBreakdown{"claude-haiku-4-5": {TotalCost: 0.42}},
+				// No description, so the row shows the agent's type.
+				AgentType: "Explore",
 				// At its 200K mark, so the color goldens show it red
 				Context: &models.ContextUsage{Tokens: 200000, Window: 200000, Percent: 100, CompactAt: 200000},
 			},
@@ -166,6 +169,8 @@ func goldenViewAnalysis() *models.SessionAnalysis {
 				EndTime:      goldenTime(11, 10, 0),
 				TotalCost:    models.CostBreakdown{TotalCost: 1.10},
 				CostByModel:  map[string]models.CostBreakdown{"claude-opus-4-8": {TotalCost: 1.10}},
+				// Too long for any watch row, so it's cut.
+				Description: "Audit the parser for unchecked errors and the tests that miss them",
 				// In the warning band short of its 967K mark, so the color goldens show it orange
 				Context: &models.ContextUsage{Tokens: 900000, Window: 1000000, Percent: 90, CompactAt: 967000},
 			},
@@ -247,6 +252,15 @@ func TestGoldenWatchViewColor(t *testing.T) {
 // total and the token rows — with the rest flagged in the footer rule.
 func TestGoldenWatchView80x24(t *testing.T) {
 	checkGolden(t, "watch_view_80x24", goldenWatchViewSized(t, true, 80, 24))
+}
+
+// The agent rows carry each agent's task after its marker, as show's do:
+// whole while it fits beside the count, then in the count's place, cut to
+// fit, and gone once that would cut it below render.MinTaskWidth.
+func TestGoldenWatchAgentTasks(t *testing.T) {
+	for _, width := range []int{80, 66, 60} {
+		checkGolden(t, fmt.Sprintf("watch_agent_tasks_%dx70", width), goldenWatchViewSized(t, true, width, 70))
+	}
 }
 
 // A narrow terminal gets the whole body, fitted: each row sheds whole
@@ -339,6 +353,9 @@ func goldenBreakdownViewSized(t *testing.T, noColor bool, width, height int) str
 	updated, _ = m.Update(breakdownMsgsMsg{
 		messages:  goldenBreakdownMessages(),
 		workflows: []models.WorkflowMeta{{RunID: "wf_2e7850b6-b19", Name: "audit-codebase", Status: "completed"}},
+		// One agent has a task and the workflow agent has none, as when its
+		// meta file is missing.
+		tasks:     map[string]string{"g7h8i9j0k1l2": "Find the auth middleware"},
 		totalCost: 3.41,
 		minCost:   0.01,
 		maxCost:   1.87,
@@ -372,6 +389,11 @@ func TestGoldenBreakdownView(t *testing.T) {
 // way whole rather than the right edge cutting C_RD in half.
 func TestGoldenBreakdownView79(t *testing.T) {
 	checkGolden(t, "breakdown_view_79", goldenBreakdownViewSized(t, true, 79, 24))
+}
+
+// A wide terminal gives AGENT the spare columns for the agents' tasks.
+func TestGoldenBreakdownView120(t *testing.T) {
+	checkGolden(t, "breakdown_view_120x40", goldenBreakdownViewSized(t, true, 120, 40))
 }
 
 func TestGoldenBreakdownViewColor(t *testing.T) {

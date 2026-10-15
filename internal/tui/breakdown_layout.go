@@ -5,10 +5,12 @@ import (
 	"strings"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 )
 
-// Breakdown column widths, in display columns. Every cell is ASCII or
-// single-width, so padding by byte or rune count is padding by column.
+// Breakdown column widths, in display columns. Every cell but an agent's
+// task is ASCII or single-width, so padding by byte or rune count is padding
+// by column; render.FitTask pads a task by display width.
 const (
 	bdMinIndexWidth = 3
 	bdTimeWidth     = 8
@@ -30,6 +32,7 @@ const (
 type breakdownLayout struct {
 	indexWidth int
 	agentWidth int  // 0 when AGENT isn't drawn
+	taskWidth  int  // columns AGENT gets past agentWidth for agents' tasks; 0 for none
 	modelExtra int  // columns MODEL gets past bdModelWidth, for unknown model IDs
 	runTags    bool // AGENT cells carry workflow run tags
 	in, out    bool
@@ -93,11 +96,48 @@ func (l breakdownLayout) widenModel(want, termWidth int) breakdownLayout {
 	return l
 }
 
+// bdMinTaskWidth and bdMaxTaskWidth bound AGENT's task. A task repeats on
+// every one of its agent's rows, so a stub that only show's one row per
+// agent could live with says too little here, and past the cap the parent
+// rows, blank in AGENT, would carry a wide gap for one long task.
+const (
+	bdMinTaskWidth = 20
+	bdMaxTaskWidth = 40
+)
+
+// widenAgent gives AGENT room for the agents' tasks after their markers,
+// want columns at most, from whatever the row leaves spare, as widenModel
+// does for MODEL. A task is a nicety beside a cost, so it never takes a
+// column from the others, and with less room than bdMinTaskWidth (or the
+// whole task, if shorter) it doesn't show at all.
+func (l breakdownLayout) widenAgent(want, termWidth int) breakdownLayout {
+	if l.agentWidth == 0 || want == 0 {
+		return l
+	}
+	room := min(want, bdMaxTaskWidth)
+	if termWidth > 0 {
+		room = min(room, termWidth-l.width()-bdGap)
+	}
+	if room >= min(want, bdMinTaskWidth) {
+		l.taskWidth = room
+	}
+	return l
+}
+
+// agentColumn is AGENT's width: its markers, and the tasks after them, a
+// column gap apart.
+func (l breakdownLayout) agentColumn() int {
+	if l.taskWidth > 0 {
+		return l.agentWidth + bdGap + l.taskWidth
+	}
+	return l.agentWidth
+}
+
 // width is the display width of a row drawn with this layout, indent included.
 func (l breakdownLayout) width() int {
 	w := bdIndent + l.indexWidth + bdGap + bdTimeWidth + bdGap + l.modelWidth() + bdGap + bdCostWidth
 	if l.agentWidth > 0 {
-		w += bdGap + l.agentWidth
+		w += bdGap + l.agentColumn()
 	}
 	if l.in {
 		w += bdGap + bdInWidth
@@ -143,7 +183,7 @@ func (l breakdownLayout) header() string {
 	return l.join(breakdownCells{
 		index:      fmt.Sprintf("%-*s", l.indexWidth, "#"),
 		time:       fmt.Sprintf("%-*s", bdTimeWidth, "TIME"),
-		agent:      fmt.Sprintf("%-*s", l.agentWidth, "AGENT"),
+		agent:      fmt.Sprintf("%-*s", l.agentColumn(), "AGENT"),
 		model:      fmt.Sprintf("%-*s", l.modelWidth(), "MODEL"),
 		cost:       fmt.Sprintf("%*s", bdCostWidth, "COST"),
 		in:         fmt.Sprintf("%*s", bdInWidth, "IN"),
@@ -197,4 +237,14 @@ func workflowRunTag(name string) string {
 		return words[0][:min(2, len(words[0]))]
 	}
 	return string(words[0][0]) + string(words[1][0])
+}
+
+// agentColumnCell is the AGENT cell padded to its column: agentCell, then,
+// when the layout has room, the agent's task.
+func (m BreakdownModel) agentColumnCell(msg models.BreakdownMessage, layout breakdownLayout) string {
+	cell := fmt.Sprintf("%-*s", layout.agentWidth, m.agentCell(msg, layout.runTags))
+	if layout.taskWidth == 0 {
+		return cell
+	}
+	return cell + strings.Repeat(" ", bdGap) + render.FitTask(m.tasks[msg.AgentID], layout.taskWidth)
 }

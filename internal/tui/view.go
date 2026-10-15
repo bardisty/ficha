@@ -348,8 +348,9 @@ func (m Model) renderCostByModelContent() string {
 }
 
 // renderAgentBreakdownContent renders just the agent breakdown content (no header)
-// Layout: [AN] Model (ID) msgs cost
-// All rows align costs at column 47 (4 indent + 43 content)
+// Layout: [AN] task Model msgs ctx cost
+// All rows align costs at column 47 (4 indent + 43 content), further right
+// by agentTasks.extra when the rows carry tasks
 // Example:
 //
 //	Parent session                              $1.14
@@ -359,13 +360,16 @@ func (m Model) renderAgentBreakdownContent() string {
 	var sb strings.Builder
 	a := m.analysis
 
-	// Show parent session cost - right-aligned cost at column 47
+	// Show parent session cost - right-aligned cost at column 47, or later
+	// with tasks
 	// Format: 4(indent) + 40(label) + 3(spaces) + cost = 47 chars before cost
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	// Uses plain white (not magnitude gradient) - model tier colors provide cost hierarchy
 	// A terminal narrower than the rows takes the columns it lacks out of
 	// the space before the cost, so the cost stays on screen.
-	labelWidth := 40 - m.agentShrink()
+	rows := agentRows(a, m.clock())
+	tasks := m.agentTaskColumn(rows)
+	labelWidth := 40 - m.agentShrink(tasks) + tasks.extra()
 	parentHighlighted := m.isHighlighted("parent_cost")
 	parentCostStr := render.CostStyled(a.ParentCost.TotalCost, 11, parentHighlighted, m.noColor)
 	if !m.noColor {
@@ -377,7 +381,7 @@ func (m Model) renderAgentBreakdownContent() string {
 
 	// Show each agent as [A<id>] model msgs ctx cost
 	// Format: 2(indent) + 1(dot) + 1 + 10(marker) + 1 + 11(model) + 9(msgs) + 9(ctx) + 3(gap) + cost
-	//       = 47 chars before cost (aligned with parent)
+	//       = 47 chars before cost (aligned with parent), plus any task cell
 	// Uses plain white costs - model tier colors already provide cost hierarchy
 	// Workflow agents are grouped after regular agents; a dim header line marks
 	// each run's start. Markers carry the real agent ID (abbreviated), matching
@@ -386,7 +390,6 @@ func (m Model) renderAgentBreakdownContent() string {
 	// When a heading doesn't fit, every heading drops its status before a
 	// name is cut, all or none, as show does, so a heading without one can't
 	// read as a run that had none.
-	rows := agentRows(a, m.clock())
 	statuses := true
 	for _, row := range rows {
 		if row.kind == agentRowRun &&
@@ -421,16 +424,25 @@ func (m Model) renderAgentBreakdownContent() string {
 				sb.WriteString("    " + styles.DimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, 11) + "\n")
 			}
 		case agentRowFinished:
-			label := fmt.Sprintf("%-22s", fmt.Sprintf("%d finished agents", row.count))
+			// The fold has no task, so where the agents' count makes way for
+			// theirs it keeps its own, in the room its task cell leaves. A
+			// task cell too narrow for the label and the count leaves the
+			// label alone, as the agents' rows are.
+			text := fmt.Sprintf("%d finished agents", row.count)
+			labelWidth, noMsgs := 22+tasks.cell(), tasks.noMsgs
+			if noMsgs && lipgloss.Width(text) <= labelWidth-agentMsgsWidth {
+				labelWidth, noMsgs = labelWidth-agentMsgsWidth, false
+			}
+			label := fmt.Sprintf("%-*s", labelWidth, text)
 			costStr := render.CostStyled(row.cost, 11, false, m.noColor)
-			msgs, ctx, gap := m.agentColumns(row.msgs, nil)
+			msgs, ctx, gap := m.agentColumns(row.msgs, nil, noMsgs, m.agentShrink(tasks))
 			if m.noColor {
 				sb.WriteString("    " + label + msgs + ctx + gap + costStr + "\n")
 			} else {
 				sb.WriteString("    " + styles.DimStyle.Render(label) + dimMsgs(msgs) + ctx + gap + costStr + "\n")
 			}
 		case agentRowAgent:
-			sb.WriteString(m.renderAgentRow(row.agent, row.running))
+			sb.WriteString(m.renderAgentRow(row.agent, row.running, tasks))
 		}
 	}
 
@@ -448,13 +460,13 @@ func (m Model) renderAgentBreakdownContent() string {
 	return sb.String()
 }
 
-// agentShrink is how many columns the agent section's rows, 58 wide, lack
-// on the terminal.
-func (m Model) agentShrink() int {
+// agentShrink is how many columns the agent section's rows, 58 wide with no
+// task, lack on the terminal.
+func (m Model) agentShrink(tasks agentTasks) int {
 	if m.width <= 0 {
 		return 0
 	}
-	return max(4+40+3+11-m.width, 0)
+	return max(4+40+3+11+tasks.extra()-m.width, 0)
 }
 
 // dimMsgs dims agentColumns' count, leaving its leading space plain.
@@ -465,16 +477,79 @@ func dimMsgs(msgs string) string {
 	return " " + styles.DimStyle.Render(msgs[1:])
 }
 
+// agentTasks is the task column of watch's agent rows, as show draws it
+// after the marker: width columns wide, 0 when no row has one, and taking
+// the message count's place when noMsgs.
+type agentTasks struct {
+	width  int
+	noMsgs bool
+}
+
+// cell is the columns the task takes in a row: its width and the space
+// before it.
+func (t agentTasks) cell() int {
+	if t.width == 0 {
+		return 0
+	}
+	return 1 + t.width
+}
+
+// extra is how far the task moves the cost column right: its cell, less the
+// count it replaces.
+func (t agentTasks) extra() int {
+	if t.noMsgs {
+		return t.cell() - agentMsgsWidth
+	}
+	return t.cell()
+}
+
+// agentMsgsWidth is the width of agentColumns' message count, " 22 msgs".
+const agentMsgsWidth = 9
+
+// agentTaskColumn fits the drawn agent rows' tasks into the room the panel
+// has past the 58-column rows, as show does: beside the count when the
+// widest fits whole, then in the count's place, cut to fit, and gone when
+// that would cut it below render.MinTaskWidth. So the task gives way after
+// the count and before the reading and the cost. The rows stay inside the
+// panel, as every row of watch does, so a long task is cut shorter than
+// show cuts it on a wide terminal. The column takes all the room it has
+// rather than the widest task's width, so the cost column moves once when
+// the first task appears, not again with each new agent.
+func (m Model) agentTaskColumn(rows []agentRow) agentTasks {
+	want := 0
+	for _, row := range rows {
+		if row.kind == agentRowAgent {
+			want = max(want, lipgloss.Width(row.agent.TaskLabel()))
+		}
+	}
+	room := panelWidthFor(m.width) - (4 + 40 + 3 + 11)
+	switch {
+	case want == 0:
+		return agentTasks{}
+	case 1+want <= room:
+		return agentTasks{width: room - 1}
+	case room+agentMsgsWidth-1 >= min(want, render.MinTaskWidth):
+		return agentTasks{width: room + agentMsgsWidth - 1, noMsgs: true}
+	default:
+		return agentTasks{}
+	}
+}
+
 // agentColumns are an agent row's message count, " 22 msgs" right-aligned in
 // 9 columns, its context reading, " 38% ctx" in 9 more (blank for a nil c),
 // and the gap before its cost: 3 spaces, less what a narrow terminal lacks.
 // Where no gap is left the count goes, then the reading, so the cost stays.
 // The count goes first because the reading says more about a running agent.
-func (m Model) agentColumns(n int, c *models.ContextUsage) (msgs, ctx, gap string) {
-	width := 3 - m.agentShrink()
+// The count also goes where noMsgs, for a task's room. shrink is
+// agentShrink's for the section's rows.
+func (m Model) agentColumns(n int, c *models.ContextUsage, noMsgs bool, shrink int) (msgs, ctx, gap string) {
+	width := 3 - shrink
 	msgs = fmt.Sprintf(" %8s", msgCount(n))
+	if noMsgs {
+		msgs = ""
+	}
 	ctx = " " + render.AgentContextCell(c, m.noColor)
-	if width < 1 {
+	if width < 1 && msgs != "" {
 		msgs, width = "", width+len(msgs)
 	}
 	if width < 1 {
@@ -494,9 +569,9 @@ func workflowCost(agents []models.AgentAnalysis, runID string) float64 {
 	return total
 }
 
-// renderAgentRow renders one agent's row: live dot, [A<id>] marker, model,
-// message count, context reading and cost.
-func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool) string {
+// renderAgentRow renders one agent's row: live dot, [A<id>] marker, task,
+// model, message count, context reading and cost.
+func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool, tasks agentTasks) string {
 	agentHighlighted := m.isHighlighted("agent_" + agent.AgentID)
 	costStr := render.CostStyled(agent.TotalCost.TotalCost, 11, agentHighlighted, m.noColor)
 
@@ -513,10 +588,14 @@ func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool) string {
 		dot = styles.LiveDot
 	}
 
-	msgs, ctx, gap := m.agentColumns(agent.MessageCount, agent.Context)
+	msgs, ctx, gap := m.agentColumns(agent.MessageCount, agent.Context, tasks.noMsgs, m.agentShrink(tasks))
+	task := ""
+	if tasks.width > 0 {
+		task = render.FitTask(agent.TaskLabel(), tasks.width) + " "
+	}
 	if m.noColor {
-		return fmt.Sprintf("  %s %-10s %-11s%s%s%s%s\n",
-			dot, marker, modelLabel, msgs, ctx, gap, costStr)
+		return fmt.Sprintf("  %s %-10s %s%-11s%s%s%s%s\n",
+			dot, marker, task, modelLabel, msgs, ctx, gap, costStr)
 	}
 	if running {
 		dot = styles.LiveIndicatorStyle.Render(dot)
@@ -529,8 +608,8 @@ func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool) string {
 	modelColor := styles.GetModelColor(modelName)
 	modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-11s", modelLabel))
 
-	return fmt.Sprintf("  %s %s %s%s%s%s%s\n",
-		dot, markerStyled, modelStyled, dimMsgs(msgs), ctx, gap, costStr)
+	return fmt.Sprintf("  %s %s %s%s%s%s%s%s\n",
+		dot, markerStyled, task, modelStyled, dimMsgs(msgs), ctx, gap, costStr)
 }
 
 // msgCount is "1 msg" or "N msgs".
