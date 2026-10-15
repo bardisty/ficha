@@ -234,9 +234,9 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 
 	// treeMsgs is whether agent rows show their message count, and treeTask
 	// how wide their task is (0 for none). The count goes from every row
-	// before a task would be cut, and the task, cut below minTaskWidth,
-	// before any model would be cut to fit before COST: the model tells
-	// agents apart, the count doesn't.
+	// before a task would be cut, and the task, cut below
+	// render.MinTaskWidth, before any model would be cut to fit before COST:
+	// the model tells agents apart, the count doesn't.
 	treeMsgs := true
 	treeTask := 0
 	if expandAgents {
@@ -267,7 +267,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 				treeMsgs = false
 				treeTask = taskRoom(false)
 			}
-			if treeTask < min(taskWant, minTaskWidth) {
+			if treeTask < min(taskWant, render.MinTaskWidth) {
 				treeTask = 0
 				treeMsgs = true
 			}
@@ -524,7 +524,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 		task := ""
 		if layout.task > 0 {
 			room -= layout.task + 1
-			task = padTask(agent.TaskLabel(), layout.task) + " "
+			task = render.FitTask(agent.TaskLabel(), layout.task) + " "
 		}
 		if layout.msgs {
 			room -= 1 + msgsWidth

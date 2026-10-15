@@ -635,9 +635,9 @@ func gaugeNote(forms []string, main string, agent *ContextAgent, width int, noCo
 	return paint(styles.NoteColor, firstFit(width, forms...))
 }
 
-// MinTaskWidth is as narrow as an agent's task gets in watch and breakdown
-// before it goes: two short words and an ellipsis, as show cuts it. A task
-// shorter than this is never cut.
+// MinTaskWidth is as narrow as an agent's task gets before it goes from
+// every row: two short words and an ellipsis, as in "Find the au…", and
+// enough to tell most tasks apart. A task shorter than this is never cut.
 const MinTaskWidth = 12
 
 // FitTask fits an agent's task, models.AgentAnalysis.TaskLabel, into width
