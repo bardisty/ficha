@@ -236,24 +236,39 @@ func TestUnknownModelFootnote(t *testing.T) {
 	}
 }
 
-// breakdown's stats line drops the pointer to ficha show rather than clip it
-// where the terminal is too narrow, and keeps it where there's room.
+// breakdown's stats line shortens the fallback-pricing note by whole pieces
+// rather than clip it: the pointer to ficha show goes first, then the words
+// after the IDs, then the IDs, for what the marker means. Short of room for
+// any form, the note goes, separator and all.
 func TestBreakdownUnknownNoteFitsWidth(t *testing.T) {
+	const long = "claude-nova-6-20991231-preview"
 	for _, tc := range []struct {
-		width   int
-		pointer bool
-	}{{120, true}, {80, false}} {
-		m := loadedBreakdown(t, tc.width, 24, chromeRows(goldenTime(10, 0, 0), 3))
-		m.unknownModels = []string{"claude-nova-6"}
-		line := m.renderStatsTotals()
-		if !strings.Contains(line, "claude-nova-6: fallback pricing") {
-			t.Errorf("width %d: footnote lost the model: %q", tc.width, line)
-		}
-		if got := strings.Contains(line, unknownModelPointer(m.sessionID)); got != tc.pointer {
-			t.Errorf("width %d: pointer shown = %v, want %v: %q", tc.width, got, tc.pointer, line)
-		}
-		if w := lipgloss.Width(line); tc.pointer && w > tc.width {
-			t.Errorf("width %d: line is %d wide", tc.width, w)
+		width int
+		id    string
+		want  string // the note's form, "" for none
+	}{
+		{120, "claude-nova-6", "⚠ * claude-nova-6: fallback pricing, see ficha show 0a1b2c3d"},
+		{100, "claude-nova-6", "⚠ * claude-nova-6: fallback pricing"},
+		{80, "claude-nova-6", "⚠ * claude-nova-6"},
+		{80, long, "⚠ * = fallback pricing"},
+		{60, "claude-nova-6", ""},
+	} {
+		for _, noColor := range []bool{true, false} {
+			m := loadedBreakdown(t, tc.width, 24, chromeRows(goldenTime(10, 0, 0), 3))
+			m.noColor = noColor
+			m.skippedLines = 1
+			m.unknownModels = []string{tc.id}
+			line := stripANSI(m.renderStatsTotals())
+			want := "  Messages: 3 │ Total: $0.0000 │ ⚠ 1 skipped line(s)"
+			if tc.want != "" {
+				want += " │ " + tc.want
+			}
+			if line != want {
+				t.Errorf("width %d, %s, noColor %v:\n got %q\nwant %q", tc.width, tc.id, noColor, line, want)
+			}
+			if w := lipgloss.Width(line); w > tc.width {
+				t.Errorf("width %d: line is %d wide", tc.width, w)
+			}
 		}
 	}
 }

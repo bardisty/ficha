@@ -45,6 +45,7 @@ type BreakdownModel struct {
 	hasAgents      bool              // Any agent row in the merged list — drives the insight scope label
 	runTags        map[string]string // Workflow run ID -> AGENT-column run tag
 	runNames       map[string]string // AGENT-column run tag -> workflow name
+	runOrder       []string          // AGENT-column run tags, in run start order
 	tasks          map[string]string // Agent ID -> its task, for agents that have one
 	err            error
 	loading        bool
@@ -414,8 +415,10 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.runTags = workflowRunTags(msg.workflows)
 		m.tasks = msg.tasks
 		m.runNames = make(map[string]string, len(msg.workflows))
+		m.runOrder = nil
 		for _, run := range msg.workflows {
 			m.runNames[m.runTags[run.RunID]] = runName(run)
+			m.runOrder = append(m.runOrder, m.runTags[run.RunID])
 		}
 		m.relayout()
 		slowClock := m.clockInterval() > time.Second
@@ -635,6 +638,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.hasAgents = false
 	m.runTags = nil
 	m.runNames = nil
+	m.runOrder = nil
 	m.tasks = nil
 	m.totalCost = 0
 	m.minCost = 0
@@ -922,26 +926,31 @@ func (m BreakdownModel) fitRunTagKey(line, sep string) string {
 	return ""
 }
 
-// runTagKey spells out the run tags on the visible rows, in the order they
-// first appear: "ac = audit-codebase". breakdown is the only view that
-// abbreviates a workflow's name, so it's where the name has to be. The
-// caller checks that the layout draws the tags.
+// runTagKey spells out the run tags on the visible rows, in the order the
+// runs started, so scrolling changes which entries show but never their
+// order: "ac = audit-codebase". The tag a run with no metadata falls back to
+// comes last, unless a listed run has that tag too. breakdown is the only
+// view that abbreviates a workflow's name, so it's where the name has to be.
+// The caller checks that the layout draws the tags.
 func (m BreakdownModel) runTagKey() []string {
 	if !m.ready {
 		return nil
 	}
-	var entries []string
-	seen := make(map[string]bool)
+	visible := make(map[string]bool)
 	top := m.viewport.YOffset()
 	for _, index := range m.lineRows[min(top, len(m.lineRows)):min(top+m.viewport.Height(), len(m.lineRows))] {
-		if index < 1 || index > len(m.messages) {
+		if index >= 1 && index <= len(m.messages) {
+			if tag := m.runTag(m.messages[index-1]); tag != "" {
+				visible[tag] = true
+			}
+		}
+	}
+	var entries []string
+	for _, tag := range slices.Concat(m.runOrder, []string{workflowRunTag("")}) {
+		if !visible[tag] {
 			continue
 		}
-		tag := m.runTag(m.messages[index-1])
-		if tag == "" || seen[tag] {
-			continue
-		}
-		seen[tag] = true
+		visible[tag] = false
 		name := m.runNames[tag]
 		if name == "" {
 			name = "workflow"
@@ -976,8 +985,8 @@ func (m BreakdownModel) renderStatsTotals() string {
 		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts); note != "" {
 			line += sep + note
 		}
-		if len(m.unknownModels) > 0 {
-			line += sep + m.fitUnknownNote(line, sep)
+		if note := m.fitUnknownNote(line, sep); note != "" {
+			line += sep + note
 		}
 		return line
 	}
@@ -998,23 +1007,26 @@ func (m BreakdownModel) renderStatsTotals() string {
 		sb.WriteString(warnStyle.Render(note))
 	}
 	// Explain the MODEL-column asterisk: those rows are fallback-priced
-	if len(m.unknownModels) > 0 {
-		note := m.fitUnknownNote(sb.String(), sep)
+	if note := m.fitUnknownNote(sb.String(), sep); note != "" {
 		sb.WriteString(sepStyled)
 		sb.WriteString(warnStyle.Render(note))
 	}
 	return sb.String()
 }
 
-// fitUnknownNote is the fallback-pricing footnote for the stats line after
-// line, without its pointer to ficha show when the terminal is too narrow for
-// it. The model IDs matter more.
+// fitUnknownNote is the longest form of the fallback-pricing footnote that
+// fits on the stats line after line and sep (see unknownModelNotes), or ""
+// when no model is fallback-priced or no form fits.
 func (m BreakdownModel) fitUnknownNote(line, sep string) string {
-	note := unknownModelFootnote(m.unknownModels, m.sessionID)
-	if m.width > 0 && lipgloss.Width(line+sep+note) > m.width {
-		note = strings.TrimSuffix(note, unknownModelPointer(m.sessionID))
+	if len(m.unknownModels) == 0 {
+		return ""
 	}
-	return note
+	for _, note := range unknownModelNotes(m.unknownModels, m.sessionID) {
+		if m.width <= 0 || lipgloss.Width(line+sep+note) <= m.width {
+			return note
+		}
+	}
+	return ""
 }
 
 // renderHelpLine is the key-hint row: watch's, plus p and s, which only

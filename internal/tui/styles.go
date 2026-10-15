@@ -33,6 +33,19 @@ func unknownModelFootnote(ids []string, sessionID string) string {
 	return styles.Warning + " " + unknownModelMarker + " " + named + ": fallback pricing" + unknownModelPointer(sessionID)
 }
 
+// unknownModelNotes is unknownModelFootnote's forms, from the most it says to
+// the least, for a line that takes the first that fits: the note, the note
+// without its pointer, the IDs alone, then what the marker means. Each drops
+// whole words, and the IDs go last, since they're what a pricing update needs.
+func unknownModelNotes(ids []string, sessionID string) []string {
+	full := unknownModelFootnote(ids, sessionID)
+	if len(ids) == 0 {
+		return []string{full}
+	}
+	short := strings.TrimSuffix(full, unknownModelPointer(sessionID))
+	return []string{full, short, strings.TrimSuffix(short, ": fallback pricing"), unknownModelFootnote(nil, sessionID)}
+}
+
 // unknownModelPointer ends unknownModelFootnote. It names the view's session:
 // ficha show on its own opens the newest one, which a pinned view may not be
 // on. The ID's prefix works from the project's directory, where the view was
