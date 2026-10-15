@@ -80,6 +80,7 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 			Cost:      msg.Cost,
 		})
 	}
+	sortKeys := streamSortKeys(nil, allMessages)
 
 	// Process agent sub-sessions. An unreadable subagents/ or
 	// workflow-run directory hides agents entirely, so it counts as skipped
@@ -134,6 +135,7 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 				Cost:       msg.Cost,
 			})
 		}
+		sortKeys = streamSortKeys(sortKeys, allMessages)
 	}
 
 	// Discovery walks run directories by name, and run IDs are random.
@@ -149,16 +151,17 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		insights = CalculateInsights(breakdownAnalyses(allMessages))
 	}
 
-	// Sort all messages by timestamp; stable so equal timestamps keep the
-	// deterministic append order (parent rows, then agents in discovery order).
-	// Sorting positions rather than messages keeps the file-order position of
-	// each row, which the insight snapshots need to find their display row.
+	// Sort all messages by time (see streamSortKeys); stable so equal keys
+	// keep the deterministic append order (parent rows, then agents in
+	// discovery order). Sorting positions rather than messages keeps the
+	// file-order position of each row, which the insight snapshots need to
+	// find their display row.
 	order := make([]int, len(allMessages))
 	for i := range order {
 		order[i] = i
 	}
 	sort.SliceStable(order, func(i, j int) bool {
-		return allMessages[order[i]].Timestamp.Before(allMessages[order[j]].Timestamp)
+		return earlierStart(sortKeys[order[i]], sortKeys[order[j]])
 	})
 	sorted := make([]models.BreakdownMessage, len(allMessages))
 	displayIndex := make([]int, len(allMessages)) // file-order position -> 1-based display Index
@@ -183,6 +186,36 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		Workflows:             workflows,
 		Tasks:                 tasks,
 	}, nil
+}
+
+// streamSortKeys extends keys with the sort times of msgs[len(keys):], one
+// transcript's replies in file order. A reply with no timestamp takes the time
+// of the next timed reply in its own transcript, or the previous one's when
+// none follows, so the sort leaves it where its file put it rather than
+// floating its zero time to the top. A transcript with no timestamps at all
+// keeps zero keys, which earlierStart sorts after every timed row.
+func streamSortKeys(keys []time.Time, msgs []models.BreakdownMessage) []time.Time {
+	start := len(keys)
+	for _, msg := range msgs[start:] {
+		keys = append(keys, msg.Timestamp)
+	}
+	var next time.Time
+	for i := len(keys) - 1; i >= start; i-- {
+		if keys[i].IsZero() {
+			keys[i] = next
+		} else {
+			next = keys[i]
+		}
+	}
+	var prev time.Time
+	for i := start; i < len(keys); i++ {
+		if keys[i].IsZero() {
+			keys[i] = prev
+		} else {
+			prev = keys[i]
+		}
+	}
+	return keys
 }
 
 // breakdownAnalyses converts breakdown rows to the analyses CalculateInsights
