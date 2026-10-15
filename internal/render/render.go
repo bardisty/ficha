@@ -692,10 +692,10 @@ func TruncateRight(s string, width int) string {
 	return ""
 }
 
-// Tail is the longest end of s, in whole graphemes, that fits width display
-// columns. It cuts heads with ansi.Truncate, shortest first, and keeps the
-// first tail lipgloss.Width fits: ansi.TruncateLeft keeps a wide character
-// the cut falls inside, and ansi counts a keycap narrower than lipgloss does.
+// Tail is the longest end of plain text s, in whole graphemes, that fits
+// width display columns. It cuts heads with ansi.Truncate, shortest first,
+// and keeps the first tail lipgloss.Width fits: ansi.TruncateLeft keeps a
+// wide character the cut falls inside, and ansi undercounts a keycap.
 func Tail(s string, width int) string {
 	if width <= 0 {
 		return ""
