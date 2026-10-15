@@ -317,7 +317,7 @@ ficha parses the JSONL transcripts and multiplies each message's token counts by
 
 Agents count too, both regular subagents and Claude Code Workflow agents. ficha groups workflow agents by run, with the run's name and status taken from its metadata.
 
-`ficha help output` explains the terms on screen: cache TTLs, Savings, messages, insights and Context.
+`ficha help output` explains the terms on screen: cache TTLs, Savings, messages, insights, Context, ~compaction, the spend rate and the cost trend.
 
 ficha does not model:
 

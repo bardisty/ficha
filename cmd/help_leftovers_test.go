@@ -272,3 +272,17 @@ func TestUnreadableProjectDirNamedOnce(t *testing.T) {
 		t.Errorf("no next step: %v", err)
 	}
 }
+
+// ficha help output names the labels watch and breakdown print that it
+// explains, so a reader who sees one can find it, and the ? lists point here.
+func TestHelpOutputNamesTheLiveViewsTerms(t *testing.T) {
+	out, _, err := executeCLISplit(t, "help", "output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, term := range []string{"IN, OUT, C_WR and C_RD", "/h (10m)", "-/h", "~compaction", "COST TREND", "last 68 of 618 msgs"} {
+		if !strings.Contains(out, term) {
+			t.Errorf("help output lacks %q", term)
+		}
+	}
+}

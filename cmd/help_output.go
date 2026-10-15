@@ -23,6 +23,7 @@ Input, Output, Cache write, Cache read
   costs more than plain input: 1.25x the input rate for the 5-minute cache
   (5m TTL) and 2x for the 1-hour cache (1h TTL). Reading from it costs a
   fraction: 10% of the input rate on most models, less on some newer ones.
+  breakdown's columns call them IN, OUT, C_WR and C_RD.
 
 Savings
   What the cache-read tokens would have cost at the full input rate, minus
@@ -49,30 +50,52 @@ Message insights
   messages, and a difference of 20% or less reads as flat.
 
 Context
-  How full the model's context window was on the latest parent message:
+  How full the model's context window was at the latest parent message:
   its fresh input plus cache writes plus cache reads, the figure Claude
   Code's /context shows, out of the model's window. It's a snapshot, not a
-  running total. Agents have context windows of their own: AGENT
-  SUB-SESSIONS reads each one's the same way, from its latest request.
-  The bar's tick marks ~compaction, where Claude Code auto-compacts the
+  running total. A request larger than a 200K model's window reads against
+  the 1M long-context window it must have run on. For a model ficha
+  doesn't know, or a request larger than any window ficha knows for its
+  model, ficha shows the tokens alone and says why. Agents have context
+  windows of their own: AGENT SUB-SESSIONS reads each one's the same way,
+  from its latest request.
+
+~compaction
+  The context bar's tick marks where Claude Code auto-compacts the
   conversation by default: about 967K tokens on models with a native 1M
-  window, 200K on Opus 4.6 and Sonnet 4.6 unless the latest request is
-  past it, and the end of the window on the rest, per
+  window, and the end of the window on the rest, except that Opus 4.6 and
+  Sonnet 4.6 compact at 200K until a request goes past it, per
   code.claude.com/docs/en/model-config. It's approximate, and your Claude
-  Code settings can move it. When a running agent is past its ~compaction
-  mark or nearing it, and closer to it than the main session is to its
-  own, watch names it under the bar and in the footer's ctx reading. A
-  request larger than a 200K model's window reads against the 1M
-  long-context window it must have run on. For a model ficha doesn't know,
-  or a request larger than any window ficha knows for its model, ficha
-  shows the tokens alone and says why.
+  Code settings can move it. The reading turns orange 85% of the way to
+  the mark and red at it, and the note under the bar counts the tokens to
+  it or past it. From the orange band on, statusline says the same in
+  words and colors its percentage. A running agent in its own orange band
+  or past its mark, and nearer it than the main session is to its own, is
+  named under the bar and in watch's footer, as "(agent 98%)".
 
 Agents and workflows
   Agents are sub-sessions Claude started. Their cost is included in the
-  session's total, and AGENT SUB-SESSIONS lists them. Agents from a workflow
-  run are grouped under the run's name, with the run's subtotal. In
-  breakdown, a workflow agent's AGENT cell ends in its run's initials, such
-  as rc for review-changes, and the footer names those on screen when it
-  has room.`,
+  session's total, and AGENT SUB-SESSIONS lists them, each with its task
+  beside its ID when there's room. Agents from a workflow run are grouped
+  under the run's name, with the run's subtotal. In breakdown, a workflow
+  agent's AGENT cell ends in its run's initials, such as rc for
+  review-changes, the footer names those on screen when it has room, and a
+  wide terminal adds the task after the cell.
+
+Spend rate
+  watch's footer shows it as $46.82/h (10m): what the last 10 minutes
+  cost, agents included, scaled to an hour. It reads -/h until the session
+  is 10 minutes old, since a shorter stretch scaled up would read one
+  expensive message as a steady burn. After a failed reload it keeps the
+  last rate for 10 minutes, then reads -/h.
+
+Cost trend
+  watch's COST TREND chart has one point per message, agents included, in
+  the order they were sent: the latest 68, fewer on a narrow terminal. It
+  draws them as a line, or as bars with --ascii. The scale runs to the
+  most expensive message on screen, and min and max are the cheapest and
+  most expensive on screen, not in the session. "(last 68 of 618 msgs)"
+  says how many it shows of the latest 1000 messages it keeps. It needs
+  two messages, and a short terminal leaves it out.`,
 	}
 }
