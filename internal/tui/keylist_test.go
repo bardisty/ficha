@@ -194,3 +194,39 @@ func TestGoldenBreakdownKeyListColor(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 15})
 	checkGolden(t, "breakdown_keys_80x15_color", frameOf(press(t, updated.(BreakdownModel), "?")))
 }
+
+// The ? list ends in a dim pointer to ficha help output when it has a row
+// to spare, after a blank when it has two, and drops it before its title as
+// rows run short.
+func TestKeyListPointsToTheGlossary(t *testing.T) {
+	keys := WatchKeys()
+	n := 0
+	for _, k := range keys {
+		if !k.suspend || canSuspend() {
+			n++
+		}
+	}
+	const terms = "Terms: ficha help output"
+	tests := []struct {
+		rows        int
+		terms, head bool
+	}{
+		{n + 3, true, true},
+		{n + 2, true, true},
+		{n + 1, false, true},
+		{n, false, false},
+	}
+	for _, tt := range tests {
+		lines := keyList("watch", keys, 80, tt.rows, true)
+		got := strings.Join(lines, "\n")
+		if strings.Contains(got, terms) != tt.terms {
+			t.Errorf("rows %d: pointer shown = %v, want %v:\n%s", tt.rows, !tt.terms, tt.terms, got)
+		}
+		if (strings.TrimSpace(lines[0]) == "Keys") != tt.head {
+			t.Errorf("rows %d: title shown = %v, want %v", tt.rows, !tt.head, tt.head)
+		}
+		if len(lines) != tt.rows {
+			t.Errorf("rows %d: %d lines", tt.rows, len(lines))
+		}
+	}
+}

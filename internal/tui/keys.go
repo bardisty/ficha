@@ -125,9 +125,11 @@ func helpLine(keys []Key, width int, listOpen, pinned, noColor bool) string {
 }
 
 // keyList draws the ? list in place of a view's frame above the help line,
-// exactly rows lines tall so the help line stays at the bottom. It drops
-// its title when the rows are short, and past that cuts the list with a
-// pointer to --help, which has all of it. A terminal too narrow for every
+// exactly rows lines tall so the help line stays at the bottom. With rows
+// to spare it ends in a dim pointer to ficha help output, which explains
+// the terms the views print. When the rows are short that goes first, then
+// the title, and past that it cuts the list with a pointer to --help,
+// which has all of it. A terminal too narrow for every
 // row whole gets each row's first keys only, and --help has the others.
 func keyList(view string, keys []Key, width, rows int, noColor bool) []string {
 	var shown []Key
@@ -162,6 +164,12 @@ func keyList(view string, keys []Key, width, rows int, noColor bool) []string {
 
 	var lines []string
 	switch {
+	case len(entries)+1 < rows:
+		lines = append([]string{"  " + style(styles.HeaderStyle, "Keys")}, entries...)
+		if len(entries)+2 < rows {
+			lines = append(lines, "")
+		}
+		lines = append(lines, style(styles.DimStyle, "  Terms: ficha help output"))
 	case len(entries) < rows:
 		lines = append([]string{"  " + style(styles.HeaderStyle, "Keys")}, entries...)
 	case len(entries) <= rows:
