@@ -260,9 +260,9 @@ func TestGetBreakdownMessages_InsightsMatchSessionFileOrder(t *testing.T) {
 
 	// Six agent-free assistant messages. File order != timestamp order: the last
 	// file line has the earliest timestamp, and one line carries no timestamp
-	// (parses to the zero time, which sorts to the very front). The first file
-	// line is deliberately the most expensive so file-order FirstMessage/Highest
-	// differ from what a timestamp sort would pick.
+	// (parses to the zero time). The first file line is deliberately the most
+	// expensive so file-order FirstMessage/Highest differ from what a timestamp
+	// sort would pick.
 	content := `{"type":"assistant","timestamp":"2024-01-15T10:02:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":5000}}}
 {"type":"assistant","timestamp":"2024-01-15T10:03:00Z","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":100}}}
 {"type":"assistant","message":{"model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":100}}}
@@ -307,8 +307,8 @@ func TestGetBreakdownMessages_InsightsMatchSessionFileOrder(t *testing.T) {
 
 	// Pin file-order semantics so a regression to timestamp-sorted insights is
 	// caught even if both surfaces drifted together: the first file line (the
-	// 5000-output message) must be FirstMessage, not the zero-timestamp line a
-	// sort would float to the front.
+	// 5000-output message) must be FirstMessage, not the 10:01 line a sort
+	// puts first.
 	if result.Insights.FirstMessage == nil {
 		t.Fatal("expected insights with a FirstMessage")
 	}
@@ -318,10 +318,10 @@ func TestGetBreakdownMessages_InsightsMatchSessionFileOrder(t *testing.T) {
 		t.Fatalf("expected file-order FirstMessage (5000-output) to cost more than LastMessage; got first=%.6f last=%.6f (insights look timestamp-sorted)", firstCost, lastCost)
 	}
 
-	// The first file line sorts third (after the zero timestamp and 10:01), so
-	// its display row is #3, not its file position 1.
-	if got := result.Insights.FirstMessage.Index; got != 3 {
-		t.Errorf("FirstMessage index = %d, want display row 3", got)
+	// The first file line sorts second (after 10:01), so its display row is
+	// #2, not its file position 1.
+	if got := result.Insights.FirstMessage.Index; got != 2 {
+		t.Errorf("FirstMessage index = %d, want display row 2", got)
 	}
 	for name, snap := range map[string]*models.MessageSnapshot{
 		"FirstMessage": result.Insights.FirstMessage,
@@ -720,4 +720,116 @@ func TestGetBreakdownMessages_TrendUsesTimeOrderWithAgents(t *testing.T) {
 	if peak := result.Insights.HighestCost; peak == nil || result.Messages[peak.Index-1].AgentID == "" {
 		t.Errorf("Peak should name one of the agent's rows: %+v", peak)
 	}
+}
+
+// A reply with no timestamp stays where its transcript put it, so the row
+// numbers match the file, and keeps its zero time so it still prints as
+// untimed. Rows are identified here by their output tokens.
+func TestGetBreakdownMessages_UntimedReplyKeepsFilePosition(t *testing.T) {
+	line := func(ts string, output int64) string {
+		stamp := ""
+		if ts != "" {
+			stamp = fmt.Sprintf(`"timestamp":"2024-01-15T%s:00Z",`, ts)
+		}
+		return fmt.Sprintf(`{"type":"assistant",%s"message":{"model":"claude-sonnet-4","usage":{"input_tokens":10,"output_tokens":%d}}}`, stamp, output)
+	}
+	tests := []struct {
+		name   string
+		parent []string
+		agents map[string][]string // agent file -> lines
+		want   []int64             // output tokens in display order
+		first  int64               // output tokens of the First insight
+		peak   int                 // display row the Peak names; 0 for no Peak check
+	}{
+		{
+			name:   "mid-parent and at its end",
+			parent: []string{line("10:00", 1), line("10:01", 2), line("", 9000), line("10:03", 4), line("", 5)},
+			want:   []int64{1, 2, 9000, 4, 5},
+			first:  1,
+			peak:   3,
+		},
+		{
+			name:   "at the start of an agent's transcript",
+			parent: []string{line("10:00", 1), line("10:10", 4)},
+			agents: map[string][]string{"agent-a.jsonl": {line("", 2), line("10:05", 3)}},
+			want:   []int64{1, 2, 3, 4},
+			first:  1,
+			peak:   0,
+		},
+		{
+			name:   "mid-parent merged with an agent",
+			parent: []string{line("10:00", 1), line("", 3), line("10:20", 9000)},
+			agents: map[string][]string{"agent-a.jsonl": {line("10:10", 2)}},
+			want:   []int64{1, 2, 3, 9000},
+			first:  1,
+			peak:   4,
+		},
+		{
+			name:   "an agent with no timestamps sorts last",
+			parent: []string{line("10:00", 1), line("10:10", 2)},
+			agents: map[string][]string{"agent-a.jsonl": {line("", 3), line("", 4)}},
+			want:   []int64{1, 2, 3, 4},
+			first:  1,
+			peak:   0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			sessionID := "untimed"
+			sessionPath := filepath.Join(tmpDir, sessionID+".jsonl")
+			writeJSONLFile(t, sessionPath, tt.parent)
+			for name, lines := range tt.agents {
+				writeAgentSession(t, tmpDir, sessionID, name, lines)
+			}
+
+			result, err := GetBreakdownMessages(sessionPath, sessionID)
+			if err != nil {
+				t.Fatalf("GetBreakdownMessages: %v", err)
+			}
+			var got []int64
+			for i, msg := range result.Messages {
+				got = append(got, msg.Usage.OutputTokens)
+				if msg.Index != i+1 {
+					t.Errorf("row %d has Index %d", i+1, msg.Index)
+				}
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("display order (by output tokens) = %v, want %v", got, tt.want)
+			}
+			untimed := 0
+			for _, msg := range result.Messages {
+				if msg.Timestamp.IsZero() {
+					untimed++
+				}
+			}
+			if want := countUntimed(tt.parent, tt.agents); untimed != want {
+				t.Errorf("%d rows kept the zero time, want %d", untimed, want)
+			}
+
+			ins := result.Insights
+			if ins == nil || ins.FirstMessage == nil {
+				t.Fatal("expected insights with a First")
+			}
+			if got := result.Messages[ins.FirstMessage.Index-1].Usage.OutputTokens; got != tt.first {
+				t.Errorf("First names the row with %d output tokens, want %d", got, tt.first)
+			}
+			if tt.peak > 0 && (ins.HighestCost == nil || ins.HighestCost.Index != tt.peak) {
+				t.Errorf("Peak = %+v, want #%d", ins.HighestCost, tt.peak)
+			}
+		})
+	}
+}
+
+func countUntimed(parent []string, agents map[string][]string) int {
+	n := 0
+	for _, l := range parent {
+		if !strings.Contains(l, `"timestamp"`) {
+			n++
+		}
+	}
+	for _, lines := range agents {
+		n += countUntimed(lines, nil)
+	}
+	return n
 }
