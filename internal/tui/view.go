@@ -85,7 +85,7 @@ func (m Model) frame() string {
 		return renderTooSmall(m.width, m.height, minTermWidth, minTermHeight)
 	}
 	if m.keysOpen {
-		lines := append(keyList("watch", WatchKeys(), m.width, m.height-1, m.noColor), helpLine(WatchKeys(), m.width, true, !m.followMode, m.noColor))
+		lines := append(keyList("watch", WatchKeys(), m.width, m.height-1, m.noColor, ""), helpLine(WatchKeys(), m.width, true, !m.followMode, m.noColor))
 		return clipToWidth(strings.Join(lines, "\n"), m.width)
 	}
 

@@ -175,7 +175,7 @@ func TestKeyListFits(t *testing.T) {
 func TestKeyListSuspendRow(t *testing.T) {
 	for _, can := range []bool{true, false} {
 		pinSuspend(t, can)
-		listed := strings.Contains(strings.Join(keyList("watch", WatchKeys(), 80, 40, true), "\n"), "ctrl+z")
+		listed := strings.Contains(strings.Join(keyList("watch", WatchKeys(), 80, 40, true, ""), "\n"), "ctrl+z")
 		if listed != can {
 			t.Errorf("canSuspend %v: ctrl+z listed = %v", can, listed)
 		}
@@ -216,7 +216,7 @@ func TestKeyListPointsToTheGlossary(t *testing.T) {
 		{n, false, false},
 	}
 	for _, tt := range tests {
-		lines := keyList("watch", keys, 80, tt.rows, true)
+		lines := keyList("watch", keys, 80, tt.rows, true, "")
 		got := strings.Join(lines, "\n")
 		if strings.Contains(got, terms) != tt.terms {
 			t.Errorf("rows %d: pointer shown = %v, want %v:\n%s", tt.rows, !tt.terms, tt.terms, got)
@@ -228,4 +228,49 @@ func TestKeyListPointsToTheGlossary(t *testing.T) {
 			t.Errorf("rows %d: %d lines", tt.rows, len(lines))
 		}
 	}
+}
+
+// A trailing line, such as breakdown's hidden columns, takes the glossary
+// pointer's place, and stays as rows run short: the title goes first, then
+// the blank before it, then the last keys.
+func TestKeyListKeepsTheTrailingLine(t *testing.T) {
+	pinSuspend(t, true)
+	keys := WatchKeys()
+	n := len(keys)
+	const trailing = "hidden: IN"
+	for rows, want := range map[int]struct {
+		head, blank bool
+		more        bool
+	}{
+		n + 3: {head: true, blank: true},
+		n + 2: {blank: true},
+		n + 1: {},
+		n:     {more: true},
+		5:     {more: true},
+	} {
+		lines := keyList("watch", keys, 80, rows, true, trailing)
+		got := strings.Join(lines, "\n")
+		if len(lines) != rows || strings.TrimSpace(lines[rows-1]) != trailing {
+			t.Errorf("rows %d: want %d lines ending in %q:\n%s", rows, rows, trailing, got)
+			continue
+		}
+		if strings.Contains(got, "Terms:") {
+			t.Errorf("rows %d: the glossary pointer showed beside the trailing line", rows)
+		}
+		if head := strings.TrimSpace(lines[0]) == "Keys"; head != want.head {
+			t.Errorf("rows %d: title shown = %v, want %v", rows, head, want.head)
+		}
+		if blank := lines[rows-2] == ""; blank != want.blank {
+			t.Errorf("rows %d: blank before the line = %v, want %v", rows, blank, want.blank)
+		}
+		if more := strings.Contains(got, "more in ficha watch --help"); more != want.more {
+			t.Errorf("rows %d: --help pointer = %v, want %v:\n%s", rows, more, want.more, got)
+		}
+	}
+}
+
+// With columns hidden and agent rows, the ? list ends naming them.
+func TestGoldenBreakdownKeyListHidden(t *testing.T) {
+	pinSuspend(t, true)
+	checkGolden(t, "breakdown_keys_hidden_60x24", frameOf(press(t, goldenBreakdownModel(t, true, 60, 24), "?")))
 }

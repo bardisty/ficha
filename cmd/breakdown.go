@@ -26,6 +26,8 @@ Features:
     it has room
   - Can sort by cost, most expensive first. While sorted, the view stays
     put as rows arrive, and time order comes back where you left it
+  - On a narrow terminal, columns give way whole, IN first; ? names the
+    ones hidden
   - With no session in the project yet, waits for the first one
 
 Examples:
