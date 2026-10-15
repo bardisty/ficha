@@ -61,10 +61,10 @@ func (m BreakdownModel) rowOrder() []int {
 // hold: in time order new rows land below, and at the top of a sorted view
 // a new most expensive row should show where the reader is looking.
 func (m BreakdownModel) sortAnchor() string {
-	if !m.sortByCost || !m.ready || m.viewport.YOffset() == 0 || m.viewport.YOffset() >= len(m.lineRows) {
+	if !m.sortByCost || !m.ready || m.chosenY == 0 || m.chosenY >= len(m.lineRows) {
 		return ""
 	}
-	index := m.lineRows[m.viewport.YOffset()]
+	index := m.lineRows[m.chosenY]
 	if index < 1 || index > len(m.messages) {
 		return ""
 	}
@@ -80,7 +80,7 @@ func (m *BreakdownModel) keepSortAnchor(anchor string) {
 	}
 	for line, index := range m.lineRows {
 		if index > 0 && breakdownMsgKey(m.messages[index-1]) == anchor {
-			m.viewport.SetYOffset(line)
+			m.returnTo(line)
 			return
 		}
 	}
@@ -101,12 +101,12 @@ func (m *BreakdownModel) toggleSort() {
 		if len(m.messages) == 0 {
 			return
 		}
-		m.timeYOffset, m.timeFollow = m.viewport.YOffset(), m.autoScroll
+		m.timeYOffset, m.timeFollow = m.chosenY, m.autoScroll
 		m.setFollow(false)
 		m.sortByCost = true
 		m.relayout()
 		m.refreshViewport()
-		m.viewport.GotoTop()
+		m.scrollTo(0)
 		return
 	}
 	m.sortByCost = false
@@ -114,10 +114,11 @@ func (m *BreakdownModel) toggleSort() {
 	m.refreshViewport()
 	if m.timeFollow {
 		m.viewport.GotoBottom()
+		m.scrollTo(m.viewport.YOffset())
 		m.setFollow(true)
 		return
 	}
-	m.viewport.SetYOffset(m.timeYOffset)
+	m.returnTo(m.timeYOffset)
 }
 
 // selectedRank returns the selected row's position in top and its rank, or
@@ -150,7 +151,7 @@ func (m *BreakdownModel) selectNextTop() {
 	m.refreshViewport()
 	for line, index := range m.lineRows {
 		if index == msg.Index {
-			m.viewport.SetYOffset(line - m.viewport.Height()/2)
+			m.scrollTo(line - m.viewport.Height()/2)
 			break
 		}
 	}

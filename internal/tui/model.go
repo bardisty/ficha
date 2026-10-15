@@ -64,7 +64,10 @@ type Model struct {
 
 	// Viewport for scrolling. watch is a dashboard, not a log: it opens at the
 	// top and keeps the reader's position across reloads and resizes.
+	// chosenY is the offset the reader last scrolled to, which only a scroll
+	// key sets; see refreshContent.
 	viewport viewport.Model
+	chosenY  int
 	ready    bool // viewport initialized
 
 	// now stands in for time.Now where the view reads the wall clock (the
@@ -313,16 +316,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "g", "home":
 			m.viewport.GotoTop()
+			m.chosenY = m.viewport.YOffset()
 
 		case "G", "end":
 			m.viewport.GotoBottom()
+			m.chosenY = m.viewport.YOffset()
 
 		default:
 			// Everything else goes to the viewport's pager keymap: j/k and
 			// arrows, space/f/pgdown and b/pgup by page, d/u and ctrl+d/u by
-			// half page. f is taken above for follow.
+			// half page. f is taken above for follow. A key that moves
+			// nothing leaves the choice alone: after a resize clamped the
+			// view, it would otherwise take the clamp as the reader's.
+			before := m.viewport.YOffset()
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
+			if m.viewport.YOffset() != before {
+				m.chosenY = m.viewport.YOffset()
+			}
 			return m, cmd
 		}
 
@@ -619,6 +630,7 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 
 	// A new session opens at the top, like the first one, and drops the old
 	// session's warning rows from the layout.
+	m.chosenY = 0
 	if m.ready {
 		m.viewport.SetContent("")
 		m.viewport.GotoTop()
@@ -747,9 +759,11 @@ func (m *Model) layoutViewport() {
 	m.viewport.SetHeight(viewportHeight(m.height, m.headerHeight(), m.footerHeight()))
 }
 
-// refreshContent re-renders the body into the viewport and keeps the scroll
-// position, clamped so a shorter body or a taller window never leaves the
-// view scrolled past its last line.
+// refreshContent re-renders the body into the viewport at the offset the
+// reader chose, clamped so a shorter body or a taller window never leaves
+// the view scrolled past its last line. The clamp isn't kept: the viewport
+// clamps on every SetContent, and a window that grows and shrinks back, as
+// a zoomed tmux pane does, would otherwise come back off the reader's line.
 func (m *Model) refreshContent() {
 	m.layoutViewport()
 	m.runningAgents = runningAgentsKey(m.analysis, m.clock())
@@ -761,7 +775,7 @@ func (m *Model) refreshContent() {
 		body = dropBlankLines(body)
 	}
 	m.viewport.SetContent(body)
-	m.viewport.SetYOffset(m.viewport.YOffset())
+	m.viewport.SetYOffset(m.chosenY)
 }
 
 // trimBlankEdges drops whitespace-only lines from both ends of s. Rendered
