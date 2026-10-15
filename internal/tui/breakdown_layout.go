@@ -13,7 +13,7 @@ import (
 // by column; render.FitTask pads a task by display width.
 const (
 	bdMinIndexWidth = 3
-	bdTimeWidth     = 8
+	bdTimeWidth     = 8 // "15:04:05"; "Mon 15:04" when the layout has weekday
 	bdModelWidth    = 10
 	bdCostWidth     = 10 // fits "$9999.99  "; see render.CostCell
 	bdInWidth       = 6
@@ -35,6 +35,7 @@ type breakdownLayout struct {
 	taskWidth  int  // columns AGENT gets past agentWidth for agents' tasks; 0 for none
 	modelExtra int  // columns MODEL gets past bdModelWidth, for unknown model IDs
 	runTags    bool // AGENT cells carry workflow run tags
+	weekday    bool // TIME reads "Mon 15:04"; see BreakdownModel.layout
 	in, out    bool
 	cacheWrite bool
 	cacheRead  bool
@@ -48,13 +49,14 @@ type breakdownCells struct {
 
 // newBreakdownLayout fits the columns to termWidth. markerWidth is the
 // widest agent marker and cellWidth the widest marker plus run tag, both 0
-// when no row came from an agent. The token columns go first: IN (a few
-// tokens per message, rarely what a reader is after), then C_WR, C_RD and
-// OUT. Then the run tags, then AGENT itself. termWidth <= 0 means unknown,
-// and keeps every column.
-func newBreakdownLayout(indexWidth, markerWidth, cellWidth, termWidth int) breakdownLayout {
+// when no row came from an agent. weekday puts the day in TIME. The token
+// columns go first: IN (a few tokens per message, rarely what a reader is
+// after), then C_WR, C_RD and OUT. Then the run tags, then AGENT itself.
+// termWidth <= 0 means unknown, and keeps every column.
+func newBreakdownLayout(indexWidth, markerWidth, cellWidth, termWidth int, weekday bool) breakdownLayout {
 	l := breakdownLayout{
 		indexWidth: max(indexWidth, bdMinIndexWidth),
+		weekday:    weekday,
 		in:         true, out: true, cacheWrite: true, cacheRead: true,
 	}
 	if markerWidth > 0 {
@@ -76,6 +78,14 @@ func newBreakdownLayout(indexWidth, markerWidth, cellWidth, termWidth int) break
 		l.agentWidth = 0
 	}
 	return l
+}
+
+// timeWidth is the TIME column's width.
+func (l breakdownLayout) timeWidth() int {
+	if l.weekday {
+		return len("Mon 15:04")
+	}
+	return bdTimeWidth
 }
 
 // modelWidth is the MODEL column's width.
@@ -135,7 +145,7 @@ func (l breakdownLayout) agentColumn() int {
 
 // width is the display width of a row drawn with this layout, indent included.
 func (l breakdownLayout) width() int {
-	w := bdIndent + l.indexWidth + bdGap + bdTimeWidth + bdGap + l.modelWidth() + bdGap + bdCostWidth
+	w := bdIndent + l.indexWidth + bdGap + l.timeWidth() + bdGap + l.modelWidth() + bdGap + bdCostWidth
 	if l.agentWidth > 0 {
 		w += bdGap + l.agentColumn()
 	}
@@ -182,7 +192,7 @@ func (l breakdownLayout) join(c breakdownCells) string {
 func (l breakdownLayout) header() string {
 	return l.join(breakdownCells{
 		index:      fmt.Sprintf("%-*s", l.indexWidth, "#"),
-		time:       fmt.Sprintf("%-*s", bdTimeWidth, "TIME"),
+		time:       fmt.Sprintf("%-*s", l.timeWidth(), "TIME"),
 		agent:      fmt.Sprintf("%-*s", l.agentColumn(), "AGENT"),
 		model:      fmt.Sprintf("%-*s", l.modelWidth(), "MODEL"),
 		cost:       fmt.Sprintf("%*s", bdCostWidth, "COST"),

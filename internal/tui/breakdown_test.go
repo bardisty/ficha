@@ -139,7 +139,7 @@ func TestBreakdownModel_RenderRow(t *testing.T) {
 		},
 	}
 
-	row := m.renderRow(msg, false, newBreakdownLayout(2, 0, 0, 0))
+	row := m.renderRow(msg, false, newBreakdownLayout(2, 0, 0, 0, false))
 
 	// Check that the row contains expected values
 	if !strings.Contains(row, "42") {
@@ -183,7 +183,7 @@ func TestBreakdownModel_RenderRow_WithAgent(t *testing.T) {
 		},
 	}
 
-	row := m.renderRow(msg, false, newBreakdownLayout(2, 10, 10, 0))
+	row := m.renderRow(msg, false, newBreakdownLayout(2, 10, 10, 0, false))
 
 	// Check agent marker shows the truncated real ID
 	if !strings.Contains(row, "[Ag7h8i9j]") {
@@ -196,7 +196,7 @@ func TestBreakdownModel_RenderRow_WithAgent(t *testing.T) {
 
 	// A short ID is shown whole
 	msg.AgentID = "w1"
-	row = m.renderRow(msg, false, newBreakdownLayout(2, 10, 10, 0))
+	row = m.renderRow(msg, false, newBreakdownLayout(2, 10, 10, 0, false))
 	if !strings.Contains(row, "[Aw1]") {
 		t.Errorf("row should contain agent marker [Aw1], got %q", row)
 	}
@@ -213,11 +213,11 @@ func TestBreakdownModel_RenderRow_ANSICodes(t *testing.T) {
 
 	// noColor=false takes color code path
 	m := NewBreakdownModel("/test/path", "test-session", false, "", false)
-	coloredRow := m.renderRow(msg, false, newBreakdownLayout(2, 0, 0, 0))
+	coloredRow := m.renderRow(msg, false, newBreakdownLayout(2, 0, 0, 0, false))
 
 	// noColor=true takes plain code path - must not contain ANSI
 	m2 := NewBreakdownModel("/test/path", "test-session", true, "", false)
-	plainRow := m2.renderRow(msg, false, newBreakdownLayout(2, 0, 0, 0))
+	plainRow := m2.renderRow(msg, false, newBreakdownLayout(2, 0, 0, 0, false))
 
 	if strings.Contains(plainRow, "\x1b[") {
 		t.Error("noColor output should not contain ANSI escape codes")

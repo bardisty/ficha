@@ -40,9 +40,9 @@ func TestNewBreakdownLayout_ShedsColumnsWhole(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := newBreakdownLayout(2, tt.markerWidth, tt.cellWidth, tt.termWidth)
+			got := newBreakdownLayout(2, tt.markerWidth, tt.cellWidth, tt.termWidth, false)
 			if got != tt.want {
-				t.Errorf("newBreakdownLayout(2, %d, %d, %d) = %+v, want %+v", tt.markerWidth, tt.cellWidth, tt.termWidth, got, tt.want)
+				t.Errorf("newBreakdownLayout(2, %d, %d, %d, false) = %+v, want %+v", tt.markerWidth, tt.cellWidth, tt.termWidth, got, tt.want)
 			}
 			if w := len(got.header()); w != got.width() {
 				t.Errorf("header is %d wide, layout says %d", w, got.width())
@@ -50,7 +50,7 @@ func TestNewBreakdownLayout_ShedsColumnsWhole(t *testing.T) {
 		})
 	}
 	// The # column grows with the row count.
-	if got := newBreakdownLayout(5, 0, 0, 0).indexWidth; got != 5 {
+	if got := newBreakdownLayout(5, 0, 0, 0, false).indexWidth; got != 5 {
 		t.Errorf("indexWidth for 5-digit rows = %d, want 5", got)
 	}
 }

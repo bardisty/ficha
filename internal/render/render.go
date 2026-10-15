@@ -222,6 +222,25 @@ func ClockShort(t time.Time) string {
 	return t.Local().Format("15:04")
 }
 
+// WeekdayClock is Clock with the local weekday ("Tue 15:04:05"), for a time
+// in a view whose rows span days.
+func WeekdayClock(t time.Time) string {
+	if t.IsZero() {
+		return Clock(t)
+	}
+	return t.Local().Format("Mon 15:04:05")
+}
+
+// WeekdayClockShort is WeekdayClock without seconds ("Tue 15:04"), as wide
+// as Clock plus one. A zero time keeps Clock's placeholder, so a row with no
+// timestamp reads the same in a column of either.
+func WeekdayClockShort(t time.Time) string {
+	if t.IsZero() {
+		return Clock(t)
+	}
+	return t.Local().Format("Mon 15:04")
+}
+
 // DayMarker labels a local calendar day ("Tue 29 Sep"), for the divider
 // a per-message table draws where the day changes, since its rows show only
 // a time.

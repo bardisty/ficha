@@ -27,6 +27,15 @@ func breakdownViewFor(t *testing.T, msgs []models.BreakdownMessage, noColor bool
 func breakdownViewWithInsights(t *testing.T, msgs []models.BreakdownMessage, insights *models.MessageInsights, noColor bool) string {
 	t.Helper()
 	m := NewBreakdownModel("/fixture/sess.jsonl", "0a1b2c3d", noColor, "", false)
+	// Today is the newest row's day, so a session dates only by what came
+	// before it.
+	var newest time.Time
+	for _, msg := range msgs {
+		if msg.Timestamp.After(newest) {
+			newest = msg.Timestamp
+		}
+	}
+	m.now = func() time.Time { return newest }
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = updated.(BreakdownModel)
 	updated, _ = m.Update(breakdownMsgsMsg{messages: msgs, insights: insights, totalCost: 0.3, minCost: 0.1, maxCost: 0.1})
@@ -52,7 +61,8 @@ func crossMidnightMessages() []models.BreakdownMessage {
 }
 
 // Rows show local time, and a marker row appears where the local day changes,
-// which is not where the UTC day changes.
+// which is not where the UTC day changes. The session's first rows are from
+// the day before the newest, so the first day is marked too.
 func TestBreakdownRowsUseLocalTimeAndMarkDayChange(t *testing.T) {
 	withLocal(t, time.FixedZone("UTC+1", 3600))
 
@@ -69,17 +79,21 @@ func TestBreakdownRowsUseLocalTimeAndMarkDayChange(t *testing.T) {
 		if got := strings.Count(out, "Tue 29 Sep"); got != 1 {
 			t.Errorf("noColor=%v: want one day marker for Tue 29 Sep, got %d\n%s", noColor, got, out)
 		}
-		if strings.Contains(out, "Mon 28 Sep") {
-			t.Errorf("noColor=%v: the first day needs no marker\n%s", noColor, out)
-		}
-		// The marker sits between row 1 (23:50) and row 2 (00:10)
+		// One marker sits above row 1 (23:50), the other between row 1 and
+		// row 2 (00:10).
 		lines := strings.Split(out, "\n")
 		for i, l := range lines {
+			if strings.Contains(l, "Mon 28 Sep") && (i+1 >= len(lines) || !strings.Contains(lines[i+1], "23:50:00")) {
+				t.Errorf("noColor=%v: the first day's marker is not above row 1\n%s", noColor, out)
+			}
 			if strings.Contains(l, "Tue 29 Sep") {
 				if i == 0 || i+1 >= len(lines) || !strings.Contains(lines[i-1], "23:50:00") || !strings.Contains(lines[i+1], "00:10:00") {
 					t.Errorf("noColor=%v: marker is not between the day's last and next rows\n%s", noColor, out)
 				}
 			}
+		}
+		if got := strings.Count(out, "Mon 28 Sep"); got != 1 {
+			t.Errorf("noColor=%v: want one day marker for Mon 28 Sep, got %d\n%s", noColor, got, out)
 		}
 	}
 }
@@ -139,7 +153,7 @@ func TestBreakdownPeakTimeIsLocal(t *testing.T) {
 	}
 	for _, noColor := range []bool{true, false} {
 		out := breakdownViewWithInsights(t, msgs, insights, noColor)
-		if !strings.Contains(out, "@ 23:50") || strings.Contains(out, "@ 22:50") {
+		if !strings.Contains(out, "@ Mon 23:50:00") || strings.Contains(out, "22:50") {
 			t.Errorf("noColor=%v: peak time not local\n%s", noColor, out)
 		}
 	}
