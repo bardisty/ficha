@@ -226,3 +226,61 @@ func TestNoTasksHugeCountGivesWay(t *testing.T) {
 		t.Errorf("want the cost column where it is without tasks:\n%s", out)
 	}
 }
+
+// Transcript text can carry a bidi override, which would turn the rest of
+// the row around, and emoji drawn two columns wide: one with a variation
+// selector, and a ZWJ sequence. The override goes, the sequences print
+// whole, and the costs stay in one column, in show and in the summary tree,
+// whole and cut alike.
+func TestTasksWithBidiAndEmojiStayInColumns(t *testing.T) {
+	var agents []models.AgentAnalysis
+	for i, task := range []string{
+		"Fix \u202eparser tests",
+		"Check ☀\ufe0f weather API",
+		"Pair with \U0001F469\u200d\U0001F4BB on review",
+		"Check ☀\ufe0f☀\ufe0f☀\ufe0f☀\ufe0f☀\ufe0f weather for every region we serve",
+	} {
+		a := taskAgents()[0]
+		a.AgentID = strings.Repeat(string(rune('a'+i)), 12)
+		a.Description = task
+		agents = append(agents, a)
+	}
+	check := func(name, out string, width int) {
+		t.Helper()
+		checkTaskRows(t, out, width)
+		plain := ansiRe.ReplaceAllString(out, "")
+		if strings.ContainsRune(plain, '\u202e') {
+			t.Errorf("%s: the override reached the output:\n%s", name, plain)
+		}
+		for _, whole := range []string{"Check ☀\ufe0f weather API", "\U0001F469\u200d\U0001F4BB"} {
+			if !strings.Contains(plain, whole) {
+				t.Errorf("%s: want %q whole:\n%s", name, whole, plain)
+			}
+		}
+		var costCols []int
+		for line := range strings.SplitSeq(plain, "\n") {
+			if before, _, ok := strings.Cut(line, "$"); ok && strings.Contains(line, "] ") {
+				costCols = append(costCols, lipgloss.Width(before))
+			}
+		}
+		for _, col := range costCols {
+			if col != costCols[0] {
+				t.Errorf("%s: costs start at columns %v, not one:\n%s", name, costCols, plain)
+				break
+			}
+		}
+	}
+	for _, noColor := range []bool{true, false} {
+		check("show", formatAgentBreakdownContent(taskAnalysis(agents), reportWidth(80), noColor), reportWidth(80))
+
+		r := sessionRow("aaaa1111", "claude-opus-4-8", 10, 3.00)
+		r.Analysis.HasAgents = true
+		r.Analysis.Agents = agents
+		r.Analysis.AgentCount = len(agents)
+		aggregate := &models.SessionAnalysis{
+			SessionID: "aggregate", IsSummary: true, SessionCount: 1,
+			CostByModel: map[string]models.CostBreakdown{},
+		}
+		check("summary", FormatSummaryTableWithDetails(aggregate, []models.SessionResult{r}, "/home/user/src/app", noColor, true, 80), 80)
+	}
+}

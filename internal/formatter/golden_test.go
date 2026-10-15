@@ -440,6 +440,21 @@ func TestSessionListCountsUnreadableApart(t *testing.T) {
 	}
 }
 
+// A project that's nothing but bidi characters prints as no project, so
+// the header saves it no room either.
+func TestSessionListBidiOnlyProjectTakesNoRoom(t *testing.T) {
+	for width := 20; width <= 80; width++ {
+		opts := goldenListOptions
+		opts.Width = width
+		opts.Project = ""
+		want := FormatSessionListTable(goldenListResults(), true, opts)
+		opts.Project = "\u202e\u2066"
+		if got := FormatSessionListTable(goldenListResults(), true, opts); got != want {
+			t.Errorf("width %d: got\n%s\nwant\n%s", width, got, want)
+		}
+	}
+}
+
 func TestGoldenSessionListColor(t *testing.T) {
 	checkGolden(t, "session_list_color", FormatSessionListTable(goldenListResults(), false, goldenListOptions))
 }

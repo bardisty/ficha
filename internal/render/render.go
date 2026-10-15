@@ -20,6 +20,7 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/pricing"
 	"github.com/bardisty/ficha/internal/styles"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Cost formats a dollar amount for human output: two decimals from $1 up
@@ -307,9 +308,10 @@ func TruncateID(id string, maxLen int) string {
 func WorkflowLabel(meta models.WorkflowMeta) string {
 	const maxLen = 48
 
-	name := meta.Name
+	// The run's name is transcript text, like an agent's task.
+	name := models.OneLine(meta.Name)
 	if name == "" {
-		name = meta.RunID
+		name = models.OneLine(meta.RunID)
 	}
 	label := "workflow: " + name
 	if meta.Status != "" {
@@ -665,13 +667,45 @@ const MinTaskWidth = 12
 // so it counts display columns, not bytes or runes.
 func FitTask(task string, width int) string {
 	if lipgloss.Width(task) > width {
-		r := []rune(task)
-		for len(r) > 0 && lipgloss.Width(string(r))+lipgloss.Width(styles.Ellipsis) > width {
-			r = r[:len(r)-1]
-		}
-		task = strings.TrimRight(string(r), " ") + styles.Ellipsis
+		cut := strings.TrimSuffix(TruncateRight(task, width), styles.Ellipsis)
+		task = strings.TrimRight(cut, " ") + styles.Ellipsis
 	}
 	return task + strings.Repeat(" ", max(width-lipgloss.Width(task), 0))
+}
+
+// TruncateRight fits s into width display columns, ending in an ellipsis
+// when it's cut. A negative width leaves s whole, and a zero width, with no
+// room even for the ellipsis, leaves nothing. It measures as lipgloss.Width
+// does, so an emoji with a variation selector counts the two columns
+// terminals draw it in. ansi.Truncate counts an ASCII character as one
+// column even where it starts a wider cluster, as in a keycap emoji, so a
+// cut that comes out too wide is cut again, shorter.
+func TruncateRight(s string, width int) string {
+	if width < 0 || lipgloss.Width(s) <= width {
+		return s
+	}
+	for n := width; n > 0; n-- {
+		if cut := ansi.Truncate(s, n, styles.Ellipsis); lipgloss.Width(cut) <= width {
+			return cut
+		}
+	}
+	return ""
+}
+
+// Tail is the longest end of plain text s, in whole graphemes, that fits
+// width display columns. It cuts heads with ansi.Truncate, shortest first,
+// and keeps the first tail lipgloss.Width fits: ansi.TruncateLeft keeps a
+// wide character the cut falls inside, and ansi undercounts a keycap.
+func Tail(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	for n := 0; ; n++ {
+		head := ansi.Truncate(s, n, "")
+		if tail := s[len(head):]; lipgloss.Width(tail) <= width {
+			return tail
+		}
+	}
 }
 
 // AgentContextWidth is the width of AgentContextCell: "100% ctx".

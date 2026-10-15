@@ -10,7 +10,6 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/mattn/go-runewidth"
 )
 
 // ListTableOptions shapes FormatSessionListTable.
@@ -72,7 +71,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 				costs = append(costs, r.Analysis.TotalCost.TotalCost)
 			}
 		}
-		titleWidth = max(titleWidth, runewidth.StringWidth(rowTitle(r)))
+		titleWidth = max(titleWidth, lipgloss.Width(rowTitle(r)))
 	}
 	costWidth := render.CostCellWidth(len("COST"), costs...)
 	// LENGTH grows past "12h 34m" for a session left open for days.
@@ -150,7 +149,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	// renderPanel keeps for it.
 	fits := func(head string, project bool) bool {
 		need := append([]string{head}, fields[1:]...)
-		if project && opts.Project != "" {
+		if project && models.StripControl(opts.Project) != "" {
 			need = append(need, strings.Repeat(" ", min(lipgloss.Width(models.StripControl(opts.Project)), minProjectWidth)))
 		}
 		return lipgloss.Width(strings.Join(need, "  "+styles.BoxVerticalSep+"  ")) <= width-6
@@ -182,7 +181,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		fmt.Sprintf("%-*s", listModelWidth, "MODEL"),
 		fmt.Sprintf("%*s", listAgentsWidth, "AGENTS"),
 		fmt.Sprintf("%*s", costWidth, "COST"),
-		truncateRight("TITLE", titleCol),
+		render.TruncateRight("TITLE", titleCol),
 	)
 	rule := strings.Repeat(" ", rowIndent) + strings.Repeat(styles.LineHorizontal, width-rowIndent)
 	if noColor {
@@ -213,7 +212,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 				fmt.Sprintf("%-*s", listModelWidth, "-"),
 				fmt.Sprintf("%*s", listAgentsWidth, "-"),
 				fmt.Sprintf("%*s", costWidth, "-"),
-				truncateRight(rowTitle(r), titleCol))
+				render.TruncateRight(rowTitle(r), titleCol))
 			if !noColor {
 				row = styles.DimStyle.Render(row)
 			}
@@ -228,7 +227,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		if a.AgentCount > 0 {
 			agents = fmt.Sprintf("%*d", listAgentsWidth, a.AgentCount)
 		}
-		title := truncateRight(rowTitle(r), titleCol)
+		title := render.TruncateRight(rowTitle(r), titleCol)
 
 		if noColor {
 			sb.WriteString(join(id, when, duration, model, agents, render.CostCell(a.TotalCost.TotalCost, costWidth), title) + "\n")
@@ -287,19 +286,6 @@ func shortSessionIDs(results []models.SessionResult) []string {
 	return ids
 }
 
-// truncateRight fits s into width display columns, ending in an ellipsis
-// when it's cut. A negative width leaves s whole, and a zero width, with no
-// room even for the ellipsis, leaves nothing.
-func truncateRight(s string, width int) string {
-	if width < 0 || runewidth.StringWidth(s) <= width {
-		return s
-	}
-	if width == 0 {
-		return ""
-	}
-	return runewidth.Truncate(s, width, styles.Ellipsis)
-}
-
 // rowTitle is what a row prints in TITLE before it's cut: the session's
 // title, or a placeholder for a session with nothing to price.
 func rowTitle(r models.SessionResult) string {
@@ -323,5 +309,5 @@ func nestedTitle(r models.SessionResult, title string) string {
 	if r.Nested == "" {
 		return title
 	}
-	return r.Nested + " " + styles.FieldSep + " " + title
+	return models.StripControl(r.Nested) + " " + styles.FieldSep + " " + title
 }

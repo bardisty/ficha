@@ -1008,8 +1008,8 @@ func TestWrapHangingMarkedPathLongerThanWidth(t *testing.T) {
 	}
 }
 
-// A task fits by display columns, so a wide character counts twice, and a
-// cut never leaves a space before its ellipsis.
+// A task fits by display columns, so a wide character counts twice, a cut
+// never splits an emoji, and it never leaves a space before its ellipsis.
 func TestFitTask(t *testing.T) {
 	tests := []struct {
 		task  string
@@ -1020,6 +1020,8 @@ func TestFitTask(t *testing.T) {
 		{"Find the auth middleware", 14, "Find the auth…"},
 		{"Find the auth middleware", 15, "Find the auth… "},
 		{"認証ミドルウェアを探す", 12, "認証ミドル… "},
+		{"Check \u2600\ufe0f weather", 8, "Check…  "},
+		{"Pair \U0001F469\u200d\U0001F4BB review", 8, "Pair \U0001F469\u200d\U0001F4BB…"},
 		{"", 4, "    "},
 	}
 	for _, tt := range tests {
@@ -1071,5 +1073,51 @@ func TestWeekdayClock(t *testing.T) {
 		if f(time.Time{}) != Clock(time.Time{}) {
 			t.Error("a zero time should keep Clock's placeholder")
 		}
+	}
+}
+
+// TruncateRight and Tail measure as lipgloss.Width does and cut whole
+// graphemes: an emoji with a variation selector is two columns, a ZWJ
+// sequence is never split, and a wide character the cut falls inside goes.
+func TestTruncateRightAndTail(t *testing.T) {
+	sun := "☀\ufe0f"
+	coder := "\U0001F469\u200d\U0001F4BB"
+	for _, tt := range []struct {
+		s           string
+		width       int
+		right, tail string
+	}{
+		{"short", 10, "short", "short"},
+		{"ab" + sun + "cd", 4, "ab…", sun + "cd"},
+		{"ab" + sun + "cd", 3, "ab…", "cd"},
+		{"x" + coder + "y", 3, "x…", coder + "y"},
+		{"日本語", 3, "日…", "語"},
+		{"日本語", 0, "", ""},
+		{"ab1\ufe0f\u20e3cd", 4, "ab…", "1\ufe0f\u20e3cd"},
+		{"/" + strings.Repeat("1\ufe0f\u20e3", 5) + "/p", 6, "/1\ufe0f\u20e31\ufe0f\u20e3…", "1\ufe0f\u20e31\ufe0f\u20e3/p"},
+	} {
+		if got := TruncateRight(tt.s, tt.width); got != tt.right {
+			t.Errorf("TruncateRight(%q, %d) = %q, want %q", tt.s, tt.width, got, tt.right)
+		}
+		if got := Tail(tt.s, tt.width); got != tt.tail {
+			t.Errorf("Tail(%q, %d) = %q, want %q", tt.s, tt.width, got, tt.tail)
+		}
+		for _, got := range []string{TruncateRight(tt.s, tt.width), Tail(tt.s, tt.width)} {
+			if w := lipgloss.Width(got); w > tt.width {
+				t.Errorf("%q is %d columns, wider than %d", got, w, tt.width)
+			}
+		}
+	}
+	if got := TruncateRight("whole", -1); got != "whole" {
+		t.Errorf("a negative width should leave the string whole, got %q", got)
+	}
+}
+
+// A workflow's name comes from the transcript, so a bidi override or a
+// newline in it doesn't reach the heading.
+func TestWorkflowLabelCleansName(t *testing.T) {
+	got := WorkflowLabel(models.WorkflowMeta{Name: "deploy \u202erollback\nnow", Status: "completed"})
+	if want := "workflow: deploy rollback now (completed)"; got != want {
+		t.Errorf("WorkflowLabel = %q, want %q", got, want)
 	}
 }

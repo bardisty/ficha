@@ -9,7 +9,6 @@ import (
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
-	"github.com/mattn/go-runewidth"
 )
 
 // FormatSessionTable renders a session analysis as a table (single session or
@@ -168,7 +167,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	for _, agent := range analysis.Agents {
 		if agent.WorkflowID != "" {
 			heading := styles.GroupRule + " " + workflowLabel(analysis.WorkflowByID(agent.WorkflowID))
-			headingWidth = max(headingWidth, runewidth.StringWidth(heading))
+			headingWidth = max(headingWidth, lipgloss.Width(heading))
 		}
 	}
 	// labelFor is labelWidth for agent rows with a rowMsgs-wide count (none
@@ -235,7 +234,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 				// The run's subtotal sits in the cost column, so a workflow
 				// compares with the parent session at a glance.
 				heading := fitWorkflowLabel(styles.GroupRule+" ", analysis.WorkflowByID(agent.WorkflowID), labelWidth, status)
-				pad := strings.Repeat(" ", labelWidth-runewidth.StringWidth(heading)+3)
+				pad := strings.Repeat(" ", labelWidth-lipgloss.Width(heading)+3)
 				cost := workflowCost(analysis.Agents, agent.WorkflowID)
 				if noColor {
 					sb.WriteString("  " + heading + pad + render.CostCell(cost, 11) + "\n")
