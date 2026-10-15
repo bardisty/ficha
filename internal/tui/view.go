@@ -223,13 +223,12 @@ func (m Model) renderAnalysis() string {
 	sb.WriteString("\n")
 	sb.WriteString(m.renderContextSection())
 
-	// Cost trend chart (only show if we have 2+ data points). A short
-	// terminal can't spare its nine rows.
-	if len(m.costHistory) >= 2 && !m.compact() {
+	// Agent breakdown (shown when agents exist)
+	if a.HasAgents {
 		sb.WriteString("\n")
-		sb.WriteString("  " + render.SectionHeader("COST TREND", sectionWidth, m.noColor))
+		sb.WriteString("  " + render.SectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
-		sb.WriteString(m.renderCostChart())
+		sb.WriteString(m.renderAgentBreakdownContent())
 	}
 
 	// Section: COST BY MODEL. A session of only synthetic lines has no model
@@ -241,12 +240,13 @@ func (m Model) renderAnalysis() string {
 		sb.WriteString(m.renderCostByModelContent())
 	}
 
-	// Agent breakdown (shown when agents exist)
-	if a.HasAgents {
+	// Cost trend chart (only show if we have 2+ data points). A short
+	// terminal can't spare its nine rows.
+	if len(m.costHistory) >= 2 && !m.compact() {
 		sb.WriteString("\n")
-		sb.WriteString("  " + render.SectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
+		sb.WriteString("  " + render.SectionHeader("COST TREND", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
-		sb.WriteString(m.renderAgentBreakdownContent())
+		sb.WriteString(m.renderCostChart())
 	}
 
 	// Message insights (shown when insights are available)

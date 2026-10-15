@@ -13,11 +13,11 @@
     Context 680.4K tokens                                                       
              window unknown for claude-mystery-9                                
                                                                                 
-  ───────────────────────────────[ COST TREND ]───────────────────────────────  
+  ───────────────────────────[ AGENT SUB-SESSIONS ]───────────────────────────  
                                                                                 
-                                                                   ⢸            
-                                                                   ⡎⡆           
-                                                                   ⡇⡇           
+    Parent session                                                   $7.90      
+  ● [Af6e5d4c] Find the auth middleware   Sonnet 5     38% ctx       $1.58      
+    [A1b2c3d4] Explore                    mystery-9   680K ctx       $0.4200    
   ══[ ↓ 28 more ]═════════════════════════════════════════════════════════════  
   $9.90 API est. │ ctx 680.4K │ $6.42/h (10m) │ 37 msgs │ 1h 30m                
   ⚠ * claude-mystery-9: fallback pricing, see ficha show 0a1b2c3d               
