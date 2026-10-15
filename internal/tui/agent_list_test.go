@@ -98,7 +98,8 @@ func rowSummary(rows []agentRow) []string {
 func TestAgentRowsFoldAboveCap(t *testing.T) {
 	got := rowSummary(agentRows(foldAnalysis(), foldNow))
 	want := []string{
-		"3 finished", "a2000000000*",
+		// a1 cost the most of the three finished, so it stays out.
+		"a1000000000", "2 finished", "a2000000000*",
 		"run:wf_done/folded",
 		// Still in progress per its status, so its quiet agents stay listed.
 		"run:wf_busy", "c1000000000", "c2000000000",
@@ -134,7 +135,7 @@ func TestAgentRowsKeepAJustStartedAgent(t *testing.T) {
 		models.AgentAnalysis{AgentID: "e0000000000"},
 		models.AgentAnalysis{AgentID: "b3000000000", WorkflowID: "wf_done"})
 	got := strings.Join(rowSummary(agentRows(a, foldNow)), " ")
-	want := "3 finished a2000000000* e0000000000 run:wf_done b2000000000 b1000000000 b3000000000"
+	want := "a1000000000 2 finished a2000000000* e0000000000 run:wf_done b2000000000 b1000000000 b3000000000"
 	if !strings.HasPrefix(got, want) {
 		t.Errorf("rows:\n got %v\nwant prefix %v", got, want)
 	}
@@ -171,6 +172,90 @@ func TestAgentRowsKeepALoneFinishedAgent(t *testing.T) {
 	}
 }
 
+// Two finished plain agents would leave one in the fold once the costliest
+// stays out; list them both.
+func TestAgentRowsListTwoFinishedAgents(t *testing.T) {
+	a := foldAnalysis()
+	a.Agents[2].EndTime = foldNow // a4 is writing again
+	got := strings.Join(rowSummary(agentRows(a, foldNow)), " ")
+	want := "a3000000000 a1000000000 a4000000000* a2000000000* run:wf_done/folded"
+	if !strings.HasPrefix(got, want) {
+		t.Errorf("rows:\n got %v\nwant prefix %v", got, want)
+	}
+}
+
+// costlyFinishedAnalysis has the shape that hides spend in a fold: a
+// costly agent that finished early, nine cheap finished ones, and two cheap
+// ones still writing.
+func costlyFinishedAnalysis() *models.SessionAnalysis {
+	ago := func(d time.Duration) time.Time { return foldNow.Add(-d) }
+	var agents []models.AgentAnalysis
+	for i := range 9 {
+		agents = append(agents, foldAgent(fmt.Sprintf("a%d000000000", i+1), "", ago(50*time.Minute), ago(40*time.Minute), 6, 0.05))
+	}
+	agents = append(agents,
+		foldAgent("b0000000000", "", ago(45*time.Minute), ago(12*time.Minute), 80, 9.88),
+		foldAgent("c1000000000", "", ago(3*time.Minute), ago(20*time.Second), 6, 0.0494),
+		foldAgent("c2000000000", "", ago(3*time.Minute), ago(10*time.Second), 6, 0.0514))
+	a := &models.SessionAnalysis{Agents: agents, HasAgents: true}
+	for _, agent := range agents {
+		a.AgentsCost.Add(agent.TotalCost)
+	}
+	return a
+}
+
+// The finished agent that cost the most stays listed above the fold, even
+// though every running agent is cheaper and the fold holds nine.
+func TestAgentRowsKeepTheCostliestFinishedAgentOut(t *testing.T) {
+	got := strings.Join(rowSummary(agentRows(costlyFinishedAnalysis(), foldNow)), " ")
+	want := "b0000000000 9 finished c1000000000* c2000000000*"
+	if got != want {
+		t.Errorf("rows:\n got %v\nwant %v", got, want)
+	}
+}
+
+// Running agents that grow past the kept-out agent don't fold it back in;
+// it gives way only to a finished agent that cost more.
+func TestAgentRowsKeptOutAgentStaysPut(t *testing.T) {
+	a := costlyFinishedAnalysis()
+	a.Agents[10].TotalCost.TotalCost = 25
+	a.Agents[11].TotalCost.TotalCost = 30
+	got := strings.Join(rowSummary(agentRows(a, foldNow)), " ")
+	if want := "b0000000000 9 finished c1000000000* c2000000000*"; got != want {
+		t.Errorf("running agents grew:\n got %v\nwant %v", got, want)
+	}
+
+	// c2 finishes at $30: it takes b0's place, and b0 joins the fold.
+	got = strings.Join(rowSummary(agentRows(a, foldNow.Add(idleAfter))), " ")
+	if want := "c2000000000 11 finished"; got != want {
+		t.Errorf("a costlier agent finished:\n got %v\nwant %v", got, want)
+	}
+}
+
+// Of finished agents that cost the same, the one that finished first stays
+// out, so one finishing later at that cost doesn't swap them, whether it
+// started after the kept-out agent or before it.
+func TestAgentRowsKeptOutAgentTiesKeepTheFirstFinished(t *testing.T) {
+	a := costlyFinishedAnalysis()
+	a.Agents[11].TotalCost.TotalCost = 9.88
+	got := strings.Join(rowSummary(agentRows(a, foldNow.Add(idleAfter))), " ")
+	if want := "b0000000000 11 finished"; got != want {
+		t.Errorf("a later starter tied:\n got %v\nwant %v", got, want)
+	}
+
+	a = costlyFinishedAnalysis()
+	a.Agents[0].EndTime = foldNow // a1 started before b0 and is still writing
+	a.Agents[0].TotalCost.TotalCost = 9.88
+	got = strings.Join(rowSummary(agentRows(a, foldNow)), " ")
+	if want := "b0000000000 8 finished a1000000000* c1000000000* c2000000000*"; got != want {
+		t.Errorf("an earlier starter still running:\n got %v\nwant %v", got, want)
+	}
+	got = strings.Join(rowSummary(agentRows(a, foldNow.Add(idleAfter))), " ")
+	if want := "b0000000000 11 finished"; got != want {
+		t.Errorf("an earlier starter tied:\n got %v\nwant %v", got, want)
+	}
+}
+
 // The analyzer orders agents; the list keeps that order rather than sorting
 // again, so it agrees row for row with show and summary. Given agents out of
 // start order, it lists them as given, plain agents first.
@@ -192,20 +277,24 @@ func TestAgentRowsKeepAnalyzerOrder(t *testing.T) {
 // Folding hides rows, never spend: the fold line, the listed agents and the
 // folded runs' subtotals add up to the agents subtotal.
 func TestAgentRowsKeepTotals(t *testing.T) {
-	a := foldAnalysis()
-	var sum float64
-	for _, r := range agentRows(a, foldNow) {
-		switch {
-		case r.kind == agentRowFinished:
-			sum += r.cost
-		case r.kind == agentRowAgent:
-			sum += r.agent.TotalCost.TotalCost
-		case r.folded:
-			sum += workflowCost(a.Agents, r.runID)
+	for name, a := range map[string]*models.SessionAnalysis{
+		"fold":            foldAnalysis(),
+		"costly finished": costlyFinishedAnalysis(),
+	} {
+		var sum float64
+		for _, r := range agentRows(a, foldNow) {
+			switch {
+			case r.kind == agentRowFinished:
+				sum += r.cost
+			case r.kind == agentRowAgent:
+				sum += r.agent.TotalCost.TotalCost
+			case r.folded:
+				sum += workflowCost(a.Agents, r.runID)
+			}
 		}
-	}
-	if math.Abs(sum-a.AgentsCost.TotalCost) > 1e-9 {
-		t.Errorf("rows sum to %v, agents subtotal is %v", sum, a.AgentsCost.TotalCost)
+		if math.Abs(sum-a.AgentsCost.TotalCost) > 1e-9 {
+			t.Errorf("%s: rows sum to %v, agents subtotal is %v", name, sum, a.AgentsCost.TotalCost)
+		}
 	}
 }
 
@@ -223,7 +312,7 @@ func TestAgentDotAgesOutOnClockTick(t *testing.T) {
 	updated, _ := m.Update(clockMsg{gen: m.clockGen})
 	m = updated.(Model)
 	view := m.viewport.View()
-	if strings.Contains(view, "[A2000000]") || !strings.Contains(view, "4 finished agents") {
+	if strings.Contains(view, "[A2000000]") || !strings.Contains(view, "3 finished agents") {
 		t.Errorf("agent still listed after going quiet:\n%s", view)
 	}
 }

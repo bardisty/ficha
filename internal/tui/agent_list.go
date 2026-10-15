@@ -117,11 +117,18 @@ func markShare(c *models.ContextUsage) float64 {
 
 // agentRows lays out the agent list: plain agents, then each workflow run
 // under its heading, in the order the analyzer lists them, which is by first
-// message. Above agentListCap agents, two or more finished plain agents fold
-// into one line ahead of the rest, and a run that has ended folds to its
-// heading, which carries the run's subtotal. A run whose status can't be
-// read has ended once all its agents have finished. Running and just-started
-// agents never fold.
+// message. Above agentListCap agents, finished plain agents fold into one
+// line ahead of the rest, and a run that has ended folds to its heading,
+// which carries the run's subtotal. A run whose status can't be read has
+// ended once all its agents have finished. Running and just-started agents
+// never fold.
+//
+// The costliest finished plain agent stays out of the fold, listed above it,
+// so the agent that spent the most is never hidden behind a count. A fold
+// needs at least two agents in it, so plain agents fold only once three have
+// finished. A finished agent's cost stops changing, so the kept-out row moves
+// only when a newly finished agent costs more; comparing against running
+// agents, which keep getting dearer, would fold it back in mid-session.
 func agentRows(a *models.SessionAnalysis, now time.Time) []agentRow {
 	var plain []models.AgentAnalysis
 	runs := map[string][]models.AgentAnalysis{}
@@ -139,17 +146,29 @@ func agentRows(a *models.SessionAnalysis, now time.Time) []agentRow {
 
 	fold := len(a.Agents) > agentListCap
 	var rows []agentRow
-	finished := agentRow{kind: agentRowFinished}
-	for _, agent := range plain {
-		if agentFinished(agent, now) {
-			finished.count++
-			finished.msgs += agent.MessageCount
-			finished.cost += agent.TotalCost.TotalCost
+	// Of equal costs, the one that finished first stays out, so an agent
+	// finishing later at the same cost can't move it.
+	costliest, finishedCount := -1, 0
+	for i, agent := range plain {
+		if !agentFinished(agent, now) {
+			continue
+		}
+		finishedCount++
+		if costliest < 0 || costlierFinish(agent, plain[costliest]) {
+			costliest = i
 		}
 	}
-	foldPlain := fold && finished.count >= 2
+	foldPlain := fold && finishedCount >= 3
 	if foldPlain {
-		rows = append(rows, finished)
+		finished := agentRow{kind: agentRowFinished}
+		for i, agent := range plain {
+			if i != costliest && agentFinished(agent, now) {
+				finished.count++
+				finished.msgs += agent.MessageCount
+				finished.cost += agent.TotalCost.TotalCost
+			}
+		}
+		rows = append(rows, agentRow{kind: agentRowAgent, agent: plain[costliest]}, finished)
 	}
 	for _, agent := range plain {
 		if foldPlain && agentFinished(agent, now) {
@@ -172,6 +191,15 @@ func agentRows(a *models.SessionAnalysis, now time.Time) []agentRow {
 		}
 	}
 	return rows
+}
+
+// costlierFinish reports whether finished agent a outranks b for the row
+// kept out of the fold: it cost more, or the same and finished first.
+func costlierFinish(a, b models.AgentAnalysis) bool {
+	if a.TotalCost.TotalCost != b.TotalCost.TotalCost {
+		return a.TotalCost.TotalCost > b.TotalCost.TotalCost
+	}
+	return a.EndTime.Before(b.EndTime)
 }
 
 func allFinished(agents []models.AgentAnalysis, now time.Time) bool {

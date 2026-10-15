@@ -29,14 +29,14 @@ func watchAt(t *testing.T, a *models.SessionAnalysis, width int) string {
 func TestWatchTasksOnlyFromDrawnRows(t *testing.T) {
 	a := foldAnalysis()
 	long := "Check every query in the billing module for rounding"
-	for _, i := range []int{0, 1, 4} { // a3, a1 and b2: folded
+	for _, i := range []int{0, 2, 4} { // a3, a4 and b2: folded
 		a.Agents[i].Description = long
 	}
 	frame := watchAt(t, a, 80)
 	if strings.Contains(frame, "Check every") {
 		t.Errorf("a folded agent's task shows:\n%s", frame)
 	}
-	for _, want := range []string{"22 msgs", "71 msgs"} {
+	for _, want := range []string{"22 msgs", "46 msgs"} {
 		if !strings.Contains(frame, want) {
 			t.Errorf("frame lacks %q, a count the hidden tasks took:\n%s", want, frame)
 		}
@@ -49,7 +49,7 @@ func TestWatchFoldKeepsItsCountBesideTasks(t *testing.T) {
 	a := foldAnalysis()
 	a.Agents[3].Description = "Check every query in the billing module for rounding" // a2, running
 	frame := watchAt(t, a, 80)
-	if !strings.Contains(frame, "3 finished agents") || !strings.Contains(frame, "71 msgs") {
+	if !strings.Contains(frame, "2 finished agents") || !strings.Contains(frame, "46 msgs") {
 		t.Errorf("the fold lost its count:\n%s", frame)
 	}
 	if strings.Contains(frame, "22 msgs") {
