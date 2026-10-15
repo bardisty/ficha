@@ -185,8 +185,9 @@ func formatMessagesCSV(analysis *models.SessionAnalysis) (string, error) {
 
 // FormatSessionListCSV formats `list` output as CSV, with the fields of
 // FormatSessionListJSON. A session that failed to parse leaves the analysis
-// columns (start_time through title) empty.
-func FormatSessionListCSV(results []models.SessionResult, originalPath string) (string, error) {
+// columns (start_time through title) empty. originalPaths maps each project
+// directory to the working directory it stands for.
+func FormatSessionListCSV(results []models.SessionResult, originalPaths map[string]string) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
 
@@ -227,7 +228,7 @@ func FormatSessionListCSV(results []models.SessionResult, originalPath string) (
 			fmt.Sprintf("%d", entry.SkippedAgents),
 			fmt.Sprintf("%d", entry.SkippedLines),
 			csvCell(filepath.Dir(entry.FullPath)),
-			csvCell(originalPath),
+			csvCell(originalPaths[filepath.Dir(entry.FullPath)]),
 		}
 		if a := r.Analysis; a != nil {
 			start := ""

@@ -29,10 +29,16 @@ Examples:
   ficha summary --details -f json         Per-session records as JSON
   ficha summary --since 7d                The last 7 days
   ficha summary --since 2026-09-01 --until 2026-09-30   September
+  ficha summary --nested                  Include the repo's worktrees
 
 --since and --until count messages by their own timestamps, agents' too, so
 a session that crosses a bound is split at it. They apply to json and csv
-as well as the table.`,
+as well as the table.
+
+Claude Code records a session under the directory it ran in, so a worktree
+under the repo, from claude --worktree or git worktree add, is a project of
+its own. summary notes when projects under this directory have sessions,
+and --nested counts them in. --details then names each session's project.`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -44,6 +50,7 @@ as well as the table.`,
 	summaryCmd.Flags().BoolVarP(&cfg.showDetails, "details", "d", false, "Add a per-session breakdown (table rows / json sessions / csv rows)")
 	summaryCmd.Flags().BoolVar(&cfg.expandAgents, "expand-agents", false, "Include per-agent records: tree rows (table), nested agents (json), agent rows (csv); requires --details")
 	addWindowFlags(summaryCmd, cfg)
+	addNestedFlag(summaryCmd, cfg)
 
 	return summaryCmd
 }
@@ -52,14 +59,20 @@ func runSummary(cfg *config) error {
 	if cfg.expandAgents && !cfg.showDetails {
 		return usageErrorf("--expand-agents requires --details")
 	}
+	if err := checkNested(cfg); err != nil {
+		return err
+	}
 	window, err := cfg.timeWindow(time.Now())
 	if err != nil {
 		return err
 	}
 
-	sessions, projectDir, err := loadProjectSessionsWithDir(cfg)
+	sessions, projectDir, nested, err := loadProjectAndNestedSessions(cfg)
 	if err != nil {
 		return err
+	}
+	if cfg.nested {
+		sessions = append(sessions, nested.sessions...)
 	}
 	pickPalette(cfg)
 
@@ -69,6 +82,7 @@ func runSummary(cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("analyzing sessions: %w", err)
 	}
+	nested.mark(results)
 
 	var warnings bytes.Buffer
 	skipWarning{
@@ -87,12 +101,15 @@ func runSummary(cfg *config) error {
 		}
 	}
 	warnUnknownModels(&warnings, analysis.UnpricedModels)
+	if !cfg.nested {
+		writeNestedNote(&warnings, cfg, nested, window, parser.ProjectDisplayName(projectDir))
+	}
 
 	// Mark as summary (don't overwrite SessionID). SessionCount is already the
 	// skip-adjusted count — AnalyzeMultipleSessions sets it where the totals
 	// are summed.
 	analysis.IsSummary = true
-	analysis.Project = parser.ProjectDisplayName(projectDir)
+	analysis.Project = nestedLabel(parser.ProjectDisplayName(projectDir), results)
 
 	// Output in requested format. --details/--expand-agents add per-session and
 	// per-agent records to json/csv (not just the table); without --details the

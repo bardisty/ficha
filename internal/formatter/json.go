@@ -31,7 +31,8 @@ func FormatSessionJSON(analysis *models.SessionAnalysis, pretty bool) (string, e
 //
 // project_path is the transcript's directory, derived the way the analyzer
 // derives show's, so the two join. original_path is the working directory
-// the project stands for, "" when unknown.
+// that project stands for, "" when unknown. Under --nested a record's
+// project can be one nested under the directory list ran for.
 //
 // The analysis fields are those of the session's summary -d record: model,
 // start_time, duration_seconds and total_cost leave out messages repeated
@@ -64,7 +65,7 @@ type sessionListRecord struct {
 // each entry's, as the caller filled them to match show's; costs and the rest
 // come from the analysis, which prices cross-session duplicates once, so a
 // session's cost matches its summary -d row.
-func FormatSessionListJSON(results []models.SessionResult, originalPath string, pretty bool) (string, error) {
+func FormatSessionListJSON(results []models.SessionResult, originalPaths map[string]string, pretty bool) (string, error) {
 	records := make([]sessionListRecord, len(results))
 	for i, r := range results {
 		e := r.Entry
@@ -72,7 +73,7 @@ func FormatSessionListJSON(results []models.SessionResult, originalPath string, 
 			SessionID:         e.SessionID,
 			FullPath:          e.FullPath,
 			ProjectPath:       filepath.Dir(e.FullPath),
-			OriginalPath:      originalPath,
+			OriginalPath:      originalPaths[filepath.Dir(e.FullPath)],
 			Modified:          models.MachineTime(e.Modified),
 			MessageCount:      e.MessageCount,
 			AgentPaths:        e.AgentPaths,

@@ -45,8 +45,73 @@ func loadProjectSessionsWithDir(cfg *config) ([]models.SessionEntry, string, err
 	if err != nil {
 		return nil, "", err
 	}
-	projDir := project.dir
+	sessions, err := projectSessionsIn(cfg, project)
+	if err != nil {
+		return nil, "", err
+	}
+	return sessions, project.dir, nil
+}
 
+// nestedSessions are the sessions of the projects nested under the one a
+// report reads (see nestedProjects), and those projects by their dirs.
+type nestedSessions struct {
+	sessions []models.SessionEntry
+	projects map[string]nestedProject
+}
+
+// mark names the nested project each result ran in, "" for the report's
+// own project.
+func (n nestedSessions) mark(results []models.SessionResult) {
+	for i := range results {
+		results[i].Nested = n.projects[filepath.Dir(results[i].Entry.FullPath)].name
+	}
+}
+
+// loadProjectAndNestedSessions is loadProjectSessionsWithDir, plus the
+// sessions of the projects nested under the project. A nested project that
+// can't be read is left out, with a warning when --nested counts it in.
+func loadProjectAndNestedSessions(cfg *config) ([]models.SessionEntry, string, nestedSessions, error) {
+	project, err := resolveProjectDirectory(cfg)
+	if err != nil {
+		return nil, "", nestedSessions{}, err
+	}
+	sessions, err := projectSessionsIn(cfg, project)
+	if err != nil {
+		return nil, "", nestedSessions{}, err
+	}
+	nested := nestedSessions{projects: map[string]nestedProject{}}
+	for _, p := range nestedProjects(project) {
+		found, err := readProjectSessions(cfg, p.dir)
+		if err != nil {
+			if cfg.nested {
+				writeWarning(cfg, "left out %s: %v", p.name, err)
+			}
+			continue
+		}
+		nested.sessions = append(nested.sessions, found...)
+		nested.projects[p.dir] = p
+	}
+	return sessions, project.dir, nested, nil
+}
+
+// projectSessionsIn is readProjectSessions for the project a command reads,
+// which has to have sessions.
+func projectSessionsIn(cfg *config, project resolvedProject) ([]models.SessionEntry, error) {
+	sessions, err := readProjectSessions(cfg, project.dir)
+	if err != nil {
+		return nil, err
+	}
+	if len(sessions) == 0 {
+		cfg.tracef("no transcripts in %s", filepath.Base(project.dir))
+		return nil, noSessionsError(cfg, project)
+	}
+	cfg.tracef("using %s (%d sessions)", filepath.Base(project.dir), len(sessions))
+	return sessions, nil
+}
+
+// readProjectSessions lists the sessions in a Claude project directory, from
+// its transcripts and the index when there is one.
+func readProjectSessions(cfg *config, projDir string) ([]models.SessionEntry, error) {
 	// Scan disk for session files
 	diskSessions, err := parser.DiscoverSessionsFromDisk(projDir)
 	if err != nil {
@@ -55,11 +120,11 @@ func loadProjectSessionsWithDir(cfg *config) ([]models.SessionEntry, string, err
 		var pathErr *os.PathError
 		if errors.As(err, &pathErr) && pathErr.Path == projDir {
 			if errors.Is(err, fs.ErrPermission) {
-				return nil, "", fmt.Errorf("can't read %s: %w. Check its permissions.", projDir, fs.ErrPermission)
+				return nil, fmt.Errorf("can't read %s: %w. Check its permissions.", projDir, fs.ErrPermission)
 			}
-			return nil, "", fmt.Errorf("can't read %s: %w", projDir, pathErr.Err)
+			return nil, fmt.Errorf("can't read %s: %w", projDir, pathErr.Err)
 		}
-		return nil, "", fmt.Errorf("scanning sessions in %s: %w", projDir, err)
+		return nil, fmt.Errorf("scanning sessions in %s: %w", projDir, err)
 	}
 
 	// Try to load index (may fail or be incomplete)
@@ -73,12 +138,6 @@ func loadProjectSessionsWithDir(cfg *config) ([]models.SessionEntry, string, err
 	// Merge sources
 	sessions, orphanCount := parser.MergeSessionSources(index, diskSessions, projDir)
 
-	if len(sessions) == 0 {
-		cfg.tracef("no transcripts in %s", filepath.Base(projDir))
-		return nil, "", noSessionsError(cfg, project)
-	}
-	cfg.tracef("using %s (%d sessions)", filepath.Base(projDir), len(sessions))
-
 	// Sessions missing from an index are only worth a note when there is an
 	// index: current Claude Code doesn't write one, so without it every
 	// session would count.
@@ -86,7 +145,7 @@ func loadProjectSessionsWithDir(cfg *config) ([]models.SessionEntry, string, err
 		writeNote(cfg, "Found %d session(s) not in sessions-index.json", orphanCount)
 	}
 
-	return sessions, projDir, nil
+	return sessions, nil
 }
 
 // selectSession finds the appropriate session based on CLI args.

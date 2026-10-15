@@ -78,6 +78,9 @@ func (cfg *config) typedProjectArgs() string {
 type resolvedProject struct {
 	dir   string
 	label string
+	// path is the directory Claude Code ran in, when the project was found
+	// by it: "" for --project-dir and for a match by name elsewhere.
+	path string
 }
 
 // resolveProjectDirectory determines which Claude project directory to use.
@@ -123,7 +126,7 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 	exactDir := filepath.Join(projectsDir, paths.PathToProjectDir(canonical))
 	if isDir(exactDir) {
 		cfg.tracef("found project directory %s", filepath.Base(exactDir))
-		return resolvedProject{dir: exactDir, label: canonical}, nil
+		return resolvedProject{dir: exactDir, label: canonical, path: canonical}, nil
 	}
 	cfg.tracef("no project directory %s", filepath.Base(exactDir))
 
@@ -148,7 +151,7 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 	for _, p := range allProjects {
 		if p.OriginalPath == canonical {
 			cfg.tracef("found project directory %s by its recorded path", p.EncodedPath)
-			return resolvedProject{dir: p.FullPath, label: p.OriginalPath}, nil
+			return resolvedProject{dir: p.FullPath, label: p.OriginalPath, path: canonical}, nil
 		}
 	}
 
@@ -256,6 +259,58 @@ func ancestorWithProject(dir, projectsDir string) string {
 		}
 	}
 	return ""
+}
+
+// nestedProject is a Claude project whose recorded path lies under another
+// project's, such as a worktree's under its repo.
+type nestedProject struct {
+	dir string
+	// path is the directory Claude Code recorded for it.
+	path string
+	// name is its path below the outer project's, slash-separated and less
+	// the .claude/worktrees/ that claude --worktree puts it under, as in
+	// "fix-auth" or "packages/api".
+	name string
+}
+
+// nestedProjects returns the projects whose recorded path lies under
+// project's, in the order the projects dir lists them. Like
+// ancestorWithProject it skips the home directory, which many people have
+// run Claude Code in: every project would be under it.
+//
+// Claude Code names a project's directory after its path, so a nested
+// project's name starts with the outer one's. Only those are opened to read
+// their recorded path, which the lossy name can't stand in for.
+func nestedProjects(project resolvedProject) []nestedProject {
+	home, _ := os.UserHomeDir()
+	home, _ = paths.CanonicalizePath(home)
+	if project.path == "" || project.path == home {
+		return nil
+	}
+	projectsDir := filepath.Dir(project.dir)
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return nil
+	}
+	prefix := strings.ToLower(paths.PathToProjectDir(project.path) + "-")
+	var nested []nestedProject
+	for _, e := range entries {
+		dir := filepath.Join(projectsDir, e.Name())
+		if !strings.HasPrefix(strings.ToLower(e.Name()), prefix) || dir == project.dir || !isDir(dir) {
+			continue
+		}
+		recorded := parser.ProjectOriginalPath(dir)
+		if recorded == "" || !isWithin(recorded, project.path) {
+			continue
+		}
+		rel, err := filepath.Rel(project.path, recorded)
+		if err != nil || rel == "." {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		nested = append(nested, nestedProject{dir: dir, path: recorded, name: strings.TrimPrefix(rel, ".claude/worktrees/")})
+	}
+	return nested
 }
 
 // hasTranscripts reports whether a project directory holds any session.
