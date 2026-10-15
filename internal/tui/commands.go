@@ -58,9 +58,8 @@ func (m Model) loadAnalysis() tea.Msg {
 	}
 	// The cost trend chart needs every message. The agent cache skips
 	// re-parsing unchanged agent sub-sessions on each reload. AllMessages so
-	// the chart covers agent spend too; the analyzer keeps
-	// parent-block-then-agent-blocks order and updateCostChart merges
-	// chronologically on every reload.
+	// the chart's minutes count agent spend too; rebuildCostChart buckets
+	// them by timestamp on every reload, whatever order the analyzer keeps.
 	analysis, err := analyzer.AnalyzeSessionWithCache(m.sessionPath, m.sessionID, analyzer.AllMessages, m.agentCache)
 	if err != nil {
 		return errorMsg{err: err, sessionPath: m.sessionPath}

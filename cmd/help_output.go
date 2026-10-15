@@ -90,12 +90,13 @@ Spend rate
   last rate for 10 minutes, then reads -/h.
 
 Cost trend
-  watch's COST TREND chart has one point per message, agents included, in
-  the order they were sent: the latest 68, fewer on a narrow terminal. It
-  draws them as a line, or as bars with --ascii. The scale runs to the
-  most expensive message on screen, and min and max are the cheapest and
-  most expensive on screen, not in the session. "(last 68 of 618 msgs)"
-  says how many it shows of the latest 1000 messages it keeps. It needs
-  two messages, and a short terminal leaves it out.`,
+  watch's COST TREND chart plots what each clock minute cost, agents
+  included: "$ per minute, last 68m". The newest column is the minute in
+  progress. The chart moves on each minute even while nothing is written,
+  so a pause shows as empty columns. It spans 68 minutes, fewer on a
+  narrow terminal or in a younger session. It draws a line, or bars with
+  --ascii. The scale runs from $0 to the costliest minute on screen, which
+  max gives. Like the spend rate, it skips messages without a timestamp.
+  A short terminal leaves it out.`,
 	}
 }
