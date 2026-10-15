@@ -195,9 +195,8 @@ func TestGoldenBreakdownKeyListColor(t *testing.T) {
 	checkGolden(t, "breakdown_keys_80x15_color", frameOf(press(t, updated.(BreakdownModel), "?")))
 }
 
-// The ? list ends in a dim pointer to ficha help output when it has a row
-// to spare, after a blank when it has two, and drops it before its title as
-// rows run short.
+// The ? list ends in a dim pointer to ficha help output, after a blank, when
+// it has two rows to spare, and drops it before its title as rows run short.
 func TestKeyListPointsToTheGlossary(t *testing.T) {
 	keys := WatchKeys()
 	n := 0
@@ -212,7 +211,7 @@ func TestKeyListPointsToTheGlossary(t *testing.T) {
 		terms, head bool
 	}{
 		{n + 3, true, true},
-		{n + 2, true, true},
+		{n + 2, false, true},
 		{n + 1, false, true},
 		{n, false, false},
 	}
