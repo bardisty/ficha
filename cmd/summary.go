@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/formatter"
 	"github.com/spf13/cobra"
 )
@@ -71,14 +70,12 @@ func runSummary(cfg *config) error {
 	if err != nil {
 		return err
 	}
-	if cfg.nested {
-		sessions = append(sessions, nested.sessions...)
-	}
+	sessions, parsed := parseWithNested(cfg, sessions, nested, window)
 	pickPalette(cfg)
 
 	// Analyze all sessions. The per-session results feed the --details view so
 	// the formatter doesn't re-parse every session.
-	analysis, results, err := analyzer.AnalyzeMultipleSessionsInWindow(sessions, window)
+	analysis, results, err := parsed.Analyze(len(sessions))
 	if err != nil {
 		return fmt.Errorf("analyzing sessions: %w", err)
 	}
@@ -102,7 +99,7 @@ func runSummary(cfg *config) error {
 	}
 	warnUnknownModels(&warnings, analysis.UnpricedModels)
 	if !cfg.nested {
-		writeNestedNote(&warnings, cfg, sessions, analysis.TotalCost.TotalCost, nested, window, root.name)
+		writeNestedNote(&warnings, parsed, len(sessions), analysis.TotalCost.TotalCost, nested, window, root.name)
 	}
 
 	// Mark as summary (don't overwrite SessionID). SessionCount is already the

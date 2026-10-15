@@ -27,20 +27,30 @@ func checkNested(cfg *config) error {
 	return nil
 }
 
+// parseWithNested parses a report's sessions and the nested ones, once, in
+// the order --nested reads them. The report analyzes the sessions it
+// returns, the first of them, and writeNestedNote all of them. They take in
+// the nested ones under --nested.
+func parseWithNested(cfg *config, sessions []models.SessionEntry, nested nestedSessions, window models.TimeWindow) ([]models.SessionEntry, *analyzer.ParsedSessions) {
+	all := append(slices.Clip(sessions), nested.sessions...)
+	if cfg.nested {
+		sessions = all
+	}
+	return sessions, analyzer.ParseSessions(all, window)
+}
+
 // writeNestedNote tells a report without --nested what the projects under
-// its directory would add to it, in window. own are the report's sessions
-// and ownTotal their total cost.
+// its directory would add to it, in window. The report analyzed the first
+// own of parsed, for ownTotal.
 //
 // A worktree session can resume one of the directory's own and start with a
-// copy of its history, which --nested counts once. So the note prices the
-// report as --nested would and takes away what the report already counts,
-// at the cost of a second parse of every session.
-func writeNestedNote(w io.Writer, cfg *config, own []models.SessionEntry, ownTotal float64, nested nestedSessions, window models.TimeWindow, project string) {
+// copy of its history, which --nested counts once. So the note analyzes the
+// report as --nested would and takes away what the report already counts.
+func writeNestedNote(w io.Writer, parsed *analyzer.ParsedSessions, own int, ownTotal float64, nested nestedSessions, window models.TimeWindow, project string) {
 	if len(nested.sessions) == 0 {
 		return
 	}
-	combined := append(slices.Clip(own), nested.sessions...)
-	aggregate, results, err := analyzer.AnalyzeMultipleSessionsInWindow(combined, window)
+	aggregate, results, err := parsed.Analyze(own + len(nested.sessions))
 	if err != nil {
 		return
 	}

@@ -67,12 +67,10 @@ func runList(cfg *config) error {
 	if err != nil {
 		return err
 	}
-	if cfg.nested {
-		sessions = append(sessions, nested.sessions...)
-	}
+	sessions, parsed := parseWithNested(cfg, sessions, nested, window)
 
 	// Priced the way the table is, so costs match summary -d.
-	aggregate, results, err := analyzer.AnalyzeMultipleSessionsInWindow(sessions, window)
+	aggregate, results, err := parsed.Analyze(len(sessions))
 	if err != nil {
 		results = make([]models.SessionResult, len(sessions))
 		for i, s := range sessions {
@@ -118,7 +116,7 @@ func runList(cfg *config) error {
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
 	if !cfg.nested {
-		writeNestedNote(&warnings, cfg, sessions, ownTotal(aggregate), nested, window, root.name)
+		writeNestedNote(&warnings, parsed, len(sessions), ownTotal(aggregate), nested, window, root.name)
 	}
 
 	// Cleaned as each transcript's directory is, which --project-dir isn't.
@@ -177,12 +175,10 @@ func runListTable(cfg *config, window models.TimeWindow) error {
 	if err != nil {
 		return err
 	}
-	if cfg.nested {
-		sessions = append(sessions, nested.sessions...)
-	}
+	sessions, parsed := parseWithNested(cfg, sessions, nested, window)
 	pickPalette(cfg)
 
-	aggregate, results, err := analyzer.AnalyzeMultipleSessionsInWindow(sessions, window)
+	aggregate, results, err := parsed.Analyze(len(sessions))
 	if err != nil {
 		// Every transcript failed to parse. List them anyway, as unreadable.
 		results = make([]models.SessionResult, len(sessions))
@@ -211,7 +207,7 @@ func runListTable(cfg *config, window models.TimeWindow) error {
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
 	if !cfg.nested {
-		writeNestedNote(&warnings, cfg, sessions, ownTotal(aggregate), nested, window, root.name)
+		writeNestedNote(&warnings, parsed, len(sessions), ownTotal(aggregate), nested, window, root.name)
 	}
 
 	opts := formatter.ListTableOptions{

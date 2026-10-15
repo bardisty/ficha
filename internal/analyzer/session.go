@@ -519,12 +519,37 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 // The transcripts, agents' included, are parsed in parallel. The analysis of
 // those parses is serial and ordered, so the totals are the same on every run.
 func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window models.TimeWindow) (*models.SessionAnalysis, []models.SessionResult, error) {
-	if len(entries) == 0 {
-		return nil, nil, fmt.Errorf("no sessions to analyze")
-	}
+	return ParseSessions(entries, window).Analyze(len(entries))
+}
+
+// ParsedSessions is one parse of each session's files, which can be analyzed
+// more than once without reading a file again.
+type ParsedSessions struct {
+	entries []models.SessionEntry
+	window  models.TimeWindow
+	parses  *sessionParses
+}
+
+// ParseSessions parses entries' files for AnalyzeMultipleSessionsInWindow
+// over window.
+func ParseSessions(entries []models.SessionEntry, window models.TimeWindow) *ParsedSessions {
 	parses, jobs := planSessionParses(entries, window)
 	runParseJobs(jobs)
-	return analyzeSessionParses(entries, window, parses)
+	return &ParsedSessions{entries: entries, window: window, parses: parses}
+}
+
+// Analyze is AnalyzeMultipleSessionsInWindow over the first n entries. The
+// analysis only reads the parses, so each call gets the same answer it would
+// from a parse of its own.
+func (p *ParsedSessions) Analyze(n int) (*models.SessionAnalysis, []models.SessionResult, error) {
+	if n == 0 {
+		return nil, nil, fmt.Errorf("no sessions to analyze")
+	}
+	return analyzeSessionParses(p.entries[:n], p.window, &sessionParses{
+		parsed: p.parses.parsed[:n],
+		old:    p.parses.old[:n],
+		agents: p.parses.agents[:n],
+	})
 }
 
 // analyzeSessionParses is AnalyzeMultipleSessionsInWindow after the parse

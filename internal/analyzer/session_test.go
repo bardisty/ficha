@@ -3,6 +3,7 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1768,5 +1769,47 @@ func TestAnalyzeSession_HealthyAgentsReportNoSkips(t *testing.T) {
 	if analysis.SkippedAgents != 0 || analysis.AgentCount != 1 {
 		t.Errorf("SkippedAgents=%d AgentCount=%d, want 0/1",
 			analysis.SkippedAgents, analysis.AgentCount)
+	}
+}
+
+// One parse serves any number of analyses: each matches an analysis from a
+// parse of its own, whichever runs first.
+func TestParsedSessionsAnalyzeEachPrefix(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalPath := filepath.Join(tmpDir, "original.jsonl")
+	writeJSONLFile(t, originalPath, []string{forkMsg1, forkMsg2})
+	writeAgentSession(t, tmpDir, "original", "agent-a1.jsonl", []string{forkMsg3})
+	forkPath := filepath.Join(tmpDir, "fork.jsonl")
+	writeJSONLFile(t, forkPath, []string{forkMsg1, forkMsg2, forkMsg3})
+	entries := []models.SessionEntry{
+		{SessionID: "original", FullPath: originalPath, Modified: time.Date(2024, 1, 15, 10, 10, 0, 0, time.UTC)},
+		{SessionID: "fork", FullPath: forkPath, Modified: time.Date(2024, 1, 16, 9, 0, 0, 0, time.UTC)},
+	}
+
+	type analysis struct {
+		aggregate *models.SessionAnalysis
+		results   []models.SessionResult
+	}
+	alone := func(n int) analysis {
+		aggregate, results, err := AnalyzeMultipleSessions(entries[:n])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return analysis{aggregate, results}
+	}
+	for _, order := range [][]int{{1, 2}, {2, 1}} {
+		parsed := ParseSessions(entries, models.TimeWindow{})
+		for _, n := range order {
+			aggregate, results, err := parsed.Analyze(n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := (analysis{aggregate, results}), alone(n); !reflect.DeepEqual(got, want) {
+				t.Errorf("order %v, first %d: got %+v, want %+v", order, n, got.aggregate, want.aggregate)
+			}
+		}
+	}
+	if _, _, err := ParseSessions(entries, models.TimeWindow{}).Analyze(0); err == nil {
+		t.Error("Analyze(0) has nothing to analyze, and no error")
 	}
 }
