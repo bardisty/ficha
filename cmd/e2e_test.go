@@ -1394,9 +1394,9 @@ func TestE2EFlagScope(t *testing.T) {
 		wantStderr string
 	}{
 		{name: "list rejects --live", args: []string{"list", projFlag, "--live"}, wantErr: "unknown flag: --live"},
-		{name: "summary rejects --no-follow", args: []string{"summary", projFlag, "--no-follow"}, wantErr: "unknown flag: --no-follow"},
-		{name: "global rejects -p", args: []string{"global", "-p", "."}, wantErr: "unknown shorthand flag: 'p' in -p"},
-		{name: "global rejects --project-dir", args: []string{"global", projFlag}, wantErr: "unknown flag: --project-dir"},
+		{name: "summary rejects --no-follow", args: []string{"summary", projFlag, "--no-follow"}, wantErr: "ficha summary doesn't take --no-follow. --no-follow is a breakdown and watch flag."},
+		{name: "global rejects -p", args: []string{"global", "-p", "."}, wantErr: "ficha global covers every project and doesn't take -p. summary covers one project."},
+		{name: "global rejects --project-dir", args: []string{"global", projFlag}, wantErr: "ficha global covers every project and doesn't take --project-dir. summary covers one project."},
 		{
 			name:    "-p and --project-dir are exclusive",
 			args:    []string{"list", "-p", ".", projFlag},
