@@ -372,7 +372,12 @@ func TestBidiAndEmojiStayInColumns(t *testing.T) {
 	}, true, ListTableOptions{Width: 80})
 	check("list", list, 80, "\U0001F469\u200d\U0001F4BB")
 
-	names := []string{"~/src/\u202eevil", "~/src/weather-" + sun, "~/src/" + sun + "/a-very-long-path/to-a-project-cut-from-the-left"}
-	global := projectsTable(globalAnalysisWithProjects(map[string]float64{names[0]: 1.5, names[1]: 0.25, names[2]: 0.5}, names), true, GlobalTableOptions{TopN: 10, Width: 80})
+	keycaps := "~/src/" + strings.Repeat("1\ufe0f\u20e3", 20) + "/proj"
+	names := []string{"~/src/\u202eevil", "~/src/weather-" + sun, "~/src/" + sun + "/a-very-long-path/to-a-project-cut-from-the-left", keycaps}
+	global := projectsTable(globalAnalysisWithProjects(map[string]float64{names[0]: 1.5, names[1]: 0.25, names[2]: 0.5, names[3]: 0.1}, names), true, GlobalTableOptions{TopN: 10, Width: 80})
 	check("global", global, 80, "weather-"+sun)
+	// A keycap name cut from the left keeps as much of its end as fits.
+	if !strings.Contains(global, strings.Repeat("1\ufe0f\u20e3", 8)+"/proj") {
+		t.Errorf("global: want the keycap name's end kept:\n%s", global)
+	}
 }

@@ -1094,6 +1094,7 @@ func TestTruncateRightAndTail(t *testing.T) {
 		{"日本語", 3, "日…", "語"},
 		{"日本語", 0, "", ""},
 		{"ab1\ufe0f\u20e3cd", 4, "ab…", "1\ufe0f\u20e3cd"},
+		{"/" + strings.Repeat("1\ufe0f\u20e3", 5) + "/p", 6, "/1\ufe0f\u20e31\ufe0f\u20e3…", "1\ufe0f\u20e31\ufe0f\u20e3/p"},
 	} {
 		if got := TruncateRight(tt.s, tt.width); got != tt.right {
 			t.Errorf("TruncateRight(%q, %d) = %q, want %q", tt.s, tt.width, got, tt.right)
