@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/spinner"
+	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
@@ -102,4 +103,45 @@ func accountingFootnote(skippedAgents, skippedLines, estimatedCosts int) string 
 		parts = append(parts, fmt.Sprintf("%d estimated cost(s)", estimatedCosts))
 	}
 	return styles.Warning + " " + strings.Join(parts, ", ")
+}
+
+// accountingNotes is accountingFootnote's forms, from the most it says to
+// the least, for a line that takes the first that fits: the note, the counts
+// in fewer words, one word for what the totals lack, then the warning sign
+// alone. Each drops whole words, and every form keeps the sign, so a line
+// too narrow for the counts still doesn't pass for complete. Empty when
+// there's nothing to report.
+func accountingNotes(skippedAgents, skippedLines, estimatedCosts int) []string {
+	full := accountingFootnote(skippedAgents, skippedLines, estimatedCosts)
+	if full == "" {
+		return nil
+	}
+	var skipped, parts []string
+	if skippedAgents > 0 {
+		skipped = append(skipped, fmt.Sprintf("%d agent(s)", skippedAgents))
+	}
+	if skippedLines > 0 {
+		skipped = append(skipped, fmt.Sprintf("%d line(s)", skippedLines))
+	}
+	if len(skipped) > 0 {
+		parts = append(parts, strings.Join(skipped, ", ")+" skipped")
+	}
+	word := "incomplete"
+	if estimatedCosts > 0 {
+		parts = append(parts, fmt.Sprintf("%d estimated", estimatedCosts))
+		if len(skipped) == 0 {
+			word = "estimated"
+		}
+	}
+	forms := []string{full}
+	for _, form := range []string{
+		styles.Warning + " " + strings.Join(parts, ", "),
+		styles.Warning + " " + word,
+		styles.Warning,
+	} {
+		if lipgloss.Width(form) < lipgloss.Width(forms[len(forms)-1]) {
+			forms = append(forms, form)
+		}
+	}
+	return forms
 }

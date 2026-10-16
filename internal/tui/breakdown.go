@@ -119,6 +119,10 @@ type BreakdownModel struct {
 	dated   bool
 	weekOld bool
 	datedOn time.Time
+	// rowsDated is dated as of the last relayout that had rows: a reload
+	// can empty the table, and the rows that come back bring a divider
+	// back only if they had one before.
+	rowsDated bool
 
 	spinner   spinner.Model
 	watcher   *fsnotify.Watcher
@@ -583,11 +587,7 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // superseded by a faster chain; see breakdownMsgsMsg
 		}
 		if !render.SameLocalDay(m.datedOn, m.clock()) {
-			wasDated := m.dated
 			m.relayout()
-			if !wasDated && m.dated {
-				m.keepLineWhenDated()
-			}
 			m.refreshViewport()
 		}
 		return m, clockCmd(m.clockInterval(), m.clockGen)
@@ -664,6 +664,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.clearSelection()
 	m.lineRows, m.linePos = nil, nil
 	m.sortByCost = false
+	m.rowsDated = false
 	m.relayout()
 	if m.ready {
 		m.viewport.SetContent("")
@@ -986,11 +987,11 @@ func (m BreakdownModel) renderStatsTotals() string {
 	sep := " " + styles.BoxVerticalSep + " "
 	if m.noColor {
 		line := fmt.Sprintf("  Messages: %d%sTotal: %s", len(m.messages), sep, render.Cost(m.totalCost))
-		if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts); note != "" {
-			line += sep + note
-		}
-		if note := m.fitUnknownNote(line, sep); note != "" {
-			line += sep + note
+		accounting, unknown := m.fitStatsNotes(line, sep)
+		for _, note := range []string{accounting, unknown} {
+			if note != "" {
+				line += sep + note
+			}
 		}
 		return line
 	}
@@ -1005,32 +1006,55 @@ func (m BreakdownModel) renderStatsTotals() string {
 	sb.WriteString(sepStyled)
 	sb.WriteString(lightGray.Render("Total: "))
 	sb.WriteString(lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(render.Cost(m.totalCost)))
-	// Surface parse warnings so an incomplete breakdown doesn't look complete
-	if note := accountingFootnote(m.skippedAgents, m.skippedLines, m.estimatedCosts); note != "" {
-		sb.WriteString(sepStyled)
-		sb.WriteString(warnStyle.Render(note))
-	}
-	// Explain the MODEL-column asterisk: those rows are fallback-priced
-	if note := m.fitUnknownNote(sb.String(), sep); note != "" {
-		sb.WriteString(sepStyled)
-		sb.WriteString(warnStyle.Render(note))
+	// Surface parse warnings so an incomplete breakdown doesn't look
+	// complete, and explain the MODEL column's fallback-pricing asterisk.
+	accounting, unknown := m.fitStatsNotes(sb.String(), sep)
+	for _, note := range []string{accounting, unknown} {
+		if note != "" {
+			sb.WriteString(sepStyled)
+			sb.WriteString(warnStyle.Render(note))
+		}
 	}
 	return sb.String()
 }
 
-// fitUnknownNote is the longest form of the fallback-pricing footnote that
-// fits on the stats line after line and sep (see unknownModelNotes), or ""
-// when no model is fallback-priced or no form fits.
-func (m BreakdownModel) fitUnknownNote(line, sep string) string {
-	if len(m.unknownModels) == 0 {
+// fitStatsNotes picks the forms of the accounting note (accountingNotes) and
+// the fallback-pricing note (unknownModelNotes) for the stats line after
+// line, each led by sep, or "" for a note there's nothing to say for or no
+// room for. The accounting note comes first, as in watch's footer, and
+// takes the longest form that still leaves the other room for its
+// shortest: the totals missing something matters more than what an
+// asterisk means, but both are worth a few words before either gets more.
+// The bare warning sign doesn't count as a few words, so the accounting
+// note never shrinks to it to make room.
+func (m BreakdownModel) fitStatsNotes(line, sep string) (accounting, unknown string) {
+	notes := accountingNotes(m.skippedAgents, m.skippedLines, m.estimatedCosts)
+	var unknowns []string
+	if len(m.unknownModels) > 0 {
+		unknowns = unknownModelNotes(m.unknownModels, m.sessionID)
+	}
+	first := func(head string, forms []string) string {
+		for _, form := range forms {
+			if m.width <= 0 || lipgloss.Width(head+sep+form) <= m.width {
+				return form
+			}
+		}
 		return ""
 	}
-	for _, note := range unknownModelNotes(m.unknownModels, m.sessionID) {
-		if m.width <= 0 || lipgloss.Width(line+sep+note) <= m.width {
-			return note
+	if len(unknowns) > 0 && len(notes) > 0 {
+		// The last form is the plainest, but a short model ID can make the
+		// one before it narrower.
+		least := slices.MinFunc(unknowns, func(a, b string) int { return lipgloss.Width(a) - lipgloss.Width(b) })
+		for _, note := range notes[:len(notes)-1] {
+			if m.width <= 0 || lipgloss.Width(line+sep+note+sep+least) <= m.width {
+				return note, first(line+sep+note, unknowns)
+			}
 		}
 	}
-	return ""
+	if accounting = first(line, notes); accounting != "" {
+		line += sep + accounting
+	}
+	return accounting, first(line, unknowns)
 }
 
 // renderHelpLine is the key-hint row: watch's, plus p and s, which only
@@ -1354,11 +1378,20 @@ func (m BreakdownModel) agentCell(msg models.BreakdownMessage, withTag bool) str
 
 // relayout works out the table's layout again. Call it whenever the rows,
 // the run tags, the width, the sort or the local day change, or columns
-// misalign.
+// misalign. Whichever of those first finds rows that weren't dated now
+// dated, the day having turned, keeps the reader's line past the divider
+// that adds, so the line moves once. A table a reload emptied doesn't
+// count: its rows weren't drawn, and come back as dated as they were.
 func (m *BreakdownModel) relayout() {
 	m.datedOn = m.clock()
 	m.dated, m.weekOld = m.isDated(m.datedOn)
 	m.table = m.layout()
+	if len(m.messages) > 0 {
+		if !m.rowsDated && m.dated {
+			m.keepLineWhenDated()
+		}
+		m.rowsDated = m.dated
+	}
 }
 
 // isDated reports whether any row is from a local day before now's, and
