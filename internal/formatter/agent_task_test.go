@@ -222,7 +222,7 @@ func TestNoTasksHugeCountGivesWay(t *testing.T) {
 	if strings.Contains(out, "msgs") {
 		t.Errorf("want the 11-column count dropped:\n%s", out)
 	}
-	if !strings.Contains(out, "  Parent session                             ") {
+	if !strings.Contains(out, "  Main conversation                          ") {
 		t.Errorf("want the cost column where it is without tasks:\n%s", out)
 	}
 }

@@ -81,7 +81,7 @@ Each entry in `agents` names what the agent was for, as Claude Code recorded it 
 | Key | Meaning |
 | --- | --- |
 | `agent_type` | the agent's type: `Explore`, `general-purpose`, or a custom agent's name |
-| `description` | the short task label the parent session gave the agent |
+| `description` | the short task label the main conversation gave the agent |
 
 Either is absent when Claude Code didn't record it, as for agents from versions that wrote no meta file. Both are raw text: escape them before you print them to a terminal. The tables show `description`, or `agent_type` when there's none.
 
@@ -109,12 +109,12 @@ The last two columns, `agent_type` and `description`, are the agent's, as in jso
 - `model`, `start_time`, `duration_seconds` and `total_cost` come from the same analysis as the session's `summary -d` record and the list table. That analysis counts a message repeated across sessions once, under the session it first appeared in. So for a resumed or forked session, which starts with a copy of earlier history, these fields describe what it added: `start_time` is its first new message, and its `total_cost` can be lower than `show`'s, which analyzes the session alone.
 - `title` is the session's title, as on `show`. A fork that hasn't been retitled yet carries the original's title.
 - `message_count` and `agent_count` come from the same parse as `show`'s, so the two agree, repeated history included.
-- `model` is the session's costliest model in the parent transcript, spelled as a `cost_by_model` key, like `summary -d` csv's `model`.
+- `model` is the session's costliest model in its main conversation, spelled as a `cost_by_model` key, like `summary -d` csv's `model`.
 - A session that fails to parse is still listed, with `skipped_sessions: 1`. It has no `title`, `model`, `start_time`, `duration_seconds` or `total_cost`, and csv leaves those cells empty. A session that holds nothing but repeated history parses fine, so it has `total_cost` (zero) and `duration_seconds`, but no `start_time` or `model`.
 
 ## Context window
 
-`context` on `show` json and on each per-session record in `summary -d` json is the reading the table's Context gauge shows: how full the context window was at the session's last parent request.
+`context` on `show` json and on each per-session record in `summary -d` json is the reading the table's Context gauge shows: how full the context window was at the main conversation's last request.
 
 | Key | Meaning |
 | --- | --- |
@@ -122,7 +122,7 @@ The last two columns, `agent_type` and `description`, are the agent's, as in jso
 | `window` | the window ficha reads the request against: the model's, from ficha's price list, or the 1M long-context window when the request was larger |
 | `percent` | `tokens / window * 100`, unrounded. The table rounds it |
 
-`context` is absent when the session has no parent request, and on the `summary` aggregate, which spans many sessions. A `summary -d` session made only of history repeated from an earlier session has no request of its own, so it has no `context` there, though `show` gives it one.
+`context` is absent when the session's main conversation has no request, and on the `summary` aggregate, which spans many sessions. A `summary -d` session made only of history repeated from an earlier session has no request of its own, so it has no `context` there, though `show` gives it one.
 
 A model on the price list whose request is larger than its usual window reads against the 1M long-context window: Sonnet 4.5 at 687K reads 69%, not 344%. So `percent` is never over 100. `window` and `percent` are absent when ficha doesn't know the window: the model isn't on its price list, or the request is larger than any window ficha knows for the model. `context` then has `tokens` alone, and the table shows the tokens with a note saying the window is unknown, or that the request outgrew the largest window ficha knows. jq's `.context.percent // empty` skips those readings.
 
@@ -138,11 +138,11 @@ Each entry in `workflows` (on `show` json and each per-session record in `summar
 
 ## Cost insights
 
-`insights` on `show` json and on each per-session record in `summary -d` json describes the parent transcript's messages. Agents' messages aren't in it.
+`insights` on `show` json and on each per-session record in `summary -d` json describes the main conversation's messages. Agents' messages aren't in it.
 
 | Key | Meaning |
 | --- | --- |
-| `message_count` | parent messages the insights cover |
+| `message_count` | main conversation messages the insights cover |
 | `average_cost` | mean cost per message |
 | `first_message`, `last_message` | a snapshot: `index` (1-based), `timestamp`, `cost`, and `main_cost_component` (`input`, `output`, `cache_write_5m`, `cache_write_1h` or `cache_read`) with its `main_cost_value` |
 | `highest_cost` | the same snapshot for the costliest message, present only when it costs more than 1.5 times the average |
@@ -150,7 +150,7 @@ Each entry in `workflows` (on `show` json and each per-session record in `summar
 | `recent_avg_cost` | mean cost of the last `trend_window` messages |
 | `trend_window` | how many recent messages the trend averages: 20, or half the session if that's fewer |
 
-A session with fewer than 6 parent messages has no trend, so `cost_trend`, `recent_avg_cost` and `trend_window` are absent. Check for `cost_trend` before reading the other two.
+A session with fewer than 6 messages in its main conversation has no trend, so `cost_trend`, `recent_avg_cost` and `trend_window` are absent. Check for `cost_trend` before reading the other two.
 
 ## Skip counters
 
@@ -200,7 +200,7 @@ On the `summary` aggregate that split spans every session, alongside `agent_coun
 
 ## Time windows (`--since`, `--until`)
 
-On `list`, `summary` and `global`, `--since` and `--until` limit every format to the messages timestamped inside the window, parent and agents alike, so a session that crosses a bound counts only its part inside. Sessions, agents and projects with nothing inside drop out of the records and the counts. A message with no timestamp can't be placed, so a window leaves it out. json names the window as `window: {since, until}` (timestamps as below, either one absent when open) on the `summary` aggregate and the `global` object. `list` json is a bare array with nowhere to put it, and csv doesn't carry it.
+On `list`, `summary` and `global`, `--since` and `--until` limit every format to the messages timestamped inside the window, the main conversation's and agents' alike, so a session that crosses a bound counts only its part inside. Sessions, agents and projects with nothing inside drop out of the records and the counts. A message with no timestamp can't be placed, so a window leaves it out. json names the window as `window: {since, until}` (timestamps as below, either one absent when open) on the `summary` aggregate and the `global` object. `list` json is a bare array with nowhere to put it, and csv doesn't carry it.
 
 `list` keeps the sessions `summary -d` keeps for the same window. Each record's `total_cost`, `start_time`, `duration_seconds`, `message_count`, `agent_count` and `agent_message_count` then cover only its messages inside the window, as `summary -d`'s do, so an agent with nothing inside isn't counted. The discovery fields (`modified`, `agent_paths`) and the skip counters stay the whole session's. A session ficha can't read has no timestamps, so a window keeps it, as the `summary -d` table does, unless `--since` skips its files as described below.
 
@@ -218,17 +218,17 @@ Whole seconds mean `end_time` minus `start_time` can differ from `duration_secon
 
 ## Per-message rows (`show --messages`)
 
-`show --messages` likewise emits agent rows, not just the parent transcript, so the rows sum to the session's `total_cost`. An `agent_id` column (json: `agent_id`, omitted on parent records) says where each row came from:
+`show --messages` likewise emits agent rows, not just the main conversation's, so the rows sum to the session's `total_cost`. An `agent_id` column (json: `agent_id`, omitted on the main conversation's records) says where each row came from:
 
 ```
 agent_id  timestamp             model            total_cost
           2026-02-02T09:00:00Z  claude-opus-4-8    0.031500   ─┐
-          2026-02-02T09:10:00Z  claude-opus-4-8    0.004200    ├─ parent
+          2026-02-02T09:10:00Z  claude-opus-4-8    0.004200    ├─ main conversation
 g1        2026-02-02T09:05:00Z  claude-sonnet-5    0.012000   ─┤
 w1        2026-02-02T09:07:00Z  claude-sonnet-5    0.009000   ─┘ agents
 ```
 
-Parent rows come first, then one block per agent, in the order of `agents`. Sort by timestamp for a chronological view — or use `ficha breakdown`, which does it for you.
+The main conversation's rows come first, then one block per agent, in the order of `agents`. Sort by timestamp for a chronological view — or use `ficha breakdown`, which does it for you.
 
 One `agent_id` key space throughout: the same ID joins these rows, the json `agents[]` array, and `summary --details --expand-agents` rows.
 

@@ -12,7 +12,7 @@
   Savings           $20.25    (from cache reads)
 
   Context  38% [████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░│░] 380.0K / 1.00M
-           587.0K to ~compaction (main session, last request)
+           587.0K to ~compaction (main conversation, last request)
 
 ─────────────────────────────[ COST BY MODEL ]──────────────────────────────
 
@@ -22,7 +22,7 @@
 
 ───────────────────────────[ AGENT SUB-SESSIONS ]───────────────────────────
 
-  Parent session                                                     $7.90
+  Main conversation                                                  $7.90
   [A1b2c3d4] Find the auth middleware       Haiku 4.5   100% ctx     $0.4200
   [Af6e5d4c] code-reviewer                  Sonnet 5     38% ctx     $1.58
   ── workflow: audit-codebase (running)                              $1.65
@@ -41,6 +41,6 @@
   Trend      last 12 $0.5500/msg vs $0.4100/msg avg  ▲ rising
 
 ════════════════════════════════════════════════════════════════════════════
-Total: $12.30  │  Messages: 68 (24 parent, 44 agents)
+Total: $12.30  │  Messages: 68 (24 main, 44 agents)
 Last active: Jan 15 11:30
 ────────────────────────────────────────────────────────────────────────────

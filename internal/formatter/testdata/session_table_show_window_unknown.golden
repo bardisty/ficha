@@ -23,7 +23,7 @@
 
 ───────────────────────────[ AGENT SUB-SESSIONS ]───────────────────────────
 
-  Parent session                                               $7.90
+  Main conversation                                            $7.90
   [A1b2c3d4] Find the auth middleware mystery-9   680K ctx     $0.4200
   [Af6e5d4c] code-reviewer            Sonnet 5     38% ctx     $1.58
   Agents subtotal                                              $2.00
@@ -37,6 +37,6 @@
   Trend      last 12 $0.5500/msg vs $0.4100/msg avg  ▲ rising
 
 ════════════════════════════════════════════════════════════════════════════
-Total: $9.90  │  Messages: 37 (24 parent, 13 agents)
+Total: $9.90  │  Messages: 37 (24 main, 13 agents)
 Last active: Jan 15 11:30
 ────────────────────────────────────────────────────────────────────────────

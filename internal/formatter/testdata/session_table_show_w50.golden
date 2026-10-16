@@ -22,7 +22,7 @@
 
 ──────────────[ AGENT SUB-SESSIONS ]──────────────
 
-  Parent session                           $7.90
+  Main conversation                        $7.90
   [A1b2c3d4] Haiku 4.5   100% ctx          $0.4200
   [Af6e5d4c] Sonnet 5     38% ctx          $1.58
   ── workflow: audit-codebase              $1.65
@@ -40,6 +40,6 @@
 
 ══════════════════════════════════════════════════
 Total: $11.55
-Messages: 59 (24 parent, 35 agents)
+Messages: 59 (24 main, 35 agents)
 Last active: Jan 15 11:30
 ──────────────────────────────────────────────────

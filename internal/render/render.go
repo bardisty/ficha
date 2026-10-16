@@ -587,7 +587,7 @@ const minContextBar = 10
 // c.CompactAt, the model's ~compaction point:
 //
 //	 95% [██████████████████████████████████│░] 950.0K / 1.00M
-//	17.0K to ~compaction (main session, last request)
+//	17.0K to ~compaction (main conversation, last request)
 //
 // The point is approximate, and Claude Code settings can move it, so the UI
 // always calls it "~compaction".
@@ -661,7 +661,7 @@ type ContextAgent struct {
 // gaugeNote fits the note under the gauge to width: the main reading's
 // forms, longest first, led by forms that add agent after main, the main
 // reading without its scope. The agent part carries its own label, so the
-// unlabeled reading before it reads as the main session's; the panel is too
+// unlabeled reading before it reads as the main conversation's; the panel is too
 // narrow to keep the scope as well. The agent part goes before the main
 // reading's headroom does. Only the agent's reading takes its zone's color,
 // as only the gauge's percentage takes the main reading's.
@@ -779,21 +779,21 @@ func AgentContextCell(c *models.ContextUsage, noColor bool) string {
 // contextNotes are the forms of the line under the gauge, longest first.
 // It's laid out one column in, under the percentage's digits. The forms
 // count tokens to or past compactAt rather than naming the mark's share of
-// the window, which differs from model to model. They shed the scope before
-// the reading, and a shorter reading before nothing at all, so a narrow
-// terminal never cuts the headroom figure or the warning mid-word. The
-// headroom has no shorter form: "288.8K left" beside "678.2K / 1.00M" reads
-// as room in the window.
+// the window, which differs from model to model. They shorten the scope,
+// then shed it before the reading, and a shorter reading before nothing at
+// all, so a narrow terminal never cuts the headroom figure or the warning
+// mid-word. The headroom has no shorter form: "288.8K left" beside "678.2K
+// / 1.00M" reads as room in the window.
 func contextNotes(contextSize int64, compactAt int) []string {
 	if compactAt <= 0 {
 		return nil
 	}
-	const scope = " (main session, last request)"
+	const scope, shortScope = " (main conversation, last request)", " (main, last request)"
 	reading := CompactionWords(contextSize, compactAt)
 	if contextSize > int64(compactAt) {
-		return []string{reading + scope, reading, pastCompaction}
+		return []string{reading + scope, reading + shortScope, reading, pastCompaction}
 	}
-	return []string{reading + scope, reading}
+	return []string{reading + scope, reading + shortScope, reading}
 }
 
 // pastCompaction is the shortest form of a reading past its mark.
