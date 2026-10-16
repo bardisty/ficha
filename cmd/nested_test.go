@@ -250,6 +250,62 @@ func TestNestedProjectsNotAtHome(t *testing.T) {
 	}
 }
 
+// A directory above ~, such as /home, holds every project under ~ too, so it
+// gets no note, doesn't stand in for the projects under it, and isn't
+// offered as a parent.
+func TestNestedProjectsNotAboveHome(t *testing.T) {
+	setHome := func(t *testing.T, repo string) {
+		t.Helper()
+		home := filepath.Join(repo, "home", "user")
+		if err := os.MkdirAll(home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+	}
+
+	t.Run("no note", func(t *testing.T) {
+		repo, _, _ := setupNestedFixture(t)
+		setHome(t, repo)
+		_, stderr, err := executeCLISplit(t, "summary")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(stderr, "Note:") {
+			t.Errorf("stderr = %q", stderr)
+		}
+	})
+
+	t.Run("no stand-in", func(t *testing.T) {
+		repo, projectsDir, _ := setupNestedFixture(t)
+		setHome(t, repo)
+		if err := os.RemoveAll(filepath.Join(projectsDir, paths.PathToProjectDir(repo))); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"summary"}, {"summary", "--nested"}} {
+			_, _, err := executeCLISplit(t, args...)
+			want := "Claude Code has no sessions for " + repo + ". Sessions are recorded per directory Claude Code was started in."
+			if exitCode(err) != 1 || !strings.HasPrefix(err.Error(), want) {
+				t.Errorf("%v: exit %d, error %v, want it to start %q", args, exitCode(err), err, want)
+			}
+		}
+	})
+
+	t.Run("no parent hint", func(t *testing.T) {
+		repo, _, _ := setupNestedFixture(t)
+		setHome(t, repo)
+		src := filepath.Join(repo, "src")
+		if err := os.MkdirAll(src, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Chdir(src)
+		_, _, err := executeCLISplit(t, "summary")
+		if err == nil || strings.Contains(err.Error(), "parent directory") {
+			t.Errorf("error %v", err)
+		}
+	})
+}
+
 // A repo where only claude --worktree ever ran has no sessions of its own:
 // either no project directory at all, or one that holds no transcript.
 func TestNestedProjectsWithoutOwnSessions(t *testing.T) {
