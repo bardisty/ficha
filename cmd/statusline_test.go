@@ -69,6 +69,9 @@ func TestStatusLineParts(t *testing.T) {
 			a.Insights.RecentAvgCost = 0.0099
 			a.TotalCost.TotalCost, a.AgentsCost.TotalCost = 0.005, 0
 		}, "Haiku 4.5 · ctx 68% · $0.0099/msg ▲ · $0.0050"},
+		{"over $1,000", "Opus 5.5", func(a *models.SessionAnalysis) {
+			a.TotalCost.TotalCost, a.AgentsCost.TotalCost = 1234.56, 999.996
+		}, "Opus 5.5 · ctx 68% · $0.19/msg ▲ · $1,234.56 (agents $1,000.00)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

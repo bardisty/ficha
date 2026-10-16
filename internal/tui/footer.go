@@ -255,7 +255,7 @@ func (m Model) statsSegments(label, agent bool) []string {
 	}
 	segs = append(segs, style(styles.FooterStyle, fmt.Sprintf("%s (%s)", rateStr, windowLabel(rateWindow))))
 
-	msgs := fmt.Sprintf("%d msgs", a.MessageCount)
+	msgs := render.Count(a.MessageCount) + " msgs"
 	if a.MessageCount == 1 {
 		msgs = "1 msg"
 	}

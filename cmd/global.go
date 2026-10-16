@@ -11,6 +11,7 @@ import (
 	"github.com/bardisty/ficha/internal/formatter"
 	"github.com/bardisty/ficha/internal/parser"
 	"github.com/bardisty/ficha/internal/paths"
+	"github.com/bardisty/ficha/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -105,7 +106,7 @@ func runGlobal(cfg *config) error {
 	var warnings bytes.Buffer
 	warnIgnoredIndexes(&warnings, analysis.IgnoredIndexes, cfg.verbose)
 	if analysis.SkippedProjects > 0 {
-		fmt.Fprintf(&warnings, "Warning: %d project(s) could not be analyzed\n", analysis.SkippedProjects)
+		fmt.Fprintf(&warnings, "Warning: %s project(s) could not be analyzed\n", render.Count(analysis.SkippedProjects))
 	}
 	var details []namedSkip
 	for _, p := range slices.Concat(analysis.Projects, analysis.OutOfWindow) {

@@ -102,7 +102,7 @@ func TestSummaryTableLargeCostsStayAligned(t *testing.T) {
 	for _, expand := range []bool{false, true} {
 		out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", true, expand, 0)
 		assertRowsAligned(t, out, "WHEN", []string{"aaaa1111", "bbbb2222", "cccc3333"})
-		if !strings.Contains(out, "$13580.48") {
+		if !strings.Contains(out, "$13,580.48") {
 			t.Errorf("expand=%v: sum missing:\n%s", expand, out)
 		}
 	}
@@ -379,5 +379,46 @@ func TestBidiAndEmojiStayInColumns(t *testing.T) {
 	// A keycap name cut from the left keeps as much of its end as fits.
 	if !strings.Contains(global, strings.Repeat("1\ufe0f\u20e3", 8)+"/proj") {
 		t.Errorf("global: want the keycap name's end kept:\n%s", global)
+	}
+}
+
+// A five-figure savings widens the cost rows' column rather than spilling
+// past it, so every decimal point stays in one column.
+func TestCostRowsWidenForFiveFigures(t *testing.T) {
+	cost := models.CostBreakdown{InputCost: 114.35, OutputCost: 5717.27, CacheReadCost: 2140.41, CacheSavings: 54522.39}
+	usage := models.TokenUsage{InputTokens: 25_670_000, OutputTokens: 257_200_000, CacheReadInputTokens: 12_730_000_000}
+	for _, width := range []int{80, 45} {
+		out := renderCostRows(cost, usage, width, true)
+		want := -1
+		for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+			if lipgloss.Width(line) > width {
+				t.Errorf("width %d: %q is %d wide", width, line, lipgloss.Width(line))
+			}
+			dot := strings.Index(line, ".")
+			if want == -1 {
+				want = dot
+			} else if dot != want {
+				t.Errorf("width %d: decimal at %d, want %d:\n%s", width, dot, want, out)
+				break
+			}
+		}
+	}
+}
+
+// COST BY MODEL widens for a six-figure model rather than letting that row
+// spill past the others.
+func TestCostByModelWidensForSixFigures(t *testing.T) {
+	byModel := map[string]models.CostBreakdown{
+		"claude-opus-4-8":   {TotalCost: 123456.78},
+		"claude-sonnet-4-5": {TotalCost: 12.50},
+	}
+	for name, out := range map[string]string{
+		"global": formatGlobalCostByModel(byModel, true),
+		"show":   formatCostByModelContent(&models.SessionAnalysis{CostByModel: byModel}, true),
+	} {
+		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		if len(lines) != 2 || strings.LastIndex(lines[0], ".") != strings.LastIndex(lines[1], ".") {
+			t.Errorf("%s: decimals out of line:\n%s", name, out)
+		}
 	}
 }

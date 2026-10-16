@@ -306,6 +306,15 @@ func TestWatchStatsLine(t *testing.T) {
 	if got, want := m.renderStatsLine(5), "$30.05"; got != want {
 		t.Errorf("too narrow keeps the total:\n got %q\nwant %q", got, want)
 	}
+
+	// From 1,000 up the total and the count take commas, and still fit at 40.
+	big := tallAnalysis(1209.02)
+	big.MessageCount = 1021
+	big.Duration, big.Messages = a.Duration, a.Messages
+	m = load(t, m, big)
+	if got, want := m.renderStatsLine(40), "$1,209.02 │ $7.20/h (10m) │ 1,021 msgs"; got != want {
+		t.Errorf("4-digit count:\n got %q\nwant %q", got, want)
+	}
 }
 
 // Any other error opening the session file shows its reason, never the path:
@@ -352,5 +361,24 @@ func TestErrNoticeKeepsRetryHint(t *testing.T) {
 		if !strings.HasSuffix(got, " r to retry") || lipgloss.Width(got) > width {
 			t.Errorf("errNotice at %d = %q (%d wide), want the whole retry hint within the width", width, got, lipgloss.Width(got))
 		}
+	}
+}
+
+// A five-figure savings widens the cost rows' column, so its decimal point
+// stays under the others.
+func TestWatchCostRowsWidenForFiveFigures(t *testing.T) {
+	a := tallAnalysis(5717.27)
+	a.TotalCost.CacheSavings = 54522.39
+	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
+	m = sized(t, m, 80, 40)
+	m = load(t, m, a)
+	var dots []int
+	for _, line := range strings.Split(stripANSI(m.renderAnalysis()), "\n") {
+		if strings.HasPrefix(line, "    Input ") || strings.HasPrefix(line, "    Savings ") {
+			dots = append(dots, strings.Index(line, "."))
+		}
+	}
+	if len(dots) != 2 || dots[0] != dots[1] {
+		t.Errorf("Input and Savings decimals at %v, want one column:\n%s", dots, stripANSI(m.renderAnalysis()))
 	}
 }

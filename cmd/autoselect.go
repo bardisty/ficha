@@ -48,7 +48,7 @@ func trulyEmpty(a *models.SessionAnalysis) bool {
 // writeSkippedNote says the report isn't about the newest session, and
 // names that session when there's one, so 'ficha show <id>' can reach it.
 func writeSkippedNote(w io.Writer, skipped int, newestID string, noColor bool) {
-	note := fmt.Sprintf("(skipped %d newer sessions with no replies yet)", skipped)
+	note := "(skipped " + render.Count(skipped) + " newer sessions with no replies yet)"
 	if skipped == 1 {
 		note = fmt.Sprintf("(skipped 1 newer session with no replies yet: %s)", render.TruncateID(newestID, 8))
 	}

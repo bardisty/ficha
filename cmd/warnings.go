@@ -219,16 +219,16 @@ type namedSkip struct {
 
 func (s skipWarning) write(w io.Writer, verbose bool) {
 	if s.sessions > 0 {
-		fmt.Fprintf(w, "Warning: %d session(s) could not be parsed\n", s.sessions)
+		fmt.Fprintf(w, "Warning: %s session(s) could not be parsed\n", render.Count(s.sessions))
 	}
 	// "read" rather than "parsed": the count also covers agent directories
 	// that could not be listed, whose agent files were never seen, so there
 	// the number is a lower bound.
 	if s.agents > 0 {
-		fmt.Fprintf(w, "Warning: %d agent sub-session(s) could not be read\n", s.agents)
+		fmt.Fprintf(w, "Warning: %s agent sub-session(s) could not be read\n", render.Count(s.agents))
 	}
 	if s.lines > 0 {
-		fmt.Fprintf(w, "Warning: %d unparseable line(s) skipped; %s may be undercounted\n", s.lines, s.counts)
+		fmt.Fprintf(w, "Warning: %s unparseable line(s) skipped; %s may be undercounted\n", render.Count(s.lines), s.counts)
 	}
 	if s.sessions+s.agents+s.lines == 0 {
 		return
@@ -321,7 +321,7 @@ func plural(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun
 	}
-	return fmt.Sprintf("%d %ss", n, noun)
+	return render.Count(n) + " " + noun + "s"
 }
 
 // shortSessionID is the 8-character prefix of a UUID session ID, which the
@@ -367,7 +367,7 @@ func labelSkips(project string, details []models.SkipDetail) []namedSkip {
 func warnIgnoredIndexes(w io.Writer, ignored []models.IgnoredIndex, verbose bool) {
 	for i, index := range ignored {
 		if i == maxListedFiles && !verbose {
-			fmt.Fprintf(w, "Warning: ignoring %s. Run with -v to list all %d.\n", plural(len(ignored)-i, "more sessions-index.json file"), len(ignored))
+			fmt.Fprintf(w, "Warning: ignoring %s. Run with -v to list all %s.\n", plural(len(ignored)-i, "more sessions-index.json file"), render.Count(len(ignored)))
 			return
 		}
 		fmt.Fprintf(w, "Warning: %s\n", ignoredIndexMessage(index.Path, index.Err))
@@ -379,7 +379,7 @@ func warnIgnoredIndexes(w io.Writer, ignored []models.IgnoredIndex, verbose bool
 // the affected totals are lower-bound estimates rather than exact.
 func warnEstimatedCosts(w io.Writer, estimatedCostMessages int) {
 	if estimatedCostMessages > 0 {
-		fmt.Fprintf(w, "Warning: %d message(s) lack cache-write TTL detail; their write cost assumes the 5m rate and may be underestimated\n", estimatedCostMessages)
+		fmt.Fprintf(w, "Warning: %s message(s) lack cache-write TTL detail; their write cost assumes the 5m rate and may be underestimated\n", render.Count(estimatedCostMessages))
 	}
 }
 

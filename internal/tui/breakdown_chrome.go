@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 )
 
@@ -249,9 +250,9 @@ func (m BreakdownModel) positionText() string {
 	if first == 0 {
 		return ""
 	}
-	text := fmt.Sprintf("rows %d-%d of %d", first, last, len(m.messages))
+	text := fmt.Sprintf("rows %s-%s of %s", render.Count(first), render.Count(last), render.Count(len(m.messages)))
 	if n := len(m.messages) - m.pausedAt; !m.autoScroll && n > 0 {
-		text += fmt.Sprintf(" %s %d new %s (G)", styles.Bullet, n, styles.MoreBelow)
+		text += fmt.Sprintf(" %s %s new %s (G)", styles.Bullet, render.Count(n), styles.MoreBelow)
 	}
 	return text
 }
@@ -269,7 +270,7 @@ func (m BreakdownModel) sortedPositionText() string {
 	if m.ready && m.viewport.TotalLineCount() > m.viewport.Height() {
 		first := m.viewport.YOffset() + 1
 		last := min(m.viewport.YOffset()+m.viewport.Height(), m.viewport.TotalLineCount())
-		text += fmt.Sprintf(" %s rank %d-%d of %d", styles.Bullet, first, last, len(m.messages))
+		text += fmt.Sprintf(" %s rank %s-%s of %s", styles.Bullet, render.Count(first), render.Count(last), render.Count(len(m.messages)))
 	}
 	return text
 }

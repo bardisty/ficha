@@ -193,7 +193,7 @@ func (m BreakdownModel) selectionText() string {
 		return ""
 	}
 	msg := m.messages[top[rank]]
-	prefix := fmt.Sprintf("top %d of %d: #%d %s", rank+1, len(top), msg.Index, render.Cost(msg.Cost.TotalCost))
+	prefix := fmt.Sprintf("top %s of %s: #%d %s", render.Count(rank+1), render.Count(len(top)), msg.Index, render.Cost(msg.Cost.TotalCost))
 	var split []string
 	for _, c := range render.CostComponents(msg.Cost) {
 		if c.Cost < minSplitShare*msg.Cost.TotalCost {

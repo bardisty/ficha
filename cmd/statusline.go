@@ -206,10 +206,14 @@ func statusLine(model string, a *models.SessionAnalysis, noColor bool) string {
 // the line short, and four below a cent, where two would lose the amount or
 // read as "$0.00", as a cheap model's per-message cost would. The cutoff is
 // where four decimals would round up to "$0.0100", so 0.009996 prints
-// "$0.01". Zero prints "$0.00".
+// "$0.01". Zero prints "$0.00". From $1,000 up it takes render.Cost's
+// commas.
 func statusCost(cost float64) string {
 	if cost != 0 && math.Abs(cost) < 0.00995 {
 		return fmt.Sprintf("$%.4f", cost)
+	}
+	if math.Abs(cost) >= 0.99995 {
+		return render.Cost(cost)
 	}
 	return fmt.Sprintf("$%.2f", cost)
 }

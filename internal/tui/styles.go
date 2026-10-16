@@ -94,13 +94,13 @@ func accountingFootnote(skippedAgents, skippedLines, estimatedCosts int) string 
 	}
 	var parts []string
 	if skippedAgents > 0 {
-		parts = append(parts, fmt.Sprintf("%d skipped agent(s)", skippedAgents))
+		parts = append(parts, render.Count(skippedAgents)+" skipped agent(s)")
 	}
 	if skippedLines > 0 {
-		parts = append(parts, fmt.Sprintf("%d skipped line(s)", skippedLines))
+		parts = append(parts, render.Count(skippedLines)+" skipped line(s)")
 	}
 	if estimatedCosts > 0 {
-		parts = append(parts, fmt.Sprintf("%d estimated cost(s)", estimatedCosts))
+		parts = append(parts, render.Count(estimatedCosts)+" estimated cost(s)")
 	}
 	return styles.Warning + " " + strings.Join(parts, ", ")
 }
@@ -118,17 +118,17 @@ func accountingNotes(skippedAgents, skippedLines, estimatedCosts int) []string {
 	}
 	var skipped, parts []string
 	if skippedAgents > 0 {
-		skipped = append(skipped, fmt.Sprintf("%d agent(s)", skippedAgents))
+		skipped = append(skipped, render.Count(skippedAgents)+" agent(s)")
 	}
 	if skippedLines > 0 {
-		skipped = append(skipped, fmt.Sprintf("%d line(s)", skippedLines))
+		skipped = append(skipped, render.Count(skippedLines)+" line(s)")
 	}
 	if len(skipped) > 0 {
 		parts = append(parts, strings.Join(skipped, ", ")+" skipped")
 	}
 	word := "incomplete"
 	if estimatedCosts > 0 {
-		parts = append(parts, fmt.Sprintf("%d estimated", estimatedCosts))
+		parts = append(parts, render.Count(estimatedCosts)+" estimated")
 		if len(skipped) == 0 {
 			word = "estimated"
 		}

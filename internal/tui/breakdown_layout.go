@@ -15,7 +15,7 @@ import (
 const (
 	bdMinIndexWidth = 3
 	bdModelWidth    = 10
-	bdCostWidth     = 10 // fits "$9999.99  "; see render.CostCell
+	bdCostWidth     = 10 // fits "$999.99  ", past any one message; see render.CostCell
 	bdInWidth       = 6
 	bdOutWidth      = 5
 	bdCacheWidth    = 6

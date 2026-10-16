@@ -986,7 +986,7 @@ func runName(run models.WorkflowMeta) string {
 func (m BreakdownModel) renderStatsTotals() string {
 	sep := " " + styles.BoxVerticalSep + " "
 	if m.noColor {
-		line := fmt.Sprintf("  Messages: %d%sTotal: %s", len(m.messages), sep, render.Cost(m.totalCost))
+		line := fmt.Sprintf("  Messages: %s%sTotal: %s", render.Count(len(m.messages)), sep, render.Cost(m.totalCost))
 		accounting, unknown := m.fitStatsNotes(line, sep)
 		for _, note := range []string{accounting, unknown} {
 			if note != "" {
@@ -1002,7 +1002,7 @@ func (m BreakdownModel) renderStatsTotals() string {
 
 	var sb strings.Builder
 	sb.WriteString("  ")
-	sb.WriteString(lightGray.Render(fmt.Sprintf("Messages: %d", len(m.messages))))
+	sb.WriteString(lightGray.Render("Messages: " + render.Count(len(m.messages))))
 	sb.WriteString(sepStyled)
 	sb.WriteString(lightGray.Render("Total: "))
 	sb.WriteString(lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(render.Cost(m.totalCost)))
