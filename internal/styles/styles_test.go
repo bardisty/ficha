@@ -126,12 +126,17 @@ func TestGetCostGradientColor(t *testing.T) {
 	}
 }
 
-// The light values must stay readable on a white background: WCAG's 4.5:1
-// for text, and 3:1 for bars and separators, which aren't read letter by
-// letter.
-func TestLightPaletteContrast(t *testing.T) {
+// paletteSlots lists every palette slot with the contrast it needs: WCAG's
+// 4.5:1 for text, and 3:1 for bars and separators, which aren't read letter
+// by letter. The context gauge's green, orange and red also color the
+// percentage beside it, so they count as text.
+func paletteSlots() []struct {
+	name  string
+	color pair
+	min   float64
+} {
 	const text, graphic = 4.5, 3.0
-	tests := []struct {
+	return []struct {
 		name  string
 		color pair
 		min   float64
@@ -154,10 +159,27 @@ func TestLightPaletteContrast(t *testing.T) {
 		{"ContextFree", palette.contextFree, graphic},
 		{"Separator", palette.separator, graphic},
 	}
-	for _, tt := range tests {
+}
+
+// The light values must stay readable on a white background.
+func TestLightPaletteContrast(t *testing.T) {
+	for _, tt := range paletteSlots() {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := contrastOnWhite(t, tt.color.light); got < tt.min {
+			if got := contrast(t, tt.color.light, white); got < tt.min {
 				t.Errorf("%s light value %d has contrast %.2f on white, want at least %.1f", tt.name, tt.color.light, got, tt.min)
+			}
+		})
+	}
+}
+
+// The dark values must stay readable on #1e1e1e, VS Code's default dark
+// background. Most dark themes sit near it rather than at black, where
+// every value would pass more easily.
+func TestDarkPaletteContrast(t *testing.T) {
+	for _, tt := range paletteSlots() {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := contrast(t, tt.color.dark, darkGray); got < tt.min {
+				t.Errorf("%s dark value %d has contrast %.2f on #1e1e1e, want at least %.1f", tt.name, tt.color.dark, got, tt.min)
 			}
 		})
 	}
@@ -174,7 +196,7 @@ func TestSetDarkRebuildsThePalette(t *testing.T) {
 		}
 		want := lipgloss.Color("92")
 		if dark {
-			want = lipgloss.Color("99")
+			want = lipgloss.Color("141")
 		}
 		for name, got := range map[string]color.Color{
 			"PrimaryColor": PrimaryColor,
@@ -212,6 +234,8 @@ func TestSetBasicKeepsEachColorsHue(t *testing.T) {
 		"Info (bright cyan)":        {InfoColor, "14"},
 		"Success (bright green)":    {SuccessColor, "10"},
 		"Error (bright red)":        {ErrorColor, "9"},
+		"Primary (bright magenta)":  {PrimaryColor, "13"},
+		"Separator (bright black)":  {SeparatorColor, "8"},
 		"HeroCostStyle":             {HeroCostStyle.GetForeground(), "10"},
 	} {
 		if c.got != lipgloss.Color(c.want) {
@@ -220,21 +244,33 @@ func TestSetBasicKeepsEachColorsHue(t *testing.T) {
 	}
 }
 
-// contrastOnWhite returns the WCAG contrast ratio of an xterm-256 index
-// against white.
-func contrastOnWhite(t *testing.T, n uint8) float64 {
+// The backgrounds the palette is measured against, in linear luminance.
+var (
+	white    = 1.0
+	darkGray = luminance(termenv.RGBColor("#1e1e1e"))
+)
+
+// contrast returns the WCAG contrast ratio of an xterm-256 index against a
+// background of the given luminance.
+func contrast(t *testing.T, n uint8, bg float64) float64 {
 	t.Helper()
 	if n < 16 {
 		// 0-15 are the theme's own colors, so no ratio holds for them.
-		t.Fatalf("light value %d must be an xterm-256 index from 16 to 255", n)
+		t.Fatalf("palette value %d must be an xterm-256 index from 16 to 255", n)
 	}
-	c := termenv.ConvertToRGB(termenv.ANSI256Color(n))
+	fg := luminance(termenv.ANSI256Color(n))
+	lo, hi := math.Min(fg, bg), math.Max(fg, bg)
+	return (hi + 0.05) / (lo + 0.05)
+}
+
+// luminance returns a color's WCAG relative luminance.
+func luminance(c termenv.Color) float64 {
+	rgb := termenv.ConvertToRGB(c)
 	linear := func(v float64) float64 {
 		if v <= 0.03928 {
 			return v / 12.92
 		}
 		return math.Pow((v+0.055)/1.055, 2.4)
 	}
-	lum := 0.2126*linear(c.R) + 0.7152*linear(c.G) + 0.0722*linear(c.B)
-	return 1.05 / (lum + 0.05)
+	return 0.2126*linear(rgb.R) + 0.7152*linear(rgb.G) + 0.0722*linear(rgb.B)
 }

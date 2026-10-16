@@ -9,10 +9,11 @@ import (
 
 // darkOnlyIndexes are the xterm-256 colors ficha draws only on a dark
 // background. Any of them in light-background output is a color that
-// bypassed the palette.
+// bypassed the palette. The dark separator, 242, is left out because the
+// light palette's secondary gray is 242 too.
 var darkOnlyIndexes = map[string]bool{
-	"42": true, "43": true, "75": true, "99": true, "196": true, "212": true, "213": true, "214": true,
-	"220": true, "221": true, "240": true, "245": true, "248": true, "250": true, "252": true,
+	"42": true, "43": true, "75": true, "141": true, "203": true, "212": true, "213": true, "214": true,
+	"220": true, "221": true, "245": true, "248": true, "250": true, "252": true,
 }
 
 var fgIndex = regexp.MustCompile(`38;5;(\d+)`)
