@@ -227,7 +227,9 @@ func TestGetChartWidth(t *testing.T) {
 		want  int
 	}{
 		{"zero width returns default", 0, 68},
-		{"wide terminal", 80, 68},       // 80-8=72 > 68, capped at 68
+		{"80 columns", 80, 68},          // 80-8=72 > 68, capped at 68
+		{"wide terminal", 100, 88},      // the panel's 96 less 8
+		{"widest panel", 200, 110},      // the panel's cap of 118 less 8
 		{"narrow terminal", 50, 42},     // 50-8=42 < 68, use 42
 		{"very narrow terminal", 10, 2}, // 10-8=2 < 68, use 2
 		// A terminal narrower than 8 columns must clamp to 1, not go negative —
@@ -381,14 +383,18 @@ func TestPanelWidthFor(t *testing.T) {
 		term int
 		want int
 	}{
-		{0, 76},   // no WindowSizeMsg yet — design width
-		{-1, 76},  // defensive
-		{120, 76}, // wide terminals cap at the design width
-		{78, 76},  // exact fit including the 2-column indent
-		{60, 58},  // narrow: terminal width minus indent
-		{42, 40},  // narrow: terminal width minus indent
-		{40, 38},  // watch's minimum terminal: at the floor
-		{30, 38},  // below the floor — clamped (View clips the overflow)
+		{0, 76},    // no WindowSizeMsg yet — design width
+		{-1, 76},   // defensive
+		{200, 118}, // wide terminals cap at maxPanelWidth
+		{122, 118}, // the cap with a 2-column margin each side
+		{120, 116}, // wider than 80: terminal width minus both margins
+		{81, 77},   // one past 80 grows one column
+		{80, 76},   // the design width with a 2-column margin each side
+		{78, 76},   // exact fit including the 2-column indent
+		{60, 58},   // narrow: terminal width minus indent
+		{42, 40},   // narrow: terminal width minus indent
+		{40, 38},   // watch's minimum terminal: at the floor
+		{30, 38},   // below the floor — clamped (View clips the overflow)
 	}
 
 	for _, tt := range tests {

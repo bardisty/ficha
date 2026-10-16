@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,8 +9,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 )
 
@@ -179,7 +182,7 @@ func longAnalysis() *models.SessionAnalysis {
 func TestCostChartScalesToDrawnMinutes(t *testing.T) {
 	m := NewModel("/test/path", "sess", true, "", false)
 	m.now = func() time.Time { return at(179, 30) }
-	m.width = 100 // getChartWidth -> 68
+	m.width = 80 // getChartWidth -> 68
 	m.analysis = longAnalysis()
 	m.rebuildCostChart()
 
@@ -205,11 +208,30 @@ func TestCostChartScalesToDrawnMinutes(t *testing.T) {
 func TestCostChartResizeChangesSpan(t *testing.T) {
 	m := NewModel("/test/path", "sess", true, "", false)
 	m.now = func() time.Time { return at(179, 30) }
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	updated, _ = updated.Update(analysisMsg{analysis: longAnalysis()})
 	m = updated.(Model)
 	if !strings.Contains(m.renderCostChart(), "last 68m") {
-		t.Errorf("width 100 label:\n%s", m.renderCostChart())
+		t.Errorf("width 80 label:\n%s", m.renderCostChart())
+	}
+
+	// A wider terminal widens the panel, and the chart fills it, up to the
+	// panel's cap.
+	for width, minutes := range map[int]int{100: 88, 200: 110} {
+		updated, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
+		m = updated.(Model)
+		if len(m.costHistory) != minutes {
+			t.Fatalf("buckets at %d: got %d, want %d", width, len(m.costHistory), minutes)
+		}
+		if want := fmt.Sprintf("last %dm", minutes); !strings.Contains(m.renderCostChart(), want) {
+			t.Errorf("width %d label lacks %q:\n%s", width, want, m.renderCostChart())
+		}
+		rule := "  " + render.SectionHeader("COST TREND", panelWidthFor(width), true)
+		for _, line := range strings.Split(strings.TrimRight(m.costChart.View(), "\n"), "\n") {
+			if 4+lipgloss.Width(line) > lipgloss.Width(rule)-2 {
+				t.Errorf("width %d: chart line runs past the rule's margin: %q", width, line)
+			}
+		}
 	}
 
 	updated, _ = m.Update(tea.WindowSizeMsg{Width: 50, Height: 40})

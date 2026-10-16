@@ -244,6 +244,13 @@ func TestGoldenWatchView(t *testing.T) {
 	checkGolden(t, "watch_view", goldenWatchView(t, true))
 }
 
+// On a wide terminal the panel grows to its cap and the chart fills it,
+// while the cost rows, the context gauge and the agent rows keep the layout
+// they have at 80 columns.
+func TestGoldenWatchViewWide(t *testing.T) {
+	checkGolden(t, "watch_view_160x60", goldenWatchViewSized(t, true, 160, 60))
+}
+
 func TestGoldenWatchViewColor(t *testing.T) {
 	checkGolden(t, "watch_view_color", goldenWatchView(t, false))
 }
