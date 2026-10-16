@@ -5,9 +5,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
+
+	"charm.land/lipgloss/v2"
+	"github.com/spf13/cobra"
 )
 
 func TestHelpTopics(t *testing.T) {
@@ -477,5 +482,62 @@ func TestFormatBeforeCommand(t *testing.T) {
 	got, err := executeLikeMain(t, "-f", "json", "list", projFlag)
 	if err != nil || got != want {
 		t.Errorf("ficha -f json list: %v\n got: %s\nwant: %s", err, got, want)
+	}
+}
+
+// cobra pads the flag column and never wraps a description, so a line past
+// 80 columns wraps mid-word in a terminal that wide. Every help page, help
+// topic and completion shell's help stays within it.
+func TestHelpFitsEightyColumns(t *testing.T) {
+	root := newRootCmd()
+	initCompletion(root)
+	var pages [][]string
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		if c.Hidden {
+			return
+		}
+		path := strings.Fields(c.CommandPath())[1:]
+		pages = append(pages, append(slices.Clone(path), "--help"), append([]string{"help"}, path...))
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(root)
+	for _, args := range pages {
+		out, err := executeLikeMain(t, args...)
+		if err != nil {
+			t.Errorf("%v: %v", args, err)
+			continue
+		}
+		for _, line := range strings.Split(out, "\n") {
+			if w := lipgloss.Width(line); w > 80 {
+				t.Errorf("ficha %s: %d columns:\n%s", strings.Join(args, " "), w, line)
+			}
+		}
+	}
+}
+
+// The --since and --until flag lines leave the forms they take to the
+// command's text, so it lists every one, and so does the parse error.
+func TestWindowHelpListsEveryForm(t *testing.T) {
+	forms := append(regexp.MustCompile(`[0-9][0-9T:-]*[dwhm]?|today|yesterday`).FindAllString(windowHelp, -1), "whole day")
+	if len(forms) < 8 {
+		t.Fatalf("forms read from windowHelp: %q", forms)
+	}
+	for _, name := range []string{"list", "summary", "global"} {
+		out, err := executeLikeMain(t, name, "--help")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range forms {
+			if !strings.Contains(out, f) {
+				t.Errorf("%s --help doesn't mention %q", name, f)
+			}
+		}
+	}
+	_, err := executeLikeMain(t, "summary", "--since", "soon")
+	if want := `invalid --since "soon": want ` + windowHelp; err == nil || err.Error() != want {
+		t.Errorf("error:\n got: %v\nwant: %s", err, want)
 	}
 }

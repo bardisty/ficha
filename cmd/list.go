@@ -30,9 +30,11 @@ Examples:
   ficha list -f json            Output as JSON
   ficha list -f csv             Output as CSV
 
---since and --until keep the sessions with a message inside the window, as
-summary --details does. WHEN, LENGTH and COST cover only the messages
-inside it, and so do message_count and the agent counts in json and csv.
+` + windowForms + `
+
+Both keep the sessions with a message inside the window, as summary
+--details does. WHEN, LENGTH and COST cover only the messages inside it,
+and so do message_count and the agent counts in json and csv.
 
 A worktree under the repo, from claude --worktree or git worktree add, is a
 project of its own. list notes when projects under this directory have

@@ -13,7 +13,7 @@ import (
 
 // addNestedFlag registers --nested, which summary and list take.
 func addNestedFlag(cmd *cobra.Command, cfg *config) {
-	cmd.Flags().BoolVar(&cfg.nested, "nested", false, "Include the projects under this directory at any depth, such as the worktrees claude --worktree makes")
+	cmd.Flags().BoolVar(&cfg.nested, "nested", false, "Include projects at any depth under this directory")
 }
 
 // checkNested rejects --nested with --project-dir, which names a Claude

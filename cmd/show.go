@@ -27,7 +27,10 @@ Examples:
   ficha show                    Show latest session
   ficha show abc123             Show specific session
   ficha show -f json            Output as JSON
-  ficha show -f csv --messages  Per-message rows as CSV`,
+  ficha show -f csv --messages  Per-message rows as CSV
+
+--messages adds a record for each message, agents' too: a messages array
+on the session in json, one row per message in csv. The table ignores it.`,
 		Args:              sessionArgs,
 		ValidArgsFunction: completeSessionIDs(cfg),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -40,7 +43,7 @@ Examples:
 	// --live predates watch and still works, hidden so help points at watch.
 	addLiveFlags(showCmd, cfg, true)
 	_ = showCmd.Flags().MarkHidden("no-follow")
-	showCmd.Flags().BoolVar(&cfg.messages, "messages", false, "Add per-message records, agents' too: json adds a messages array to the session, csv writes one row per message (json/csv only)")
+	showCmd.Flags().BoolVar(&cfg.messages, "messages", false, "Add per-message records to json or csv")
 
 	return showCmd
 }

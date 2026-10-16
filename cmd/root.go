@@ -114,7 +114,7 @@ Exit status:
 	// commands that use it, so help lists nothing a command would ignore.
 	rootCmd.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "Show debug information")
 	rootCmd.PersistentFlags().BoolVar(&cfg.noColor, "no-color", false, "Disable colored output (same as setting NO_COLOR)")
-	rootCmd.PersistentFlags().BoolVar(&cfg.ascii, "ascii", false, "Draw frames and symbols in plain ASCII instead of Unicode")
+	rootCmd.PersistentFlags().BoolVar(&cfg.ascii, "ascii", false, "Draw frames and symbols in ASCII, not Unicode")
 
 	// Bare `ficha` is `ficha show`. --live stays for compatibility, hidden so
 	// help steers people to `ficha watch`; --no-follow only matters with it.
@@ -169,6 +169,11 @@ func initCompletion(root *cobra.Command) {
 			takeNoGlobalFlags(c)
 			for _, shell := range c.Commands() {
 				takeNoGlobalFlags(shell)
+				// cobra's one line past 80 columns, which a terminal of that
+				// width would wrap mid-word.
+				shell.Long = strings.Replace(shell.Long,
+					"If it is not installed already, you can install it via your OS's package manager.",
+					"If it is not installed already, install it with your OS's package manager.", 1)
 			}
 		}
 	}
@@ -249,7 +254,7 @@ func liveFormatError(cfg *config, cmd *cobra.Command, args []string) error {
 // project.
 func addProjectFlags(cmd *cobra.Command, cfg *config) {
 	cmd.Flags().StringVarP(&cfg.projectPath, "project", "p", "", "Project directory (default: current directory)")
-	cmd.Flags().StringVar(&cfg.projectDir, "project-dir", "", "Claude project directory name (bypass auto-detection)")
+	cmd.Flags().StringVar(&cfg.projectDir, "project-dir", "", "Claude project directory name, instead of -p")
 	// Validated with a clearer message in PersistentPreRunE; marking the group
 	// as well stops completion offering the second flag once one is set.
 	cmd.MarkFlagsMutuallyExclusive("project", "project-dir")
@@ -263,7 +268,7 @@ func addProjectFlags(cmd *cobra.Command, cfg *config) {
 // live view. hideLive hides --live from help while still accepting it.
 func addLiveFlags(cmd *cobra.Command, cfg *config, hideLive bool) {
 	cmd.Flags().BoolVarP(&cfg.live, "live", "l", false, "Watch the session live (same as 'ficha watch')")
-	cmd.Flags().BoolVar(&cfg.noFollow, "no-follow", false, "Stay on the starting session instead of following new ones (live mode only)")
+	cmd.Flags().BoolVar(&cfg.noFollow, "no-follow", false, "Stay on the starting session when a new one starts")
 	if hideLive {
 		_ = cmd.Flags().MarkHidden("live")
 	}
