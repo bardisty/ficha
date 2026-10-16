@@ -93,12 +93,22 @@ func editDistance(a, b string) int {
 // Global Flags block and from completion, which skips hidden flags. The copy
 // still parses the global flag's value, so noGlobalFlags can name it.
 func takeNoGlobalFlags(cmd *cobra.Command) {
-	cmd.Root().PersistentFlags().VisitAll(func(f *pflag.Flag) {
+	visitGlobalFlags(cmd.Root(), func(f *pflag.Flag) {
 		shadow := *f
 		shadow.Hidden = true
 		cmd.Flags().AddFlag(&shadow)
 	})
 	cmd.Annotations = map[string]string{noGlobalFlagsAnnotation: "true"}
+}
+
+// visitGlobalFlags calls fn for each of root's persistent flags, and for
+// --format, which every report takes but each registers itself so the live
+// views can leave it out of their help.
+func visitGlobalFlags(root *cobra.Command, fn func(*pflag.Flag)) {
+	root.PersistentFlags().VisitAll(fn)
+	if f := root.Flags().Lookup("format"); f != nil {
+		fn(f)
+	}
 }
 
 const noGlobalFlagsAnnotation = "ficha/no-global-flags"
@@ -110,7 +120,7 @@ func noGlobalFlags(cmd *cobra.Command) error {
 		return nil
 	}
 	var given string
-	cmd.Root().PersistentFlags().VisitAll(func(g *pflag.Flag) {
+	visitGlobalFlags(cmd.Root(), func(g *pflag.Flag) {
 		if f := cmd.Flags().Lookup(g.Name); f != nil && f.Changed && given == "" {
 			given = "--" + f.Name
 		}

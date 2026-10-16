@@ -78,11 +78,11 @@ Exit status:
 				return usageErrorf("invalid format %q: must be one of table, json, csv", cfg.format)
 			}
 			cfg.format = strings.ToLower(cfg.format)
-			// TUI/live modes only support table format. watch and breakdown are
-			// always TUIs; cfg.live covers `show --live` and bare `ficha --live`.
+			// watch and breakdown are always TUIs; cfg.live covers `show --live`
+			// and bare `ficha --live`.
 			isTUI := cfg.live || cmd.Name() == "breakdown" || cmd.Name() == "watch"
 			if isTUI && cfg.format != "table" {
-				return usageErrorf("--format %s is not supported in live/TUI mode", cfg.format)
+				return liveFormatError(cfg, cmd, args)
 			}
 			if cmd.Name() == "statusline" && cfg.format != "table" {
 				return usageErrorf("--format %s is not supported by statusline, which prints one line for Claude Code. For scripting, use 'ficha show <transcript_path> -f %s'", cfg.format, cfg.format)
@@ -112,14 +112,13 @@ Exit status:
 
 	// Flags every command honors. Everything else is registered only on the
 	// commands that use it, so help lists nothing a command would ignore.
-	rootCmd.PersistentFlags().StringVarP(&cfg.format, "format", "f", "table", "Output format: table, json, csv")
 	rootCmd.PersistentFlags().BoolVarP(&cfg.verbose, "verbose", "v", false, "Show debug information")
 	rootCmd.PersistentFlags().BoolVar(&cfg.noColor, "no-color", false, "Disable colored output (same as setting NO_COLOR)")
 	rootCmd.PersistentFlags().BoolVar(&cfg.ascii, "ascii", false, "Draw frames and symbols in plain ASCII instead of Unicode")
-	_ = rootCmd.RegisterFlagCompletionFunc("format", fixedValues(formatValues))
 
 	// Bare `ficha` is `ficha show`. --live stays for compatibility, hidden so
 	// help steers people to `ficha watch`; --no-follow only matters with it.
+	addFormatFlag(rootCmd, cfg, false)
 	addProjectFlags(rootCmd, cfg)
 	addLiveFlags(rootCmd, cfg, true)
 	_ = rootCmd.Flags().MarkHidden("no-follow")
@@ -142,6 +141,13 @@ Exit status:
 	rootCmd.InitDefaultHelpCmd()
 	if help := subcommandNamed(rootCmd, "help"); help != nil {
 		help.Args = helpTopicArgs
+	}
+	// help and its topics take the global flags, which change nothing in
+	// their fixed text. -f is still one of them there, out of sight.
+	for _, c := range rootCmd.Commands() {
+		if c.Flags().Lookup("format") == nil {
+			addFormatFlag(c, cfg, true)
+		}
 	}
 	usageArgs(rootCmd)
 
@@ -195,6 +201,48 @@ func Execute() {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
 	}
 	os.Exit(exitCode(err))
+}
+
+// addFormatFlag registers -f on a command. hidden keeps it out of the help
+// and completion of a command that prints only a table, where it still
+// parses, so -f json on a live view gets liveFormatError rather than an
+// unknown flag.
+func addFormatFlag(cmd *cobra.Command, cfg *config, hidden bool) {
+	cmd.Flags().StringVarP(&cfg.format, "format", "f", "table", "Output format: table, json, csv")
+	if hidden {
+		_ = cmd.Flags().MarkHidden("format")
+		_ = cmd.RegisterFlagCompletionFunc("format", cobra.NoFileCompletions)
+		return
+	}
+	_ = cmd.RegisterFlagCompletionFunc("format", fixedValues(formatValues))
+}
+
+// liveFormatError rejects -f json and -f csv on a live view, naming the
+// show command that prints the same session in that format. It carries the
+// session ID, the project and --messages from the line, and drops the rest:
+// the live flags mean nothing to a report, and the display flags nothing to
+// json.
+func liveFormatError(cfg *config, cmd *cobra.Command, args []string) error {
+	what := "the session as " + cfg.format
+	line := []string{cmd.Root().Name(), "show"}
+	switch {
+	case cmd.Flags().Changed("project"):
+		line = append(line, "-p", shellQuote(cfg.projectPath))
+	case cmd.Flags().Changed("project-dir"):
+		line = append(line, "--project-dir="+shellQuote(cfg.projectDir))
+	}
+	for _, a := range args {
+		line = append(line, shellQuote(a))
+	}
+	line = append(line, "-f", cfg.format)
+	if cmd.Name() == "breakdown" || cfg.messages {
+		what = "the session's messages as " + cfg.format
+		if cfg.format == "csv" {
+			what = "one row per message"
+		}
+		line = append(line, "--messages")
+	}
+	return usageErrorf("%s is a live view and has no %s output. For %s, run: %s", cfg.command(), cfg.format, what, strings.Join(line, " "))
 }
 
 // addProjectFlags registers -p and --project-dir on a command that analyzes one

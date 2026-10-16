@@ -43,6 +43,7 @@ Examples:
 		},
 	}
 
+	addFormatFlag(breakdownCmd, cfg, true)
 	addProjectFlags(breakdownCmd, cfg)
 	// breakdown is always live; --live is accepted, hidden, for scripts that pass it.
 	addLiveFlags(breakdownCmd, cfg, true)

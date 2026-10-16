@@ -44,6 +44,7 @@ the table.`,
 		},
 	}
 
+	addFormatFlag(globalCmd, cfg, false)
 	globalCmd.Flags().BoolVarP(&cfg.globalDetails, "details", "d", false, "Show all projects, plus a cumulative column when sorted by cost (table view only)")
 	globalCmd.Flags().IntVarP(&cfg.globalTopN, "top", "n", 10, "Top projects to show in the table (json/csv always export all)")
 	globalCmd.Flags().StringVar(&cfg.globalSortBy, "sort-by", "cost", "Sort by: cost, sessions, name, activity")

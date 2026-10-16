@@ -175,17 +175,15 @@ Every command except `version` and `completion` takes these:
 
 | Flag | Does |
 | --- | --- |
-| `-f, --format <fmt>` | Output format: `table` (the default), `json` or `csv` |
 | `-v, --verbose` | Show debug information, such as each place ficha looked for sessions |
 | `--no-color` | Turn color off, the same as setting `NO_COLOR` |
 | `--ascii` | Draw frames and symbols in plain ASCII instead of Unicode |
-
-`watch` and `breakdown` draw a terminal UI, so they reject `-f json` and `-f csv`.
 
 The rest belong to particular commands:
 
 | Flag | Commands | Does |
 | --- | --- | --- |
+| `-f, --format <fmt>` | `show`, `list`, `summary`, `global` | Output format: `table` (the default), `json` or `csv` |
 | `-p, --project <dir>` | `show`, `watch`, `breakdown`, `list`, `summary` | The project directory (default: the current one) |
 | `--project-dir <name>` | `show`, `watch`, `breakdown`, `list`, `summary` | The project's folder name under `~/.claude/projects`, used as is instead of `-p` |
 | `--no-follow` | `watch`, `breakdown` | Stay on the starting session instead of following new ones |
@@ -199,7 +197,9 @@ The rest belong to particular commands:
 | `--until <when>` | `list`, `summary`, `global` | Count only messages before then; a date includes that whole day |
 | `--nested` | `list`, `summary` | Include the projects under this directory at any depth, such as the worktrees `claude --worktree` makes |
 
-Bare `ficha` works like `show` and takes the same project flags. A flag on a command that doesn't use it is an error. `--no-follow` and `--messages` print a warning where they'd have no effect.
+`watch`, `breakdown` and `statusline` print only a table, so they reject `-f json` and `-f csv`.
+
+Bare `ficha` works like `show` and takes `-f` and the same project flags. A flag on a command that doesn't use it is an error. `--no-follow` and `--messages` print a warning where they'd have no effect.
 
 ### Color
 
