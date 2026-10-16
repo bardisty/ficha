@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 // chromeRows builds n parent messages a minute apart from start.
@@ -139,6 +140,21 @@ func TestBreakdownPosition_SkipsDayDividers(t *testing.T) {
 	m.viewport.SetYOffset(5) // the divider is mid-view
 	if got := m.positionText(); got != "rows 6-14 of 20" {
 		t.Errorf("position with a divider mid-view = %q, want %q", got, "rows 6-14 of 20")
+	}
+}
+
+// Row numbers and counts from 1,000 up take commas, in table order and in
+// cost order.
+func TestBreakdownPosition_ThousandsSeparators(t *testing.T) {
+	msgs := chromeRows(time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC), 1021)
+	m := loadedBreakdown(t, 100, 20, msgs) // 10 viewport rows, following
+	if got, want := m.positionText(), "rows 1,012-1,021 of 1,021"; got != want {
+		t.Errorf("position = %q, want %q", got, want)
+	}
+	m = press(t, m, "s")
+	m.viewport.SetYOffset(1000)
+	if got, want := m.positionText(), "sorted by cost (s) "+styles.Bullet+" rank 1,001-1,010 of 1,021"; got != want {
+		t.Errorf("sorted position = %q, want %q", got, want)
 	}
 }
 

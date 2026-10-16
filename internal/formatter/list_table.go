@@ -127,10 +127,10 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 			readable++
 		}
 	}
-	count := fmt.Sprintf("%d %s", readable, sessionsWord(readable))
+	count := render.Count(readable) + " " + sessionsWord(readable)
 	fields := []string{count}
 	if unreadable := len(results) - readable; unreadable > 0 {
-		fields[0] += fmt.Sprintf(", %d unreadable", unreadable)
+		fields[0] += ", " + render.Count(unreadable) + " unreadable"
 	}
 	// A window stays in the header when nothing else fits: without it the
 	// rows read as all-time.

@@ -217,15 +217,15 @@ func (m Model) renderAnalysis() string {
 	// A narrow terminal drops the note whole.
 	if a.TotalCost.CacheSavings > 0 {
 		note := "(from cache reads)"
-		if m.width > 0 && costRowLead+len(note) > m.width {
+		if m.width > 0 && m.costRowLead()+len(note) > m.width {
 			note = ""
 		}
 		if m.noColor {
 			sb.WriteString(strings.TrimRight(fmt.Sprintf("    %-14s %s  %s",
-				"Savings", render.CostCell(a.TotalCost.CacheSavings, 11), note), " ") + "\n")
+				"Savings", render.CostCell(a.TotalCost.CacheSavings, m.costCellWidth()), note), " ") + "\n")
 		} else {
 			savingsHighlighted := m.isHighlighted("savings")
-			savingsStr := render.CostStyledGreen(a.TotalCost.CacheSavings, 11, savingsHighlighted, m.noColor)
+			savingsStr := render.CostStyledGreen(a.TotalCost.CacheSavings, m.costCellWidth(), savingsHighlighted, m.noColor)
 			line := "    " + styles.SavingsLabelStyle.Render(fmt.Sprintf("%-14s", "Savings")) + " " + savingsStr
 			if note != "" {
 				line += "  " + styles.DimStyle.Render(note)
@@ -331,6 +331,7 @@ func (m Model) renderCostByModelContent() string {
 	var sb strings.Builder
 
 	// Highest-cost model first.
+	costWidth := render.ModelCostWidth(m.analysis.CostByModel)
 	for _, modelID := range render.OrderModelsByCost(m.analysis.CostByModel) {
 		cost := m.analysis.CostByModel[modelID]
 		modelName := pricing.GetModelDisplayName(modelID)
@@ -355,7 +356,7 @@ func (m Model) renderCostByModelContent() string {
 		}
 
 		// Plain white costs - model tier colors already provide cost hierarchy
-		costStr := render.CostStyled(cost.TotalCost, 12, highlighted, m.noColor)
+		costStr := render.CostStyled(cost.TotalCost, costWidth, highlighted, m.noColor)
 		sb.WriteString(fmt.Sprintf("    %s %s\n", labelStr, costStr))
 	}
 
@@ -446,7 +447,7 @@ func (m Model) renderAgentBreakdownContent() string {
 			// theirs it keeps its own, in the room its task cell leaves. A
 			// task cell too narrow for the label and the count leaves the
 			// label alone, as the agents' rows are.
-			text := fmt.Sprintf("%d finished agents", row.count)
+			text := render.Count(row.count) + " finished agents"
 			labelWidth, noMsgs := 22+tasks.cell(), tasks.noMsgs
 			if noMsgs && lipgloss.Width(text) <= labelWidth-agentMsgsWidth {
 				labelWidth, noMsgs = labelWidth-agentMsgsWidth, false
@@ -635,7 +636,7 @@ func msgCount(n int) string {
 	if n == 1 {
 		return "1 msg"
 	}
-	return fmt.Sprintf("%d msgs", n)
+	return render.Count(n) + " msgs"
 }
 
 // renderInsightsContent renders just the insights content (no header)
@@ -867,14 +868,29 @@ const ttlColumnWidth = 8
 
 // Cost row columns: indent, label, cost, then the count and " tokens".
 const (
-	costRowLead     = 4 + 14 + 1 + 11 + 2
 	tokenCountWidth = 12
 	tokenWord       = " tokens"
 )
 
+// costCellWidth is the cost rows' cost column: 11, or as wide as the widest
+// amount, so a five-figure savings keeps its decimal point under the rest.
+func (m Model) costCellWidth() int {
+	if m.analysis == nil {
+		return 11
+	}
+	c := m.analysis.TotalCost
+	return render.CostCellWidth(11, c.InputCost, c.OutputCost, c.CacheWrite5mCost, c.CacheWrite1hCost, c.CacheReadCost, c.CacheSavings)
+}
+
+// costRowLead is the cost rows' width up to the token count: indent,
+// label, cost and the gap after it.
+func (m Model) costRowLead() int { return 4 + 14 + 1 + m.costCellWidth() + 2 }
+
 // deltaColumnEnd is where the delta column starts, plus its two-space gap:
 // indent, label, cost, count, " tokens", then the TTL column.
-const deltaColumnEnd = costRowLead + tokenCountWidth + len(tokenWord) + ttlColumnWidth + 2
+func (m Model) deltaColumnEnd() int {
+	return m.costRowLead() + tokenCountWidth + len(tokenWord) + ttlColumnWidth + 2
+}
 
 // renderUnifiedCostRow renders a single row with cost and token info combined
 // Format: "  Label          $0.371042     53.9K tokens"
@@ -895,14 +911,14 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 		ttlWidth = ttlColumnWidth
 	}
 	if m.width > 0 {
-		if costRowLead+countWidth+len(word)+ttlWidth > m.width {
+		if m.costRowLead()+countWidth+len(word)+ttlWidth > m.width {
 			word = ""
 		}
-		if ttl != "" && costRowLead+countWidth+ttlWidth > m.width {
+		if ttl != "" && m.costRowLead()+countWidth+ttlWidth > m.width {
 			label += " " + ttl
 			ttl, ttlWidth = "", 0
 		}
-		countWidth = max(min(countWidth, m.width-costRowLead), len(count))
+		countWidth = max(min(countWidth, m.width-m.costRowLead()), len(count))
 	}
 
 	// Tokens keep a fixed width; a recent change lights them up, and its
@@ -919,9 +935,9 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 			deltaStr = styles.HighlightStyle.Render(deltaStr)
 		}
 	}
-	inline := deltaStr != "" && m.width > 0 && deltaColumnEnd+lipgloss.Width(deltaStr) > m.width
+	inline := deltaStr != "" && m.width > 0 && m.deltaColumnEnd()+lipgloss.Width(deltaStr) > m.width
 	if inline {
-		end := costRowLead + countWidth + 1 + lipgloss.Width(deltaStr) + len(word)
+		end := m.costRowLead() + countWidth + 1 + lipgloss.Width(deltaStr) + len(word)
 		if ttl != "" && end+ttlWidth > m.width {
 			label += " " + ttl
 			ttl = ""
@@ -939,7 +955,7 @@ func (m Model) renderUnifiedCostRow(label string, cost float64, tokens int64, co
 		labelStr = fmt.Sprintf("%-14s", label)
 	}
 
-	costStr := render.CostStyled(cost, 11, costHighlighted, m.noColor)
+	costStr := render.CostStyled(cost, m.costCellWidth(), costHighlighted, m.noColor)
 
 	tokenStr := fmt.Sprintf("%*s", countWidth, count)
 	if tokenHighlighted {

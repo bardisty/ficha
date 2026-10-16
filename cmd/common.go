@@ -201,7 +201,7 @@ func readProjectSessions(cfg *config, projDir string, quiet bool) ([]models.Sess
 	// index: current Claude Code doesn't write one, so without it every
 	// session would count.
 	if orphanCount > 0 && cfg.verbose && index != nil && !quiet {
-		writeNote(cfg, "Found %d session(s) not in sessions-index.json", orphanCount)
+		writeNote(cfg, "Found %s session(s) not in sessions-index.json", render.Count(orphanCount))
 	}
 
 	return sessions, nil

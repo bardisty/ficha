@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -57,7 +56,7 @@ func describeSessions(sessions []models.SessionEntry, now time.Time) []string {
 				n += len(agent.Messages)
 			}
 		}
-		out[i] += fmt.Sprintf(" · %d msgs", n)
+		out[i] += " · " + render.Count(n) + " msgs"
 	}
 	return out
 }

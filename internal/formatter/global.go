@@ -85,8 +85,8 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 	sb.WriteString(footerStats([]string{
 		"Total: " + render.Cost(analysis.TotalCost.TotalCost),
 		messagesField(analysis.MessageCount, analysis.MessageCount, 0),
-		fmt.Sprintf("Sessions: %d", analysis.SessionCount),
-		fmt.Sprintf("Projects: %d", analysis.ProjectCount),
+		"Sessions: " + render.Count(analysis.SessionCount),
+		"Projects: " + render.Count(analysis.ProjectCount),
 	}, sectionWidth, noColor))
 	sb.WriteString("\n")
 	sb.WriteString(renderFooterSingleRule(sectionWidth, noColor))
@@ -100,9 +100,9 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 // The count is there even when no rows are, so the line accounting for the
 // rest sits under a heading that says why the table is empty.
 func projectsHeading(shown, total int, sortBy string) string {
-	count := fmt.Sprintf("%d of %d", shown, total)
+	count := render.Count(shown) + " of " + render.Count(total)
 	if shown == total {
-		count = fmt.Sprintf("all %d", total)
+		count = "all " + render.Count(total)
 	}
 	return fmt.Sprintf("PROJECTS (%s, by %s)", count, sortBy)
 }
@@ -203,8 +203,8 @@ func newProjectsLayout(projects []models.ProjectAnalysis, opts GlobalTableOption
 // and sessions, and the span from the first message to the last.
 func renderGlobalHeaderPanel(analysis *models.GlobalAnalysis, width int, noColor bool) string {
 	return renderPanel("", []string{
-		fmt.Sprintf("%d %s", analysis.ProjectCount, projectsWord(analysis.ProjectCount)),
-		fmt.Sprintf("%d %s", analysis.SessionCount, sessionsWord(analysis.SessionCount)),
+		render.Count(analysis.ProjectCount) + " " + projectsWord(analysis.ProjectCount),
+		render.Count(analysis.SessionCount) + " " + sessionsWord(analysis.SessionCount),
 		spanOrWindow(analysis.Window, analysis.FirstActive, analysis.LastActive),
 	}, []int{2, 1}, width, noColor)
 }
@@ -214,16 +214,17 @@ func formatGlobalCostByModel(costByModel map[string]models.CostBreakdown, noColo
 	var sb strings.Builder
 
 	// Highest-cost model first.
+	costWidth := render.ModelCostWidth(costByModel)
 	for _, modelID := range render.OrderModelsByCost(costByModel) {
 		cost := costByModel[modelID]
 		modelName := pricing.GetModelDisplayName(modelID)
 		modelLabel := render.ClampModel(modelName, 12)
 		if noColor {
-			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelLabel, render.CostCell(cost.TotalCost, 12)))
+			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelLabel, render.CostCell(cost.TotalCost, costWidth)))
 		} else {
 			modelColor := styles.GetModelColor(modelName)
 			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-12s", modelLabel))
-			sb.WriteString(fmt.Sprintf("    %s %s\n", modelStyled, formatCostStyled(cost.TotalCost, 12, noColor)))
+			sb.WriteString(fmt.Sprintf("    %s %s\n", modelStyled, formatCostStyled(cost.TotalCost, costWidth, noColor)))
 		}
 	}
 
@@ -249,7 +250,7 @@ func renderProjectsTable(analysis *models.GlobalAnalysis, noColor bool, layout p
 		if layout.rows == 0 {
 			more = ""
 		}
-		summaryText := fmt.Sprintf("(%d%s %s totaling %s)", remaining, more, projectsWord(remaining), render.Cost(remainingCost))
+		summaryText := fmt.Sprintf("(%s%s %s totaling %s)", render.Count(remaining), more, projectsWord(remaining), render.Cost(remainingCost))
 		if noColor {
 			sb.WriteString(fmt.Sprintf("  %s\n", summaryText))
 		} else {
@@ -340,7 +341,7 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 		name += strings.Repeat(" ", layout.project-lipgloss.Width(name))
 
 		rank := fmt.Sprintf("%*d", rankWidth, i+1)
-		sessions := fmt.Sprintf("%*d", sessionsWidth, p.SessionCount)
+		sessions := fmt.Sprintf("%*s", sessionsWidth, render.Count(p.SessionCount))
 		pct := fmt.Sprintf("%*s", pctWidth, fmt.Sprintf("%.1f%%", pctTotal))
 		active := fmt.Sprintf("%*s", activeWidth, render.Ago(p.LastActive, opts.Now))
 

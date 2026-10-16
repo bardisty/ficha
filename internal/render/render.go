@@ -24,11 +24,22 @@ import (
 )
 
 // Cost formats a dollar amount for human output: two decimals from $1 up
-// ("$13.65"), four below ("$0.2628"), where per-message costs live. These are
-// list-price estimates, so more digits would be false precision. Machine
-// output (json, csv) keeps six decimals and never goes through here.
+// ("$13.65"), four below ("$0.2628"), where per-message costs live, and a
+// comma every three digits from $1,000 up. These are list-price estimates,
+// so more digits would be false precision. Machine output (json, csv) keeps
+// six decimals and never goes through here.
 func Cost(cost float64) string {
-	return fmt.Sprintf("$%.*f", costDecimals(cost), cost)
+	s := fmt.Sprintf("%.*f", costDecimals(cost), cost)
+	sign, digits := "", s
+	if rest, ok := strings.CutPrefix(s, "-"); ok {
+		sign, digits = "-", rest
+	}
+	whole, frac, ok := strings.Cut(digits, ".")
+	if !ok {
+		// NaN and Inf have no digits to group.
+		return "$" + s
+	}
+	return "$" + sign + groupThousands(whole) + "." + frac
 }
 
 // costDecimals picks Cost's precision. The cutoff is where four decimals
@@ -56,6 +67,16 @@ func CostCellWidth(minWidth int, costs ...float64) int {
 	for _, c := range costs {
 		_, value, right := costCellParts(c, 0)
 		width = max(width, len(value)+len(right))
+	}
+	return width
+}
+
+// ModelCostWidth is the cost column of COST BY MODEL's rows: 12, or as wide
+// as the costliest model's amount needs, so every decimal point lines up.
+func ModelCostWidth(costByModel map[string]models.CostBreakdown) int {
+	width := 12
+	for _, c := range costByModel {
+		width = CostCellWidth(width, c.TotalCost)
 	}
 	return width
 }
@@ -108,15 +129,19 @@ func NumberShort(n int64) string {
 // counts a reader may compare, such as messages. Number abbreviates.
 func Count(n int) string {
 	s := fmt.Sprintf("%d", n)
-	neg := strings.HasPrefix(s, "-")
-	s = strings.TrimPrefix(s, "-")
-	for i := len(s) - 3; i > 0; i -= 3 {
-		s = s[:i] + "," + s[i:]
+	if digits, ok := strings.CutPrefix(s, "-"); ok {
+		return "-" + groupThousands(digits)
 	}
-	if neg {
-		s = "-" + s
+	return groupThousands(s)
+}
+
+// groupThousands puts a comma every three digits from the right of a string
+// of digits.
+func groupThousands(digits string) string {
+	for i := len(digits) - 3; i > 0; i -= 3 {
+		digits = digits[:i] + "," + digits[i:]
 	}
-	return s
+	return digits
 }
 
 // Duration formats a span with hours as the largest unit (no day rollup), for

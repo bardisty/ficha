@@ -90,7 +90,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool, width in
 	}
 	if isSummary {
 		if sessionCount := analysis.SessionCount; sessionCount > 0 {
-			fields = append(fields, fmt.Sprintf("Sessions: %d", sessionCount))
+			fields = append(fields, "Sessions: "+render.Count(sessionCount))
 		}
 	} else if !analysis.EndTime.IsZero() {
 		// Show last active time for single sessions
@@ -125,7 +125,7 @@ func agentMsgs(count int) string {
 	if count == 1 {
 		return "1 msg"
 	}
-	return fmt.Sprintf("%d msgs", count)
+	return render.Count(count) + " msgs"
 }
 
 // agentMsgsWidth returns the msgs column width for a set of agent rows: at

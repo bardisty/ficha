@@ -69,7 +69,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 	sb.WriteString(footerStats([]string{
 		"Total: " + render.Cost(analysis.TotalCost.TotalCost),
 		messagesField(analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount),
-		fmt.Sprintf("Sessions: %d", analysis.SessionCount),
+		"Sessions: " + render.Count(analysis.SessionCount),
 	}, sectionWidth, noColor))
 	sb.WriteString("\n")
 
@@ -391,7 +391,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	}
 
 	// The sum sits under COST.
-	sumLabel := fmt.Sprintf("Sum (%d %s):", valid, sessionsWord(valid))
+	sumLabel := fmt.Sprintf("Sum (%s %s):", render.Count(valid), sessionsWord(valid))
 	sumLabelWidth := lipgloss.Width(headerRow) - 2 - 2 - costWidth
 	sumCost := render.CostCell(totalCost, costWidth)
 	if !noColor {

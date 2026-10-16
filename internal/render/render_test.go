@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"image/color"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -35,8 +36,18 @@ func TestCost(t *testing.T) {
 		{10.5, "$10.50"},
 		{123.456789, "$123.46"},
 		{999.99, "$999.99"},
-		{6224.395577, "$6224.40"},
-		{99999.99, "$99999.99"},
+		// Rounding comes first, so the comma goes where the rounded figure
+		// needs it.
+		{999.996, "$1,000.00"},
+		{1000, "$1,000.00"},
+		{6224.395577, "$6,224.40"},
+		{54522.39, "$54,522.39"},
+		{99999.99, "$99,999.99"},
+		{1234567.891, "$1,234,567.89"},
+		{-1234.5, "$-1,234.50"},
+	}
+	if got := Cost(math.NaN()); got != "$NaN" {
+		t.Errorf("Cost(NaN) = %q, want %q", got, "$NaN")
 	}
 	for _, tc := range tests {
 		if got := Cost(tc.input); got != tc.want {
@@ -53,10 +64,11 @@ func TestCostCellAlignsDecimals(t *testing.T) {
 	}{
 		{0.2628, 11, "    $0.2628"},
 		{13.65, 11, "   $13.65  "},
-		{1234.56, 11, " $1234.56  "},
+		{1234.56, 11, "$1,234.56  "},
+		{999.99, 11, "  $999.99  "},
 		{0, 8, " $0.0000"},
 		// Too wide for the cell: returned whole, never cut
-		{123456.78, 8, "$123456.78  "},
+		{123456.78, 8, "$123,456.78  "},
 	}
 	for _, tc := range tests {
 		got := CostCell(tc.cost, tc.width)
@@ -89,9 +101,9 @@ func TestCostCellWidth(t *testing.T) {
 	if got := CostCellWidth(10, 0.5, 12.34); got != 10 {
 		t.Errorf("narrow costs: got %d, want 10", got)
 	}
-	// "$12345.67" plus the two-space decimal pad
-	if got := CostCellWidth(10, 0.5, 12345.67); got != 11 {
-		t.Errorf("wide cost: got %d, want 11", got)
+	// "$12,345.67" plus the two-space decimal pad
+	if got := CostCellWidth(10, 0.5, 12345.67); got != 12 {
+		t.Errorf("wide cost: got %d, want 12", got)
 	}
 }
 

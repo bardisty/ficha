@@ -102,7 +102,7 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 			when = strings.TrimPrefix(when, "Window: ")
 		}
 		return renderPanel(analysis.Project, []string{
-			fmt.Sprintf("%d %s", analysis.SessionCount, sessionsWord(analysis.SessionCount)),
+			render.Count(analysis.SessionCount) + " " + sessionsWord(analysis.SessionCount),
 			when,
 		}, giveWay, width, noColor)
 	}
@@ -290,22 +290,26 @@ func renderHeroCost(cost float64, width int, noColor bool) string {
 // with, fitted to width. The rows' trailing notes go first, a cache write's
 // TTL moving into its label so the two rows stay apart, then the "tokens"
 // after each count. The block sheds each together, so its rows read alike.
+// The columns are 11 and 12 wide, or as wide as their widest value, so a
+// five-figure savings keeps its decimal point under the others.
 func renderCostRows(cost models.CostBreakdown, usage models.TokenUsage, width int, noColor bool) string {
-	out := costRows(cost, usage, true, true, costRowWidths{cost: 11, tokens: 12}, noColor)
+	fitted := fittedCostRowWidths(cost, usage)
+	usual := costRowWidths{cost: max(11, fitted.cost), tokens: max(12, fitted.tokens)}
+	out := costRows(cost, usage, true, true, usual, noColor)
 	if lipgloss.Width(out) > width {
-		out = costRows(cost, usage, false, true, costRowWidths{cost: 11, tokens: 12}, noColor)
+		out = costRows(cost, usage, false, true, usual, noColor)
 	}
 	if lipgloss.Width(out) > width {
-		out = costRows(cost, usage, false, false, costRowWidths{cost: 11, tokens: 12}, noColor)
+		out = costRows(cost, usage, false, false, usual, noColor)
 	}
 	if lipgloss.Width(out) > width {
 		// Give up only the columns the rows don't fit in: the cost column
 		// takes back spare room first, so its $ stays where it usually is.
-		w := fittedCostRowWidths(cost, usage)
+		w := fitted
 		spare := width - lipgloss.Width(costRows(cost, usage, false, false, w, true))
-		grow := max(0, min(spare, 11-w.cost))
+		grow := max(0, min(spare, usual.cost-w.cost))
 		w.cost += grow
-		w.tokens += max(0, min(spare-grow, 12-w.tokens))
+		w.tokens += max(0, min(spare-grow, usual.tokens-w.tokens))
 		out = costRows(cost, usage, false, false, w, noColor)
 	}
 	return out
@@ -314,9 +318,9 @@ func renderCostRows(cost models.CostBreakdown, usage models.TokenUsage, width in
 // costRowWidths sizes the cost rows' cost and token-count columns.
 type costRowWidths struct{ cost, tokens int }
 
-// fittedCostRowWidths sizes both columns to their widest value rather than
-// the usual 11 and 12, for global's narrowest layouts. show and summary never
-// draw narrow enough to need it.
+// fittedCostRowWidths sizes both columns to their widest value, which is
+// narrower than the usual 11 and 12 on global's narrowest layouts and wider
+// for a value of $10,000 or more.
 func fittedCostRowWidths(cost models.CostBreakdown, usage models.TokenUsage) costRowWidths {
 	cache5m, cache1h := render.CacheTokensByTTL(usage)
 	var w costRowWidths
@@ -499,17 +503,18 @@ func formatCostByModelContent(analysis *models.SessionAnalysis, noColor bool) st
 	var sb strings.Builder
 
 	// Highest-cost model first.
+	costWidth := render.ModelCostWidth(analysis.CostByModel)
 	for _, modelID := range render.OrderModelsByCost(analysis.CostByModel) {
 		cost := analysis.CostByModel[modelID]
 		modelName := pricing.GetModelDisplayName(modelID)
 		modelLabel := render.ClampModel(modelName, 12)
 		if noColor {
-			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelLabel, render.CostCell(cost.TotalCost, 12)))
+			sb.WriteString(fmt.Sprintf("    %-12s %s\n", modelLabel, render.CostCell(cost.TotalCost, costWidth)))
 		} else {
 			// Color by model tier
 			modelColor := styles.GetModelColor(modelName)
 			modelStyled := lipgloss.NewStyle().Foreground(modelColor).Render(fmt.Sprintf("%-12s", modelLabel))
-			sb.WriteString(fmt.Sprintf("    %s %s\n", modelStyled, formatCostStyled(cost.TotalCost, 12, noColor)))
+			sb.WriteString(fmt.Sprintf("    %s %s\n", modelStyled, formatCostStyled(cost.TotalCost, costWidth, noColor)))
 		}
 	}
 
