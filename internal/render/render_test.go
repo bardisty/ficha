@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestCost(t *testing.T) {
@@ -1113,11 +1114,160 @@ func TestTruncateRightAndTail(t *testing.T) {
 	}
 }
 
+// tailLinear is Tail as a linear search over head lengths, the reference
+// Tail's bisection must agree with.
+func tailLinear(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	for n := 0; ; n++ {
+		head := ansi.Truncate(s, n, "")
+		if tail := s[len(head):]; lipgloss.Width(tail) <= width {
+			return tail
+		}
+	}
+}
+
+// Tail's bisection finds the same shortest head as trying each length in
+// turn, for the strings where display width and ansi's count part ways.
+func TestTailMatchesALinearSearch(t *testing.T) {
+	sun := "☀\ufe0f"
+	coder := "\U0001F469\u200d\U0001F4BB"
+	keycap := "1\ufe0f\u20e3"
+	for _, s := range []string{
+		"",
+		"plain/ascii/path",
+		"日本語のプロジェクト/パス",
+		"ab" + sun + "cd" + sun + sun + "e",
+		"/" + strings.Repeat(keycap, 5) + "/p",
+		"x" + coder + "y" + coder + coder,
+		"cafe\u0301/nai\u0308ve/e\u0301\u0301",
+		"mix/日本" + sun + keycap + coder + "e\u0301/end",
+	} {
+		for width := 0; width <= lipgloss.Width(s)+1; width++ {
+			if got, want := Tail(s, width), tailLinear(s, width); got != want {
+				t.Errorf("Tail(%q, %d) = %q, want %q", s, width, got, want)
+			}
+		}
+	}
+	// A skin-tone modifier after a letter measures wider cut off than in
+	// place, so bisection can miss the shortest head. The tail it keeps
+	// still fits, and text that fits whole comes back whole.
+	for _, tt := range []struct {
+		s     string
+		width int
+		want  string
+	}{
+		{"a🏽aa", 3, "a🏽aa"},
+		{"~/x🏽/abcdefghij", 12, "/abcdefghij"},
+	} {
+		if got := Tail(tt.s, tt.width); got != tt.want {
+			t.Errorf("Tail(%q, %d) = %q, want %q", tt.s, tt.width, got, tt.want)
+		}
+	}
+}
+
+func BenchmarkTail4K(b *testing.B) {
+	s := strings.Repeat("work/a-long-project-name/", 4096/25+1)[:4096]
+	for b.Loop() {
+		Tail(s, 60)
+	}
+}
+
 // A workflow's name comes from the transcript, so a bidi override or a
 // newline in it doesn't reach the heading.
 func TestWorkflowLabelCleansName(t *testing.T) {
 	got := WorkflowLabel(models.WorkflowMeta{Name: "deploy \u202erollback\nnow", Status: "completed"})
 	if want := "workflow: deploy rollback now (completed)"; got != want {
 		t.Errorf("WorkflowLabel = %q, want %q", got, want)
+	}
+	// The status is read from the same file.
+	got = WorkflowLabel(models.WorkflowMeta{Name: "deploy", Status: "\u202ecompleted\n"})
+	if want := "workflow: deploy (completed)"; got != want {
+		t.Errorf("WorkflowLabel = %q, want %q", got, want)
+	}
+	if got := WorkflowLabel(models.WorkflowMeta{Name: "deploy", Status: "\n\t"}); got != "workflow: deploy" {
+		t.Errorf("a status of only control characters: %q, want none", got)
+	}
+}
+
+// A name too long for WorkflowLabel's cap is cut before its status is, so
+// a heading never loses its status to the cap while the others keep theirs.
+func TestWorkflowLabelKeepsStatusPastTheCap(t *testing.T) {
+	long := models.WorkflowMeta{RunID: "wf1", Name: "review-changes-across-the-billing-and-auth-modules", Status: "running"}
+	got := WorkflowLabel(long)
+	if want := "workflow: review-changes-across-the-b… (running)"; got != want {
+		t.Errorf("long name: got %q, want %q", got, want)
+	}
+	if w := lipgloss.Width(got); w != WorkflowLabelWidth {
+		t.Errorf("long name: %d wide, want the cap's %d", w, WorkflowLabelWidth)
+	}
+	// Cut at the cap as one string, this would end in "(co…".
+	mid := models.WorkflowMeta{RunID: "wf1", Name: "review-changes-across-the-billing", Status: "completed"}
+	if got, want := WorkflowLabel(mid), "workflow: review-changes-across-the… (completed)"; got != want {
+		t.Errorf("mid-length name: got %q, want %q", got, want)
+	}
+	// A status that leaves the name no room goes, and the name takes the cap.
+	odd := models.WorkflowMeta{RunID: "wf1", Name: long.Name, Status: "a-very-long-status-string-from-a-future-version"}
+	if got, want := WorkflowLabel(odd), "workflow: review-changes-across-the-billing-and…"; got != want {
+		t.Errorf("long status: got %q, want %q", got, want)
+	}
+	if !WorkflowStatusDropped(odd) {
+		t.Error("long status: WorkflowStatusDropped is false")
+	}
+	// Room for one letter of the name and the ellipsis keeps the status;
+	// less drops it.
+	for status, want := range map[string]string{
+		strings.Repeat("s", WorkflowLabelWidth-lipgloss.Width("workflow: x… ()")):   "workflow: r… (",
+		strings.Repeat("s", WorkflowLabelWidth-lipgloss.Width("workflow: x… ()")+1): "workflow: review-changes",
+	} {
+		meta := models.WorkflowMeta{RunID: "wf1", Name: long.Name, Status: status}
+		if got := WorkflowLabel(meta); !strings.HasPrefix(got, want) || lipgloss.Width(got) > WorkflowLabelWidth {
+			t.Errorf("status of %d: got %q, want it to start %q", len(status), got, want)
+		}
+	}
+	// A name that fits once the status goes is whole, with nothing to mark.
+	for _, name := range []string{"x", strings.Repeat("n", WorkflowLabelWidth-len("workflow: "))} {
+		short := odd
+		short.Name = name
+		if got, want := WorkflowLabel(short), "workflow: "+name; got != want || !WorkflowStatusDropped(short) {
+			t.Errorf("long status, name %q: got %q, want %q, dropped", name, got, want)
+		}
+	}
+	for _, meta := range []models.WorkflowMeta{long, mid, {RunID: "wf1"}, {RunID: "wf1", Status: "running"}} {
+		if WorkflowStatusDropped(meta) {
+			t.Errorf("%+v: WorkflowStatusDropped is true", meta)
+		}
+	}
+}
+
+// WorkflowLabel's cap is display columns, not runes: a name of wide
+// characters stays within it, and a cut never leaves an emoji without its
+// variation selector or a keycap without its digit's companions.
+func TestWorkflowLabelCutsByWidth(t *testing.T) {
+	sun := "☀\ufe0f"
+	keycap := "1\ufe0f\u20e3"
+	for _, name := range []string{
+		strings.Repeat("日本語", 10),
+		strings.Repeat(sun, 30),
+		strings.Repeat(keycap, 30),
+		"x" + strings.Repeat(sun, 30),
+	} {
+		got := WorkflowLabel(models.WorkflowMeta{Name: name, Status: "running"})
+		if w := lipgloss.Width(got); w > WorkflowLabelWidth {
+			t.Errorf("%q is %d columns, past the cap of %d", got, w, WorkflowLabelWidth)
+		}
+		body, ok := strings.CutSuffix(got, styles.Ellipsis+" (running)")
+		if !ok {
+			t.Errorf("%q: want the name cut and the status kept", got)
+		}
+		for _, piece := range []string{sun, keycap} {
+			if strings.Contains(name, piece) && strings.Count(body, piece) != strings.Count(body, string([]rune(piece)[0])) {
+				t.Errorf("%q splits %q", got, piece)
+			}
+		}
+	}
+	if got, want := WorkflowLabel(models.WorkflowMeta{Name: "abcdefghijklmnopqrstuvwxyz0123456789 and more"}), "workflow: abcdefghijklmnopqrstuvwxyz0123456789…"; got != want {
+		t.Errorf("a cut after a space: %q, want %q", got, want)
 	}
 }

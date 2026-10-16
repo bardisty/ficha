@@ -8,7 +8,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
-	"github.com/bardisty/ficha/internal/render"
 )
 
 // narrowReports renders every show and summary fixture at a terminal width,
@@ -253,30 +252,16 @@ func TestShowAgentCostsAlignAsLabelColumnGrows(t *testing.T) {
 	}
 }
 
-// A name too long for WorkflowLabel's cap is cut before its status is, so
-// a heading never loses its status to the cap while the others keep theirs.
-func TestWorkflowLabelKeepsStatusPastTheCap(t *testing.T) {
-	long := models.WorkflowMeta{RunID: "wf1", Name: "review-changes-across-the-billing-and-auth-modules", Status: "running"}
-	got := workflowLabel(long)
-	if want := "workflow: review-changes-across-the-b… (running)"; got != want {
-		t.Errorf("long name: got %q, want %q", got, want)
-	}
-	if w, limit := lipgloss.Width(got), lipgloss.Width(render.WorkflowLabel(long)); w != limit {
-		t.Errorf("long name: %d wide, want the cap's %d", w, limit)
-	}
-	// Cut at the cap as one string, this would end in "(co…".
-	mid := models.WorkflowMeta{RunID: "wf1", Name: "review-changes-across-the-billing", Status: "completed"}
-	if got, want := workflowLabel(mid), "workflow: review-changes-across-the… (completed)"; got != want {
-		t.Errorf("mid-length name: got %q, want %q", got, want)
-	}
-	for _, meta := range []models.WorkflowMeta{
-		{RunID: "wf1", Name: "audit-codebase", Status: "running"},
-		{RunID: "wf1", Name: long.Name},
-		{RunID: "wf_2e7850b6-b19"},
-	} {
-		if got, want := workflowLabel(meta), render.WorkflowLabel(meta); got != want {
-			t.Errorf("%+v: got %q, want render's %q", meta, got, want)
-		}
+// Every heading keeps its status or none does. A status with a stray
+// control character is cleaned as the label cleans it, so it doesn't read
+// as one the cap cut.
+func TestWorkflowStatusesAllOrNone(t *testing.T) {
+	dirty := models.WorkflowMeta{RunID: "wf1", Name: "audit-codebase", Status: "running\n"}
+	if !workflowStatuses("", 80, &models.SessionAnalysis{
+		Agents:    []models.AgentAnalysis{{AgentID: "a1", WorkflowID: "wf1"}},
+		Workflows: []models.WorkflowMeta{dirty},
+	}) {
+		t.Error("a status with a newline was taken for one the cap cut")
 	}
 
 	// A status too long to show takes the others' with it.

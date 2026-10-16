@@ -360,6 +360,20 @@ func TestRunHeadingStatusesAllOrNone(t *testing.T) {
 	}
 }
 
+// A status too long for the label's cap never shows, so it takes the other
+// headings' with it, as a heading too wide for the terminal does.
+func TestRunHeadingTooLongStatusDropsEveryStatus(t *testing.T) {
+	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
+	m.now = func() time.Time { return foldNow }
+	m.width = 100
+	m.analysis = foldAnalysis()
+	m.analysis.Workflows[1].Status = "a-very-long-status-string-from-a-future-version"
+	got := m.renderAgentBreakdownContent()
+	if strings.Contains(got, "(completed)") || strings.Contains(got, "(running)") || strings.Contains(got, "future") {
+		t.Errorf("a heading kept its status beside one that couldn't:\n%s", got)
+	}
+}
+
 // As the terminal narrows, an agent row gives up its gap, then its message
 // count, then its context reading, and every cost in the section stays in
 // one column, the folded rows' too.

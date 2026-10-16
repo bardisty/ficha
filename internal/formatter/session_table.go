@@ -166,7 +166,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	headingWidth := 40
 	for _, agent := range analysis.Agents {
 		if agent.WorkflowID != "" {
-			heading := styles.GroupRule + " " + workflowLabel(analysis.WorkflowByID(agent.WorkflowID))
+			heading := styles.GroupRule + " " + render.WorkflowLabel(analysis.WorkflowByID(agent.WorkflowID))
 			headingWidth = max(headingWidth, lipgloss.Width(heading))
 		}
 	}

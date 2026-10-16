@@ -301,24 +301,53 @@ func TruncateID(id string, maxLen int) string {
 	return id[:maxLen]
 }
 
+// WorkflowLabelWidth is the widest a WorkflowLabel gets, in display columns.
+const WorkflowLabelWidth = 48
+
 // WorkflowLabel returns the group-header label shown above a workflow run's
 // agents, e.g. "workflow: audit-codebase (completed)". Falls back to the run
-// ID when metadata was unreadable. Long labels truncate with an ellipsis so
-// the line stays within the agent-section row width.
+// ID when metadata was unreadable. A label past WorkflowLabelWidth loses the
+// end of its name rather than its status: cut off, a status would go from
+// one heading while the others keep theirs, and that heading would read as a
+// run that had none. A status too long to leave the name any room goes
+// whole; WorkflowStatusDropped says when, so a caller can drop the others'.
 func WorkflowLabel(meta models.WorkflowMeta) string {
-	const maxLen = 48
+	label, _ := workflowLabel(meta)
+	return label
+}
 
-	// The run's name is transcript text, like an agent's task.
+// WorkflowStatusDropped reports whether WorkflowLabel leaves out a status
+// meta has, one too long for the cap.
+func WorkflowStatusDropped(meta models.WorkflowMeta) bool {
+	_, dropped := workflowLabel(meta)
+	return dropped
+}
+
+func workflowLabel(meta models.WorkflowMeta) (label string, dropped bool) {
+	// The run's name and status are read from disk, like an agent's task.
 	name := models.OneLine(meta.Name)
 	if name == "" {
 		name = models.OneLine(meta.RunID)
 	}
-	label := "workflow: " + name
-	if meta.Status != "" {
-		label += " (" + meta.Status + ")"
+	label = "workflow: " + name
+	var suffix string
+	if status := models.OneLine(meta.Status); status != "" {
+		suffix = " (" + status + ")"
 	}
-
-	return truncateRunes(label, maxLen)
+	if lipgloss.Width(label+suffix) <= WorkflowLabelWidth {
+		return label + suffix, false
+	}
+	room := WorkflowLabelWidth - lipgloss.Width(suffix)
+	// Without room for a letter of the name and the ellipsis, the cut would
+	// leave nothing of the name to tell runs apart.
+	if room < lipgloss.Width("workflow: x"+styles.Ellipsis) {
+		room, suffix, dropped = WorkflowLabelWidth, "", true
+	}
+	if lipgloss.Width(label) <= room {
+		return label, dropped
+	}
+	cut := strings.TrimSuffix(TruncateRight(label, room), styles.Ellipsis)
+	return strings.TrimRight(cut, " ") + styles.Ellipsis + suffix, dropped
 }
 
 // CacheTokensByTTL returns the 5-minute and 1-hour cache-write token counts.
@@ -693,19 +722,27 @@ func TruncateRight(s string, width int) string {
 }
 
 // Tail is the longest end of plain text s, in whole graphemes, that fits
-// width display columns. It cuts heads with ansi.Truncate, shortest first,
-// and keeps the first tail lipgloss.Width fits: ansi.TruncateLeft keeps a
-// wide character the cut falls inside, and ansi undercounts a keycap.
+// width display columns. It cuts heads with ansi.Truncate and keeps the
+// shortest head whose tail lipgloss.Width fits: ansi.TruncateLeft keeps a
+// wide character the cut falls inside, and ansi undercounts a keycap. A
+// longer head leaves a tail that's a suffix of the shorter one's, which in
+// well-formed text is never wider, so the shortest head is found by
+// bisection rather than by trying each length in turn, which took half a
+// second on a 4 KB path. A sequence Truncate cuts inside, such as a
+// skin-tone modifier after a letter, can leave a tail wider than the text
+// it ended, and there the tail may come out shorter than it could be, never
+// wider than width.
 func Tail(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	for n := 0; ; n++ {
-		head := ansi.Truncate(s, n, "")
-		if tail := s[len(head):]; lipgloss.Width(tail) <= width {
-			return tail
-		}
+	if lipgloss.Width(s) <= width {
+		return s
 	}
+	tail := func(n int) string { return s[len(ansi.Truncate(s, n, "")):] }
+	// At its own width, ansi.Truncate keeps all of s, leaving an empty tail.
+	n := sort.Search(ansi.StringWidth(s), func(n int) bool { return lipgloss.Width(tail(n)) <= width })
+	return tail(n)
 }
 
 // AgentContextWidth is the width of AgentContextCell: "100% ctx".
