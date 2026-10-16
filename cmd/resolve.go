@@ -258,14 +258,14 @@ func noProjectError(cfg *config, projPath, canonical, parent string, allProjects
 // ancestorWithProject returns the nearest parent of dir whose Claude project
 // has sessions, or "". A project directory can outlive its transcripts
 // (Claude Code's cleanup leaves the folder), and suggesting one of those would
-// fail. It's only ever a hint, never auto-selected, and the home directory is
-// skipped: many people have run Claude Code in ~ itself, which would make
-// every unmatched directory under it look like part of that project.
+// fail. It's only ever a hint, never auto-selected, and the home directory
+// and the ones above it are skipped: many people have run Claude Code in ~
+// itself, which would make every unmatched directory under it look like part
+// of that project, and a project in /home would do the same for everyone's.
 func ancestorWithProject(dir, projectsDir string) string {
-	home, _ := os.UserHomeDir()
-	home, _ = paths.CanonicalizePath(home)
+	home := canonicalHome()
 	for parent := filepath.Dir(dir); parent != dir; dir, parent = parent, filepath.Dir(parent) {
-		if parent == home || filepath.Dir(parent) == parent {
+		if holdsHome(parent, home) || filepath.Dir(parent) == parent {
 			continue
 		}
 		if hasTranscripts(filepath.Join(projectsDir, paths.PathToProjectDir(parent))) {
@@ -290,15 +290,14 @@ type nestedProject struct {
 // nestedProjects returns the projects whose recorded path lies under
 // project's, in the order the projects dir lists them. Like
 // ancestorWithProject it skips the home directory, which many people have
-// run Claude Code in: every project would be under it.
+// run Claude Code in, and every directory above it, such as /home: every
+// project would be under them.
 //
 // Claude Code names a project's directory after its path, so a nested
 // project's name starts with the outer one's. Only those are opened to read
 // their recorded path, which the lossy name can't stand in for.
 func nestedProjects(project resolvedProject) []nestedProject {
-	home, _ := os.UserHomeDir()
-	home, _ = paths.CanonicalizePath(home)
-	if project.path == "" || project.path == home {
+	if project.path == "" || holdsHome(project.path, canonicalHome()) {
 		return nil
 	}
 	projectsDir := filepath.Dir(project.dir)
@@ -408,6 +407,23 @@ func windowsDefaultInWSL(dir string) bool {
 func isWSLPath(dir string) bool {
 	dir = strings.ToLower(strings.ReplaceAll(dir, "/", `\`))
 	return strings.HasPrefix(dir, `\\wsl.localhost\`) || strings.HasPrefix(dir, `\\wsl$\`)
+}
+
+// canonicalHome returns the home directory with symlinks resolved, or "" if
+// there's none.
+func canonicalHome() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	home, _ = paths.CanonicalizePath(home)
+	return home
+}
+
+// holdsHome reports whether dir is the home directory or one above it. With
+// no home it's false: isWithin would read "" as the working directory.
+func holdsHome(dir, home string) bool {
+	return home != "" && isWithin(home, dir)
 }
 
 // isWithin reports whether path is inside dir, comparing the symlink-resolved,
