@@ -51,6 +51,24 @@ func TestStatusLineParts(t *testing.T) {
 			"Opus 5.5 · ctx 68% · $0.19/msg ▲ · $43.67"},
 		{"no model", "", nil, "ctx 68% · $0.19/msg ▲ · $43.67 (agents $12.54)"},
 		{"nothing yet", "Opus 5.5", func(a *models.SessionAnalysis) { *a = models.SessionAnalysis{} }, "Opus 5.5 · $0.00"},
+		// Under a cent, two decimals would read $0.00 for a real cost.
+		{"cheap session", "Haiku 4.5", func(a *models.SessionAnalysis) {
+			a.Insights.RecentAvgCost, a.Insights.CostTrend = 0.00271838, models.TrendStable
+			a.TotalCost.TotalCost, a.AgentsCost.TotalCost = 0.07791215, 0.00412
+		}, "Haiku 4.5 · ctx 68% · $0.0027/msg · $0.08 (agents $0.0041)"},
+		{"total under a cent", "Haiku 4.5", func(a *models.SessionAnalysis) {
+			a.Insights = nil
+			a.TotalCost.TotalCost, a.AgentsCost.TotalCost = 0.0042, 0
+		}, "Haiku 4.5 · ctx 68% · $0.0042"},
+		// Four decimals would round these up to $0.0100.
+		{"at the cutoff", "Haiku 4.5", func(a *models.SessionAnalysis) {
+			a.Insights.RecentAvgCost = 0.00995
+			a.TotalCost.TotalCost, a.AgentsCost.TotalCost = 0.009996, 0
+		}, "Haiku 4.5 · ctx 68% · $0.01/msg ▲ · $0.01"},
+		{"just under the cutoff", "Haiku 4.5", func(a *models.SessionAnalysis) {
+			a.Insights.RecentAvgCost = 0.0099
+			a.TotalCost.TotalCost, a.AgentsCost.TotalCost = 0.005, 0
+		}, "Haiku 4.5 · ctx 68% · $0.0099/msg ▲ · $0.0050"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
