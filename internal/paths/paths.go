@@ -37,7 +37,6 @@ type ProjectMatch struct {
 	ProjectDir  string // Full path to the matched project directory
 	EncodedPath string // Encoded directory name
 	MatchMethod string // "exact", "suffix", or "override"
-	MatchInfo   string // Human-readable match info for logging
 }
 
 // GetClaudeConfigDir returns the path to the Claude config directory.
@@ -192,7 +191,6 @@ func FindProjectDir(path string, allProjects []models.ProjectInfo) (*ProjectMatc
 			ProjectDir:  exactDir,
 			EncodedPath: encodedPath,
 			MatchMethod: "exact",
-			MatchInfo:   "",
 		}, nil
 	}
 
@@ -223,13 +221,11 @@ func FindProjectDir(path string, allProjects []models.ProjectInfo) (*ProjectMatc
 		}
 	}
 
-	// Single match - return it with info
 	match := matches[0]
 	return &ProjectMatch{
 		ProjectDir:  match.FullPath,
 		EncodedPath: match.EncodedPath,
 		MatchMethod: "suffix",
-		MatchInfo:   fmt.Sprintf("matched by name '%s' (original: %s)", basename, match.OriginalPath),
 	}, nil
 }
 

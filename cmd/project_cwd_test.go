@@ -65,15 +65,15 @@ func TestGlobalNamesFromTranscriptCwd(t *testing.T) {
 
 // A path that doesn't match exactly falls back to the recovered path's name.
 func TestProjectNameFallbackUsesTranscriptCwd(t *testing.T) {
-	home := setupCwdFixture(t)
+	setupCwdFixture(t)
 	elsewhere := filepath.Join(t.TempDir(), "webapp")
 	out, stderr, err := executeCLISplit(t, "show", "-p", elsewhere, "--no-color")
 	if err != nil {
 		t.Fatalf("name fallback should find the webapp project: %v", err)
 	}
-	if !strings.Contains(stderr, "matched by name 'webapp'") ||
-		!strings.Contains(stderr, filepath.Join(home, "work", "webapp")) {
-		t.Errorf("stderr should note the name match and the real path, got:\n%s", stderr)
+	want := "Note: found no sessions for " + elsewhere + ". Showing " + filepath.Join("~", "work", "webapp") + ", the only project named webapp."
+	if !strings.Contains(stderr, want) {
+		t.Errorf("stderr should note the name match and the real path, got:\n%s\nwant %q", stderr, want)
 	}
 	if !strings.Contains(out, "API-equivalent estimate") {
 		t.Errorf("show should render the matched project:\n%s", out)
@@ -114,7 +114,7 @@ func TestParentHintBeatsNameFallback(t *testing.T) {
 	if err == nil {
 		t.Fatal("want the parent hint, got a report")
 	}
-	if strings.Contains(stderr, "matched by name") {
+	if strings.Contains(stderr, "the only project named") {
 		t.Errorf("fell back to the name match:\n%s", stderr)
 	}
 	for _, want := range []string{
