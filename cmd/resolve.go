@@ -198,10 +198,14 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 			label = p.OriginalPath
 		}
 	}
-	if match.MatchInfo != "" {
-		// The note names the project's path, which has to stay whole if
-		// the note wraps
-		writeNote(cfg, "%s", strings.Replace(match.MatchInfo, label, render.NoBreak(label), 1))
+	// The note is the only sign the numbers may be another directory's. It
+	// says what ficha found, not that the directory has no sessions: across
+	// WSL, the project shown can be this directory under its other path, or
+	// this directory's sessions can be in a config dir ficha isn't reading.
+	// Both paths stay whole if it wraps.
+	if match.MatchMethod == "suffix" {
+		writeNote(cfg, "found no sessions for %s. Showing %s, the only project named %s.",
+			render.NoBreak(tildePath(canonical)), render.NoBreak(tildePath(label)), paths.BasenameCrossOS(label))
 	}
 	return resolvedProject{dir: match.ProjectDir, label: label}, nil
 }

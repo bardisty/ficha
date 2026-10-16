@@ -280,9 +280,6 @@ func TestFindProjectDir(t *testing.T) {
 		if match.EncodedPath != "-other-path-otherproject" {
 			t.Errorf("expected -other-path-otherproject, got %s", match.EncodedPath)
 		}
-		if match.MatchInfo == "" {
-			t.Error("expected match info for suffix match")
-		}
 	})
 
 	t.Run("ambiguous match", func(t *testing.T) {

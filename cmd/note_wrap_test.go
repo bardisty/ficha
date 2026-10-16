@@ -88,11 +88,11 @@ func TestNoteSessionInAnotherProjectWraps(t *testing.T) {
 }
 
 func TestNoteProjectMatchWraps(t *testing.T) {
-	home := setupCwdFixture(t)
+	setupCwdFixture(t)
 	elsewhere := filepath.Join(t.TempDir(), "webapp")
 	args := []string{"show", "-p", elsewhere, "-f", "json"}
-	real := filepath.Join(home, "work", "webapp")
-	want := "Note: matched by name 'webapp' (original: " + real + ")"
+	real := filepath.Join("~", "work", "webapp")
+	want := "Note: found no sessions for " + elsewhere + ". Showing " + real + ", the only project named webapp."
 
 	_, stderr, err := executeCLISplit(t, args...)
 	if err != nil {
@@ -105,7 +105,7 @@ func TestNoteProjectMatchWraps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkWrapped(t, stderr, 40, "'webapp'", real+")")
+	checkWrapped(t, stderr, 40, "for "+elsewhere+".", "Showing "+real+",", "named webapp.")
 }
 
 func TestNoteCopiedTranscriptWraps(t *testing.T) {
