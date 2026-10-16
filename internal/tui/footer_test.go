@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -303,6 +305,38 @@ func TestWatchStatsLine(t *testing.T) {
 	}
 	if got, want := m.renderStatsLine(5), "$30.05"; got != want {
 		t.Errorf("too narrow keeps the total:\n got %q\nwant %q", got, want)
+	}
+}
+
+// Any other error opening the session file shows its reason, never the path:
+// the path pushed the reason off an 80-column row and put the home directory
+// into screenshots. Where the whole line doesn't fit, "session" gives way
+// first, so the reason survives down to 60 columns, where the panel is 58.
+func TestErrNoticeGivesAFileErrorsReasonWithoutThePath(t *testing.T) {
+	path := filepath.Join("home", "someone", ".claude", "projects", "-home-someone-work-webapp", sessA+".jsonl")
+	err := fmt.Errorf("parsing session: %w", &fs.PathError{Op: "open", Path: path, Err: errors.New("too many open files")})
+	tail := " " + styles.Bullet + " r to retry"
+	for width, want := range map[int]string{
+		80: styles.Warning + " can't read session file (too many open files)" + tail,
+		60: styles.Warning + " can't read session file (too many open files)" + tail,
+		59: styles.Warning + " can't read file (too many open files)" + tail,
+		58: styles.Warning + " can't read file (too many open files)" + tail,
+	} {
+		if got := errNotice(err, width); got != want {
+			t.Errorf("errNotice at %d = %q, want %q", width, got, want)
+		}
+	}
+	for width := 20; width <= 100; width++ {
+		if got := errNotice(err, width); strings.Contains(got, "someone") || strings.Contains(got, "parsing") {
+			t.Errorf("errNotice at %d = %q, want no path or wrapping", width, got)
+		}
+	}
+	// A missing file keeps its own words at every width.
+	gone := &fs.PathError{Op: "open", Path: path, Err: fs.ErrNotExist}
+	for width := 30; width <= 80; width++ {
+		if got := errNotice(gone, width); !strings.Contains(got, "session file r") {
+			t.Errorf("errNotice of a missing file at %d = %q", width, got)
+		}
 	}
 }
 

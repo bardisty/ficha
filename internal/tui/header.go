@@ -235,11 +235,16 @@ func buildStatusHeader(p liveHeaderParams, project, title string, form statusFor
 	if title != "" {
 		segs = append(segs, title)
 	}
-	segs = append(segs, style(modeStyle, dot+" "+p.mode), headerStatus(p, form))
+	segs = append(segs, style(modeStyle, dot+" "+p.mode))
+	if status := headerStatus(p, form); status != "" {
+		segs = append(segs, status)
+	}
 	return strings.Join(segs, style(styles.PanelBorderStyle, " "+styles.BoxVerticalSep+" "))
 }
 
-// headerStatus is the header's last segment, in the given form.
+// headerStatus is the header's last segment, in the given form, or "" when
+// there's nothing to say: a failed first load knows nothing of the session,
+// and "no messages yet" would claim it's empty.
 func headerStatus(p liveHeaderParams, form statusForm) string {
 	idle := !p.lastActivity.IsZero() && p.now.Sub(p.lastActivity) >= idleAfter
 	short := form == statusShort
@@ -257,6 +262,7 @@ func headerStatus(p liveHeaderParams, form statusForm) string {
 		if !p.noColor {
 			status = p.spinnerView + " " + status
 		}
+	case p.err != nil && p.lastActivity.IsZero():
 	case (p.lastActivity.IsZero() || p.noMessages && !idle) && short:
 		status = "no msgs"
 	case p.lastActivity.IsZero(), p.noMessages && !idle:

@@ -413,6 +413,11 @@ func withinWidth(text string, width int) string {
 func errNotice(err error, width int) string {
 	tail := " " + styles.Bullet + " r to retry"
 	text := styles.Warning + " " + describeErr(err)
+	// "session", which the header already says, goes before the reason
+	// does: the reason is the part that says what went wrong.
+	if short := fileErrText(err, "file"); short != "" && lipgloss.Width(text+tail) > width {
+		text = styles.Warning + " " + short
+	}
 	if lipgloss.Width(text+tail) > width {
 		text = withEllipsis(text, max(width-lipgloss.Width(tail), 1))
 	}
@@ -428,8 +433,28 @@ func describeErr(err error) string {
 		return describeWatchUnavailable(unavailable.err)
 	case errors.Is(err, errSessionFileGone), errors.Is(err, fs.ErrNotExist):
 		return "session file removed"
-	case errors.Is(err, fs.ErrPermission):
-		return "can't read session file (permission denied)"
+	}
+	if text := fileErrText(err, "session file"); text != "" {
+		return text
 	}
 	return err.Error()
+}
+
+// fileErrText says why the session file, called noun, can't be read, or ""
+// for an error describeErr words otherwise or that isn't the file's. It
+// leaves the path out: the header already names the session, a long path
+// pushes the reason off the row, and it puts the home directory into
+// screenshots.
+func fileErrText(err error, noun string) string {
+	var unavailable watchUnavailableError
+	var pathErr *fs.PathError
+	switch {
+	case errors.As(err, &unavailable), errors.Is(err, errSessionFileGone), errors.Is(err, fs.ErrNotExist):
+		return ""
+	case errors.Is(err, fs.ErrPermission):
+		return "can't read " + noun + " (permission denied)"
+	case errors.As(err, &pathErr):
+		return "can't read " + noun + " (" + pathErr.Err.Error() + ")"
+	}
+	return ""
 }
