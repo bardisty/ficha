@@ -137,7 +137,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	giveWay := []int{panelLead}
 	if opts.Window != nil {
 		when := spanOrWindow(opts.Window, time.Time{}, time.Time{})
-		if lipgloss.Width(when) > width-6 {
+		if lipgloss.Width(when) > panelInner(width) {
 			when = strings.TrimPrefix(when, "Window: ")
 		}
 		fields = append(fields, when)
@@ -148,11 +148,11 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	// go; their rows still name them. The project needs the room
 	// renderPanel keeps for it.
 	fits := func(head string, project bool) bool {
-		need := append([]string{head}, fields[1:]...)
-		if project && models.StripControl(opts.Project) != "" {
-			need = append(need, strings.Repeat(" ", min(lipgloss.Width(models.StripControl(opts.Project)), minProjectWidth)))
+		var lead string
+		if project {
+			lead = opts.Project
 		}
-		return lipgloss.Width(strings.Join(need, "  "+styles.BoxVerticalSep+"  ")) <= width-6
+		return panelFits(lead, append([]string{head}, fields[1:]...), width)
 	}
 	if !fits(fields[0], true) && (fits(count, true) || !fits(fields[0], false)) {
 		fields[0] = count

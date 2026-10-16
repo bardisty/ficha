@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -176,15 +177,13 @@ func renderPanel(lead string, fields []string, giveWay []int, width int, noColor
 	if width <= 0 {
 		width = 76
 	}
-	inner := width - 6 // 2 for borders, 2 for padding on each side
+	inner := panelInner(width)
 	sep := "  " + styles.BoxVerticalSep + "  "
 	lead = models.StripControl(lead)
 	shown := make([]bool, len(fields))
 	for i := range shown {
 		shown[i] = true
 	}
-	// need is the room the shown fields take, with the lead cut to its
-	// narrowest: a lead already narrower than that keeps its own width.
 	need := func() int {
 		var parts []string
 		for i, f := range fields {
@@ -192,10 +191,7 @@ func renderPanel(lead string, fields []string, giveWay []int, width int, noColor
 				parts = append(parts, f)
 			}
 		}
-		if lead != "" {
-			parts = append(parts, strings.Repeat(" ", min(lipgloss.Width(lead), minProjectWidth)))
-		}
-		return lipgloss.Width(strings.Join(parts, sep))
+		return panelNeed(lead, parts)
 	}
 	left := len(fields)
 	for _, i := range giveWay {
@@ -239,6 +235,27 @@ func renderPanel(lead string, fields []string, giveWay []int, width int, noColor
 	}
 	side := styles.PanelBorderStyle.Render(styles.BoxVertical)
 	return styles.PanelBorderStyle.Render(top) + "\n" + side + "  " + styled + pad + "  " + side + "\n" + styles.PanelBorderStyle.Render(bottom)
+}
+
+// panelInner is the room inside a renderPanel box: 2 columns for the
+// borders and 2 for the padding on each side.
+func panelInner(width int) int { return width - 6 }
+
+// panelFits reports whether a renderPanel box of width holds lead and every
+// one of fields without giving any of them up.
+func panelFits(lead string, fields []string, width int) bool {
+	return panelNeed(models.StripControl(lead), fields) <= panelInner(width)
+}
+
+// panelNeed is the room fields take in a renderPanel box beside lead, cut
+// to its narrowest: a lead already narrower than that keeps its own width,
+// and an empty one takes none.
+func panelNeed(lead string, fields []string) int {
+	parts := slices.Clone(fields)
+	if lead != "" {
+		parts = append(parts, strings.Repeat(" ", min(lipgloss.Width(lead), minProjectWidth)))
+	}
+	return lipgloss.Width(strings.Join(parts, "  "+styles.BoxVerticalSep+"  "))
 }
 
 // renderHeroCost renders the total cost integrated into a section header.

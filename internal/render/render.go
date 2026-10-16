@@ -346,8 +346,7 @@ func workflowLabel(meta models.WorkflowMeta) (label string, dropped bool) {
 	if lipgloss.Width(label) <= room {
 		return label, dropped
 	}
-	cut := strings.TrimSuffix(TruncateRight(label, room), styles.Ellipsis)
-	return strings.TrimRight(cut, " ") + styles.Ellipsis + suffix, dropped
+	return TruncateRight(label, room) + suffix, dropped
 }
 
 // CacheTokensByTTL returns the 5-minute and 1-hour cache-write token counts.
@@ -691,19 +690,17 @@ func gaugeNote(forms []string, main string, agent *ContextAgent, width int, noCo
 const MinTaskWidth = 12
 
 // FitTask fits an agent's task, models.AgentAnalysis.TaskLabel, into width
-// display columns, padded with spaces, or cut with an ellipsis that never
-// follows a space. Tasks are transcript text and can hold wide characters,
-// so it counts display columns, not bytes or runes.
+// display columns, padded with spaces, or cut by TruncateRight. Tasks are
+// transcript text and can hold wide characters, so it counts display
+// columns, not bytes or runes.
 func FitTask(task string, width int) string {
-	if lipgloss.Width(task) > width {
-		cut := strings.TrimSuffix(TruncateRight(task, width), styles.Ellipsis)
-		task = strings.TrimRight(cut, " ") + styles.Ellipsis
-	}
+	task = TruncateRight(task, width)
 	return task + strings.Repeat(" ", max(width-lipgloss.Width(task), 0))
 }
 
 // TruncateRight fits s into width display columns, ending in an ellipsis
-// when it's cut. A negative width leaves s whole, and a zero width, with no
+// when it's cut. The ellipsis never follows a space: "weather…", not
+// "weather …". A negative width leaves s whole, and a zero width, with no
 // room even for the ellipsis, leaves nothing. It measures as lipgloss.Width
 // does, so an emoji with a variation selector counts the two columns
 // terminals draw it in. ansi.Truncate counts an ASCII character as one
@@ -715,6 +712,9 @@ func TruncateRight(s string, width int) string {
 	}
 	for n := width; n > 0; n-- {
 		if cut := ansi.Truncate(s, n, styles.Ellipsis); lipgloss.Width(cut) <= width {
+			if head, ok := strings.CutSuffix(cut, styles.Ellipsis); ok {
+				return strings.TrimRight(head, " ") + styles.Ellipsis
+			}
 			return cut
 		}
 	}

@@ -1089,6 +1089,8 @@ func TestTruncateRightAndTail(t *testing.T) {
 		right, tail string
 	}{
 		{"short", 10, "short", "short"},
+		{"weather report", 9, "weather…", "er report"},
+		{"a  b", 3, "a…", "  b"},
 		{"ab" + sun + "cd", 4, "ab…", sun + "cd"},
 		{"ab" + sun + "cd", 3, "ab…", "cd"},
 		{"x" + coder + "y", 3, "x…", coder + "y"},
