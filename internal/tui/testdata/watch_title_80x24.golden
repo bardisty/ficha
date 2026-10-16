@@ -11,11 +11,11 @@
     Savings           $20.25    (from cache reads)                              
                                                                                 
     Context  38% [████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░│░] 380.0K / 1.00M  
-             587.0K to ~compaction (main session, last request)                 
+             587.0K to ~compaction (main conversation, last request)            
                                                                                 
   ───────────────────────────[ AGENT SUB-SESSIONS ]───────────────────────────  
                                                                                 
-    Parent session                                                   $7.90      
+    Main conversation                                                $7.90      
   ● [Af6e5d4c] Find the auth middleware   Sonnet 5     38% ctx       $1.58      
     [A1b2c3d4] Explore                    Haiku 4.5   100% ctx       $0.4200    
     ── workflow: audit-codebase (completed)                          $1.65      

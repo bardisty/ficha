@@ -11,11 +11,11 @@
     Savings           $20.25    (from cache reads)          
                                                             
     Context  38% [█████████░░░░░░░░░░░░░░░░│] 380.0K / 1.00M
-             587.0K to ~compaction                          
+             587.0K to ~compaction (main, last request)     
                                                             
   ──────────────────[ AGENT SUB-SESSIONS ]──────────────────
                                                             
-    Parent session                                 $7.90    
+    Main conversation                              $7.90    
   ● [Af6e5d4c] Sonnet 5       1 msg  38% ctx       $1.58    
     [A1b2c3d4] Haiku 4.5    12 msgs 100% ctx       $0.4200  
     ── workflow: audit-codebase (completed)        $1.65    
@@ -37,7 +37,7 @@
                                       ⢸⢸                    
                                   ⡀   ⡜⠘⡄   ⡄   ⢀⢆   ⢠⢣     
                              ⠤⣀⣀⣀⡰⠱⣀⣀⣀⡇ ⣇⣀⣀⡜⠘⣄⣀⣀⡜⠘⣄⣀⣀⡜⠘⡄    
-    $ per minute, last 27m · max $1.87 · parent and agents  
+    $ per minute, last 27m · max $1.87 · with agents        
                                                             
   ───────────────────[ MESSAGE INSIGHTS ]───────────────────
                                                             

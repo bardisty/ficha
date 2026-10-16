@@ -410,13 +410,13 @@ func renderSavingsRow(savings float64, note bool, costWidth int, noColor bool) s
 	return row + "\n"
 }
 
-// messagesField is the footer's message count, split into parent and agent
-// messages when agents ran.
+// messagesField is the footer's message count, split into the main
+// conversation's messages and the agents' when agents ran.
 func messagesField(total, parent, agents int) string {
 	if agents == 0 {
 		return "Messages: " + render.Count(total)
 	}
-	return fmt.Sprintf("Messages: %s (%s parent, %s agents)", render.Count(total), render.Count(parent), render.Count(agents))
+	return fmt.Sprintf("Messages: %s (%s main, %s agents)", render.Count(total), render.Count(parent), render.Count(agents))
 }
 
 // footerSep is the field separator used inside footer stat lines.

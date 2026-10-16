@@ -149,7 +149,7 @@ func agentMsgsWidth(agents []models.AgentAnalysis) int {
 // further left when the rows would be wider than width
 // Example:
 //
-//	Parent session                                         $1.14
+//	Main conversation                                      $1.14
 //	[Aa0b184d] Find the auth middleware Opus 4.5   14 msgs  38% ctx   $0.3588
 //	Agents subtotal                                        $5.11
 func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, noColor bool) string {
@@ -219,9 +219,9 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	// unless a workflow heading, a task or the width moved it
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	if noColor {
-		sb.WriteString(fmt.Sprintf("  %-*s   %s\n", labelWidth, "Parent session", render.CostCell(analysis.ParentCost.TotalCost, 11)))
+		sb.WriteString(fmt.Sprintf("  %-*s   %s\n", labelWidth, "Main conversation", render.CostCell(analysis.ParentCost.TotalCost, 11)))
 	} else {
-		paddedLabel := fmt.Sprintf("%-*s", labelWidth, "Parent session")
+		paddedLabel := fmt.Sprintf("%-*s", labelWidth, "Main conversation")
 		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedLabel, formatCostStyled(analysis.ParentCost.TotalCost, 11, noColor)))
 	}
 	msgsGap := strings.Repeat(" ", max(1, labelWidth+3-agentRowWidth(rowMsgs, taskWidth)))

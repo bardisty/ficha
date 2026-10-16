@@ -573,7 +573,8 @@ func TestNumberShort(t *testing.T) {
 	}
 }
 
-// The note keeps its reading whole at any width, shedding the scope first.
+// The note keeps its reading whole at any width, shortening and then
+// shedding the scope first.
 // It counts tokens to or past the mark, so it reads true for any model.
 func TestContextNote(t *testing.T) {
 	tests := []struct {
@@ -582,15 +583,17 @@ func TestContextNote(t *testing.T) {
 		width     int
 		want      string
 	}{
-		{100_000, 150_000, 60, "50.0K to ~compaction (main session, last request)"},
+		{100_000, 150_000, 60, "50.0K to ~compaction (main conversation, last request)"},
+		{100_000, 150_000, 45, "50.0K to ~compaction (main, last request)"},
 		{100_000, 150_000, 40, "50.0K to ~compaction"},
 		{100_000, 150_000, 15, ""},
 		{100_000, 150_000, 5, ""},
-		{678_200, 967_000, 60, "288.8K to ~compaction (main session, last request)"},
-		{980_000, 967_000, 60, "13.0K past ~compaction (main session, last request)"},
+		{678_200, 967_000, 60, "288.8K to ~compaction (main conversation, last request)"},
+		{980_000, 967_000, 60, "13.0K past ~compaction (main conversation, last request)"},
+		{980_000, 967_000, 50, "13.0K past ~compaction (main, last request)"},
 		{980_000, 967_000, 30, "13.0K past ~compaction"},
 		{980_000, 967_000, 20, "past ~compaction"},
-		{200_000, 200_000, 60, "at ~compaction (main session, last request)"},
+		{200_000, 200_000, 60, "at ~compaction (main conversation, last request)"},
 		{200_000, 200_000, 20, "at ~compaction"},
 		{200_000, 200_000, 10, ""},
 	}
@@ -614,10 +617,10 @@ func TestContextGauge(t *testing.T) {
 	}{
 		{"fits: bar takes the rest", 980_000, 50,
 			" 98% [███████████████████████████│] 980.0K / 1.00M",
-			"13.0K past ~compaction"},
+			"13.0K past ~compaction (main, last request)"},
 		{"headroom before compaction", 500_000, 50,
 			" 50% [██████████████░░░░░░░░░░░░░│] 500.0K / 1.00M",
-			"467.0K to ~compaction"},
+			"467.0K to ~compaction (main, last request)"},
 		// The bar outranks the counts: it carries the compaction tick.
 		{"narrow drops the counts before clipping", 980_000, 25,
 			" 98% [█████████████████│]", ""},

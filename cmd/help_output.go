@@ -34,9 +34,9 @@ Messages and turns
   A message is one response from the API, and the counts are messages. A
   turn, one prompt from you, usually produces several: each tool call Claude
   makes ends one response and starts another. Agents' messages are counted
-  with the session's unless a line says "parent". Lines Claude Code writes
-  itself, such as an API error, count too, the same in every report. They
-  cost $0, breakdown names their model "synthetic", and COST BY MODEL
+  with the session's, except in a count marked "main". Lines Claude Code
+  writes itself, such as an API error, count too, the same in every report.
+  They cost $0, breakdown names their model "synthetic", and COST BY MODEL
   leaves them out.
 
 Message insights
@@ -50,15 +50,15 @@ Message insights
   messages, and a difference of 20% or less reads as flat.
 
 Context
-  How full the model's context window was at the latest parent message:
-  its fresh input plus cache writes plus cache reads, the figure Claude
-  Code's /context shows, out of the model's window. It's a snapshot, not a
-  running total. A request larger than a 200K model's window reads against
-  the 1M long-context window it must have run on. For a model ficha
-  doesn't know, or a request larger than any window ficha knows for its
-  model, ficha shows the tokens alone and says why. Agents have context
-  windows of their own: AGENT SUB-SESSIONS reads each one's the same way,
-  from its latest request.
+  How full the model's context window was at the main conversation's
+  latest message: its fresh input plus cache writes plus cache reads, the
+  figure Claude Code's /context shows, out of the model's window. It's a
+  snapshot, not a running total. A request larger than a 200K model's
+  window reads against the 1M long-context window it must have run on. For
+  a model ficha doesn't know, or a request larger than any window ficha
+  knows for its model, ficha shows the tokens alone and says why. Agents
+  have context windows of their own: AGENT SUB-SESSIONS reads each one's
+  the same way, from its latest request.
 
 ~compaction
   The context bar's tick marks where Claude Code auto-compacts the
@@ -69,8 +69,8 @@ Context
   the mark and red at it, and the note under the bar counts the tokens to
   it or past it. From the orange band on, statusline says the same in
   words and colors its percentage. A running agent in its own orange band
-  or past its mark, and nearer it than the main session is to its own, is
-  named under the bar and in watch's footer, as "(agent 98%)".
+  or past its mark, and nearer it than the main conversation is to its
+  own, is named under the bar and in watch's footer, as "(agent 98%)".
 
 Agents and workflows
   Agents are sub-sessions Claude started. Their cost is included in the

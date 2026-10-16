@@ -18,7 +18,7 @@ func nearerAgentAnalysis() *models.SessionAnalysis {
 	return a
 }
 
-// A running agent nearer ~compaction than the main session shows on the
+// A running agent nearer ~compaction than the main conversation shows on the
 // first screen: the note under the gauge names it, and the footer's ctx
 // reading carries it. Each sheds whole as the terminal narrows, before the
 // main reading does.
@@ -35,8 +35,8 @@ func TestGoldenWatchAgentNearerCompaction(t *testing.T) {
 }
 
 // The note and footer each name the agent at 80 columns, and the note's
-// agent part goes before the main session's headroom at 40. --ascii swaps
-// the note's separator for its own.
+// agent part goes before the main conversation's headroom at 40. --ascii
+// swaps the note's separator for its own.
 func TestWatchAgentNearerCompactionText(t *testing.T) {
 	frame := goldenWatchViewOf(t, nearerAgentAnalysis(), true, 80, 24)
 	for _, want := range []string{
@@ -61,7 +61,7 @@ func TestWatchAgentNearerCompactionText(t *testing.T) {
 }
 
 // Only a running agent in its warning band or past its mark, and nearer its
-// mark than the main session is to its own, counts.
+// mark than the main conversation is to its own, counts.
 func TestWatchAgentNearerCompactionOnlyWhenItShould(t *testing.T) {
 	tests := []struct {
 		name   string

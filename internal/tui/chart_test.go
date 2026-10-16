@@ -193,7 +193,7 @@ func TestCostChartScalesToDrawnMinutes(t *testing.T) {
 		t.Errorf("chart scale = %f, want under the off-chart $5 minute", mv)
 	}
 	label := m.renderCostChart()
-	for _, want := range []string{"$ per minute, last 68m", "max $0.0590", "parent and agents"} {
+	for _, want := range []string{"$ per minute, last 68m", "max $0.0590", "main conversation + agents"} {
 		if !strings.Contains(label, want) {
 			t.Errorf("label lacks %q:\n%s", want, label)
 		}

@@ -627,8 +627,8 @@ func TestFormatSessionTable_WithAgents(t *testing.T) {
 	if !strings.Contains(output, "AGENT SUB-SESSIONS") {
 		t.Error("Table output missing agent breakdown section")
 	}
-	if !strings.Contains(output, "Parent session") {
-		t.Error("Table output missing parent session cost")
+	if !strings.Contains(output, "Main conversation") {
+		t.Error("Table output missing the main conversation cost")
 	}
 	if !strings.Contains(output, "agent-1") {
 		t.Error("Table output missing first agent")

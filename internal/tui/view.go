@@ -368,7 +368,7 @@ func (m Model) renderCostByModelContent() string {
 // by agentTasks.extra when the rows carry tasks
 // Example:
 //
-//	Parent session                              $1.14
+//	Main conversation                           $1.14
 //	[Aa0b184d] Opus 4.5      14 msgs            $0.3588
 //	Agents subtotal                             $5.11
 func (m Model) renderAgentBreakdownContent() string {
@@ -388,10 +388,10 @@ func (m Model) renderAgentBreakdownContent() string {
 	parentHighlighted := m.isHighlighted("parent_cost")
 	parentCostStr := render.CostStyled(a.ParentCost.TotalCost, 11, parentHighlighted, m.noColor)
 	if !m.noColor {
-		paddedLabel := fmt.Sprintf("%-*s", labelWidth, "Parent session")
+		paddedLabel := fmt.Sprintf("%-*s", labelWidth, "Main conversation")
 		sb.WriteString(fmt.Sprintf("    %s   %s\n", styles.DimStyle.Render(paddedLabel), parentCostStr))
 	} else {
-		sb.WriteString(fmt.Sprintf("    %-*s   %s\n", labelWidth, "Parent session", parentCostStr))
+		sb.WriteString(fmt.Sprintf("    %-*s   %s\n", labelWidth, "Main conversation", parentCostStr))
 	}
 
 	// Show each agent as [A<id>] model msgs ctx cost
@@ -1028,7 +1028,7 @@ func (m Model) renderCostChart() string {
 	peak := "max " + render.Cost(maxOf(m.costHistory))
 	const indent = "    "
 	scaleInfo := strings.TrimPrefix(m.firstFit(
-		indent+"$ per minute, "+span+sep+peak+sep+"parent and agents",
+		indent+"$ per minute, "+span+sep+peak+sep+"main conversation + agents",
 		indent+"$ per minute, "+span+sep+peak+sep+"with agents",
 		indent+span+sep+peak+sep+"with agents",
 		indent+span+sep+peak,

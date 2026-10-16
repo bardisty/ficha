@@ -127,7 +127,7 @@ func TestWatchFoldStaysAlignedBesideShortTasks(t *testing.T) {
 				want := -1
 				for _, line := range strings.Split(frame, "\n") {
 					if !strings.Contains(line, "$") || !(strings.Contains(line, "[A") || strings.Contains(line, "finished agents") ||
-						strings.Contains(line, "Parent session") || strings.Contains(line, "Agents subtotal")) {
+						strings.Contains(line, "Main conversation") || strings.Contains(line, "Agents subtotal")) {
 						continue
 					}
 					if want < 0 {

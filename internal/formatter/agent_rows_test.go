@@ -37,10 +37,9 @@ func agentBreakdownAnalysis() *models.SessionAnalysis {
 	}
 }
 
-// The AGENT SUB-SESSIONS section aligns every cost — "Parent session", each
-// agent row, "Agents subtotal" — at the same column. The msgs field used a
-// fixed %8s, so a 1000+ message agent pushed its cost out of that column; now
-// the column widens (eating the gap) and the costs stay put.
+// The AGENT SUB-SESSIONS section aligns every cost — "Main conversation",
+// each agent row, "Agents subtotal" — at the same column. A 1000+ message
+// agent widens the msgs column, eating the gap, and the costs stay put.
 func TestAgentBreakdownMsgsColumnKeepsCostAligned(t *testing.T) {
 	for _, noColor := range []bool{true, false} {
 		name := "color"
