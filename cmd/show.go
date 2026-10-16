@@ -35,6 +35,7 @@ Examples:
 		},
 	}
 
+	addFormatFlag(showCmd, cfg, false)
 	addProjectFlags(showCmd, cfg)
 	// --live predates watch and still works, hidden so help points at watch.
 	addLiveFlags(showCmd, cfg, true)

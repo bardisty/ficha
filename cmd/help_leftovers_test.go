@@ -381,3 +381,101 @@ func TestHelpOutputNamesTheLiveViewsTerms(t *testing.T) {
 		}
 	}
 }
+
+// The live views and statusline print only a table, so their help leaves -f
+// out. They still parse it: json and csv name the show command that prints
+// them, with the session and project from the line, and table still works.
+func TestLiveViewsRejectMachineFormats(t *testing.T) {
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"watch", "-f", "json"}, "ficha watch is a live view and has no json output. For the session as json, run: ficha show -f json"},
+		{[]string{"watch", "-f", "csv"}, "ficha watch is a live view and has no csv output. For the session as csv, run: ficha show -f csv"},
+		{[]string{"breakdown", "-f", "csv"}, "ficha breakdown is a live view and has no csv output. For one row per message, run: ficha show -f csv --messages"},
+		{[]string{"breakdown", "--format=JSON"}, "ficha breakdown is a live view and has no json output. For the session's messages as json, run: ficha show -f json --messages"},
+		{[]string{"watch", "-p", "my proj", "abc123", "-vf", "csv", "--no-follow"}, "ficha watch is a live view and has no csv output. For the session as csv, run: ficha show -p 'my proj' abc123 -f csv"},
+		{[]string{"breakdown", "--project-dir=-home-x", "-f", "json"}, "ficha breakdown is a live view and has no json output. For the session's messages as json, run: ficha show --project-dir=-home-x -f json --messages"},
+		// -f ahead of the command parses on the command cobra finds.
+		{[]string{"-f", "json", "watch"}, "ficha watch is a live view and has no json output. For the session as json, run: ficha show -f json"},
+		{[]string{"show", "--live", "-f", "json"}, "ficha show --live is a live view and has no json output. For the session as json, run: ficha show -f json"},
+		{[]string{"--live", "-f", "json"}, "ficha --live is a live view and has no json output. For the session as json, run: ficha show -f json"},
+		{[]string{"show", "--live", "--messages", "-f", "csv"}, "ficha show --live is a live view and has no csv output. For one row per message, run: ficha show -f csv --messages"},
+	}
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			_, err := executeLikeMain(t, tt.args...)
+			if err == nil || err.Error() != tt.want {
+				t.Fatalf("error:\n got: %v\nwant: %s", err, tt.want)
+			}
+			if got := exitCode(err); got != exitUsage {
+				t.Errorf("exit %d, want %d", got, exitUsage)
+			}
+		})
+	}
+
+	for _, name := range []string{"watch", "breakdown", "statusline"} {
+		out, err := executeLikeMain(t, name, "--help")
+		if err != nil {
+			t.Fatalf("%s --help: %v", name, err)
+		}
+		if strings.Contains(out, "--format") {
+			t.Errorf("%s --help lists --format:\n%s", name, out)
+		}
+		if out, _ := executeLikeMain(t, "__complete", name, "-"); strings.Contains(out, "--format") {
+			t.Errorf("%s completes --format:\n%s", name, out)
+		}
+	}
+	// The reports list it with their own flags.
+	for _, args := range [][]string{{"--help"}, {"show", "--help"}, {"list", "--help"}, {"summary", "--help"}, {"global", "--help"}} {
+		out, err := executeLikeMain(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		flags, global, _ := strings.Cut(out, "Global Flags:")
+		if !strings.Contains(flags, "-f, --format string") || strings.Contains(global, "--format") {
+			t.Errorf("%v should list -f under Flags, not Global Flags:\n%s", args, out)
+		}
+	}
+
+	// -f table is what these commands print anyway.
+	t.Run("watch -f table", func(t *testing.T) {
+		setupE2EFixture(t)
+		_, err := executeLikeMain(t, "watch", projFlag, "-f", "table")
+		if err == nil || strings.Contains(err.Error(), "format") || exitCode(err) != 1 {
+			t.Errorf("watch -f table should get as far as the terminal check, got: %v", err)
+		}
+	})
+	t.Run("help ignores it", func(t *testing.T) {
+		for _, args := range [][]string{{"help", "-f", "json"}, {"help", "output", "-f", "csv"}} {
+			if _, err := executeLikeMain(t, args...); err != nil {
+				t.Errorf("%v: %v", args, err)
+			}
+		}
+	})
+	t.Run("statusline -f table", func(t *testing.T) {
+		proj := setupStatusFixture(t)
+		stdin := statusInput(t, filepath.Join(proj, statusID+".jsonl"), "Opus 5.5")
+		want, _, err := executeStatusline(t, stdin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, _, err := executeStatusline(t, stdin, "-f", "table")
+		if err != nil || got != want {
+			t.Errorf("statusline -f table: %v\n got: %q\nwant: %q", err, got, want)
+		}
+	})
+}
+
+// -f before the command is still the command's flag.
+func TestFormatBeforeCommand(t *testing.T) {
+	setupE2EFixture(t)
+	want, err := executeLikeMain(t, "list", projFlag, "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := executeLikeMain(t, "-f", "json", "list", projFlag)
+	if err != nil || got != want {
+		t.Errorf("ficha -f json list: %v\n got: %s\nwant: %s", err, got, want)
+	}
+}

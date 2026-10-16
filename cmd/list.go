@@ -44,6 +44,7 @@ sessions, and --nested lists them too, each titled with its project.`,
 		},
 	}
 
+	addFormatFlag(listCmd, cfg, false)
 	addProjectFlags(listCmd, cfg)
 	addWindowFlags(listCmd, cfg)
 	addNestedFlag(listCmd, cfg)

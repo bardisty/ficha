@@ -22,7 +22,7 @@ import (
 )
 
 func newStatuslineCmd(cfg *config) *cobra.Command {
-	return &cobra.Command{
+	statuslineCmd := &cobra.Command{
 		Use:   "statusline",
 		Short: "Print a line for Claude Code's status line",
 		Long: `Print one line for Claude Code's status line: the model, how full the
@@ -44,6 +44,8 @@ mark. It's colored; --no-color turns that off.`,
 			return runStatusline(cfg, cmd.InOrStdin())
 		},
 	}
+	addFormatFlag(statuslineCmd, cfg, true)
+	return statuslineCmd
 }
 
 // statusLineInput is the part of Claude Code's status line JSON that

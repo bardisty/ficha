@@ -631,7 +631,7 @@ func TestE2ECommands(t *testing.T) {
 		{
 			name:    "breakdown rejects non-table format before launching TUI",
 			args:    []string{"breakdown", projFlag, "-f", "json"},
-			wantErr: "not supported in live/TUI mode",
+			wantErr: "ficha breakdown is a live view and has no json output",
 		},
 		{
 			name:    "breakdown reports an unknown session before launching TUI",
@@ -1408,8 +1408,8 @@ func TestE2EFlagScope(t *testing.T) {
 			wantErr: "use either -p or --project-dir, not both: -p is the directory Claude Code ran in, --project-dir a Claude project directory name",
 		},
 		// Parsing --live on root and watch is what reaches the TUI format check.
-		{name: "root still accepts hidden --live", args: []string{projFlag, "--live", "-f", "json"}, wantErr: "--format json is not supported in live/TUI mode"},
-		{name: "watch still accepts hidden --live", args: []string{"watch", projFlag, "--live", "-f", "json"}, wantErr: "--format json is not supported in live/TUI mode"},
+		{name: "root still accepts hidden --live", args: []string{projFlag, "--live", "-f", "json"}, wantErr: "ficha --live is a live view and has no json output. For the session as json, run: ficha show --project-dir=" + e2eProjDir + " -f json"},
+		{name: "watch still accepts hidden --live", args: []string{"watch", projFlag, "--live", "-f", "json"}, wantErr: "ficha watch is a live view and has no json output. For the session as json, run: ficha show --project-dir=" + e2eProjDir + " -f json"},
 		{
 			name:       "--messages on a table warns",
 			args:       []string{"show", projFlag, e2eAlphaID, "--messages"},

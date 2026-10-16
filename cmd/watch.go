@@ -32,6 +32,7 @@ Examples:
 		},
 	}
 
+	addFormatFlag(watchCmd, cfg, true)
 	addProjectFlags(watchCmd, cfg)
 	// watch is always live; --live is accepted, hidden, for scripts that pass it.
 	addLiveFlags(watchCmd, cfg, true)
