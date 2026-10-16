@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,12 +161,12 @@ func runStatusline(cfg *config, stdin io.Reader) error {
 // "Opus 5.5 · ctx 68% · $0.19/msg ▲ · $43.67 (agents $12.54)". A part with
 // nothing behind it is left out: the context before the first reply, the
 // recent cost before the trend has enough messages, the arrow while the
-// trend is stable, the agents' share when they cost nothing. Amounts take two
-// decimals and the context none, to keep the line short. In the warning band
-// and past the mark the context says how near ~compaction it is, as show's
-// note does, and unless noColor its percentage takes the gauge's color.
-// Below the band it stays plain, as an agent's row does, so color on the
-// line means look here.
+// trend is stable, the agents' share when they cost nothing. Amounts take
+// statusCost's precision and the context no decimals, to keep the line short.
+// In the warning band and past the mark the context says how near
+// ~compaction it is, as show's note does, and unless noColor its percentage
+// takes the gauge's color. Below the band it stays plain, as an agent's row
+// does, so color on the line means look here.
 func statusLine(model string, a *models.SessionAnalysis, noColor bool) string {
 	var parts []string
 	if model != "" {
@@ -185,16 +186,28 @@ func statusLine(model string, a *models.SessionAnalysis, noColor bool) string {
 		parts = append(parts, "ctx "+reading)
 	}
 	if in := a.Insights; in != nil && in.HasTrend() {
-		recent := fmt.Sprintf("$%.2f/msg", in.RecentAvgCost)
+		recent := statusCost(in.RecentAvgCost) + "/msg"
 		if in.CostTrend != models.TrendStable {
 			recent += " " + render.TrendSymbol(in.CostTrend)
 		}
 		parts = append(parts, recent)
 	}
-	total := fmt.Sprintf("$%.2f", a.TotalCost.TotalCost)
+	total := statusCost(a.TotalCost.TotalCost)
 	if a.AgentsCost.TotalCost > 0 {
-		total += fmt.Sprintf(" (agents $%.2f)", a.AgentsCost.TotalCost)
+		total += " (agents " + statusCost(a.AgentsCost.TotalCost) + ")"
 	}
 	parts = append(parts, total)
 	return strings.Join(parts, " "+styles.FieldSep+" ")
+}
+
+// statusCost formats an amount for the status line: two decimals, which keep
+// the line short, and four below a cent, where two would lose the amount or
+// read as "$0.00", as a cheap model's per-message cost would. The cutoff is
+// where four decimals would round up to "$0.0100", so 0.009996 prints
+// "$0.01". Zero prints "$0.00".
+func statusCost(cost float64) string {
+	if cost != 0 && math.Abs(cost) < 0.00995 {
+		return fmt.Sprintf("$%.4f", cost)
+	}
+	return fmt.Sprintf("$%.2f", cost)
 }
