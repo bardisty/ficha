@@ -111,8 +111,10 @@ func ASCIIChart(s string) string {
 // Shared color palette. Each color carries two xterm-256 indexes: dark is
 // the one ficha was designed with, and light takes over on a light terminal
 // background. Light values keep text at 4.5:1 or better against white, and
-// bars and separators at 3:1. They're palette indexes rather than hex so the
-// ratio holds under both the 256-color and truecolor profiles.
+// bars and separators at 3:1. Dark values hold the same ratios against
+// #1e1e1e, since most dark themes are a gray rather than black. They're
+// palette indexes rather than hex so the ratios hold under both the
+// 256-color and truecolor profiles.
 //
 // Every run starts on the dark values. cmd switches to the light ones, with
 // SetDark, when the terminal says its background is light, and to the 16
@@ -142,20 +144,20 @@ var palette = struct {
 	neutral, softText, note, separator                                    pair
 	highlight, fable, contextFree, agentOlive                             pair
 }{
-	primary:   pair{dark: 99, light: 92},   // Purple
+	primary:   pair{dark: 141, light: 92},  // Purple
 	secondary: pair{dark: 245, light: 242}, // Gray (dimmed but readable)
 	success:   pair{dark: 42, light: 28},   // Green
 	info:      pair{dark: 43, light: 23},   // Cyan
 	warning:   pair{dark: 221, light: 94},  // Yellow
 	accent:    pair{dark: 212, light: 162}, // Pink
-	err:       pair{dark: 196, light: 160}, // Red
+	err:       pair{dark: 203, light: 160}, // Red
 	orange:    pair{dark: 214, light: 130}, // Orange
 	blue:      pair{dark: 75, light: 25},   // Blue
 
 	neutral:   pair{dark: 252, light: 238},
 	softText:  pair{dark: 250, light: 239},
 	note:      pair{dark: 248, light: 241},
-	separator: pair{dark: 240, light: 246},
+	separator: pair{dark: 242, light: 246},
 
 	// On a dark background the highlight is a brighter gold than warning.
 	// On white no gold reaches 4.5:1, so both take the same dark amber.
@@ -398,5 +400,5 @@ func GetCostGradientColor(cost, minCost, maxCost float64) color.Color {
 	if normalized < 0.9 {
 		return OrangeColor
 	}
-	return ErrorColor // Red (196)
+	return ErrorColor // Red
 }
