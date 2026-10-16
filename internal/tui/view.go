@@ -387,13 +387,16 @@ func (m Model) renderAgentBreakdownContent() string {
 	// each run's start. Markers carry the real agent ID (abbreviated), matching
 	// the breakdown TUI's [A<id>] scheme. A running agent's live dot sits in
 	// the indent, so the rows' columns don't move as agents start and stop.
-	// When a heading doesn't fit, every heading drops its status before a
-	// name is cut, all or none, as show does, so a heading without one can't
-	// read as a run that had none.
+	// When a heading doesn't fit, or its status is too long to show, every
+	// heading drops its status before a name is cut, all or none, as show
+	// does, so a heading without one can't read as a run that had none.
 	statuses := true
 	for _, row := range rows {
-		if row.kind == agentRowRun &&
-			lipgloss.Width(styles.GroupRule+" "+render.WorkflowLabel(a.WorkflowByID(row.runID))) > labelWidth {
+		if row.kind != agentRowRun {
+			continue
+		}
+		meta := a.WorkflowByID(row.runID)
+		if render.WorkflowStatusDropped(meta) || lipgloss.Width(styles.GroupRule+" "+render.WorkflowLabel(meta)) > labelWidth {
 			statuses = false
 		}
 	}
