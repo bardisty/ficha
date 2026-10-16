@@ -1274,6 +1274,11 @@ func TestE2EUsageErrors(t *testing.T) {
 		{"stray arg on a no-arg command", []string{"list", "extra"}, `ficha list takes no arguments, got "extra"`},
 		{"directory on list points at -p", []string{"list", dir}, "ficha list takes no arguments. For that directory's sessions, run: ficha list -p " + shellQuote(dir)},
 		{"directory on global has no -p", []string{"global", dir}, "ficha global takes no arguments, got " + strconv.Quote(dir)},
+		{"two session IDs to show", []string{"show", "a", "b"}, `ficha show takes one session ID, got "a" and "b"`},
+		{"two session IDs to watch", []string{"watch", "a", "b"}, `ficha watch takes one session ID, got "a" and "b"`},
+		{"three session IDs to breakdown", []string{"breakdown", "a", "b", "c"}, `ficha breakdown takes one session ID, got "a", "b" and "c"`},
+		{"two session IDs to bare ficha", []string{"abc", "def"}, `ficha takes one session ID, got "abc" and "def"`},
+		{"typo before an extra arg is still a typo", []string{"lst", "extra"}, `unknown command "lst" for "ficha". Did you mean "list"?`},
 		{"directory on show points at -p", []string{"show", dir}, strconv.Quote(dir) + " is a directory, not a session. To show that directory's latest session, run: ficha show -p " + shellQuote(dir)},
 		{"non-numeric int flag", []string{"global", "--top", "abc"}, `invalid --top value "abc": must be a whole number`},
 		{"overflowing int flag", []string{"global", "--top", "99999999999999999999"}, `invalid --top value "99999999999999999999": is out of range`},
@@ -1528,6 +1533,9 @@ func TestE2ECompletion(t *testing.T) {
 		{"one session ID only", []string{"show", projFlag, e2eAlphaID, ""}, nil, noFile},
 		{"--format values", []string{"list", "-f", ""}, []string{"table", "json", "csv"}, noFile},
 		{"--sort-by values", []string{"global", "--sort-by", ""}, []string{"cost", "sessions", "name", "activity"}, noFile},
+		{"--since values", []string{"summary", "--since", ""}, []string{"today", "yesterday", "7d", "30d"}, noFile},
+		{"--until values", []string{"list", "--until", ""}, []string{"today", "yesterday", "7d", "30d"}, noFile},
+		{"--top takes a number, not a file", []string{"global", "--top", ""}, nil, noFile},
 		{"--project-dir offers project dirs", []string{"list", "--project-dir", ""}, []string{e2eOtherDir, e2eProjDir}, noFile},
 		// A word starting with "-" completes as a flag name unless it's
 		// attached with "=".

@@ -119,7 +119,7 @@ func TestE2EResolutionErrors(t *testing.T) {
 			webapp + " has no Claude Code sessions. --project-dir takes a directory under " + projectsDir +
 				". For sessions started in " + webapp + ", run: ficha show -p " + shellQuote(webapp)},
 		{"unknown --project-dir name", []string{"list", "--project-dir=-nope"},
-			"no project directory -nope in " + projectsDir + ". Run 'ficha global' to see every project."},
+			"no project directory -nope in " + projectsDir + ". --project-dir=<Tab> completes the names, or pass the project's own directory with -p."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -23,16 +23,22 @@ import (
 // Claude Code wrote agent-<id>.jsonl transcripts at the project root, and
 // those list as sessions whose IDs aren't hex.
 func rootArgs(cmd *cobra.Command, args []string) error {
-	if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
-		return err
-	}
 	if len(args) == 0 || looksLikeSessionID(args[0]) || isTranscriptPath(args[0]) {
-		return nil
+		return oneSessionArg(cmd, args)
 	}
 	if len(cmd.SuggestionsFor(args[0])) > 0 || isDir(args[0]) {
 		return unknownCommandError(cmd, args[0])
 	}
-	return nil
+	return oneSessionArg(cmd, args)
+}
+
+// oneSessionArg replaces cobra.MaximumNArgs(1), whose `accepts at most 1
+// arg(s)` doesn't say what the one argument is.
+func oneSessionArg(cmd *cobra.Command, args []string) error {
+	if len(args) <= 1 {
+		return nil
+	}
+	return fmt.Errorf("%s takes one session ID, got %s", cmd.CommandPath(), joinQuoted(args, "and"))
 }
 
 // rootRun is bare `ficha [session-id]`: show, except that a non-hex word no
@@ -127,7 +133,7 @@ func joinQuoted(items []string, conj string) string {
 // transcript path and a hex word stay a session lookup, so a directory named
 // like an ID is still read as one.
 func sessionArgs(cmd *cobra.Command, args []string) error {
-	if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
+	if err := oneSessionArg(cmd, args); err != nil {
 		return err
 	}
 	if len(args) == 0 || looksLikeSessionID(args[0]) || isTranscriptPath(args[0]) || !isDir(args[0]) {
@@ -341,14 +347,14 @@ func commandFlagHint(cmd *cobra.Command, e *pflag.NotExistError) string {
 	isProjectFlag := flag == "-p" || flag == "--project" || flag == "--project-dir"
 	switch {
 	case cmd == root:
-		return withSuggestedLine(root, fmt.Sprintf("%s is a %s flag", flag, joinWords(owners)), owners)
+		return withSuggestedLine(root, fmt.Sprintf("%s is a %s flag", flag, joinWords(owners, "and")), owners)
 	case isProjectFlag && cmd.Name() == "global":
 		// Of the commands that take -p, summary is the one global narrows to.
 		return withSuggestedLine(root, fmt.Sprintf("%s covers every project and doesn't take %s. summary covers one project", cmd.CommandPath(), flag), []string{"summary"})
 	case isProjectFlag && cmd.Name() == "statusline":
 		return fmt.Sprintf("%s doesn't take %s: it reads the session from the JSON Claude Code writes on stdin.", cmd.CommandPath(), flag)
 	}
-	return withSuggestedLine(root, fmt.Sprintf("%s doesn't take %s. %s is a %s flag", cmd.CommandPath(), flag, flag, joinWords(owners)), owners)
+	return withSuggestedLine(root, fmt.Sprintf("%s doesn't take %s. %s is a %s flag", cmd.CommandPath(), flag, flag, joinWords(owners, "and")), owners)
 }
 
 // withSuggestedLine ends hint with the command line ficha was run with,
@@ -436,12 +442,12 @@ func takesLine(cmd *cobra.Command, args []string) bool {
 }
 
 // joinWords renders ["a"] as "a", ["a", "b"] as "a and b" and
-// ["a", "b", "c"] as "a, b and c".
-func joinWords(words []string) string {
+// ["a", "b", "c"] as "a, b and c", with conj in place of "and".
+func joinWords(words []string, conj string) string {
 	if len(words) == 1 {
 		return words[0]
 	}
-	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
+	return strings.Join(words[:len(words)-1], ", ") + " " + conj + " " + words[len(words)-1]
 }
 
 type commandLineKey struct{}

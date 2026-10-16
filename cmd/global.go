@@ -50,6 +50,7 @@ the table.`,
 	globalCmd.Flags().BoolVar(&cfg.globalNoCache, "no-cache", false, "Skip cache, force fresh analysis (reserved for future use)")
 	_ = globalCmd.Flags().MarkHidden("no-cache")
 	_ = globalCmd.RegisterFlagCompletionFunc("sort-by", fixedValues(sortByValues))
+	_ = globalCmd.RegisterFlagCompletionFunc("top", cobra.NoFileCompletions)
 	addWindowFlags(globalCmd, cfg)
 
 	return globalCmd

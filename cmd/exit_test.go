@@ -59,6 +59,7 @@ func TestExitStatusByCommandLine(t *testing.T) {
 		{"too many args to show", []string{"show", "a", "b"}, 2},
 		{"too many args to watch", []string{"watch", "a", "b"}, 2},
 		{"too many args to breakdown", []string{"breakdown", "a", "b"}, 2},
+		{"too many args to bare ficha", []string{"a", "b"}, 2},
 		{"invalid format", []string{"list", "-f", "xml"}, 2},
 		{"json on a TUI", []string{"watch", "-f", "json"}, 2},
 		{"-p with --project-dir", []string{"list", "-p", ".", projFlag}, 2},

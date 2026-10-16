@@ -109,6 +109,21 @@ func TestNoFlagCommandsRejectGlobalFlags(t *testing.T) {
 	}
 }
 
+// An unknown shell names the ones there are, and a known one still writes
+// its script.
+func TestCompletionUnknownShell(t *testing.T) {
+	_, err := executeLikeMain(t, "completion", "bogus")
+	if want := `unknown shell "bogus": want bash, fish, powershell or zsh`; err == nil || err.Error() != want {
+		t.Fatalf("error:\n got: %v\nwant: %s", err, want)
+	}
+	if got := exitCode(err); got != exitUsage {
+		t.Errorf("exit %d, want %d", got, exitUsage)
+	}
+	if out, err := executeLikeMain(t, "completion", "fish"); err != nil || !strings.Contains(out, "complete -c ficha") {
+		t.Errorf("completion fish: %v\n%s", err, out)
+	}
+}
+
 func TestNoFlagCommandsHideGlobalFlags(t *testing.T) {
 	for _, args := range [][]string{{"version", "--help"}, {"completion", "--help"}, {"completion", "zsh", "--help"}} {
 		out, err := executeLikeMain(t, args...)

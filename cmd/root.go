@@ -152,12 +152,13 @@ Exit status:
 // would otherwise add it lazily, out of usageArgs' reach. Its scripts go to
 // the stdout set at this point, so a caller redirecting output must do that
 // first. Without a RunE, `completion bogus` prints help and exits 0 instead
-// of failing on its NoArgs.
+// of failing on its Args check.
 func initCompletion(root *cobra.Command) {
 	root.InitDefaultCompletionCmd()
 	for _, c := range root.Commands() {
 		if c.Name() == "completion" {
 			c.RunE = func(c *cobra.Command, _ []string) error { return c.Help() }
+			c.Args = shellArgs
 			usageArgs(c)
 			takeNoGlobalFlags(c)
 			for _, shell := range c.Commands() {
@@ -165,6 +166,21 @@ func initCompletion(root *cobra.Command) {
 			}
 		}
 	}
+}
+
+// shellArgs replaces the completion command's cobra.NoArgs, whose `unknown
+// command "x" for "ficha completion"` doesn't say which shells there are.
+func shellArgs(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	var shells []string
+	for _, c := range cmd.Commands() {
+		if c.IsAvailableCommand() {
+			shells = append(shells, c.Name())
+		}
+	}
+	return fmt.Errorf("unknown shell %q: want %s", args[0], joinWords(shells, "or"))
 }
 
 // Execute runs the root command
