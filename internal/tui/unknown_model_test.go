@@ -25,6 +25,12 @@ const unknownModelPrefix = "opus-4-9"
 // carries one catalog model and one fallback-priced model.
 func watchViewWithUnknownModel(t *testing.T, noColor bool) string {
 	t.Helper()
+	return watchViewWithUnknownModelAt(t, noColor, 80)
+}
+
+// watchViewWithUnknownModelAt is watchViewWithUnknownModel at width columns.
+func watchViewWithUnknownModelAt(t *testing.T, noColor bool, width int) string {
+	t.Helper()
 	a := goldenViewAnalysis()
 	a.CostByModel = map[string]models.CostBreakdown{
 		"claude-opus-4-8": {TotalCost: 7.90},
@@ -36,7 +42,7 @@ func watchViewWithUnknownModel(t *testing.T, noColor bool) string {
 	a.SkippedLines = 0
 
 	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d-4e5f-6789-abcd-ef0123456789", noColor, "", false)
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 60})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 60})
 	m = updated.(Model)
 	updated, _ = m.Update(analysisMsg{analysis: a})
 	m = updated.(Model)
@@ -89,6 +95,16 @@ func TestWatchMarksUnknownModel(t *testing.T) {
 				t.Errorf("the pointer doesn't fit and should be gone:\n%s", out)
 			}
 		})
+	}
+}
+
+// A wide terminal's panel has room for the pointer to ficha show that the
+// 76-column one drops.
+func TestWatchUnknownModelPointerFitsAWidePanel(t *testing.T) {
+	out := stripANSI(watchViewWithUnknownModelAt(t, true, 160))
+	full := unknownModelFootnote([]string{unknownModelID, "local-llm-7"}, "0a1b2c3d-4e5f-6789-abcd-ef0123456789")
+	if !strings.Contains(out, full) {
+		t.Errorf("footer missing %q:\n%s", full, out)
 	}
 }
 

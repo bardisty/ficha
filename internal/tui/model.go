@@ -1001,17 +1001,16 @@ func (m Model) isHighlighted(field string) bool {
 }
 
 // getChartWidth returns the chart's width in columns, one minute each: the
-// 76-column panel less a 4-column indent each side, so at most 68 minutes.
+// panel less 8, starting 2 columns in from the rule and ending 6 short of
+// it, so 68 minutes at the design width and 110 at the widest. A terminal
+// too narrow for the design width cuts the chart to its own width less the
+// same 8, keeping the chart to 68 there.
 func (m Model) getChartWidth() int {
-	maxWidth := 68
-	if m.width > 0 && m.width-8 < maxWidth {
-		w := m.width - 8
-		if w < 1 {
-			w = 1 // sparkline canvas does make() with this length; non-positive panics
-		}
-		return w
+	if m.width <= 0 {
+		return defaultPanelWidth - 8
 	}
-	return maxWidth
+	// The sparkline canvas does make() with this length; non-positive panics.
+	return max(min(m.width-8, max(panelWidthFor(m.width), defaultPanelWidth)-8), 1)
 }
 
 // costBuckets sums spend, parent and agents alike, into one bucket per clock

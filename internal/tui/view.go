@@ -19,20 +19,35 @@ import (
 // defaultPanelWidth columns; on narrower terminals they shrink toward
 // minPanelWidth so box-drawing lines don't wrap and desynchronize the fixed
 // header/footer height math. minPanelWidth plus the 2-column indent is
-// minTermWidth, so the whole frame fits at every width watch draws.
+// minTermWidth, so the whole frame fits at every width watch draws. Past 80
+// columns the panel grows with the terminal, keeping the 2-column margin it
+// has at 80 on each side, up to maxPanelWidth: that gives the cost chart 110
+// minutes, and wider rules would only stretch the sections whose figures
+// sit at their left.
 const (
 	defaultPanelWidth = 76
+	maxPanelWidth     = 118
 	minPanelWidth     = minTermWidth - 2
 )
 
-// panelWidthFor returns the panel width for a terminal width: the design width
-// when it fits (accounting for the 2-column left indent), otherwise clamped.
-// A zero/negative termWidth means no WindowSizeMsg yet — use the design width.
+// panelWidthFor returns the panel width for a terminal width: the design
+// width when it fits beside the 2-column left indent, the terminal less
+// that indent when it doesn't, down to minPanelWidth, and the terminal less
+// both margins when it's wider than 80, up to maxPanelWidth. A
+// zero/negative termWidth means no WindowSizeMsg yet — use the design width.
 func panelWidthFor(termWidth int) int {
 	if termWidth <= 0 {
 		return defaultPanelWidth
 	}
-	return max(min(termWidth-2, defaultPanelWidth), minPanelWidth)
+	return max(min(termWidth-2, defaultPanelWidth), min(termWidth-4, maxPanelWidth), minPanelWidth)
+}
+
+// columnsWidthFor is panelWidthFor held at the design width, for the
+// sections laid out in columns: the context gauge and the agent rows keep
+// their layout on a wide terminal rather than spread it across the panel,
+// so their costs stay in the cost rows' column.
+func columnsWidthFor(termWidth int) int {
+	return min(panelWidthFor(termWidth), defaultPanelWidth)
 }
 
 // viewportHeight returns the rows left for the scrollable viewport after the
@@ -275,7 +290,7 @@ func (m Model) renderContextSection() string {
 	// "Context 100%" align.
 	// The panel keeps a minimum width and clips below it; size the gauge to
 	// the columns actually on screen so it drops fields instead.
-	avail := panelWidthFor(m.width)
+	avail := columnsWidthFor(m.width)
 	if m.width > 0 {
 		avail = min(avail, m.width-2)
 	}
@@ -525,7 +540,7 @@ func (m Model) agentTaskColumn(rows []agentRow) agentTasks {
 			want = max(want, lipgloss.Width(row.agent.TaskLabel()))
 		}
 	}
-	room := panelWidthFor(m.width) - (4 + 40 + 3 + 11)
+	room := columnsWidthFor(m.width) - (4 + 40 + 3 + 11)
 	switch {
 	case want == 0:
 		return agentTasks{}
