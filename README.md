@@ -209,7 +209,7 @@ Color is off when output goes to a pipe or file, except for `statusline`, whose 
 
 ## Shell completion
 
-`ficha completion <shell>` prints a completion script for bash, zsh, fish or PowerShell. It completes commands, flag values (`-f`, `--sort-by`, directories for `-p`) and session IDs. In shells that show descriptions, each session ID shows how long ago it was modified, and often its message count.
+`ficha completion <shell>` prints a completion script for bash, zsh, fish or PowerShell. It completes commands, flag values (`-f`, `--sort-by`, `--since`, `--until`, directories for `-p`) and session IDs. In shells that show descriptions, each session ID shows how long ago it was modified, and often its message count.
 
 Each setup below writes only to your home directory. Run it once, then open a new shell. For bash and zsh, `ficha completion <shell> --help` describes a system-wide setup instead, which needs root on Linux.
 

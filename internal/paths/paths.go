@@ -266,7 +266,7 @@ func ResolveProjectDir(projectDirFlag string) (string, error) {
 		if fullPath == projectDirFlag || LooksLikePath(projectDirFlag) {
 			return "", fmt.Errorf("no such directory: %s", projectDirFlag)
 		}
-		return "", fmt.Errorf("no project directory %s in %s. Run 'ficha global' to see every project.", projectDirFlag, filepath.Dir(fullPath))
+		return "", fmt.Errorf("no project directory %s in %s. --project-dir=<Tab> completes the names, or pass the project's own directory with -p.", projectDirFlag, filepath.Dir(fullPath))
 	}
 	if !info.IsDir() {
 		return "", fmt.Errorf("not a directory: %s", fullPath)

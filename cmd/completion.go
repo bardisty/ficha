@@ -17,6 +17,9 @@ import (
 var (
 	formatValues = []string{"table", "json", "csv"}
 	sortByValues = []string{"cost", "sessions", "name", "activity"}
+	// The common --since and --until values. Dates and other ages are
+	// typed out.
+	windowValues = []string{"today", "yesterday", "7d", "30d"}
 )
 
 // countBudgetBytes bounds how much transcript data a session description

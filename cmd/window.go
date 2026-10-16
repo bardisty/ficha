@@ -18,6 +18,8 @@ const windowHelp = "a date (2026-09-01), a time (2026-09-01T14:00), today, yeste
 func addWindowFlags(cmd *cobra.Command, cfg *config) {
 	cmd.Flags().StringVar(&cfg.since, "since", "", "Only count messages from this point on: "+windowHelp)
 	cmd.Flags().StringVar(&cfg.until, "until", "", "Only count messages before this point; a date includes that whole day")
+	_ = cmd.RegisterFlagCompletionFunc("since", fixedValues(windowValues))
+	_ = cmd.RegisterFlagCompletionFunc("until", fixedValues(windowValues))
 }
 
 // timeWindow parses --since and --until against now, in local time.
