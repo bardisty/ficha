@@ -202,8 +202,8 @@ func Execute() {
 	if err == nil {
 		return
 	}
-	if msg := err.Error(); msg != "" {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+	if err.Error() != "" {
+		fmt.Fprint(os.Stderr, formatError(os.Stderr, err))
 	}
 	os.Exit(exitCode(err))
 }

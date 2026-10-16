@@ -878,10 +878,11 @@ func unmark(word string) (string, bool) {
 
 // WrapHanging wraps each line of text to width display columns, breaking
 // only between words. A continuation line is indented to where the line's
-// text starts, past its leading spaces and a "Warning: " or "Note: " label,
-// so a wrapped warning or note reads as one block. A word longer than the
-// room left keeps a line of its own, or stays beside the label, rather than
-// being cut: a URL, path or model ID must survive intact to be copied.
+// text starts, past its leading spaces and a "Warning: ", "Note: ", "Error: "
+// or "Debug: " label, so a wrapped message reads as one block. A word longer
+// than the room left keeps a line of its own, or stays beside the label,
+// rather than being cut: a URL, path or model ID must survive intact to be
+// copied.
 //
 // For the same reason a path marked with NoBreak counts as one word, however
 // many spaces it holds. When it doesn't fit under the indent it starts at
@@ -914,7 +915,7 @@ func wrapHangingLine(line string, width int) string {
 	text := strings.TrimLeft(line, " ")
 	lead := line[:len(line)-len(text)]
 	hang := len(lead)
-	for _, label := range []string{"Warning: ", "Note: "} {
+	for _, label := range []string{"Warning: ", "Note: ", "Error: ", "Debug: "} {
 		if strings.HasPrefix(text, label) {
 			hang += len(label)
 		}
