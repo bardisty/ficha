@@ -15,12 +15,14 @@ func newSummaryCmd(cfg *config) *cobra.Command {
 	summaryCmd := &cobra.Command{
 		Use:   "summary",
 		Short: "Show totals across this project's sessions",
-		Long: `Show aggregate statistics across all Claude Code sessions for the current project.
+		Long: `Show aggregate statistics across all Claude Code sessions for this project.
 
 This calculates the total cost and token usage across all sessions.
 
---details and --expand-agents also enrich json/csv output: --details adds a
-per-session breakdown, --expand-agents adds each session's agent sub-sessions.
+--details adds a per-session breakdown: rows in the table and in csv, a
+sessions array in json. --expand-agents, which needs --details, adds each
+session's agents: tree rows in the table, nested agents in json, agent rows
+in csv.
 
 Examples:
   ficha summary                           Show aggregate stats
@@ -31,9 +33,11 @@ Examples:
   ficha summary --since 2026-09-01 --until 2026-09-30   September
   ficha summary --nested                  Include the repo's worktrees
 
---since and --until count messages by their own timestamps, agents' too, so
-a session that crosses a bound is split at it. They apply to json and csv
-as well as the table.
+` + windowForms + `
+
+Both count messages by their own timestamps, agents' too, so a session that
+crosses a bound is split at it. They apply to json and csv as well as the
+table.
 
 Claude Code records a session under the directory it ran in, so a worktree
 under the repo, from claude --worktree or git worktree add, is a project of
@@ -48,8 +52,8 @@ and --nested counts them in. --details then names each session's project.`,
 
 	addFormatFlag(summaryCmd, cfg, false)
 	addProjectFlags(summaryCmd, cfg)
-	summaryCmd.Flags().BoolVarP(&cfg.showDetails, "details", "d", false, "Add a per-session breakdown (table rows / json sessions / csv rows)")
-	summaryCmd.Flags().BoolVar(&cfg.expandAgents, "expand-agents", false, "Include per-agent records: tree rows (table), nested agents (json), agent rows (csv); requires --details")
+	summaryCmd.Flags().BoolVarP(&cfg.showDetails, "details", "d", false, "Add a per-session breakdown")
+	summaryCmd.Flags().BoolVar(&cfg.expandAgents, "expand-agents", false, "Add each session's agents; needs --details")
 	addWindowFlags(summaryCmd, cfg)
 	addNestedFlag(summaryCmd, cfg)
 

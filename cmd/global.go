@@ -23,20 +23,22 @@ func newGlobalCmd(cfg *config) *cobra.Command {
 This calculates total cost and token usage across every project in
 ~/.claude/projects, or $CLAUDE_CONFIG_DIR/projects when that's set.
 
-json/csv always export every project; --top and --details only shape the table
-(filter downstream with jq/head if you need a subset).
+json/csv always export every project; --top and --details only shape the
+table (filter downstream with jq/head if you need a subset). --details
+shows every project, with a cumulative cost column when sorted by cost.
 
 Examples:
   ficha global                   Show global stats (top 10 projects)
-  ficha global --details         Show all projects, with a cumulative cost column
+  ficha global --details         All projects, with a cumulative cost column
   ficha global --top 20          Show top 20 projects
   ficha global --sort-by name    Sort by project name
   ficha global -f json           Output every project as JSON
   ficha global --since 7d        Every project, the last 7 days
 
---since and --until count messages by their own timestamps, so a session
-that crosses a bound is split at it. They apply to json and csv as well as
-the table.`,
+` + windowForms + `
+
+Both count messages by their own timestamps, so a session that crosses a
+bound is split at it. They apply to json and csv as well as the table.`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -45,9 +47,9 @@ the table.`,
 	}
 
 	addFormatFlag(globalCmd, cfg, false)
-	globalCmd.Flags().BoolVarP(&cfg.globalDetails, "details", "d", false, "Show all projects, plus a cumulative column when sorted by cost (table view only)")
-	globalCmd.Flags().IntVarP(&cfg.globalTopN, "top", "n", 10, "Top projects to show in the table (json/csv always export all)")
-	globalCmd.Flags().StringVar(&cfg.globalSortBy, "sort-by", "cost", "Sort by: cost, sessions, name, activity")
+	globalCmd.Flags().BoolVarP(&cfg.globalDetails, "details", "d", false, "Show every project; cumulative column if sorted by cost")
+	globalCmd.Flags().IntVarP(&cfg.globalTopN, "top", "n", 10, "How many projects the table shows")
+	globalCmd.Flags().StringVar(&cfg.globalSortBy, "sort-by", "cost", "Sort: cost, sessions, name, activity")
 	globalCmd.Flags().BoolVar(&cfg.globalNoCache, "no-cache", false, "Skip cache, force fresh analysis (reserved for future use)")
 	_ = globalCmd.Flags().MarkHidden("no-cache")
 	_ = globalCmd.RegisterFlagCompletionFunc("sort-by", fixedValues(sortByValues))

@@ -13,11 +13,17 @@ import (
 // windowHelp describes the values --since and --until take.
 const windowHelp = "a date (2026-09-01), a time (2026-09-01T14:00), today, yesterday, or an age: 7d, 2w, 12h, 30m"
 
+// windowForms says what windowHelp says, wrapped for the help of each
+// command that takes --since and --until, whose flag lines are too narrow.
+const windowForms = `--since and --until take a date (2026-09-01), a time (2026-09-01T14:00),
+today, yesterday, or an age: 7d, 2w, 12h, 30m. A date in --until includes
+that whole day.`
+
 // addWindowFlags registers --since and --until, which limit a report to the
 // messages timestamped in that range.
 func addWindowFlags(cmd *cobra.Command, cfg *config) {
-	cmd.Flags().StringVar(&cfg.since, "since", "", "Only count messages from this point on: "+windowHelp)
-	cmd.Flags().StringVar(&cfg.until, "until", "", "Only count messages before this point; a date includes that whole day")
+	cmd.Flags().StringVar(&cfg.since, "since", "", "Only count messages from this point on")
+	cmd.Flags().StringVar(&cfg.until, "until", "", "Only count messages before this point")
 	_ = cmd.RegisterFlagCompletionFunc("since", fixedValues(windowValues))
 	_ = cmd.RegisterFlagCompletionFunc("until", fixedValues(windowValues))
 }
