@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
 )
 
@@ -162,5 +163,60 @@ func TestLoadBreakdownCarriesSkippedAgents(t *testing.T) {
 	}
 	if msg.estimatedCosts != 1 {
 		t.Errorf("breakdownMsgsMsg.estimatedCosts: got %d, want 1 (flat-only parent line)", msg.estimatedCosts)
+	}
+}
+
+// breakdown's stats line shortens the accounting note by whole words rather
+// than clip it: the counts in fewer words, then one word for what the totals
+// lack, then the warning sign alone, which still says the line isn't the
+// whole story. Beside a fallback-pricing note it takes the longest form that
+// leaves the other its shortest, but never shrinks to the sign for it.
+func TestBreakdownAccountingNoteFitsWidth(t *testing.T) {
+	const lead = "  Messages: 3 │ Total: $0.0000"
+	for _, tc := range []struct {
+		width                    int
+		agents, lines, estimated int
+		unknown                  []string
+		want                     string // the notes after lead
+	}{
+		{120, 1, 3, 2, nil, " │ ⚠ 1 skipped agent(s), 3 skipped line(s), 2 estimated cost(s)"},
+		{80, 1, 3, 2, nil, " │ ⚠ 1 agent(s), 3 line(s) skipped, 2 estimated"},
+		{60, 1, 3, 2, nil, " │ ⚠ incomplete"},
+		{46, 1, 3, 2, nil, " │ ⚠ incomplete"},
+		{40, 1, 3, 2, nil, " │ ⚠"},
+		{60, 0, 0, 4, nil, " │ ⚠ 4 estimated cost(s)"},
+		{45, 0, 0, 4, nil, " │ ⚠ estimated"},
+		{60, 0, 3, 0, nil, " │ ⚠ 3 skipped line(s)"},
+		{120, 1, 3, 2, []string{"claude-nova-6"}, " │ ⚠ 1 skipped agent(s), 3 skipped line(s), 2 estimated cost(s) │ ⚠ * claude-nova-6"},
+		{100, 1, 3, 2, []string{"claude-nova-6"}, " │ ⚠ 1 agent(s), 3 line(s) skipped, 2 estimated │ ⚠ * claude-nova-6"},
+		{80, 1, 3, 2, []string{"claude-nova-6"}, " │ ⚠ incomplete │ ⚠ * claude-nova-6"},
+		{60, 1, 3, 2, []string{"claude-nova-6"}, " │ ⚠ incomplete"},
+		{40, 1, 3, 2, []string{"claude-nova-6"}, " │ ⚠"},
+		{80, 0, 0, 0, []string{"claude-nova-6"}, " │ ⚠ * claude-nova-6: fallback pricing"},
+	} {
+		for _, noColor := range []bool{true, false} {
+			m := loadedBreakdown(t, tc.width, 24, chromeRows(goldenTime(10, 0, 0), 3))
+			m.noColor = noColor
+			m.skippedAgents, m.skippedLines, m.estimatedCosts = tc.agents, tc.lines, tc.estimated
+			m.unknownModels = tc.unknown
+			line := stripANSI(m.renderStatsTotals())
+			if want := lead + tc.want; line != want {
+				t.Errorf("width %d, %d/%d/%d, %v, noColor %v:\n got %q\nwant %q", tc.width, tc.agents, tc.lines, tc.estimated, tc.unknown, noColor, line, want)
+			}
+			if w := lipgloss.Width(line); w > tc.width {
+				t.Errorf("width %d: line is %d wide", tc.width, w)
+			}
+		}
+	}
+}
+
+// watch's footer keeps the note whole: it wraps onto its own rows rather
+// than share the stats line.
+func TestAccountingNotesStartWithTheFootnote(t *testing.T) {
+	if got, want := accountingNotes(1, 3, 2)[0], accountingFootnote(1, 3, 2); got != want {
+		t.Errorf("accountingNotes' first form = %q, want accountingFootnote's %q", got, want)
+	}
+	if got := accountingNotes(0, 0, 0); got != nil {
+		t.Errorf("nothing to report: %q", got)
 	}
 }

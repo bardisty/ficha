@@ -178,6 +178,120 @@ func TestBreakdownDated_MidnightKeepsReadersLine(t *testing.T) {
 	}
 }
 
+// A reload, s or a resize that lands between midnight and the next clock
+// tick dates the session too, and keeps the reader's line as the tick does.
+// The tick after it finds nothing new and leaves the line where it is.
+func TestBreakdownDated_MidnightKeepsReadersLineOnEveryPath(t *testing.T) {
+	msgs := chromeRows(goldenTime(10, 0, 0), 40)
+	for name, cross := range map[string]func(*testing.T, BreakdownModel) BreakdownModel{
+		"reload": func(t *testing.T, m BreakdownModel) BreakdownModel {
+			updated, _ := m.Update(breakdownMsgsMsg{messages: msgs, insights: &models.MessageInsights{}})
+			return updated.(BreakdownModel)
+		},
+		"s twice": func(t *testing.T, m BreakdownModel) BreakdownModel {
+			return press(t, press(t, m, "s"), "s")
+		},
+		"resize": func(t *testing.T, m BreakdownModel) BreakdownModel {
+			updated, _ := m.Update(tea.WindowSizeMsg{Width: 81, Height: 24})
+			return updated.(BreakdownModel)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			now := goldenTime(23, 59, 0)
+			m := datedBreakdown(t, 80, 24, now, msgs)
+			m.now = func() time.Time { return now }
+			m = press(t, press(t, m, "g"), "j", "j", "j", "j", "j")
+			top := tableLinesOf(m)[m.viewport.YOffset()]
+			if !strings.HasPrefix(top, "6 ") {
+				t.Fatalf("setup: row 6 should top the view: %q", top)
+			}
+			now = goldenTime(0, 1, 0).AddDate(0, 0, 1)
+			if m = cross(t, m); !m.dated {
+				t.Fatal("the session should be dated after midnight")
+			}
+			if got := tableLinesOf(m)[m.viewport.YOffset()]; got != top {
+				t.Errorf("after the %s, the top row is %q, want %q", name, got, top)
+			}
+			updated, _ := m.Update(clockMsg{gen: m.clockGen})
+			m = updated.(BreakdownModel)
+			if got := tableLinesOf(m)[m.viewport.YOffset()]; got != top {
+				t.Errorf("the tick after the %s moved the top row to %q, want %q", name, got, top)
+			}
+		})
+	}
+}
+
+// A reload that empties the table, as a truncated transcript does, takes
+// its divider away, and the reload that brings the rows back brings it
+// back if it was there. Rows that were today's and come back dated, the
+// day having turned while the table was empty, add the divider, and the
+// reader's line moves past it, as on a tick.
+func TestBreakdownDated_RowsComingBackKeepTheLine(t *testing.T) {
+	msgs := chromeRows(goldenTime(10, 0, 0), 40)
+	reload := func(m BreakdownModel, rows []models.BreakdownMessage) BreakdownModel {
+		updated, _ := m.Update(breakdownMsgsMsg{messages: rows, insights: &models.MessageInsights{}})
+		return updated.(BreakdownModel)
+	}
+	tick := func(m BreakdownModel) BreakdownModel {
+		updated, _ := m.Update(clockMsg{gen: m.clockGen})
+		return updated.(BreakdownModel)
+	}
+	for _, tc := range []struct {
+		name  string
+		start time.Time
+		// emptied runs while the table is empty; now moves the clock
+		emptied func(m BreakdownModel, now *time.Time) BreakdownModel
+	}{
+		{"a past day's rows, same day", goldenTime(12, 0, 0).AddDate(0, 0, 2), func(m BreakdownModel, _ *time.Time) BreakdownModel { return m }},
+		{"a past day's rows, midnight with no tick", goldenTime(23, 59, 0).AddDate(0, 0, 2), func(m BreakdownModel, now *time.Time) BreakdownModel {
+			*now = goldenTime(0, 1, 0).AddDate(0, 0, 3)
+			return m
+		}},
+		{"today's rows, midnight with no tick", goldenTime(23, 59, 0), func(m BreakdownModel, now *time.Time) BreakdownModel {
+			*now = goldenTime(0, 1, 0).AddDate(0, 0, 1)
+			return m
+		}},
+		{"today's rows, midnight on a tick", goldenTime(23, 59, 0), func(m BreakdownModel, now *time.Time) BreakdownModel {
+			*now = goldenTime(0, 1, 0).AddDate(0, 0, 1)
+			return tick(m)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			now := tc.start
+			m := datedBreakdown(t, 80, 24, now, msgs)
+			m.now = func() time.Time { return now }
+			m = press(t, press(t, m, "g"), "j", "j", "j", "j", "j")
+			top := tableLinesOf(m)[m.viewport.YOffset()]
+			m = reload(tc.emptied(reload(m, nil), &now), msgs)
+			if !m.dated {
+				t.Fatal("the session should be dated")
+			}
+			if got := tableLinesOf(m)[m.viewport.YOffset()]; got != top {
+				t.Errorf("after the rows came back, the top row is %q, want %q", got, top)
+			}
+			if m = tick(m); tableLinesOf(m)[m.viewport.YOffset()] != top {
+				t.Errorf("the tick after moved the top row to %q, want %q", tableLinesOf(m)[m.viewport.YOffset()], top)
+			}
+		})
+	}
+}
+
+// s back to time order is the first relayout after midnight when the
+// session went into cost order before it: the line s returns to moves past
+// the divider.
+func TestBreakdownDated_LeavingCostOrderAfterMidnightKeepsTheLine(t *testing.T) {
+	now := goldenTime(23, 59, 0)
+	m := datedBreakdown(t, 80, 24, now, chromeRows(goldenTime(10, 0, 0), 40))
+	m.now = func() time.Time { return now }
+	m = press(t, press(t, m, "g"), "j", "j", "j", "j", "j")
+	top := tableLinesOf(m)[m.viewport.YOffset()]
+	m = press(t, m, "s")
+	now = goldenTime(0, 1, 0).AddDate(0, 0, 1)
+	if m = press(t, m, "s"); tableLinesOf(m)[m.viewport.YOffset()] != top {
+		t.Errorf("s returned to %q, want %q", tableLinesOf(m)[m.viewport.YOffset()], top)
+	}
+}
+
 // Short of room for the Peak's date, the line drops the multiplier first,
 // then the date, then the weekday, then the time.
 func TestBreakdownDated_PeakDateGivesWay(t *testing.T) {

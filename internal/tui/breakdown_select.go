@@ -109,6 +109,9 @@ func (m *BreakdownModel) toggleSort() {
 		m.scrollTo(0)
 		return
 	}
+	// The time-order line is the one to keep if this relayout finds the
+	// session newly dated.
+	m.chosenY = m.timeYOffset
 	m.sortByCost = false
 	m.relayout()
 	m.refreshViewport()
@@ -118,7 +121,7 @@ func (m *BreakdownModel) toggleSort() {
 		m.setFollow(true)
 		return
 	}
-	m.returnTo(m.timeYOffset)
+	m.returnTo(m.chosenY)
 }
 
 // selectedRank returns the selected row's position in top and its rank, or
