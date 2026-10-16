@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/bardisty/ficha/internal/analyzer"
 	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/styles"
@@ -436,6 +438,84 @@ func TestSessionListCountsUnreadableApart(t *testing.T) {
 		}
 		if w := maxLineWidth(out); w > width {
 			t.Errorf("width %d: widest line is %d:\n%s", width, w, out)
+		}
+	}
+}
+
+// A title cut at a space loses the space too, as show and watch cut tasks:
+// "Refactor the…", not "Refactor the …".
+func TestSessionListCutsTitlesWithoutASpaceBeforeTheEllipsis(t *testing.T) {
+	cuts := 0
+	for width := 40; width <= 120; width++ {
+		opts := goldenListOptions
+		opts.Width = width
+		out := FormatSessionListTable(goldenListResults(), true, opts)
+		if strings.Contains(out, " "+styles.Ellipsis) {
+			t.Errorf("width %d: a space before the ellipsis:\n%s", width, out)
+		}
+		cuts += strings.Count(out, "Refactor the"+styles.Ellipsis)
+	}
+	if cuts == 0 {
+		t.Error("no width cut the title at a space, so nothing was checked")
+	}
+}
+
+// listHeaderReference is list's header as FormatSessionListTable fitted it
+// with its own copy of renderPanel's room math, the reference the shared
+// panelFits must agree with.
+func listHeaderReference(results []models.SessionResult, opts ListTableOptions, width int) string {
+	readable := 0
+	for _, r := range results {
+		if r.Analysis != nil {
+			readable++
+		}
+	}
+	count := fmt.Sprintf("%d %s", readable, sessionsWord(readable))
+	fields := []string{count}
+	if unreadable := len(results) - readable; unreadable > 0 {
+		fields[0] += fmt.Sprintf(", %d unreadable", unreadable)
+	}
+	giveWay := []int{panelLead}
+	if opts.Window != nil {
+		when := spanOrWindow(opts.Window, time.Time{}, time.Time{})
+		if lipgloss.Width(when) > width-6 {
+			when = strings.TrimPrefix(when, "Window: ")
+		}
+		fields = append(fields, when)
+		giveWay = []int{panelLead, 0}
+	}
+	fits := func(head string, project bool) bool {
+		need := append([]string{head}, fields[1:]...)
+		if project && models.StripControl(opts.Project) != "" {
+			need = append(need, strings.Repeat(" ", min(lipgloss.Width(models.StripControl(opts.Project)), minProjectWidth)))
+		}
+		return lipgloss.Width(strings.Join(need, "  "+styles.BoxVerticalSep+"  ")) <= width-6
+	}
+	if !fits(fields[0], true) && (fits(count, true) || !fits(fields[0], false)) {
+		fields[0] = count
+	}
+	return renderPanel(opts.Project, fields, giveWay, width, true)
+}
+
+// list's header reads the same at every width as it did when list fitted it
+// with its own copy of renderPanel's math.
+func TestSessionListHeaderMatchesItsReference(t *testing.T) {
+	window := &models.TimeWindow{Since: time.Date(2026, 1, 8, 0, 0, 0, 0, time.Local)}
+	until := &models.TimeWindow{Since: time.Date(2025, 12, 1, 0, 0, 0, 0, time.Local), Until: time.Date(2026, 1, 1, 0, 0, 0, 0, time.Local)}
+	for _, project := range []string{"~/src/app", "~/source/webapp-api", "", "~/work/日本語のプロジェクト", "~/source/a-rather-long-project-directory-name"} {
+		for _, w := range []*models.TimeWindow{nil, window, until} {
+			for _, results := range [][]models.SessionResult{goldenListResults(), goldenListResults()[:2]} {
+				for width := 40; width <= 120; width++ {
+					opts := goldenListOptions
+					opts.Project, opts.Window, opts.Width = project, w, width
+					out := FormatSessionListTable(results, true, opts)
+					lines := strings.SplitN(out, "\n", 4)
+					got := strings.Join(lines[:3], "\n")
+					if want := listHeaderReference(results, opts, lipgloss.Width(lines[0])); got != want {
+						t.Errorf("project %q, window %v, %d results, width %d:\n got\n%s\nwant\n%s", project, w, len(results), width, got, want)
+					}
+				}
+			}
 		}
 	}
 }

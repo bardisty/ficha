@@ -595,6 +595,5 @@ func fitWorkflowLabel(prefix string, meta models.WorkflowMeta, width int, status
 	if lipgloss.Width(label) <= width {
 		return label
 	}
-	cut := strings.TrimSuffix(render.TruncateRight(label, width), styles.Ellipsis)
-	return strings.TrimRight(cut, " ") + styles.Ellipsis
+	return render.TruncateRight(label, width)
 }
