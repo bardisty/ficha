@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -59,6 +60,111 @@ var stderrWidth = terminalWidth
 // wrapped or not, since this is where the path's spaces are put back.
 func wrapStderr(stderr io.Writer, text string) string {
 	return render.WrapHanging(text, stderrWidth(stderr))
+}
+
+// errorLabel starts every error ficha prints, and indents the lines after
+// an error's first on a terminal.
+const errorLabel = "Error: "
+
+// formatError is err as Execute prints it. Off a terminal it's "Error: "
+// and the message, one line per line of it, the same bytes whatever names
+// the message holds, for logs and scripts to match on. On one, a
+// displayError's paths under home read as ~ and keep whole with its
+// commands, every line after the first hangs under the message, and each
+// wraps between words like a note.
+func formatError(stderr io.Writer, err error) string {
+	msg := err.Error()
+	width := stderrWidth(stderr)
+	if width <= 0 {
+		return errorLabel + msg + "\n"
+	}
+	// A wrapper that adds words of its own would lose them to the display
+	// form, so only an error whose message is the displayError's takes it.
+	var d *displayError
+	if errors.As(err, &d) && d.Error() == msg {
+		msg = d.onTerminal()
+	}
+	msg = strings.ReplaceAll(msg, "\n", "\n"+strings.Repeat(" ", len(errorLabel)))
+	return render.WrapHanging(errorLabel+msg+"\n", width)
+}
+
+// displayError is an error message that names paths and commands, built a
+// piece at a time with add. Error() is the plain message. onTerminal is the
+// one a terminal shows, where errPath, errWhole and errCommand arguments
+// take the forms their types describe.
+type displayError struct {
+	pieces []errorPiece
+}
+
+type errorPiece struct {
+	format string
+	args   []any
+}
+
+func newDisplayError(format string, args ...any) *displayError {
+	e := &displayError{}
+	e.add(format, args...)
+	return e
+}
+
+func (e *displayError) add(format string, args ...any) {
+	e.pieces = append(e.pieces, errorPiece{format, args})
+}
+
+func (e *displayError) Error() string {
+	var sb strings.Builder
+	for _, p := range e.pieces {
+		fmt.Fprintf(&sb, p.format, p.args...)
+	}
+	return sb.String()
+}
+
+func (e *displayError) onTerminal() string {
+	var sb strings.Builder
+	for _, p := range e.pieces {
+		args := make([]any, len(p.args))
+		for i, a := range p.args {
+			switch a := a.(type) {
+			case errPath:
+				args[i] = render.NoBreak(tildePath(string(a)))
+			case errWhole:
+				args[i] = render.NoBreak(string(a))
+			case errCommand:
+				args[i] = render.NoBreak(a.onTerminal())
+			default:
+				args[i] = a
+			}
+		}
+		fmt.Fprintf(&sb, p.format, args...)
+	}
+	return sb.String()
+}
+
+// errPath is a path. A terminal shows it as ~/… when it's under home, which
+// is how a typed ~/… reads too, as the shell expanded it.
+type errPath string
+
+// errWhole is text a terminal keeps on one line, as a command with no path
+// in it.
+type errWhole string
+
+// errCommand is a command to paste back, as in "ficha list -p ~/work/webapp":
+// text, then path quoted for the shell. A terminal shows path under home as
+// ~/… unless the shell needs it quoted, since a shell doesn't expand ~
+// inside quotes.
+type errCommand struct {
+	text, path string
+}
+
+func (c errCommand) String() string {
+	return c.text + shellQuote(c.path)
+}
+
+func (c errCommand) onTerminal() string {
+	if shellQuote(c.path) != c.path {
+		return c.String()
+	}
+	return c.text + tildePath(c.path)
 }
 
 // writeNote writes "Note: " and the formatted text to stderr as one line,

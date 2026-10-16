@@ -17,10 +17,18 @@ import (
 
 // tracef prints one step of project and session resolution under -v, so a
 // "can't find sessions" error can be traced to the directory ficha looked in.
+// On a terminal the line wraps like a note, keeping each absolute path in
+// args whole.
 func (cfg *config) tracef(format string, args ...any) {
-	if cfg.verbose && cfg.stderr != nil {
-		fmt.Fprintf(cfg.stderr, "Debug: "+format+"\n", args...)
+	if !cfg.verbose || cfg.stderr == nil {
+		return
 	}
+	for i, a := range args {
+		if p, ok := a.(string); ok && filepath.IsAbs(p) {
+			args[i] = render.NoBreak(p)
+		}
+	}
+	fmt.Fprint(cfg.stderr, wrapStderr(cfg.stderr, fmt.Sprintf("Debug: "+format+"\n", args...)))
 }
 
 // command is the command as typed, for suggestions the user can paste back.
@@ -44,9 +52,9 @@ func projectsDirOrigin() string {
 // has never run as this user.
 func noDataError(projectsDir string) error {
 	if os.Getenv("CLAUDE_CONFIG_DIR") != "" {
-		return fmt.Errorf("no Claude Code data in %s (from CLAUDE_CONFIG_DIR). Check that CLAUDE_CONFIG_DIR points at Claude Code's config directory.", projectsDir)
+		return newDisplayError("no Claude Code data in %s (from CLAUDE_CONFIG_DIR). Check that CLAUDE_CONFIG_DIR points at Claude Code's config directory.", errPath(projectsDir))
 	}
-	return fmt.Errorf("no Claude Code data in %s (default ~/.claude). Start Claude Code in a project, then run ficha from the same directory.", projectsDir)
+	return newDisplayError("no Claude Code data in %s (default ~/.claude). Start Claude Code in a project, then run ficha from the same directory.", errPath(projectsDir))
 }
 
 // projectArgs is the flag that selects proj: -p with its real path, which
@@ -55,10 +63,15 @@ func noDataError(projectsDir string) error {
 // WSL) isn't absolute here and can't resolve, so it gets the encoded
 // directory name instead.
 func projectArgs(proj models.ProjectInfo) string {
+	return suggestProject("", proj).String()
+}
+
+// suggestProject is command followed by projectArgs, for an error.
+func suggestProject(command string, proj models.ProjectInfo) errCommand {
 	if filepath.IsAbs(proj.OriginalPath) {
-		return "-p " + shellQuote(proj.OriginalPath)
+		return errCommand{text: command + "-p ", path: proj.OriginalPath}
 	}
-	return "--project-dir=" + shellQuote(proj.EncodedPath)
+	return errCommand{text: command + "--project-dir=", path: proj.EncodedPath}
 }
 
 // typedProjectArgs repeats the project flag the user passed, if any, so a
@@ -140,7 +153,7 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 		// From WSL, noDataError's advice to start Claude Code in a project is
 		// wrong: the user did, in WSL, where this build doesn't look.
 		if hint := wslHint(canonical); hint != "" {
-			return resolvedProject{}, fmt.Errorf("no Claude Code data in %s (default ~/.claude).%s", projectsDir, hint)
+			return resolvedProject{}, newDisplayError("no Claude Code data in %s (default ~/.claude).%s", errPath(projectsDir), hint)
 		}
 		return resolvedProject{}, noDataError(projectsDir)
 	}
@@ -229,34 +242,36 @@ func hasProjects(projectsDir string) bool {
 // directory Claude Code never ran in. Next steps are parent, the nearest
 // parent that has sessions ("" for none), and projects with a similar name.
 func noProjectError(cfg *config, projPath, canonical, parent string, allProjects []models.ProjectInfo) error {
-	var similar strings.Builder
-	if projects := similarProjects(canonical, allProjects); len(projects) > 0 {
-		similar.WriteString("\nProjects with a similar name:")
-		for _, p := range projects {
-			fmt.Fprintf(&similar, "\n  %s %s", cfg.command(), projectArgs(p))
+	addSimilar := func(e *displayError) {
+		if projects := similarProjects(canonical, allProjects); len(projects) > 0 {
+			e.add("\nProjects with a similar name:")
+			for _, p := range projects {
+				e.add("\n  %s", suggestProject(cfg.command()+" ", p))
+			}
 		}
 	}
 
 	if info, err := os.Stat(projPath); err != nil {
-		return fmt.Errorf("no such directory: %s%s", projPath, similar.String())
+		e := newDisplayError("no such directory: %s", errPath(projPath))
+		addSimilar(e)
+		return e
 	} else if !info.IsDir() {
-		return fmt.Errorf("not a directory: %s", projPath)
+		return newDisplayError("not a directory: %s", errPath(projPath))
 	}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Claude Code has no sessions for %s. Sessions are recorded per directory Claude Code was started in.", canonical)
+	e := newDisplayError("Claude Code has no sessions for %s. Sessions are recorded per directory Claude Code was started in.", errPath(canonical))
 	hint := wslHint(canonical)
-	sb.WriteString(hint)
+	e.add("%s", hint)
 	if parent != "" {
-		fmt.Fprintf(&sb, "\nFound sessions for parent directory %s. Run: %s -p %s", parent, cfg.command(), shellQuote(parent))
+		e.add("\nFound sessions for parent directory %s. Run: %s", errPath(parent), errCommand{text: cfg.command() + " -p ", path: parent})
 	}
-	sb.WriteString(similar.String())
+	addSimilar(e)
 	// Every project this build can list is on the Windows side, so for a
 	// directory in WSL the list is no help.
 	if hint == "" {
-		sb.WriteString("\nRun 'ficha global' to see every project.")
+		e.add("\nRun %s to see every project.", errWhole("'ficha global'"))
 	}
-	return errors.New(sb.String())
+	return e
 }
 
 // ancestorWithProject returns the nearest parent of dir whose Claude project
@@ -368,12 +383,11 @@ func similarProjects(dir string, allProjects []models.ProjectInfo) []models.Proj
 // ambiguousProjectError lists the projects sharing dir's name as commands to
 // pick one with.
 func ambiguousProjectError(cfg *config, dir string, e *paths.AmbiguousProjectError) error {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Claude Code has no sessions for %s, and %d projects share its name %q. Pick one:", dir, len(e.Matches), e.Basename)
+	d := newDisplayError("Claude Code has no sessions for %s, and %d projects share its name %q. Pick one:", errPath(dir), len(e.Matches), e.Basename)
 	for _, p := range e.Matches {
-		fmt.Fprintf(&sb, "\n  %s %s", cfg.command(), projectArgs(p))
+		d.add("\n  %s", suggestProject(cfg.command()+" ", p))
 	}
-	return errors.New(sb.String())
+	return d
 }
 
 // noSessionsError explains a project directory that holds no transcripts.
@@ -382,10 +396,10 @@ func ambiguousProjectError(cfg *config, dir string, e *paths.AmbiguousProjectErr
 func noSessionsError(cfg *config, project resolvedProject) error {
 	projectsDir, _ := paths.GetProjectsDir()
 	if cfg.projectDir != "" && paths.LooksLikePath(cfg.projectDir) && !isWithin(project.dir, projectsDir) {
-		return fmt.Errorf("%s has no Claude Code sessions. --project-dir takes a directory under %s. For sessions started in %s, run: %s -p %s",
-			cfg.projectDir, projectsDir, cfg.projectDir, cfg.command(), shellQuote(cfg.projectDir))
+		return newDisplayError("%s has no Claude Code sessions. --project-dir takes a directory under %s. For sessions started in %s, run: %s",
+			errPath(cfg.projectDir), errPath(projectsDir), errPath(cfg.projectDir), errCommand{text: cfg.command() + " -p ", path: cfg.projectDir})
 	}
-	return fmt.Errorf("Claude Code has no sessions for %s yet%s", project.label, wslHint(project.label))
+	return newDisplayError("Claude Code has no sessions for %s yet%s", errPath(project.label), wslHint(project.label))
 }
 
 // wslHint explains the Windows build run from a directory inside WSL, when
