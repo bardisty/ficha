@@ -86,6 +86,31 @@ func TestHeaderStatusIsNeverCutMidWord(t *testing.T) {
 	}
 }
 
+// A first load that failed knows nothing of the session, so the header says
+// nothing of its messages; an error on a later reload keeps what the last
+// good load found.
+func TestHeaderLeavesOutTheStatusAfterAFailedFirstLoad(t *testing.T) {
+	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	p := liveHeaderParams{sessionID: sessA, noColor: true, project: "webapp", mode: "PINNED", now: now, err: errors.New("x")}
+	for width := minPanelWidth; width <= 80; width++ {
+		p.width = width
+		box := stripANSI(strings.Split(renderLiveHeaderPanel(p), "\n")[1])
+		if lipgloss.Width(box) != width+2 {
+			t.Errorf("width %d: box line is %d wide: %q", width, lipgloss.Width(box), box)
+		}
+		if strings.Contains(box, "no m") || strings.HasSuffix(strings.TrimRight(strings.TrimSuffix(strings.TrimRight(box, " "), "║"), " "), "│") {
+			t.Errorf("width %d: %q, want the header to end at the mode", width, box)
+		}
+	}
+	if got, want := fitStatusHeader(p, 74), "webapp │ aaaaaaaa │ ● PINNED"; got != want {
+		t.Errorf("failed first load: %q, want %q", got, want)
+	}
+	p.lastActivity = now.Add(-12 * time.Second)
+	if got, want := fitStatusHeader(p, 74), "webapp │ aaaaaaaa │ ● PINNED │ last msg 12s ago"; got != want {
+		t.Errorf("failed reload: %q, want %q", got, want)
+	}
+}
+
 // The status gives up its words before the project gives up anything, so
 // the project reads the same whether the session is empty, active or idle.
 func TestHeaderShortensTheStatusBeforeTheProject(t *testing.T) {
