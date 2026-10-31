@@ -251,16 +251,25 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		// agents' tasks, models and workflow labels are cut.
 		maxModelWidth := modelWidth + max(width-rowWidth(), 0)
 		maxCostCol := costCol() + maxModelWidth - modelWidth
-		taskWant := 0
+		taskWant, cellWant := 0, 0
 		for _, r := range sorted {
 			if r.Analysis != nil {
 				taskWant = max(taskWant, agentTaskWidth(r.Analysis.Agents))
+				cellWant = max(cellWant, tasklessCountWidth(r.Analysis.Agents))
 			}
 		}
-		// taskRoom is the widest task, up to taskWant, that every tree fits
-		// before maxCostCol with 10-column models.
+		// Without the count, an agent with no task shows its count in the
+		// task's cell, so the cell wants room for that too. Every tree shares
+		// the column, so that's any session's agent, even in a session with
+		// no task of its own.
+		cellWant = max(cellWant, taskWant)
+		// taskRoom is the widest task cell, up to what it wants, that every
+		// tree fits before maxCostCol with 10-column models.
 		taskRoom := func(msgs bool) int {
 			room := taskWant
+			if !msgs {
+				room = cellWant
+			}
 			for _, r := range sorted {
 				if r.Analysis != nil && len(r.Analysis.Agents) > 0 {
 					room = min(room, maxCostCol-2-agentTreeWidth(r.Analysis, 10, msgs, 0)-1)
@@ -269,11 +278,13 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 			return room
 		}
 		if taskWant > 0 {
+			want := taskWant
 			if treeTask = taskRoom(true); treeTask < taskWant {
 				treeMsgs = false
 				treeTask = taskRoom(false)
+				want = cellWant
 			}
-			if treeTask < min(taskWant, render.MinTaskWidth) {
+			if treeTask < min(want, render.MinTaskWidth) {
 				treeTask = 0
 				treeMsgs = true
 			}
@@ -537,14 +548,18 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 		task := ""
 		if layout.task > 0 {
 			room -= layout.task + 1
-			task = render.FitTask(agent.TaskLabel(), layout.task) + " "
+			count := ""
+			if !layout.msgs {
+				count = render.MsgCount(agent.MessageCount)
+			}
+			task = render.TaskCell(agent.TaskLabel(), count, layout.task, noColor) + " "
 		}
 		if layout.msgs {
 			room -= 1 + msgsWidth
 		}
 		modelWidth := min(10, max(room, minModelWidth))
 		model := fmt.Sprintf("%-*s", modelWidth, render.ClampModel(modelName, modelWidth))
-		msgs := fmt.Sprintf("%*s", msgsWidth, agentMsgs(agent.MessageCount))
+		msgs := fmt.Sprintf("%*s", msgsWidth, render.MsgCount(agent.MessageCount))
 		if !noColor {
 			marker = lipgloss.NewStyle().Foreground(styles.GetAgentColor(agent.AgentID)).Render(marker)
 			model = lipgloss.NewStyle().Foreground(styles.GetModelColor(modelName)).Render(model)

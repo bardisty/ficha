@@ -554,17 +554,21 @@ const agentMsgsWidth = 9
 // agentTaskColumn fits the drawn agent rows' tasks into the room the panel
 // has past the 58-column rows, as show does: beside the count when the
 // widest fits whole, then in the count's place, cut to fit, and gone when
-// that would cut it below render.MinTaskWidth. So the task gives way after
-// the count and before the reading and the cost. The rows stay inside the
+// that would cut it below render.MinTaskWidth, or below the count that an
+// agent without a task shows there instead. So the task gives way after the
+// count and before the reading and the cost. The rows stay inside the
 // panel, as every row of watch does, so a long task is cut shorter than
 // show cuts it on a wide terminal. The column takes all the room it has
 // rather than the widest task's width, so the cost column moves once when
 // the first task appears, not again with each new agent.
 func (m Model) agentTaskColumn(rows []agentRow) agentTasks {
-	want := 0
+	want, countWant := 0, 0
 	for _, row := range rows {
 		if row.kind == agentRowAgent {
 			want = max(want, lipgloss.Width(row.agent.TaskLabel()))
+			if row.agent.TaskLabel() == "" {
+				countWant = max(countWant, lipgloss.Width(render.MsgCount(row.agent.MessageCount)))
+			}
 		}
 	}
 	room := columnsWidthFor(m.width) - (4 + 40 + 3 + 11)
@@ -573,7 +577,7 @@ func (m Model) agentTaskColumn(rows []agentRow) agentTasks {
 		return agentTasks{}
 	case 1+want <= room:
 		return agentTasks{width: room - 1}
-	case room+agentMsgsWidth-1 >= min(want, render.MinTaskWidth):
+	case room+agentMsgsWidth-1 >= min(max(want, countWant), render.MinTaskWidth):
 		return agentTasks{width: room + agentMsgsWidth - 1, noMsgs: true}
 	default:
 		return agentTasks{}
@@ -589,7 +593,7 @@ func (m Model) agentTaskColumn(rows []agentRow) agentTasks {
 // agentShrink's for the section's rows.
 func (m Model) agentColumns(n int, c *models.ContextUsage, noMsgs bool, shrink int) (msgs, ctx, gap string) {
 	width := 3 - shrink
-	msgs = fmt.Sprintf(" %8s", msgCount(n))
+	msgs = fmt.Sprintf(" %8s", render.MsgCount(n))
 	if noMsgs {
 		msgs = ""
 	}
@@ -636,7 +640,11 @@ func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool, tasks ag
 	msgs, ctx, gap := m.agentColumns(agent.MessageCount, agent.Context, tasks.noMsgs, m.agentShrink(tasks))
 	task := ""
 	if tasks.width > 0 {
-		task = render.FitTask(agent.TaskLabel(), tasks.width) + " "
+		count := ""
+		if tasks.noMsgs {
+			count = render.MsgCount(agent.MessageCount)
+		}
+		task = render.TaskCell(agent.TaskLabel(), count, tasks.width, m.noColor) + " "
 	}
 	if m.noColor {
 		return fmt.Sprintf("  %s %-10s %s%-11s%s%s%s%s\n",
@@ -655,14 +663,6 @@ func (m Model) renderAgentRow(agent models.AgentAnalysis, running bool, tasks ag
 
 	return fmt.Sprintf("  %s %s %s%s%s%s%s%s\n",
 		dot, markerStyled, task, modelStyled, dimMsgs(msgs), ctx, gap, costStr)
-}
-
-// msgCount is "1 msg" or "N msgs".
-func msgCount(n int) string {
-	if n == 1 {
-		return "1 msg"
-	}
-	return render.Count(n) + " msgs"
 }
 
 // renderInsightsContent renders just the insights content (no header)

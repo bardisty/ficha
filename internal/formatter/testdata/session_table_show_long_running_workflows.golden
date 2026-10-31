@@ -27,9 +27,9 @@
   [Af6e5d4c] code-reviewer                  Sonnet 5     38% ctx     $1.58
   ── workflow: audit-codebase (running)                              $1.65
   [Aw1a2b3c] Check every query in the bill… Opus 4.8     90% ctx     $1.10
-  [Aw6e5d4c]                                Sonnet 5                 $0.5500
+  [Aw6e5d4c] 1 msg                          Sonnet 5                 $0.5500
   ── workflow: review-changes-across-the… (completed)                $0.7500
-  [Ar1e2v3i]                                Sonnet 5                 $0.7500
+  [Ar1e2v3i] 9 msgs                         Sonnet 5                 $0.7500
   Agents subtotal                                                    $4.40
 
 ────────────────────────────[ MESSAGE INSIGHTS ]────────────────────────────

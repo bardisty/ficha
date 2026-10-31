@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 // longTask is as long as a real agent's description gets.
@@ -66,10 +67,37 @@ func checkTaskRows(t *testing.T, out string, width int) {
 	}
 }
 
+// rowOf is the line of out that carries marker.
+func rowOf(out, marker string) string {
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.Contains(line, marker) {
+			return line
+		}
+	}
+	return ""
+}
+
+// checkCountInTaskCell checks the taskless agent's row in a report whose
+// task column has taken the count's place: its count fills its task cell,
+// once, and dimmed in color.
+func checkCountInTaskCell(t *testing.T, width int, out string, noColor bool) {
+	t.Helper()
+	plain := ansiRe.ReplaceAllString(out, "")
+	row := rowOf(plain, "[Ae1b2c3d]")
+	if !strings.Contains(row, "[Ae1b2c3d] 9 msgs ") || strings.Count(row, "msgs") != 1 {
+		t.Errorf("width %d: want the taskless agent's count in its task cell, once:\n%s", width, plain)
+	}
+	if !noColor && !strings.Contains(rowOf(out, "Ae1b2c3d"), styles.DimStyle.Render("9 msgs")) {
+		t.Errorf("width %d: want the count in the task cell dimmed: %q", width, rowOf(out, "Ae1b2c3d"))
+	}
+}
+
 // show's agent rows give a task the room the width has: the message count
 // goes before a task is cut, a task is cut by display width with an
 // ellipsis, and below render.MinTaskWidth the tasks go and the rows are as
-// they are without them. Every cost stays in one column.
+// they are without them. Every cost stays in one column. Once the count
+// column has gone, an agent without a task shows its count in the task's
+// cell instead of a blank.
 func TestAgentBreakdownTasks(t *testing.T) {
 	for _, tt := range []struct {
 		width          int
@@ -102,8 +130,11 @@ func TestAgentBreakdownTasks(t *testing.T) {
 			if got := strings.Contains(plain, "] Check every"); got != tt.tasks {
 				t.Errorf("width %d: tasks shown %v, want %v:\n%s", tt.width, got, tt.tasks, plain)
 			}
-			if got := strings.Contains(plain, "msgs"); got != tt.msgs {
+			if got := strings.Contains(rowOf(plain, "[A1b2c3d4]"), "msgs"); got != tt.msgs {
 				t.Errorf("width %d: message counts shown %v, want %v:\n%s", tt.width, got, tt.msgs, plain)
+			}
+			if tt.tasks && !tt.msgs {
+				checkCountInTaskCell(t, tt.width, out, noColor)
 			}
 			if tt.cut != "" && !strings.Contains(plain, "] "+tt.cut+" ") {
 				t.Errorf("width %d: want the long task cut to %q:\n%s", tt.width, tt.cut, plain)
@@ -122,6 +153,18 @@ func TestAgentBreakdownShortTasksKeepMessageCount(t *testing.T) {
 	agents[1].Description = "Find the router"
 	out := formatAgentBreakdownContent(taskAnalysis(agents), 76, true)
 	want := "  [Ad1b2c3d] code-reviewer   Sonnet 5       1 msg  25% ctx     $0.4200\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("want the row\n%q\nin\n%s", want, out)
+	}
+}
+
+// Where the count column stays beside the tasks, an agent without a task
+// keeps a blank cell and its count stays in its column, so the count never
+// prints twice.
+func TestAgentBreakdownCountStaysInItsColumnBesideTasks(t *testing.T) {
+	agents := taskAgents()[3:]
+	out := formatAgentBreakdownContent(taskAnalysis(agents), 76, true)
+	want := "  [Ae1b2c3d]               Sonnet 5      9 msgs  25% ctx     $0.4200\n"
 	if !strings.Contains(out, want) {
 		t.Errorf("want the row\n%q\nin\n%s", want, out)
 	}
@@ -155,8 +198,11 @@ func TestSummaryTreeTasks(t *testing.T) {
 			if got := strings.Contains(plain, "] Check every"); got != tt.tasks {
 				t.Errorf("width %d: tasks shown %v, want %v:\n%s", tt.width, got, tt.tasks, plain)
 			}
-			if got := strings.Contains(plain, " msgs"); got != tt.msgs {
+			if got := strings.Contains(rowOf(plain, "[A1b2c3d4]"), " msgs"); got != tt.msgs {
 				t.Errorf("width %d: message counts shown %v, want %v:\n%s", tt.width, got, tt.msgs, plain)
+			}
+			if tt.tasks && !tt.msgs {
+				checkCountInTaskCell(t, tt.width, out, noColor)
 			}
 			if tt.tasks && strings.Contains(plain, longTask) {
 				t.Errorf("width %d: want the long task cut:\n%s", tt.width, plain)
@@ -282,5 +328,41 @@ func TestTasksWithBidiAndEmojiStayInColumns(t *testing.T) {
 			CostByModel: map[string]models.CostBreakdown{},
 		}
 		check("summary", FormatSummaryTableWithDetails(aggregate, []models.SessionResult{r}, "/home/user/src/app", noColor, true, 80, SortByTime), 80)
+	}
+}
+
+// Every tree in --expand-agents shares one task column, so a session whose
+// agents have no task still sizes it: its counts fill the cells whole, never
+// cut, even when the only task is in another session.
+func TestSummaryTreeCountCellSpansSessions(t *testing.T) {
+	agent := func(id, task string, msgs int) models.AgentAnalysis {
+		return models.AgentAnalysis{
+			AgentID: id, AgentType: task, MessageCount: msgs,
+			TotalCost:   models.CostBreakdown{TotalCost: 0.42},
+			CostByModel: map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 0.42}},
+		}
+	}
+	session := func(id string, agents ...models.AgentAnalysis) models.SessionResult {
+		r := sessionRow(id, "claude-opus-4-8", 10, 3.00)
+		r.Analysis.HasAgents = true
+		r.Analysis.Agents = agents
+		r.Analysis.AgentCount = len(agents)
+		return r
+	}
+	rows := []models.SessionResult{
+		session("aaaa1111", agent("a1b2c3d4e5f6", "Explore", 5)),
+		session("bbbb2222", agent("f1b2c3d4e5f6", "", 1234)),
+	}
+	aggregate := &models.SessionAnalysis{
+		SessionID: "aggregate", IsSummary: true, SessionCount: 2,
+		CostByModel: map[string]models.CostBreakdown{},
+	}
+	for width := 45; width <= 80; width++ {
+		out := ansiRe.ReplaceAllString(FormatSummaryTableWithDetails(aggregate, rows, "/home/user/src/app", true, true, width, SortByTime), "")
+		checkTaskRows(t, out, width)
+		row := rowOf(out, "[Af1b2c3d]")
+		if strings.Contains(row, "1,234…") || strings.Contains(rowOf(out, "[A1b2c3d4]"), "] Explore") && !strings.Contains(row, "1,234 msgs") {
+			t.Errorf("width %d: want the count whole beside the task column:\n%s", width, out)
+		}
 	}
 }
