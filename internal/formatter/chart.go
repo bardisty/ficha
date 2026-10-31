@@ -20,6 +20,15 @@ const (
 	summaryChartMin = 5
 )
 
+// chartPoint is one session on the summary chart: its cost, and the row
+// number and short ID the table under the chart gives it, so the caption
+// can point into the table.
+type chartPoint struct {
+	cost float64
+	row  int
+	id   string
+}
+
 // renderCostChart renders a sparkline of session costs, oldest to newest, one
 // column per session. Points are evenly spaced by session, not by time, so
 // the axis says so instead of carrying dates that would suggest a timeline.
@@ -32,20 +41,31 @@ const (
 // min/max and count must all derive from that same visible tail: pushing the
 // full history would let ntcharts' AutoMaxValue pin the scale to an evicted
 // off-screen peak.
-func renderCostChart(costs []float64, width int, noColor bool) string {
-	if len(costs) < summaryChartMin {
+//
+// The table numbers its rows newest first, or costliest first, while the
+// chart runs oldest first, so the caption names the max and min sessions by
+// row and ID rather than leave the reader to hunt for the amounts. A tie
+// names the newer session, which the cost order also puts first.
+func renderCostChart(points []chartPoint, width int, noColor bool) string {
+	if len(points) < summaryChartMin {
 		return ""
 	}
 
 	var sb strings.Builder
 	indent := "    " // 4-space indent to match section content
-	chartWidth := min(len(costs), summaryChartMax, width-2*len(indent))
-	visibleCosts := costs[len(costs)-chartWidth:]
+	chartWidth := min(len(points), summaryChartMax, width-2*len(indent))
+	visible := points[len(points)-chartWidth:]
 
-	minCost, maxCost := visibleCosts[0], visibleCosts[0]
-	for _, c := range visibleCosts {
-		minCost = min(minCost, c)
-		maxCost = max(maxCost, c)
+	costs := make([]float64, len(visible))
+	lo, hi := visible[0], visible[0]
+	for i, p := range visible {
+		costs[i] = p.cost
+		if p.cost <= lo.cost {
+			lo = p
+		}
+		if p.cost >= hi.cost {
+			hi = p
+		}
 	}
 
 	var chart sparkline.Model
@@ -55,7 +75,7 @@ func renderCostChart(costs []float64, width int, noColor bool) string {
 	} else {
 		chart = sparkline.New(chartWidth, summaryChartHeight)
 	}
-	chart.PushAll(visibleCosts)
+	chart.PushAll(costs)
 
 	// Braille has four times the vertical resolution but no ASCII stand-in;
 	// the ASCII glyph set draws columns and maps them to ASCII.
@@ -74,21 +94,35 @@ func renderCostChart(costs []float64, width int, noColor bool) string {
 		}
 	}
 
-	// costs leaves out sessions that cost nothing, so the count says which
-	// sessions it covers, beside a table that lists every one.
-	count := render.Count(len(visibleCosts)) + " sessions with a cost"
-	if len(visibleCosts) < len(costs) {
-		count = "last " + render.Count(len(visibleCosts)) + " of " + render.Count(len(costs)) + " sessions with a cost"
+	// points leaves out sessions that cost nothing, so the count says which
+	// sessions it covers, beside a table that lists every one, and never
+	// calls them just sessions. A narrow report gives that up before the
+	// direction: the table runs newest or costliest first, the other way
+	// from the chart, so nothing else on screen says which end is which.
+	count, short := render.Count(len(visible))+" sessions", render.Count(len(visible))
+	if len(visible) < len(points) {
+		short = "last " + render.Count(len(visible)) + " of " + render.Count(len(points))
+		count = short + " sessions"
 	}
-	order := fmt.Sprintf("%s, oldest %s newest", count, styles.Arrow)
-	if len(indent)+lipgloss.Width(order) > width {
-		order = strings.Replace(order, " sessions with a cost", " with a cost", 1)
-	}
-	labels := []string{
-		order,
-		fmt.Sprintf("min: %s  max: %s", render.Cost(minCost), render.Cost(maxCost)),
-	}
-	for _, l := range labels {
+	direction := fmt.Sprintf(", oldest %s newest", styles.Arrow)
+	order := firstFit(width-len(indent),
+		count+" with a cost"+direction,
+		short+" with a cost"+direction,
+		short+direction,
+		short+" with a cost",
+		short,
+	)
+
+	// The extremes drop their IDs first, then min's row, then max's.
+	maxCost, minCost := "max: "+render.Cost(hi.cost), "min: "+render.Cost(lo.cost)
+	maxRow, minRow := fmt.Sprintf(" (#%d", hi.row), fmt.Sprintf(" (#%d", lo.row)
+	extremes := firstFit(width-len(indent),
+		maxCost+maxRow+" "+hi.id+")  "+minCost+minRow+" "+lo.id+")",
+		maxCost+maxRow+")  "+minCost+minRow+")",
+		maxCost+maxRow+")  "+minCost,
+		maxCost+"  "+minCost,
+	)
+	for _, l := range []string{order, extremes} {
 		if noColor {
 			sb.WriteString(indent + l + "\n")
 		} else {
@@ -96,4 +130,15 @@ func renderCostChart(costs []float64, width int, noColor bool) string {
 		}
 	}
 	return sb.String()
+}
+
+// firstFit is the first of forms, longest first, no wider than width, or the
+// last.
+func firstFit(width int, forms ...string) string {
+	for _, f := range forms {
+		if lipgloss.Width(f) <= width {
+			return f
+		}
+	}
+	return forms[len(forms)-1]
 }
