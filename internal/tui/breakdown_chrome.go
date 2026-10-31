@@ -238,11 +238,38 @@ func (m BreakdownModel) visibleRows() (first, last int) {
 //
 //	rows 13-24 of 460 • 60 new ↓ (G)
 //
-// A table that fits the viewport has no position to report.
+// A table that fits the viewport has no position to report. It's the
+// footer rule's fullest text; footerMarks has the shorter ones.
 func (m BreakdownModel) positionText() string {
-	if m.sortByCost {
-		return m.sortedPositionText()
+	marks := m.footerMarks()
+	if len(marks) == 0 {
+		return ""
 	}
+	return marks[0]
+}
+
+// footerMarks lists the footer rule's texts from fullest to barest, and the
+// rule shows the first that fits. Each step drops one label, in this order:
+// the day of the first row on screen, then the row range itself. A label
+// that should outlast the day goes left of it in the fuller texts and stays
+// in the shorter ones.
+func (m BreakdownModel) footerMarks() []string {
+	if m.sortByCost {
+		return []string{m.sortedPositionText(), sortedLabel}
+	}
+	position := m.rowsText()
+	if position == "" {
+		return nil
+	}
+	var marks []string
+	if day := m.firstVisibleDay(); day != "" {
+		marks = append(marks, day+" "+styles.Bullet+" "+position)
+	}
+	return append(marks, position)
+}
+
+// rowsText is the row range and new-row count of positionText, with no day.
+func (m BreakdownModel) rowsText() string {
 	if !m.ready || m.viewport.TotalLineCount() <= m.viewport.Height() {
 		return ""
 	}
@@ -255,6 +282,33 @@ func (m BreakdownModel) positionText() string {
 		text += fmt.Sprintf(" %s %s new %s (G)", styles.Bullet, render.Count(n), styles.MoreBelow)
 	}
 	return text
+}
+
+// firstVisibleDay names the day of the first row on screen, as its divider
+// does, so a reader deep in a long day still sees which one. It reads the
+// day from the nearest divider at or above that row, since a row whose
+// timestamp didn't parse has no day of its own. Only a dated session in
+// time order has days to name: in one that's all today the day goes
+// without saying, and in cost order TIME carries it.
+func (m BreakdownModel) firstVisibleDay() string {
+	if !m.dated || m.sortByCost {
+		return ""
+	}
+	top := m.viewport.YOffset()
+	bottom := min(top+m.viewport.Height(), len(m.lineRows))
+	first := top
+	for first < bottom && m.lineRows[first] == 0 {
+		first++
+	}
+	if first == bottom {
+		return ""
+	}
+	for i := first; i >= 0; i-- {
+		if m.lineRows[i] == 0 {
+			return render.DayMarker(m.messages[m.linePos[i]].Timestamp)
+		}
+	}
+	return ""
 }
 
 // sortedPositionText is positionText while sorted by cost. It leads with the
@@ -280,22 +334,25 @@ func (m BreakdownModel) sortedPositionText() string {
 const sortedLabel = "sorted by cost (s)"
 
 // renderFooterRule draws the heavy rule above the footer, carrying the
-// scroll position in brackets like watch's rule does. A position that
-// doesn't fit leaves the plain rule, or while sorted, the mode alone.
+// scroll position in brackets like watch's rule does. It takes the fullest
+// of footerMarks that fits, and the plain rule when none does.
 func (m BreakdownModel) renderFooterRule(panelWidth int) string {
-	mark := m.positionText()
 	const lead = 2 // rule cells kept left of the marker
-	if m.sortByCost && lead+lipgloss.Width("[ "+mark+" ]") > panelWidth {
-		mark = sortedLabel
+	mark := ""
+	for _, text := range m.footerMarks() {
+		if lead+lipgloss.Width("[ "+text+" ]") <= panelWidth {
+			mark = text
+			break
+		}
 	}
-	bracketed := "[ " + mark + " ]"
-	if mark == "" || lead+lipgloss.Width(bracketed) > panelWidth {
+	if mark == "" {
 		rule := strings.Repeat(styles.BoxHorizontal, panelWidth)
 		if m.noColor {
 			return "  " + rule
 		}
 		return "  " + styles.PanelBorderStyle.Render(rule)
 	}
+	bracketed := "[ " + mark + " ]"
 	left := strings.Repeat(styles.BoxHorizontal, lead)
 	right := strings.Repeat(styles.BoxHorizontal, panelWidth-lead-lipgloss.Width(bracketed))
 	if m.noColor {
