@@ -13,7 +13,7 @@
     Context  38% [████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░│░] 380.0K / 1.00M                                          
              587.0K to ~compaction · agent Af6e5d4c 13.0K past ~compaction                                              
                                                                                                                         
-  ───────────────────────────────────────────────[ AGENT SUB-SESSIONS ]───────────────────────────────────────────────  
+  ──────────────────────────────────────[ AGENT SUB-SESSIONS · 1 of 4 running ]───────────────────────────────────────  
                                                                                                                         
     Main conversation                                                $7.90                                              
   ● [Af6e5d4c] Find the auth middleware   Sonnet 5     98% ctx       $1.58                                              
