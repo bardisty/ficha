@@ -250,6 +250,59 @@ func TestNestedProjectsNotAtHome(t *testing.T) {
 	}
 }
 
+// --nested at ~, or above it, counts no project under it. The report is
+// what it would be without the flag, and a note says why and points to
+// global, on stderr for every format.
+func TestNestedAtHomeSaysItSkipped(t *testing.T) {
+	const note = "Note: --nested doesn't look under your home directory. 'ficha global' totals every project."
+	for _, tt := range []struct {
+		name string
+		home func(repo string) string
+		args []string
+	}{
+		{"at home", func(repo string) string { return repo }, nil},
+		{"-p home", func(repo string) string { return repo }, []string{"-p", "REPO"}},
+		{"above home", func(repo string) string { return filepath.Join(repo, "home", "user") }, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repo, _, _ := setupNestedFixture(t)
+			home := tt.home(repo)
+			if err := os.MkdirAll(home, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			var extra []string
+			for _, a := range tt.args {
+				extra = append(extra, strings.ReplaceAll(a, "REPO", repo))
+			}
+			if len(extra) > 0 {
+				t.Chdir(t.TempDir())
+			}
+			for _, command := range [][]string{
+				{"summary"}, {"summary", "-f", "json"}, {"summary", "-f", "csv"},
+				{"list"}, {"list", "-f", "json"}, {"list", "-f", "csv"},
+			} {
+				args := append(append([]string{}, command...), extra...)
+				wantOut, _, err := executeCLISplit(t, args...)
+				if err != nil {
+					t.Fatalf("%v: %v", args, err)
+				}
+				out, stderr, err := executeCLISplit(t, append(args, "--nested")...)
+				if err != nil {
+					t.Fatalf("%v --nested: %v", args, err)
+				}
+				if out != wantOut {
+					t.Errorf("%v --nested: stdout differs from without it:\n%s\nwant:\n%s", args, out, wantOut)
+				}
+				if strings.Count(stderr, "Note:") != 1 || !strings.Contains(stderr, note+"\n") {
+					t.Errorf("%v --nested: stderr = %q, want the note once", args, stderr)
+				}
+			}
+		})
+	}
+}
+
 // A directory above ~, such as /home, holds every project under ~ too, so it
 // gets no note, doesn't stand in for the projects under it, and isn't
 // offered as a parent.
