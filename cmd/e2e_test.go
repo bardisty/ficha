@@ -2105,11 +2105,16 @@ func TestE2EListWindowAgreesWithSummaryDetails(t *testing.T) {
 		})
 	}
 
-	out, _, err := executeCLISplit(t, "list", projFlag, "--until", "2026-01-01")
+	out, _, err := executeCLISplit(t, "list", projFlag, "--no-color")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(out, "No messages in start "+styles.Arrow+" Jan 01") {
+	project := headerProject(t, out)
+	out, _, err = executeCLISplit(t, "list", projFlag, "--until", "2026-01-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "No messages in "+project+": up to Jan 01.") {
 		t.Errorf("empty window: %q", out)
 	}
 }

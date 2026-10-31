@@ -43,7 +43,7 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 		opts.Now = now()
 	}
 	if analysis.Window != nil && len(analysis.Projects) == 0 {
-		return emptyWindow(*analysis.Window)
+		return emptyWindow(*analysis.Window, "")
 	}
 	// The cost rows narrow with the frame, but only as far as their fitted
 	// form, so the frame goes no narrower than that.

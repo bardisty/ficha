@@ -58,7 +58,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	if opts.Window != nil && !slices.ContainsFunc(results, func(r models.SessionResult) bool {
 		return r.Analysis != nil && r.Analysis.MessageCount > 0
 	}) {
-		return emptyWindow(*opts.Window)
+		return emptyWindow(*opts.Window, opts.Project)
 	}
 
 	ids := shortSessionIDs(results)

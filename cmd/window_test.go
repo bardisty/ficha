@@ -59,6 +59,75 @@ func TestTimeWindowRejectsBackwardsRange(t *testing.T) {
 	}
 }
 
+// headerProject is the project a report's header names, so a test can
+// expect the same name elsewhere without knowing how this platform spells
+// the fixture's project.
+func headerProject(t *testing.T, out string) string {
+	t.Helper()
+	for line := range strings.SplitSeq(out, "\n") {
+		if rest, ok := strings.CutPrefix(line, "║  "); ok {
+			if project, _, ok := strings.Cut(rest, "  │"); ok {
+				return project
+			}
+		}
+	}
+	t.Fatalf("no project in the header:\n%s", out)
+	return ""
+}
+
+// A --since still to come is a usage error, against the clock passed in. An
+// --until to come is fine on its own or after a past --since.
+func TestTimeWindowRejectsFutureSince(t *testing.T) {
+	orig := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = orig })
+	now := time.Date(2026, 10, 31, 15, 30, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		since, until, wantErr string
+	}{
+		{"2026-12-01", "", "--since 2026-12-01 is after now"},
+		{"2026-10-31T16:00", "", "--since 2026-10-31T16:00 is after now"},
+		{"2026-12-01", "2026-12-02", "--since 2026-12-01 is after now"},
+		{"today", "", ""},
+		{"2026-10-31T15:30", "", ""},
+		{"", "2026-12-31", ""},
+		{"2026-10-01", "2026-12-31", ""},
+	} {
+		cfg := &config{since: tt.since, until: tt.until}
+		_, err := cfg.timeWindow(now)
+		switch {
+		case tt.wantErr == "" && err != nil:
+			t.Errorf("--since %q --until %q: %v", tt.since, tt.until, err)
+		case tt.wantErr != "" && (err == nil || err.Error() != tt.wantErr):
+			t.Errorf("--since %q --until %q: error %v, want %q", tt.since, tt.until, err, tt.wantErr)
+		case tt.wantErr != "" && exitCode(err) != 2:
+			t.Errorf("--since %q: exit %d, want 2", tt.since, exitCode(err))
+		}
+	}
+}
+
+// A future --since fails the same way in every format, before any output.
+func TestE2EFutureSinceIsAUsageError(t *testing.T) {
+	setupE2EFixture(t)
+	for _, args := range [][]string{
+		{"summary", projFlag, "--since", "2999-01-01"},
+		{"summary", projFlag, "--since", "2999-01-01", "-f", "json"},
+		{"list", projFlag, "--since", "2999-01-01", "-f", "csv"},
+		{"global", "--since", "2999-01-01", "-f", "json"},
+	} {
+		stdout, _, err := executeCLISplit(t, args...)
+		if err == nil || err.Error() != "--since 2999-01-01 is after now" || exitCode(err) != 2 {
+			t.Errorf("%v: err %v (exit %d), want a usage error saying --since is after now", args, err, exitCode(err))
+		}
+		if stdout != "" {
+			t.Errorf("%v: printed %q before failing", args, stdout)
+		}
+	}
+	if _, _, err := executeCLISplit(t, "summary", projFlag, "--until", "2999-01-01", "-f", "json"); err != nil {
+		t.Errorf("a future --until alone should work: %v", err)
+	}
+}
+
 // A window counts messages by their own timestamps, agents' too, and the same
 // scope reaches table, json and csv. The e2e fixture: alpha on Feb 1, beta on
 // Feb 2 (parent 09:00 and 09:10, agents 09:05 and 09:07), gamma on Feb 3 in
@@ -115,12 +184,13 @@ func TestE2EWindowFiltersMessages(t *testing.T) {
 	// cmd reads the real clock, and dates carry a year only outside it.
 	feb2Label := render.Date(time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC), time.Now())
 	mustContainAll(t, out, "Window: "+feb2Label+" → now", "1 session ")
+	project := headerProject(t, out)
 	out, _, err = executeCLISplit(t, "summary", projFlag, "--since", "2026-03-01", "--no-color")
 	if err != nil {
 		t.Fatal(err)
 	}
 	mar1Label := render.Date(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), time.Now())
-	if strings.TrimSpace(out) != "No messages in "+mar1Label+" → now." {
+	if strings.TrimSpace(out) != "No messages in "+project+": "+mar1Label+" → now." {
 		t.Errorf("empty window: %q", out)
 	}
 
@@ -201,7 +271,7 @@ func TestE2EWindowDropsOldSessionsWithSkips(t *testing.T) {
 		t.Errorf("global --since 2026-02-03: %+v", g)
 	}
 
-	out, _, err = executeCLISplit(t, "global", "--since", "2027-01-01", "-f", "json")
+	out, _, err = executeCLISplit(t, "global", "--since", "2026-06-01", "-f", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
