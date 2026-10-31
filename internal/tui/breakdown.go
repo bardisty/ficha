@@ -64,8 +64,8 @@ type BreakdownModel struct {
 	chosenY    int
 	autoScroll bool
 	ready      bool // viewport initialized
-	// pausedAt is the message count when auto-scroll last turned off; rows
-	// past it arrived while the reader was scrolled up.
+	// pausedAt is the scope's row count when auto-scroll last turned off;
+	// rows past it arrived while the reader was scrolled up.
 	pausedAt int
 	// pausePending: auto-scroll went off before any load landed, so the next
 	// load's rows are the baseline, not new arrivals.
@@ -87,6 +87,14 @@ type BreakdownModel struct {
 	sortByCost  bool
 	timeYOffset int
 	timeFollow  bool
+	// scope narrows the table to one source's rows (a steps it). insights
+	// are the scope's; sessionInsights, every row's, as the load had them.
+	scope           rowScope
+	sessionInsights *models.MessageInsights
+	// scopeCount and scopeCost are the scope's row count and total, kept
+	// by countScope so a frame doesn't walk every row for them.
+	scopeCount int
+	scopeCost  float64
 
 	// Header state: project name, and the newest message timestamp (else the
 	// session file's mtime, with activityFromFile set) that the header ages.
@@ -314,7 +322,17 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectNextTop()
 
 		case "esc":
-			m.clearSelection()
+			// A selection goes first, then the scope, a step at a time back
+			// to every row.
+			switch {
+			case m.selectedKey != "":
+				m.clearSelection()
+			case m.scope.on:
+				m.setScope(rowScope{})
+			}
+
+		case "a":
+			m.stepScope()
 
 		case "s":
 			m.toggleSort()
@@ -419,16 +437,24 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Track new messages for highlighting
 		m.detectNewMessages(msg.messages)
 		anchor := m.sortAnchor()
-		if m.pausePending {
-			m.pausedAt = len(msg.messages)
-			m.pausePending = false
-		}
 
 		m.messages = msg.messages
+		// A reload keeps the scope, unless its rows are gone. Every row
+		// is then on show and none of them is new.
+		m.countScope()
+		if m.scope.on && m.scopeCount == 0 {
+			m.scope = rowScope{}
+			m.pausedAt = len(m.messages)
+		}
+		if m.pausePending {
+			m.pausedAt = m.scopeLen()
+			m.pausePending = false
+		}
 		m.totalCost = msg.totalCost
 		m.minCost = msg.minCost
 		m.maxCost = msg.maxCost
-		m.insights = msg.insights
+		m.sessionInsights = msg.insights
+		m.scopeInsights()
 		m.skippedLines = msg.skippedLines
 		m.skippedAgents = msg.skippedAgents
 		m.estimatedCosts = msg.estimatedCosts
@@ -674,6 +700,8 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	// indefinitely if that load errors.
 	m.messages = nil
 	m.insights = nil
+	m.sessionInsights = nil
+	m.scope = rowScope{}
 	m.hasAgents = false
 	m.runTags = nil
 	m.runNames = nil
@@ -1021,8 +1049,19 @@ func runName(run models.WorkflowMeta) string {
 // renderStatsTotals is the stats line's totals and footnotes.
 func (m BreakdownModel) renderStatsTotals() string {
 	sep := " " + styles.BoxVerticalSep + " "
+	// Scoped, the counts say how much of the session is on show. The
+	// session's total goes first when the line is short of room: its count
+	// already says this is part of it.
+	count, total := render.Count(len(m.messages)), render.Cost(m.totalCost)
+	if m.scope.on {
+		count = render.Count(m.scopeLen()) + " of " + count
+		total = render.Cost(m.scopeTotal()) + " of " + total
+		if line := "  Messages: " + count + sep + "Total: " + total; m.width > 0 && lipgloss.Width(line) > m.width {
+			total = render.Cost(m.scopeTotal())
+		}
+	}
 	if m.noColor {
-		line := fmt.Sprintf("  Messages: %s%sTotal: %s", render.Count(len(m.messages)), sep, render.Cost(m.totalCost))
+		line := fmt.Sprintf("  Messages: %s%sTotal: %s", count, sep, total)
 		accounting, unknown := m.fitStatsNotes(line, sep)
 		for _, note := range []string{accounting, unknown} {
 			if note != "" {
@@ -1038,10 +1077,10 @@ func (m BreakdownModel) renderStatsTotals() string {
 
 	var sb strings.Builder
 	sb.WriteString("  ")
-	sb.WriteString(lightGray.Render("Messages: " + render.Count(len(m.messages))))
+	sb.WriteString(lightGray.Render("Messages: " + count))
 	sb.WriteString(sepStyled)
 	sb.WriteString(lightGray.Render("Total: "))
-	sb.WriteString(lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(render.Cost(m.totalCost)))
+	sb.WriteString(lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(total))
 	// Surface parse warnings so an incomplete breakdown doesn't look
 	// complete, and explain the MODEL column's fallback-pricing asterisk.
 	accounting, unknown := m.fitStatsNotes(sb.String(), sep)
@@ -1175,7 +1214,8 @@ func (m BreakdownModel) renderCompactInsights() string {
 			clocks = clocks[1:]
 		}
 		marker := ""
-		if agent := m.peakAgentMarker(); agent != "" {
+		// Scoped, the label already names whose row the Peak is.
+		if agent := m.peakAgentMarker(); agent != "" && !m.scope.on {
 			marker = " " + agent
 		}
 		peaks = []string{short + " @ " + clocks[0] + marker + fmt.Sprintf(" (%.1fx avg)", m.insights.CostMultiplier())}
@@ -1203,8 +1243,15 @@ func (m BreakdownModel) renderCompactInsights() string {
 	}
 
 	// Without agents the two scopes are the same messages: no label.
+	// Scoped by a, the label names the rows the figures cover.
 	scopes := []string{""}
-	if m.hasAgents {
+	switch labels := m.scopeLabels(); {
+	case len(labels) > 0:
+		scopes = nil
+		for _, label := range labels {
+			scopes = append(scopes, style(label, styles.SecondaryColor))
+		}
+	case m.hasAgents:
 		scopes = []string{style(insightsScope, styles.SecondaryColor), style(insightsScopeShort, styles.SecondaryColor)}
 	}
 
@@ -1505,8 +1552,9 @@ func (m BreakdownModel) layout() breakdownLayout {
 // hiddenColumnsLine ends the ? list when the table hides columns at this
 // width: what's hidden and the width that shows it all, in the longest form
 // that fits, down to the names alone. Those fit the narrowest frame drawn,
-// all five names in 36 columns. It must always show, as nothing else says
-// columns are missing. "" when none are.
+// all five names in 36 columns. Beyond the list, only the table header's
+// "+N" says columns are missing, so it shows wherever it leaves every key
+// room; see keyList. "" when none are.
 func (m BreakdownModel) hiddenColumnsLine() string {
 	hidden := m.table.hidden()
 	if len(hidden) == 0 {

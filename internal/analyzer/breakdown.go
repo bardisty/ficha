@@ -251,3 +251,16 @@ func remapSnapshotIndices(insights *models.MessageInsights, displayIndex []int) 
 		}
 	}
 }
+
+// ScopeInsights is the insights over rows, some of a breakdown's rows in
+// display order, as breakdown shows them for one source's rows: snapshot
+// indexes name the rows' display Index, as the full view's do.
+func ScopeInsights(rows []models.BreakdownMessage) *models.MessageInsights {
+	insights := CalculateInsights(breakdownAnalyses(rows))
+	index := make([]int, len(rows))
+	for i, row := range rows {
+		index[i] = row.Index
+	}
+	remapSnapshotIndices(insights, index)
+	return insights
+}

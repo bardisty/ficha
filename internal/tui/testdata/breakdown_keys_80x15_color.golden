@@ -1,4 +1,3 @@
-  [1mKeys[m                                                                         
   [38;5;43mq, ctrl+c[m           quit                                                     
   [38;5;43m?[m                   key list on/off; esc closes                              
   [38;5;43mj/k, up/down[m        scroll a line                                            
@@ -7,6 +6,7 @@
   [38;5;43mg/G, home/end[m       go to the top or bottom                                  
   [38;5;43mp[m                   next costliest; esc clears                               
   [38;5;43ms[m                   sort by cost on/off                                      
+  [38;5;43ma[m                   step through main and agents                             
   [38;5;43mf[m                   follow new sessions on/off                               
   [38;5;43mn[m                   switch to the newer session                              
   [38;5;43m-[m                   back to the previous session                             
