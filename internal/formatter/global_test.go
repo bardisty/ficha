@@ -488,3 +488,25 @@ func TestGlobalCostRowsNeverOutgrowFrame(t *testing.T) {
 		}
 	}
 }
+
+// The agents' share and the main/agents split ride in the footer when they
+// fit on a line of their own, and fall back to the plain total and count
+// on a terminal too narrow for them. A span without agent spend never gets
+// the parenthesis.
+func TestFooterAgentsShare(t *testing.T) {
+	if got := totalField(73.99, 42.86, 80); got != "Total: $73.99 (agents $42.86)" {
+		t.Errorf("got %q", got)
+	}
+	if got := totalField(73.99, 0, 80); got != "Total: $73.99" {
+		t.Errorf("no agent spend: got %q", got)
+	}
+	if got := totalField(191.38, 48.88, 29); got != "Total: $191.38" {
+		t.Errorf("too narrow: got %q", got)
+	}
+	if got := splitMessagesField(4321, 2987, 1334, 80); got != "Messages: 4,321 (2,987 main, 1,334 agents)" {
+		t.Errorf("got %q", got)
+	}
+	if got := splitMessagesField(4321, 2987, 1334, 36); got != "Messages: 4,321" {
+		t.Errorf("too narrow: got %q", got)
+	}
+}

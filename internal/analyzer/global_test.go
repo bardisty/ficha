@@ -449,6 +449,62 @@ func TestAnalyzeAllProjects_SkippedAgentsReachGlobal(t *testing.T) {
 	}
 }
 
+// Each project carries its summary aggregate's parent/agent split, and the
+// global totals sum it over the projects, so main plus agents makes the
+// total at both levels.
+func TestAnalyzeAllProjects_ParentAgentSplit(t *testing.T) {
+	tmpDir := t.TempDir()
+	var projects []models.ProjectInfo
+	for _, name := range []string{"with-agent", "without"} {
+		dir := filepath.Join(tmpDir, name)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		writeJSONLFile(t, filepath.Join(dir, "sess.jsonl"), []string{
+			`{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":500}}}`,
+		})
+		projects = append(projects, models.ProjectInfo{EncodedPath: name, FullPath: dir, DisplayName: name})
+	}
+	subagents := filepath.Join(tmpDir, "with-agent", "sess", "subagents")
+	if err := os.MkdirAll(subagents, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONLFile(t, filepath.Join(subagents, "agent-a.jsonl"), []string{
+		`{"type":"assistant","timestamp":"2024-01-15T10:02:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":500,"output_tokens":100}}}`,
+		`{"type":"assistant","timestamp":"2024-01-15T10:03:00Z","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":500,"output_tokens":100}}}`,
+	})
+
+	result, err := AnalyzeAllProjects(projects)
+	if err != nil {
+		t.Fatalf("AnalyzeAllProjects: %v", err)
+	}
+	byName := map[string]models.ProjectAnalysis{}
+	for _, p := range result.Projects {
+		byName[p.DisplayName] = p
+	}
+	withAgent, without := byName["with-agent"], byName["without"]
+	if withAgent.AgentCount != 1 || withAgent.ParentMessageCount != 1 || withAgent.AgentMessageCount != 2 {
+		t.Errorf("with-agent: %d agents, %d main and %d agent messages; want 1, 1, 2",
+			withAgent.AgentCount, withAgent.ParentMessageCount, withAgent.AgentMessageCount)
+	}
+	if withAgent.AgentsCost.TotalCost <= 0 || without.AgentsCost.TotalCost != 0 {
+		t.Errorf("agents cost: with-agent %v, without %v", withAgent.AgentsCost.TotalCost, without.AgentsCost.TotalCost)
+	}
+	for _, p := range []models.ProjectAnalysis{withAgent, without} {
+		if !almostEqual(p.ParentCost.TotalCost+p.AgentsCost.TotalCost, p.TotalCost.TotalCost, 1e-9) {
+			t.Errorf("%s: parent %v + agents %v != total %v", p.DisplayName, p.ParentCost.TotalCost, p.AgentsCost.TotalCost, p.TotalCost.TotalCost)
+		}
+	}
+	if result.AgentCount != 1 || result.ParentMessageCount != 2 || result.AgentMessageCount != 2 {
+		t.Errorf("global: %d agents, %d main and %d agent messages; want 1, 2, 2",
+			result.AgentCount, result.ParentMessageCount, result.AgentMessageCount)
+	}
+	if !almostEqual(result.ParentCost.TotalCost+result.AgentsCost.TotalCost, result.TotalCost.TotalCost, 1e-9) ||
+		result.AgentsCost.TotalCost != withAgent.AgentsCost.TotalCost {
+		t.Errorf("global: parent %v + agents %v, total %v", result.ParentCost.TotalCost, result.AgentsCost.TotalCost, result.TotalCost.TotalCost)
+	}
+}
+
 // FirstActive/LastActive come from message timestamps, not file mtimes: an
 // mtime is each file's LAST write, so a single-session project would span 0s
 // and disagree with `summary`.

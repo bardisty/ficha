@@ -21,8 +21,8 @@ This calculates the total cost and token usage across all sessions.
 
 --details adds a per-session breakdown: rows in the table and in csv, a
 sessions array in json. --expand-agents, which needs --details, adds each
-session's agents: tree rows in the table, nested agents in json, agent rows
-in csv.
+session's agents: tree rows in the table, after a row for the main
+conversation's cost, nested agents in json, agent rows in csv.
 
 Examples:
   ficha summary                           Show aggregate stats

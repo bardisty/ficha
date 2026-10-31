@@ -730,8 +730,18 @@ type ProjectAnalysis struct {
 	CostByModel  map[string]CostBreakdown `json:"cost_by_model"`
 	SessionCount int                      `json:"session_count"`
 	MessageCount int                      `json:"message_count"`
-	FirstActive  time.Time                `json:"first_active"`
-	LastActive   time.Time                `json:"last_active"`
+
+	// The parent/agent split of the totals, named and meant as on the
+	// summary aggregate: ParentCost + AgentsCost recovers TotalCost, up to
+	// float rounding.
+	ParentCost         CostBreakdown `json:"parent_cost"`
+	AgentsCost         CostBreakdown `json:"agents_cost"`
+	AgentCount         int           `json:"agent_count"`
+	ParentMessageCount int           `json:"parent_message_count"`
+	AgentMessageCount  int           `json:"agent_message_count"`
+
+	FirstActive time.Time `json:"first_active"`
+	LastActive  time.Time `json:"last_active"`
 	// Inputs this project's totals could not account for
 	SkippedSessions int `json:"skipped_sessions,omitempty"` // Sessions that failed to parse
 	SkippedAgents   int `json:"skipped_agents,omitempty"`   // Agent sub-sessions that could not be read
@@ -764,6 +774,14 @@ type GlobalAnalysis struct {
 	SessionCount    int                      `json:"session_count"` // Sessions successfully analyzed (see ProjectAnalysis)
 	MessageCount    int                      `json:"message_count"`
 	SkippedProjects int                      `json:"skipped_projects"`
+
+	// The parent/agent split summed over Projects (see ProjectAnalysis).
+	ParentCost         CostBreakdown `json:"parent_cost"`
+	AgentsCost         CostBreakdown `json:"agents_cost"`
+	AgentCount         int           `json:"agent_count"`
+	ParentMessageCount int           `json:"parent_message_count"`
+	AgentMessageCount  int           `json:"agent_message_count"`
+
 	// Skipped inputs summed over Projects and OutOfWindow, so they can
 	// exceed the sum over Projects alone. A skipped project contributes only
 	// to SkippedProjects — nothing inside it was counted.

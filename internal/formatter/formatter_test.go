@@ -678,6 +678,8 @@ func sampleGlobalAnalysis() *models.GlobalAnalysis {
 			{
 				ProjectInfo:  models.ProjectInfo{DisplayName: "project-alpha"},
 				TotalCost:    models.CostBreakdown{TotalCost: 5.0, InputCost: 2.0, OutputCost: 3.0},
+				ParentCost:   models.CostBreakdown{TotalCost: 3.75},
+				AgentsCost:   models.CostBreakdown{TotalCost: 1.25},
 				SessionCount: 3,
 				MessageCount: 30,
 				FirstActive:  time.Date(2024, 1, 2, 9, 0, 0, 0, time.UTC),
@@ -718,32 +720,33 @@ func TestFormatGlobalCSV(t *testing.T) {
 		t.Fatalf("expected 3 rows (header + 2 data), got %d", len(records))
 	}
 
-	// Verify 19-column header
-	if len(records[0]) != 19 {
-		t.Fatalf("expected 19 columns, got %d", len(records[0]))
+	header := records[0]
+	col := func(name string) int {
+		t.Helper()
+		i := slices.Index(header, name)
+		if i < 0 {
+			t.Fatalf("no %s column in %v", name, header)
+		}
+		return i
 	}
-	if records[0][0] != "project" {
-		t.Errorf("first header column: got %q, want %q", records[0][0], "project")
-	}
-	if records[0][10] != "first_active" || records[0][11] != "last_active" {
-		t.Errorf("activity columns: got %q, %q, want first_active, last_active", records[0][10], records[0][11])
-	}
-	if records[0][15] != "estimated_cost_messages" {
-		t.Errorf("last header column: got %q, want %q", records[0][15], "estimated_cost_messages")
+	if len(header) != 21 || header[0] != "project" {
+		t.Fatalf("want 21 columns starting with project, got %v", header)
 	}
 
 	// Verify first data row
-	if records[1][0] != "project-alpha" {
-		t.Errorf("first project name: got %q, want %q", records[1][0], "project-alpha")
-	}
-	if records[1][1] != "3" {
-		t.Errorf("first project sessions: got %q, want %q", records[1][1], "3")
-	}
-	if records[1][10] != "2024-01-02T09:00:00Z" {
-		t.Errorf("first_active: got %q, want %q", records[1][10], "2024-01-02T09:00:00Z")
-	}
-	if records[1][11] != "2024-01-15T10:00:00Z" {
-		t.Errorf("last_active: got %q, want %q", records[1][11], "2024-01-15T10:00:00Z")
+	alpha := records[1]
+	for name, want := range map[string]string{
+		"project":      "project-alpha",
+		"sessions":     "3",
+		"first_active": "2024-01-02T09:00:00Z",
+		"last_active":  "2024-01-15T10:00:00Z",
+		"total_cost":   "5.000000",
+		"parent_cost":  "3.750000",
+		"agents_cost":  "1.250000",
+	} {
+		if got := alpha[col(name)]; got != want {
+			t.Errorf("%s: got %q, want %q", name, got, want)
+		}
 	}
 }
 
