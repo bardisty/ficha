@@ -147,6 +147,28 @@ func TestHeaderShortensTheStatusBeforeTheProject(t *testing.T) {
 	}
 }
 
+// Under --ascii the ellipsis takes three columns, so a stub keeps three
+// letters past it, as in Unicode, or the project goes.
+func TestHeaderProjectStubKeepsThreeLettersInASCII(t *testing.T) {
+	useASCII(t)
+	now := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	p := liveHeaderParams{sessionID: sessA, noColor: true, project: "billing-api", mode: "PINNED", now: now,
+		lastActivity: now.Add(-46 * time.Second)}
+	seen := false
+	for width := 25; width <= 50; width++ {
+		project, _, _ := strings.Cut(fitStatusHeader(p, width), "aaaaaaaa")
+		project = strings.TrimSuffix(project, " | ")
+		stub, cut := strings.CutSuffix(project, "...")
+		if cut && len(stub) < 3 {
+			t.Errorf("width %d: project stub %q", width, project)
+		}
+		seen = seen || cut
+	}
+	if !seen {
+		t.Error("no width cut the project to a stub")
+	}
+}
+
 // A project that is dropped leaves room behind it, and a status whose full
 // form fits there takes it back.
 func TestHeaderStatusTakesBackTheDroppedProjectsRoom(t *testing.T) {
