@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/bardisty/ficha/internal/styles"
@@ -277,7 +279,22 @@ func addLiveFlags(cmd *cobra.Command, cfg *config, hideLive bool) {
 // getProjectPath returns the project path to use (flag value or CWD)
 func getProjectPath(cfg *config) (string, error) {
 	if cfg.projectPath != "" {
-		return cfg.projectPath, nil
+		return expandHome(cfg.projectPath), nil
 	}
 	return os.Getwd()
+}
+
+// expandHome expands a leading ~ to the home directory. The shell leaves it
+// alone in quotes, in a variable's value and after "=", as in
+// --project=~/work/webapp, so -p can arrive with it. ~user stays as typed.
+func expandHome(p string) string {
+	rest, ok := strings.CutPrefix(p, "~")
+	if !ok || rest != "" && rest[0] != '/' && (runtime.GOOS != "windows" || rest[0] != '\\') {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return p
+	}
+	return filepath.Join(home, rest)
 }

@@ -150,3 +150,52 @@ func TestDebugWrapsOnATerminal(t *testing.T) {
 		t.Errorf("missing %q:\n%s", want, stderr)
 	}
 }
+
+// The shell leaves ~ alone in quotes and after "=", so -p expands it. A path
+// that doesn't exist once expanded is rejected with home's path in it.
+func TestProjectFlagExpandsHome(t *testing.T) {
+	home := setupErrorFixture(t)
+	for _, args := range [][]string{
+		{"list", "-p", "~/work/webapp"},
+		{"list", "--project=~/work/webapp"},
+		{"show", "-p", "~/work/webapp", "-f", "json"},
+		{"summary", "--project=~/work/webapp", "-f", "json"},
+	} {
+		if _, _, err := executeCLISplit(t, args...); err != nil {
+			t.Errorf("%v: %v", args, err)
+		}
+	}
+
+	_, _, err := executeCLISplit(t, "show", "-p", "~/work/gone")
+	if want := "no such directory: " + filepath.Join(home, "work", "gone"); err == nil || err.Error() != want {
+		t.Fatalf("\n got: %v\nwant: %s", err, want)
+	}
+	withStderrWidth(t, 200)
+	if got, want := formatError(nil, err), "Error: no such directory: "+filepath.Join("~", "work", "gone")+"\n"; got != want {
+		t.Errorf("on a terminal:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestExpandHome(t *testing.T) {
+	home := realDir(t, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	tests := map[string]string{
+		"~":             home,
+		"~/":            home,
+		"~/work/webapp": filepath.Join(home, "work", "webapp"),
+		"~user/work":    "~user/work",
+		"work/~/webapp": "work/~/webapp",
+		"~work":         "~work",
+		"":              "",
+		`~\work\webapp`: `~\work\webapp`,
+	}
+	if runtime.GOOS == "windows" {
+		tests[`~\work\webapp`] = filepath.Join(home, "work", "webapp")
+	}
+	for in, want := range tests {
+		if got := expandHome(in); got != want {
+			t.Errorf("expandHome(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
