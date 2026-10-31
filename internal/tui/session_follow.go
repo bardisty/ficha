@@ -113,6 +113,14 @@ func hintShowing(h *sessionHint, now time.Time) bool {
 	return h != nil && now.Sub(h.at) < idleAfter
 }
 
+// isNewestSession reports whether path is the session following would be
+// on: the last one the view saw start, or the one it opened on before it
+// saw any. Following moves only to new sessions, so a write to an older one
+// doesn't make it newer.
+func isNewestSession(started, path string) bool {
+	return started != "" && path == started
+}
+
 // followTarget is the session f switches to as it turns following on: the
 // hinted one, if it started while the view was pinned. Following means
 // taking sessions as they start, so a hint about a write to an older session
