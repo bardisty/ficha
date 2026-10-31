@@ -174,7 +174,7 @@ func longAnalysis() *models.SessionAnalysis {
 		}
 		msgs = append(msgs, chartMsg(at(i, 0), "", cost))
 	}
-	return &models.SessionAnalysis{Messages: msgs}
+	return &models.SessionAnalysis{Messages: msgs, HasAgents: true}
 }
 
 // An early expensive minute must not pin the scale once it's off the chart:
@@ -246,6 +246,41 @@ func TestCostChartResizeChangesSpan(t *testing.T) {
 	for _, line := range strings.Split(strings.TrimRight(label, "\n"), "\n") {
 		if len([]rune(line)) > 50 {
 			t.Errorf("line wider than 50 columns: %q", line)
+		}
+	}
+}
+
+// The caption names its scope only when the session has agents, as MESSAGE
+// INSIGHTS does: in a session without any, nothing else on screen mentions
+// agents, and the scope would send the reader looking for them.
+func TestCostChartCaptionScopeFollowsAgents(t *testing.T) {
+	cases := []struct {
+		width            int
+		agents, noAgents string
+	}{
+		{40, "last 32m · max $0.0590 · with agents", "$ per minute, last 32m · max $0.0590"},
+		{60, "$ per minute, last 52m · max $0.0590 · with agents", "$ per minute, last 52m · max $0.0590"},
+		{80, "$ per minute, last 68m · max $0.0590 · main conversation + agents", "$ per minute, last 68m · max $0.0590"},
+		{200, "$ per minute, last 110m · max $0.0590 · main conversation + agents", "$ per minute, last 110m · max $0.0590"},
+	}
+	for _, c := range cases {
+		for _, hasAgents := range []bool{true, false} {
+			a := longAnalysis()
+			a.HasAgents = hasAgents
+			m := NewModel("/test/path", "sess", true, "", false)
+			m.now = func() time.Time { return at(179, 30) }
+			updated, _ := m.Update(tea.WindowSizeMsg{Width: c.width, Height: 40})
+			updated, _ = updated.Update(analysisMsg{analysis: a})
+			m = updated.(Model)
+
+			lines := strings.Split(strings.TrimRight(m.renderCostChart(), "\n"), "\n")
+			want := c.noAgents
+			if hasAgents {
+				want = c.agents
+			}
+			if got := strings.TrimPrefix(lines[len(lines)-1], "    "); got != want {
+				t.Errorf("width %d, agents %v: caption = %q, want %q", c.width, hasAgents, got, want)
+			}
 		}
 	}
 }

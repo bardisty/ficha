@@ -1044,8 +1044,9 @@ func (m Model) isEmptySession() bool {
 
 // renderCostChart renders the cost trend sparkline and its label: what a
 // column is, how long the chart spans, the drawn window's peak minute, and
-// that agents count. The scale runs from zero, so a minimum would read $0
-// on any chart with an idle minute, and the label leaves it out.
+// that agents count when the session has any. The scale runs from zero, so
+// a minimum would read $0 on any chart with an idle minute, and the label
+// leaves it out.
 func (m Model) renderCostChart() string {
 	var sb strings.Builder
 
@@ -1063,17 +1064,27 @@ func (m Model) renderCostChart() string {
 	// scope, then the span: whole pieces, never half a word. The scope goes
 	// late because MESSAGE INSIGHTS below says it counts the main
 	// conversation only, and without it the chart would seem to as well.
+	// A session without agents has no scope to give: insights drops its
+	// label then too, keyed on the same flag.
 	sep := " " + styles.FieldSep + " "
 	span := fmt.Sprintf("last %dm", len(m.costHistory))
 	peak := "max " + render.Cost(maxOf(m.costHistory))
 	const indent = "    "
-	scaleInfo := strings.TrimPrefix(m.firstFit(
-		indent+"$ per minute, "+span+sep+peak+sep+"main conversation + agents",
-		indent+"$ per minute, "+span+sep+peak+sep+"with agents",
-		indent+span+sep+peak+sep+"with agents",
-		indent+span+sep+peak,
-		indent+peak,
-	), indent)
+	forms := []string{
+		indent + "$ per minute, " + span + sep + peak,
+		indent + span + sep + peak,
+		indent + peak,
+	}
+	if m.analysis != nil && m.analysis.HasAgents {
+		forms = []string{
+			indent + "$ per minute, " + span + sep + peak + sep + "main conversation + agents",
+			indent + "$ per minute, " + span + sep + peak + sep + "with agents",
+			indent + span + sep + peak + sep + "with agents",
+			indent + span + sep + peak,
+			indent + peak,
+		}
+	}
+	scaleInfo := strings.TrimPrefix(m.firstFit(forms...), indent)
 	if !m.noColor {
 		sb.WriteString("    " + styles.DimStyle.Render(scaleInfo) + "\n")
 	} else {

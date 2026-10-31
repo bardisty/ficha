@@ -101,10 +101,11 @@ Cost trend
   watch's COST TREND chart plots what each clock minute cost, agents
   included: "$ per minute, last 68m". The newest column is the minute in
   progress. The chart moves on each minute even while nothing is written,
-  so a pause shows as empty columns. It spans 68 minutes, fewer on a
-  narrow terminal or in a younger session. It draws a line, or bars with
-  --ascii. The scale runs from $0 to the costliest minute on screen, which
-  max gives. Like the spend rate, it skips messages without a timestamp.
-  A short terminal leaves it out.`,
+  so a pause shows as empty columns. It spans 68 minutes at 80 columns
+  and up to 110 on a wider terminal, fewer on a narrower one or in a
+  younger session. It draws a line, or bars with --ascii. The scale runs
+  from $0 to the costliest minute on screen, which max gives. Like the
+  spend rate, it skips messages without a timestamp. A short terminal
+  leaves it out.`,
 	}
 }
