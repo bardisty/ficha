@@ -167,6 +167,40 @@ func (m *BreakdownModel) selectNextTop() {
 	}
 }
 
+// selectedLine is the table line of p's selected row, or -1 when nothing is
+// selected or its row isn't in the table.
+func (m BreakdownModel) selectedLine() int {
+	if m.selectedKey == "" {
+		return -1
+	}
+	for line, index := range m.lineRows {
+		if index > 0 && breakdownMsgKey(m.messages[m.linePos[line]]) == m.selectedKey {
+			return line
+		}
+	}
+	return -1
+}
+
+// selectedOnScreen reports whether p's selected row is in the viewport.
+func (m BreakdownModel) selectedOnScreen() bool {
+	line, top := m.selectedLine(), m.viewport.YOffset()
+	return line >= 0 && line >= top && line < top+m.viewport.Height()
+}
+
+// showSelected scrolls the least that brings p's selected row on screen,
+// after a resize. A row still on screen leaves the view alone, so the
+// first row holds through zoom and unzoom as it does with no selection.
+func (m *BreakdownModel) showSelected() {
+	line, top, height := m.selectedLine(), m.viewport.YOffset(), m.viewport.Height()
+	switch {
+	case line < 0 || height <= 0:
+	case line < top:
+		m.scrollTo(line)
+	case line >= top+height:
+		m.scrollTo(line - height + 1)
+	}
+}
+
 // clearSelection drops p's selection.
 func (m *BreakdownModel) clearSelection() {
 	m.selectedKey = ""
