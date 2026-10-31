@@ -1673,3 +1673,43 @@ func TestParseAgentMetaWorkflowAgent(t *testing.T) {
 		t.Errorf("ParseAgentMeta = (%q, %q)", gotType, gotDesc)
 	}
 }
+
+// Every record Claude Code writes has a string type, whether or not ficha
+// prices it. history.jsonl's lines have none.
+func TestHoldsRecords(t *testing.T) {
+	cases := []struct {
+		name      string
+		content   string
+		ok        bool
+		wantLines int
+	}{
+		{"empty", "", true, 0},
+		{"blank lines", "\n\n", true, 0},
+		{"assistant", `{"type":"assistant","timestamp":"2026-02-01T10:00:00Z","message":{"id":"m","role":"assistant"}}` + "\n", true, 1},
+		{"user then snapshot", `{"type":"user","message":{"role":"user","content":"hi"}}` + "\n" + `{"type":"file-history-snapshot","snapshot":{}}` + "\n", true, 1},
+		{"record after others", `{"display":"x"}` + "\n" + `{"type":"custom-title","customTitle":"t"}` + "\n", true, 2},
+		{"system", `{"type":"system","subtype":"informational"}` + "\n", true, 1},
+		{"summary", `{"type":"summary","summary":"s","leafUuid":"u"}` + "\n", true, 1},
+		{"ai-title", `{"type":"ai-title","aiTitle":"t"}` + "\n", true, 1},
+		{"history", `{"display":"fix the login bug","pastedContents":{},"timestamp":1761880000000,"project":"/x"}` + "\n", false, 1},
+		{"non-string type", `{"type":1}` + "\n" + `{"type":null}` + "\n", false, 2},
+		{"not objects", "[1]\nnull\n" + `"x"` + "\n", false, 3},
+		{"nothing parses", "{broken\n{also\n", true, 2},
+		{"some lines parse", "{broken\n" + `{"display":"x"}` + "\n", false, 2},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "t.jsonl")
+			if err := os.WriteFile(path, []byte(c.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			ok, lines, err := HoldsRecords(path)
+			if err != nil || ok != c.ok || lines != c.wantLines {
+				t.Errorf("got ok=%v lines=%d err=%v, want ok=%v lines=%d", ok, lines, err, c.ok, c.wantLines)
+			}
+		})
+	}
+	if _, _, err := HoldsRecords(filepath.Join(t.TempDir(), "missing.jsonl")); err == nil {
+		t.Error("a missing file reads")
+	}
+}

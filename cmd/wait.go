@@ -52,17 +52,18 @@ func waitingBreakdown(cfg *config) func(dir, projectPath string, hint []string) 
 // the wait: whatever Claude Code starts here is recorded under this path, so
 // a live view following one of them would never see it. hint names them, so
 // someone who meant one can switch, unless projects under this directory
-// have sessions: hint names those instead. ok is false when waiting would hide a
-// real problem or a better answer: an explicit --project-dir, a missing or
-// empty projects directory (usually a wrong CLAUDE_CONFIG_DIR), a path that
-// isn't a directory, a project that recorded this path as its own, a
-// same-named project recorded from the other OS (it may be this directory),
-// a -p path with similarly named projects and none of the same name (a likely
-// typo), a subdirectory of a project with sessions, or a directory inside WSL
-// seen from the Windows build's default config, whose sessions will never
-// show up there. A repository or worktree root nested in such a project still
-// waits: Claude Code records sessions under the directory it starts in, and
-// that is where it would start.
+// have sessions: hint names those instead. ok is false when waiting would
+// hide a real problem or a better answer: an explicit --project-dir, a
+// missing or empty projects directory (usually a wrong CLAUDE_CONFIG_DIR), a
+// path that isn't a directory, a project's folder in the projects directory,
+// a project that recorded this path as its own, a same-named project
+// recorded from the other OS (it may be this directory), a -p path with
+// similarly named projects and none of the same name (a likely typo), a
+// subdirectory of a project with sessions, or a directory inside WSL seen
+// from the Windows build's default config, whose sessions will never show up
+// there. A repository or worktree root nested in such a project still waits:
+// Claude Code records sessions under the directory it starts in, and that is
+// where it would start.
 func waitingProject(cfg *config) (dir, projectPath string, hint []string, ok bool) {
 	if cfg.projectDir != "" {
 		return "", "", nil, false
@@ -75,7 +76,9 @@ func waitingProject(cfg *config) (dir, projectPath string, hint []string, ok boo
 	if err != nil {
 		return "", "", nil, false
 	}
-	if !isDir(projPath) {
+	// A project's folder in the projects dir is read as that project, and
+	// Claude Code never runs in one.
+	if _, ok := projectFolderName(projPath); ok || !isDir(projPath) {
 		return "", "", nil, false
 	}
 	canonical, err := paths.CanonicalizePath(projPath)
