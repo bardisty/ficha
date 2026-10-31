@@ -1,8 +1,11 @@
 package parser
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -448,4 +451,43 @@ func countMessagesInFile(path string) (count int, skips models.FileSkips) {
 		return -1, models.FileSkips{}
 	}
 	return len(result.Messages), models.FileSkips{Path: path, Count: result.SkippedLines, Lines: result.SkippedAt}
+}
+
+// HoldsRecords reports whether the file at path can be a Claude Code
+// transcript: one of its lines is a JSON object with a string "type", as
+// every record Claude Code writes has, whether or not ficha prices it. An
+// empty file passes, as a session that has just started, and so does one
+// where no line parses, which the parse reports as skipped lines. lines is
+// how many non-empty lines it read, all of them when ok is false.
+func HoldsRecords(path string) (ok bool, lines int, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, 0, err
+	}
+	defer f.Close()
+	reader := newLineReader(f)
+	malformed := 0
+	for {
+		line, oversized, err := reader.next(maxLineBytes)
+		if errors.Is(err, io.EOF) {
+			return lines == malformed, lines, nil
+		}
+		if err != nil {
+			return false, lines, err
+		}
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		lines++
+		var record struct {
+			Type any `json:"type"`
+		}
+		if oversized || json.Unmarshal(line, &record) != nil {
+			malformed++
+			continue
+		}
+		if _, ok := record.Type.(string); ok {
+			return true, lines, nil
+		}
+	}
 }

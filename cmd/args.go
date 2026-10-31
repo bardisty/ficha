@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -42,11 +43,12 @@ func oneSessionArg(cmd *cobra.Command, args []string) error {
 }
 
 // rootRun is bare `ficha [session-id]`: show, except that a non-hex word no
-// session matched is reported as the mistyped command it most likely is.
+// session matched, and no file has as its name, is reported as the mistyped
+// command it most likely is.
 func rootRun(cfg *config, cmd *cobra.Command, args []string) error {
 	err := runShow(cfg, args, cfg.live)
 	var lookupErr *sessionLookupError
-	if len(args) == 1 && !looksLikeSessionID(args[0]) && !isTranscriptPath(args[0]) && errors.As(err, &lookupErr) {
+	if len(args) == 1 && !looksLikeSessionID(args[0]) && !isTranscriptPath(args[0]) && !isRegularFile(args[0]) && errors.As(err, &lookupErr) {
 		return unknownCommandError(cmd, args[0])
 	}
 	return err
@@ -86,12 +88,43 @@ func unknownCommandError(cmd *cobra.Command, arg string) error {
 	if suggestions := cmd.SuggestionsFor(arg); len(suggestions) > 0 {
 		return usageErrorf("%s Did you mean %s?", msg, joinQuoted(suggestions, "or"))
 	}
+	if err := claudeFolderError(cmd, arg); err != nil {
+		return err
+	}
 	// A directory is the likeliest non-command word: people expect
 	// `ficha <dir>` to analyze that project.
 	if isDir(arg) {
 		return usageErrorf("%s To analyze that directory, run: ficha -p %s", msg, shellQuote(arg))
 	}
 	return usageErrorf("%s Run 'ficha --help' to see the commands.", msg)
+}
+
+// claudeFolderError explains a directory from Claude Code's own config dir
+// passed where a session goes, or returns nil for any other argument. A
+// project's folder in the projects dir is what --project-dir takes, by its
+// name, and a folder named for a session holds that session's agents, beside
+// the transcript that's meant.
+func claudeFolderError(cmd *cobra.Command, arg string) error {
+	if name, ok := projectFolderName(arg); ok {
+		todo := map[string]string{
+			"watch":     "watch its sessions",
+			"breakdown": "break down its latest session",
+		}[cmd.Name()]
+		if todo == "" {
+			todo = "show its latest session"
+		}
+		return usageErrorf("%q is a Claude project folder, not a session. To %s, run: %s", arg, todo, rewriteArg(cmd, arg, "--project-dir="+name))
+	}
+	transcript := strings.TrimRight(arg, `/\`) + ".jsonl"
+	if id := trimJSONL(filepath.Base(transcript)); id != "" && looksLikeSessionID(id) && isDir(arg) && isRegularFile(transcript) {
+		return usageErrorf("%q holds the agents of session %s, not a session. Run: %s", arg, shortSessionID(id), rewriteArg(cmd, arg, transcript))
+	}
+	return nil
+}
+
+func isRegularFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func isDir(path string) bool {
@@ -139,6 +172,9 @@ func sessionArgs(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 || looksLikeSessionID(args[0]) || isTranscriptPath(args[0]) || !isDir(args[0]) {
 		return nil
 	}
+	if err := claudeFolderError(cmd, args[0]); err != nil {
+		return err
+	}
 	todo := map[string]string{
 		"show":      "show that directory's latest session",
 		"watch":     "watch that directory's sessions",
@@ -164,9 +200,20 @@ func noArgs(cmd *cobra.Command, args []string) error {
 // from an argument to -p right after the command's name. A project flag
 // already on the line is dropped, since -p replaces it.
 func projectCommand(cmd *cobra.Command, dir string) string {
+	return rewriteArg(cmd, dir, "-p", dir)
+}
+
+// rewriteArg is the command line ficha was run with, with arg replaced by
+// tokens right after the command's name, or in arg's place for bare ficha,
+// and any project flag dropped.
+func rewriteArg(cmd *cobra.Command, arg string, tokens ...string) string {
 	line, ok := commandLine(cmd.Context())
 	if !ok {
-		return cmd.CommandPath() + " -p " + shellQuote(dir)
+		out := []string{cmd.CommandPath()}
+		for _, t := range tokens {
+			out = append(out, shellQuote(t))
+		}
+		return strings.Join(out, " ")
 	}
 	out := []string{cmd.Root().Name()}
 	named, moved, afterDashes := false, false, false
@@ -197,12 +244,16 @@ func projectCommand(cmd *cobra.Command, dir string) string {
 			}
 			if !named && (a == cmd.Name() || slices.Contains(cmd.Aliases, a)) {
 				named = true
-				out = append(out, a, "-p", dir)
+				out = append(append(out, a), tokens...)
 				continue
 			}
 		}
-		if !moved && a == dir {
+		if !moved && a == arg {
 			moved = true
+			// Bare ficha has no command name on the line to follow.
+			if !cmd.HasParent() {
+				out = append(out, tokens...)
+			}
 			continue
 		}
 		out = append(out, a)

@@ -136,6 +136,9 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 	if canonical != projPath {
 		cfg.tracef("resolves to %s", canonical)
 	}
+	if name, ok := projectFolderName(canonical); ok {
+		return projectFolder(cfg, filepath.Join(projectsDir, name)), nil
+	}
 
 	exactDir := filepath.Join(projectsDir, paths.PathToProjectDir(canonical))
 	if isDir(exactDir) {
@@ -218,6 +221,37 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 			render.NoBreak(tildePath(canonical)), render.NoBreak(tildePath(label)), paths.BasenameCrossOS(label))
 	}
 	return resolvedProject{dir: match.ProjectDir, label: label}, nil
+}
+
+// projectFolderName returns the name of the projects dir's folder that dir
+// is, which --project-dir takes, when it's one. Both are compared with
+// symlinks resolved, since ~/.claude can be a link.
+func projectFolderName(dir string) (string, bool) {
+	projectsDir, err := paths.GetProjectsDir()
+	if err != nil || !isDir(dir) {
+		return "", false
+	}
+	canonical, err := paths.CanonicalizePath(dir)
+	if err != nil {
+		return "", false
+	}
+	projects, err := paths.CanonicalizePath(projectsDir)
+	if err != nil || filepath.Dir(canonical) != projects {
+		return "", false
+	}
+	return filepath.Base(canonical), true
+}
+
+// projectFolder is a projects dir folder given as -p or run from: Claude
+// Code's record of a project rather than a directory it ran in. It reads as
+// --project-dir would, under the path the project's transcripts recorded.
+func projectFolder(cfg *config, dir string) resolvedProject {
+	cfg.tracef("%s is a project folder in the projects dir", filepath.Base(dir))
+	project := resolvedProject{dir: dir, label: filepath.Base(dir)}
+	if recorded := parser.ProjectOriginalPath(dir); filepath.IsAbs(recorded) {
+		project.label, project.path = recorded, recorded
+	}
+	return project
 }
 
 // hasProjects reports whether projectsDir holds at least one project.

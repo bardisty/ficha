@@ -226,6 +226,11 @@ func selectSession(cfg *config, args []string) (*models.SessionEntry, string, bo
 
 func findSession(cfg *config, args []string) (*models.SessionEntry, string, bool, error) {
 	explicitSessionID := len(args) > 0
+	if explicitSessionID {
+		if err := notSessionError(args[0]); err != nil {
+			return nil, "", true, err
+		}
+	}
 	if explicitSessionID && isTranscriptPath(args[0]) {
 		session, projectDir, err := sessionFromPath(cfg, args[0])
 		return session, projectDir, true, err
@@ -430,6 +435,30 @@ func isTranscriptPath(arg string) bool {
 	}
 	info, err := os.Stat(arg)
 	return err == nil && !info.IsDir()
+}
+
+// notSessionError explains a file given as the session that can't be one: a
+// file that isn't a .jsonl, or a .jsonl with no Claude Code record in it,
+// such as ~/.claude/history.jsonl. It's nil for a session ID, a transcript,
+// and anything it can't read, which the session lookup reports. A word that
+// could be a session ID stays one, even when a file has its name.
+func notSessionError(arg string) error {
+	if !isTranscriptPath(arg) {
+		if looksLikeSessionID(arg) || !isRegularFile(arg) {
+			return nil
+		}
+		projectsDir, _ := paths.GetProjectsDir()
+		return newDisplayError("%s is a file, not a session ID. ficha reads .jsonl transcripts, such as %s.",
+			errPath(arg), errPath(filepath.Join(projectsDir, "<project>", "<session-id>.jsonl")))
+	}
+	ok, lines, err := parser.HoldsRecords(arg)
+	if err != nil || ok {
+		return nil
+	}
+	if lines == 1 {
+		return newDisplayError("%s isn't a Claude Code transcript: its one line isn't a Claude Code record.", errPath(arg))
+	}
+	return newDisplayError("%s isn't a Claude Code transcript: none of its %s lines is a Claude Code record.", errPath(arg), render.Count(lines))
 }
 
 // sessionFromPath is the session a transcript path names. Its project is the
