@@ -3,6 +3,7 @@ package formatter
 import (
 	"encoding/csv"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -97,7 +98,7 @@ func sampleSummaryAggregate() *models.SessionAnalysis {
 }
 
 func TestFormatSummaryDetailJSON_NoExpand(t *testing.T) {
-	out, err := FormatSummaryDetailJSON(sampleSummaryAggregate(), sampleSummaryResults(), false, true)
+	out, err := FormatSummaryDetailJSON(sampleSummaryAggregate(), sampleSummaryResults(), false, true, SortByTime)
 	if err != nil {
 		t.Fatalf("FormatSummaryDetailJSON returned error: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestFormatSummaryDetailJSON_NoExpand(t *testing.T) {
 }
 
 func TestFormatSummaryDetailJSON_Expand(t *testing.T) {
-	out, err := FormatSummaryDetailJSON(sampleSummaryAggregate(), sampleSummaryResults(), true, true)
+	out, err := FormatSummaryDetailJSON(sampleSummaryAggregate(), sampleSummaryResults(), true, true, SortByTime)
 	if err != nil {
 		t.Fatalf("FormatSummaryDetailJSON returned error: %v", err)
 	}
@@ -160,7 +161,7 @@ func TestFormatSummaryDetailJSON_Expand(t *testing.T) {
 }
 
 func TestFormatSummaryDetailCSV_NoExpand(t *testing.T) {
-	out, err := FormatSummaryDetailCSV(sampleSummaryResults(), false)
+	out, err := FormatSummaryDetailCSV(sampleSummaryResults(), false, SortByTime)
 	if err != nil {
 		t.Fatalf("FormatSummaryDetailCSV returned error: %v", err)
 	}
@@ -232,7 +233,7 @@ func TestFormatSummaryDetailCSV_NoExpand(t *testing.T) {
 }
 
 func TestFormatSummaryDetailCSV_Expand(t *testing.T) {
-	out, err := FormatSummaryDetailCSV(sampleSummaryResults(), true)
+	out, err := FormatSummaryDetailCSV(sampleSummaryResults(), true, SortByTime)
 	if err != nil {
 		t.Fatalf("FormatSummaryDetailCSV returned error: %v", err)
 	}
@@ -297,7 +298,7 @@ func TestFormatSummaryDetailCSV_Expand(t *testing.T) {
 // detail CSV is a single table: every row (header, session, agent) has the
 // same column count, so encoding/csv in the default (non-variadic) mode parses it.
 func TestFormatSummaryDetailCSV_UniformColumns(t *testing.T) {
-	out, err := FormatSummaryDetailCSV(sampleSummaryResults(), true)
+	out, err := FormatSummaryDetailCSV(sampleSummaryResults(), true, SortByTime)
 	if err != nil {
 		t.Fatalf("FormatSummaryDetailCSV returned error: %v", err)
 	}
@@ -305,5 +306,83 @@ func TestFormatSummaryDetailCSV_UniformColumns(t *testing.T) {
 	r.FieldsPerRecord = 0 // lock to the first record's field count; mismatch errors
 	if _, err := r.ReadAll(); err != nil {
 		t.Fatalf("detail CSV is not a single uniform table: %v", err)
+	}
+}
+
+// SortSessionsByCost puts the costliest first, equal costs newest first and
+// then by ID, and sessions with nothing to price last, newest first among
+// them, whatever order they came in.
+func TestSortSessionsByCost(t *testing.T) {
+	at := func(h int) time.Time { return time.Date(2026, 1, 15, h, 0, 0, 0, time.UTC) }
+	priced := func(id string, cost float64, h int) models.SessionResult {
+		return models.SessionResult{
+			Entry:    models.SessionEntry{SessionID: id},
+			Analysis: &models.SessionAnalysis{MessageCount: 1, EndTime: at(h), TotalCost: models.CostBreakdown{TotalCost: cost}},
+		}
+	}
+	noReplies := models.SessionResult{Entry: models.SessionEntry{SessionID: "empty", Modified: at(11)}, Analysis: &models.SessionAnalysis{}}
+	unreadable := models.SessionResult{Entry: models.SessionEntry{SessionID: "broken", Modified: at(12)}}
+	want := []string{"big", "tie-new", "tie-a", "tie-b", "small", "broken", "empty"}
+	for _, in := range [][]models.SessionResult{
+		{noReplies, priced("small", 1, 9), unreadable, priced("tie-b", 5, 8), priced("big", 9, 1), priced("tie-a", 5, 8), priced("tie-new", 5, 10)},
+		{priced("tie-new", 5, 10), priced("tie-a", 5, 8), priced("big", 9, 1), priced("tie-b", 5, 8), unreadable, priced("small", 1, 9), noReplies},
+	} {
+		SortSessionsByCost(in)
+		var got []string
+		for _, r := range in {
+			got = append(got, r.Entry.SessionID)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	}
+}
+
+// Under SortByCost, summary -d's json and csv go costliest first, and csv's
+// cumulative_cost runs down the rows in that order.
+func TestSummaryDetailMachineOrderByCost(t *testing.T) {
+	results := []models.SessionResult{
+		{Entry: models.SessionEntry{SessionID: "old-cheap"}, Analysis: &models.SessionAnalysis{SessionID: "old-cheap", MessageCount: 1,
+			EndTime: time.Date(2026, 1, 10, 9, 0, 0, 0, time.UTC), TotalCost: models.CostBreakdown{TotalCost: 1}}},
+		{Entry: models.SessionEntry{SessionID: "new-dear"}, Analysis: &models.SessionAnalysis{SessionID: "new-dear", MessageCount: 1,
+			EndTime: time.Date(2026, 1, 12, 9, 0, 0, 0, time.UTC), TotalCost: models.CostBreakdown{TotalCost: 4}}},
+		{Entry: models.SessionEntry{SessionID: "mid"}, Analysis: &models.SessionAnalysis{SessionID: "mid", MessageCount: 1,
+			EndTime: time.Date(2026, 1, 11, 9, 0, 0, 0, time.UTC), TotalCost: models.CostBreakdown{TotalCost: 2}}},
+	}
+	out, err := FormatSummaryDetailCSV(results, false, SortByCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, cum := slices.Index(records[0], "session_id"), slices.Index(records[0], "cumulative_cost")
+	var got []string
+	for _, r := range records[1:] {
+		got = append(got, r[id]+" "+r[cum])
+	}
+	if want := []string{"new-dear 4.000000", "mid 6.000000", "old-cheap 7.000000"}; !slices.Equal(got, want) {
+		t.Errorf("csv rows %v, want %v", got, want)
+	}
+
+	js, err := FormatSummaryDetailJSON(&models.SessionAnalysis{}, results, false, false, SortByCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detail struct {
+		Sessions []struct {
+			SessionID string `json:"session_id"`
+		} `json:"sessions"`
+	}
+	if err := json.Unmarshal([]byte(js), &detail); err != nil {
+		t.Fatal(err)
+	}
+	got = got[:0]
+	for _, s := range detail.Sessions {
+		got = append(got, s.SessionID)
+	}
+	if want := []string{"new-dear", "mid", "old-cheap"}; !slices.Equal(got, want) {
+		t.Errorf("json sessions %v, want %v", got, want)
 	}
 }

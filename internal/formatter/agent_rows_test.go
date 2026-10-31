@@ -87,7 +87,7 @@ func TestSummaryTreeRowsMsgsColumnKeepsCostAligned(t *testing.T) {
 				SessionID: "aggregate", IsSummary: true, SessionCount: 1,
 				CostByModel: map[string]models.CostBreakdown{},
 			}
-			out := FormatSummaryTableWithDetails(aggregate, []models.SessionResult{r}, "/home/user/src/app", noColor, true, 0)
+			out := FormatSummaryTableWithDetails(aggregate, []models.SessionResult{r}, "/home/user/src/app", noColor, true, 0, SortByTime)
 
 			var costCols, rowWidths []int
 			for _, line := range strings.Split(out, "\n") {

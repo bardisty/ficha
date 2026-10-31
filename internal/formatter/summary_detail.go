@@ -11,17 +11,52 @@ import (
 	"github.com/bardisty/ficha/internal/render"
 )
 
-// sortedSuccessfulResults returns the results that parsed, ordered by last
-// message time to match the SESSION BREAKDOWN table. Failed sessions (nil
-// Analysis) are dropped: machine formats export only sessions that could be
-// analyzed, and the aggregate's skipped_sessions plus the stderr warning
-// account for the rest.
-func sortedSuccessfulResults(results []models.SessionResult) []models.SessionResult {
+// The orders a session list and summary's per-session breakdown take, as
+// --sort-by names them.
+const (
+	// SortByTime is by last message: newest first in the tables, oldest
+	// first in summary's json and csv.
+	SortByTime = "time"
+	// SortByCost is costliest first everywhere (see SortSessionsByCost).
+	SortByCost = "cost"
+)
+
+// SortSessionsByCost orders results costliest first. A session with nothing
+// to price, no replies or an unreadable transcript, goes last. Equal costs
+// go newest first, then by ID, so the order never depends on the input's.
+func SortSessionsByCost(results []models.SessionResult) {
+	priced := func(r models.SessionResult) bool { return r.Analysis != nil && r.Analysis.MessageCount > 0 }
+	sort.SliceStable(results, func(i, j int) bool {
+		a, b := results[i], results[j]
+		if priced(a) != priced(b) {
+			return priced(a)
+		}
+		if priced(a) && a.Analysis.TotalCost.TotalCost != b.Analysis.TotalCost.TotalCost {
+			return a.Analysis.TotalCost.TotalCost > b.Analysis.TotalCost.TotalCost
+		}
+		if !a.LastActive().Equal(b.LastActive()) {
+			return a.LastActive().After(b.LastActive())
+		}
+		return a.Entry.SessionID < b.Entry.SessionID
+	})
+}
+
+// sortedSuccessfulResults returns the results that parsed, in the SESSION
+// BREAKDOWN table's order: oldest first by last message, the table read from
+// the bottom, or costliest first under SortByCost, as the table reads.
+// Failed sessions (nil Analysis) are dropped: machine formats export only
+// sessions that could be analyzed, and the aggregate's skipped_sessions plus
+// the stderr warning account for the rest.
+func sortedSuccessfulResults(results []models.SessionResult, sortBy string) []models.SessionResult {
 	sorted := make([]models.SessionResult, 0, len(results))
 	for _, r := range results {
 		if r.Analysis != nil {
 			sorted = append(sorted, r)
 		}
+	}
+	if sortBy == SortByCost {
+		SortSessionsByCost(sorted)
+		return sorted
 	}
 	sort.SliceStable(sorted, func(i, j int) bool {
 		return sorted[i].LastActive().Before(sorted[j].LastActive())
@@ -52,9 +87,10 @@ func primarySessionModelID(a *models.SessionAnalysis) string {
 // FormatSummaryDetailJSON renders the summary aggregate plus a per-session
 // breakdown. When expandAgents is false each session's nested agents array is
 // omitted (its agent_count/agents_cost still convey the rollup); when true the
-// full agent sub-sessions are included.
-func FormatSummaryDetailJSON(summary *models.SessionAnalysis, results []models.SessionResult, expandAgents, pretty bool) (string, error) {
-	sorted := sortedSuccessfulResults(results)
+// full agent sub-sessions are included. sortBy orders the sessions, as
+// sortedSuccessfulResults says.
+func FormatSummaryDetailJSON(summary *models.SessionAnalysis, results []models.SessionResult, expandAgents, pretty bool, sortBy string) (string, error) {
+	sorted := sortedSuccessfulResults(results, sortBy)
 	sessions := make([]models.SessionAnalysis, 0, len(sorted))
 	for _, r := range sorted {
 		// Shallow copy so nil-ing the agents slice does not mutate the caller's
@@ -90,14 +126,15 @@ func FormatSummaryDetailJSON(summary *models.SessionAnalysis, results []models.S
 // rows break out each agent — do not sum across row types: sum session rows for
 // totals, agent rows for agent spend. On session rows parent_cost + agents_cost
 // = total_cost, so the file reconciles against itself; agent rows leave both
-// empty. cumulative_cost is the running session total in the rows' order, by
-// last message, and is empty on agent rows. agent_id holds the agent's real
+// empty. cumulative_cost is the running session total in the rows' order,
+// which sortBy sets as sortedSuccessfulResults says, and is empty on agent
+// rows. agent_id holds the agent's real
 // ID — the same key `show --messages` and the json agents[] array use, so the
 // exports join.
 // skipped_agents says how many agents a session row's agent_count does not
 // include, and is empty on agent rows. agent_type and description are the
 // agent's meta file's, raw, and empty on session rows.
-func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (string, error) {
+func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool, sortBy string) (string, error) {
 	var sb strings.Builder
 	w := csv.NewWriter(&sb)
 
@@ -134,7 +171,7 @@ func FormatSummaryDetailCSV(results []models.SessionResult, expandAgents bool) (
 	}
 
 	var cumulative float64
-	for _, r := range sortedSuccessfulResults(results) {
+	for _, r := range sortedSuccessfulResults(results, sortBy) {
 		a := r.Analysis
 		cumulative += a.TotalCost.TotalCost
 

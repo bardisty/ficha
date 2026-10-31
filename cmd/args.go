@@ -451,9 +451,12 @@ func withSuggestedLine(root *cobra.Command, hint string, owners []string) string
 // takesLine reports whether cmd takes every flag in args, and the
 // arguments left once they're taken out, and whether it can print the
 // format they ask for: the live views and statusline print only a table.
+// --sort-by takes other values on global than on list and summary, so its
+// value has to be one cmd takes too.
 func takesLine(cmd *cobra.Command, args []string) bool {
 	var positional []string
 	format, live := "", false
+	sortBy, sorted := "", false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
@@ -477,6 +480,10 @@ func takesLine(cmd *cobra.Command, args []string) bool {
 			_, format, _ = strings.Cut(a, "=")
 		case f.Name == "format":
 			_, format, _ = strings.Cut(a, f.Shorthand)
+		case f.Name == "sort-by" && takesNext && i+1 < len(args):
+			sortBy, sorted = args[i+1], true
+		case f.Name == "sort-by":
+			_, sortBy, sorted = strings.Cut(a, "=")
 		}
 		if takesNext {
 			if i+1 == len(args) {
@@ -488,6 +495,12 @@ func takesLine(cmd *cobra.Command, args []string) bool {
 	tableOnly := live || cmd.Name() == "watch" || cmd.Name() == "breakdown" || cmd.Name() == "statusline"
 	if tableOnly && format != "" && !strings.EqualFold(format, "table") {
 		return false
+	}
+	if complete, ok := cmd.GetFlagCompletionFunc("sort-by"); ok && sorted {
+		values, _ := complete(cmd, nil, "")
+		if !slices.ContainsFunc(values, func(v string) bool { return strings.EqualFold(v, sortBy) }) {
+			return false
+		}
 	}
 	return cmd.Args == nil || cmd.Args(cmd, positional) == nil
 }

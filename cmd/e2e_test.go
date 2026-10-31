@@ -2035,3 +2035,90 @@ func TestE2EListWindowWarnsAsSummaryDoes(t *testing.T) {
 		}
 	}
 }
+
+// TestE2ESortByCost: list and summary --details under --sort-by cost put the
+// costliest session first in the table, json and csv alike, and the default
+// is the time order --sort-by time names.
+func TestE2ESortByCost(t *testing.T) {
+	root := setupE2EFixture(t)
+	// A third session, costlier than both, older than both.
+	dear := e2eMsg("2026-01-20T10:00:00Z", "d1", "claude-opus-4-8", 50000, 40000, 0, 0, 0)
+	const dearID = "dddddddd-1111-2222-3333-444444444444"
+	if err := os.WriteFile(filepath.Join(root, "projects", e2eProjDir, dearID+".jsonl"), []byte(dear+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) string {
+		t.Helper()
+		out, stderr, err := executeCLISplit(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, stderr)
+		}
+		return out
+	}
+	type record struct {
+		SessionID string `json:"session_id"`
+		TotalCost struct {
+			TotalCost float64 `json:"total_cost"`
+		} `json:"total_cost"`
+	}
+	ids := func(rs []record) []string {
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.SessionID)
+		}
+		return out
+	}
+	descending := func(what string, rs []record) {
+		t.Helper()
+		if len(rs) != 3 || rs[0].SessionID != dearID {
+			t.Fatalf("%s: want 3 sessions, %s first, got %v", what, dearID[:8], ids(rs))
+		}
+		for i := 1; i < len(rs); i++ {
+			if rs[i].TotalCost.TotalCost > rs[i-1].TotalCost.TotalCost {
+				t.Errorf("%s: not costliest first: %v", what, rs)
+			}
+		}
+	}
+
+	var list []record
+	mustJSON(t, run("list", projFlag, "--sort-by", "cost", "-f", "json"), &list)
+	descending("list json", list)
+
+	records := mustCSV(t, run("list", projFlag, "--sort-by", "cost", "-f", "csv"))
+	col := slices.Index(records[0], "session_id")
+	var csvIDs []string
+	for _, r := range records[1:] {
+		csvIDs = append(csvIDs, r[col])
+	}
+	if !slices.Equal(csvIDs, ids(list)) {
+		t.Errorf("list csv order %v, json %v", csvIDs, ids(list))
+	}
+
+	table := run("list", projFlag, "--sort-by", "cost")
+	var tableIDs []string
+	for _, line := range strings.Split(table, "\n") {
+		for _, id := range ids(list) {
+			if strings.HasPrefix(strings.TrimSpace(line), id[:8]) {
+				tableIDs = append(tableIDs, id)
+			}
+		}
+	}
+	if !slices.Equal(tableIDs, ids(list)) || !strings.Contains(table, "by cost") {
+		t.Errorf("list table should name the order and list %v:\n%s", ids(list), table)
+	}
+
+	var detail struct {
+		Sessions []record `json:"sessions"`
+	}
+	mustJSON(t, run("summary", projFlag, "-d", "--sort-by", "cost", "-f", "json"), &detail)
+	descending("summary -d json", detail.Sessions)
+
+	if def, byTime := run("list", projFlag, "-f", "json"), run("list", projFlag, "--sort-by", "time", "-f", "json"); def != byTime {
+		t.Errorf("--sort-by time should be the default order:\n%s\n%s", def, byTime)
+	}
+	var byTime []record
+	mustJSON(t, run("list", projFlag, "-f", "json"), &byTime)
+	if byTime[len(byTime)-1].SessionID != dearID {
+		t.Errorf("by time, the oldest session should be last: %v", ids(byTime))
+	}
+}

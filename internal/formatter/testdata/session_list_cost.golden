@@ -1,0 +1,12 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║  ~/src/app  │  3 sessions by cost, 1 unreadable                          ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  ID        WHEN      LENGTH  MODEL       AGENTS      COST  TITLE
+  ──────────────────────────────────────────────────────────────────────────
+  01234567  13h ago   47m 5s  Sonnet 5         -  $50.00    -
+  0a1b2c3d  30m ago   1h 23m  Opus 4.8         2  $12.34    Refactor the auth middleware to use short-lived tokens
+  sess-emp  4d ago         -  -                -         -  (no replies yet)
+  deadbeef  2mo ago        -  -                -         -  (unreadable)
+
+────────────────────────────────────────────────────────────────────────────
