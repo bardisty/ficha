@@ -159,12 +159,32 @@ func renderTooSmall(width, height, minWidth, minHeight int) string {
 // renderAnalysis renders the live analysis body. Cache-write tokens are split by
 // TTL in both modes; only the per-fragment styling varies with m.noColor.
 func (m Model) renderAnalysis() string {
+	body, _ := m.renderAnalysisSections()
+	return body
+}
+
+// bodySection is where one of the body's sections starts: the blank line
+// above its heading, which moves with it, or 0 for the totals at the top.
+type bodySection struct {
+	name string
+	line int
+}
+
+// renderAnalysisSections is renderAnalysis, along with where each section
+// starts in what it returns, so refreshContent can keep the reader's line
+// when a section above it changes length.
+func (m Model) renderAnalysisSections() (string, []bodySection) {
 	// Handle empty session state
 	if m.isEmptySession() {
-		return m.renderEmptyState()
+		return m.renderEmptyState(), nil
 	}
 
 	var sb strings.Builder
+	sections := []bodySection{{name: "totals"}}
+	// begin marks a section starting at the next line written.
+	begin := func(name string) {
+		sections = append(sections, bodySection{name: name, line: strings.Count(sb.String(), "\n")})
+	}
 	a := m.analysis
 	sectionWidth := panelWidthFor(m.width)
 
@@ -236,11 +256,13 @@ func (m Model) renderAnalysis() string {
 	}
 
 	// Context window section
+	begin("context")
 	sb.WriteString("\n")
 	sb.WriteString(m.renderContextSection())
 
 	// Agent breakdown (shown when agents exist)
 	if a.HasAgents {
+		begin("agents")
 		sb.WriteString("\n")
 		sb.WriteString("  " + render.SectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
@@ -250,6 +272,7 @@ func (m Model) renderAnalysis() string {
 	// Section: COST BY MODEL. A session of only synthetic lines has no model
 	// with a cost, and a heading over nothing reads as a rendering fault.
 	if len(a.CostByModel) > 0 {
+		begin("models")
 		sb.WriteString("\n")
 		sb.WriteString("  " + render.SectionHeader("COST BY MODEL", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
@@ -259,6 +282,7 @@ func (m Model) renderAnalysis() string {
 	// Cost trend chart, from the first timestamped message on. A short
 	// terminal can't spare its nine rows.
 	if len(m.costHistory) > 0 && !m.compact() {
+		begin("trend")
 		sb.WriteString("\n")
 		sb.WriteString("  " + render.SectionHeader("COST TREND", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
@@ -267,6 +291,7 @@ func (m Model) renderAnalysis() string {
 
 	// Message insights (shown when insights are available)
 	if a.Insights != nil {
+		begin("insights")
 		sb.WriteString("\n")
 		sb.WriteString("  " + render.SectionHeader("MESSAGE INSIGHTS", sectionWidth, m.noColor))
 		sb.WriteString("\n\n")
@@ -275,7 +300,7 @@ func (m Model) renderAnalysis() string {
 
 	// Note: Footer is rendered separately in View() after the separators
 
-	return sb.String()
+	return sb.String(), sections
 }
 
 // renderContextSection renders the context gauge sized to the panel, with

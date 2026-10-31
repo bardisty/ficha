@@ -65,10 +65,14 @@ type Model struct {
 	// Viewport for scrolling. watch is a dashboard, not a log: it opens at the
 	// top and keeps the reader's position across reloads and resizes.
 	// chosenY is the offset the reader last scrolled to, which only a scroll
-	// key sets; see refreshContent.
+	// key sets, and which moves with their line when a section above it
+	// changes length; see refreshContent.
 	viewport viewport.Model
 	chosenY  int
 	ready    bool // viewport initialized
+	// bodySections is where each of the body's sections starts as last
+	// rendered; refreshContent keeps the reader's line by them.
+	bodySections []bodySection
 
 	// now stands in for time.Now where the view reads the wall clock (the
 	// rolling rate); nil means time.Now. Tests pin it.
@@ -364,7 +368,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Re-render content with new dimensions
 		if m.analysis != nil || m.waiting() {
-			m.refreshContent()
+			m.relayoutContent()
 		}
 
 	case spinner.TickMsg:
@@ -633,6 +637,7 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	// A new session opens at the top, like the first one, and drops the old
 	// session's warning rows from the layout.
 	m.chosenY = 0
+	m.bodySections = nil
 	if m.ready {
 		m.viewport.SetContent("")
 		m.viewport.GotoTop()
@@ -766,24 +771,69 @@ func (m *Model) layoutViewport() {
 // the view scrolled past its last line. The clamp isn't kept: the viewport
 // clamps on every SetContent, and a window that grows and shrinks back, as
 // a zoomed tmux pane does, would otherwise come back off the reader's line.
+//
+// When a section above the reader's line changed length, as the agent list
+// does when agents start or fold, the choice moves with it, so the line at
+// the top stays at the top. A reader at the top, or inside the section
+// that changed, stays where they were.
 func (m *Model) refreshContent() {
-	m.layoutViewport()
-	m.runningAgents = runningAgentsKey(m.analysis, m.clock())
-	// The body's edge blank lines would count as hidden lines in the footer
-	// rule's overflow marker, and a leading one would open the view on an
-	// empty row.
-	body := trimBlankEdges(clipToWidth(m.renderAnalysis(), m.width))
-	if m.compact() {
-		body = dropBlankLines(body)
-	}
-	m.viewport.SetContent(body)
+	before := m.bodySections
+	m.setBody()
+	m.chosenY += sectionShift(before, m.bodySections, m.chosenY)
 	m.viewport.SetYOffset(m.chosenY)
 }
 
-// trimBlankEdges drops whitespace-only lines from both ends of s. Rendered
-// lines are space-padded to a common width, so a blank one isn't empty.
-func trimBlankEdges(s string) string {
-	lines := strings.Split(s, "\n")
+// relayoutContent is refreshContent for a resize. The sections move with
+// the new size, but that's the window changing, not the content above the
+// reader, and the reader's choice stays as it is.
+func (m *Model) relayoutContent() {
+	m.setBody()
+	m.viewport.SetYOffset(m.chosenY)
+}
+
+// setBody renders the body into the viewport and notes where its sections
+// start, without moving the viewport's offset from what SetContent leaves.
+func (m *Model) setBody() {
+	m.layoutViewport()
+	m.runningAgents = runningAgentsKey(m.analysis, m.clock())
+	raw, sections := m.renderAnalysisSections()
+	body, at := fitBody(clipToWidth(raw, m.width), m.compact())
+	for i := range sections {
+		sections[i].line = at(sections[i].line)
+	}
+	m.bodySections = sections
+	m.viewport.SetContent(body)
+}
+
+// sectionShift is how far the reader's line at y moved between two
+// layouts of the body: how far the start of the section it's in moved.
+// A section gone from the new layout gives no shift.
+func sectionShift(before, after []bodySection, y int) int {
+	in := -1
+	for i, s := range before {
+		if s.line <= y {
+			in = i
+		}
+	}
+	if in < 0 {
+		return 0
+	}
+	for _, s := range after {
+		if s.name == before[in].name {
+			return s.line - before[in].line
+		}
+	}
+	return 0
+}
+
+// fitBody drops whitespace-only lines from both ends of body, and in a
+// compact layout, where every row goes to data, from everywhere. The body's
+// edge blank lines would count as hidden lines in the footer rule's overflow
+// marker, and a leading one would open the view on an empty row. Rendered
+// lines are space-padded to a common width, so a blank one isn't empty. at
+// maps a line of body to the line it lands on.
+func fitBody(body string, compact bool) (fitted string, at func(int) int) {
+	lines := strings.Split(body, "\n")
 	start, end := 0, len(lines)
 	for start < end && strings.TrimSpace(lines[start]) == "" {
 		start++
@@ -791,20 +841,17 @@ func trimBlankEdges(s string) string {
 	for end > start && strings.TrimSpace(lines[end-1]) == "" {
 		end--
 	}
-	return strings.Join(lines[start:end], "\n")
-}
-
-// dropBlankLines removes whitespace-only lines, for compact layouts where
-// every row goes to data.
-func dropBlankLines(s string) string {
-	lines := strings.Split(s, "\n")
-	kept := lines[:0]
-	for _, l := range lines {
-		if strings.TrimSpace(l) != "" {
-			kept = append(kept, l)
+	// landed[i] is how many kept lines come before line i.
+	landed := make([]int, len(lines)+1)
+	kept := make([]string, 0, end-start)
+	for i, line := range lines {
+		landed[i] = len(kept)
+		if i >= start && i < end && (!compact || strings.TrimSpace(line) != "") {
+			kept = append(kept, line)
 		}
 	}
-	return strings.Join(kept, "\n")
+	landed[len(lines)] = len(kept)
+	return strings.Join(kept, "\n"), func(i int) int { return landed[min(max(i, 0), len(lines))] }
 }
 
 // detectChanges compares old and new analysis and marks changed fields
