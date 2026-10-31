@@ -185,11 +185,22 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 	// A parent directory's project is far likelier to be the one meant than a
 	// project elsewhere that shares this directory's name, and common names
 	// ("src", "api") make such matches easy. So the parent hint comes first,
-	// and the name fallback is left to directories with no project above them,
-	// such as a project moved or renamed on disk.
+	// and the name fallback is left to directories with no project above or
+	// below them, such as a project moved or renamed on disk.
 	if parent := ancestorWithProject(canonical, projectsDir); parent != "" {
 		cfg.tracef("parent directory %s has a project", parent)
 		return resolvedProject{}, noProjectError(cfg, projPath, canonical, parent, projectsDir, allProjects)
+	}
+
+	// Worktrees under the directory are far likelier to be what was meant
+	// than a project elsewhere that shares its name, which only comes up as a
+	// hint. A path that isn't a directory has nothing under it.
+	if isDir(projPath) {
+		if e := nestedOnlyError(cfg, canonical, projectsDir); e != nil {
+			cfg.tracef("projects under %s", canonical)
+			addSameName(cfg, e, canonical, allProjects)
+			return resolvedProject{}, e
+		}
 	}
 
 	match, err := paths.FindProjectDir(projPath, allProjects)
@@ -467,6 +478,29 @@ func nestedOnlyError(cfg *config, path, projectsDir string) *displayError {
 		e.add("\nTo list them all, run: %s", errWhole("ficha list"+cfg.typedProjectArgs()+" --nested"))
 	}
 	return e
+}
+
+// addSameName adds to e the projects elsewhere that share dir's name, which
+// resolveProjectDirectory would have matched dir to, as commands.
+func addSameName(cfg *config, e *displayError, dir string, allProjects []models.ProjectInfo) {
+	name := filepath.Base(dir)
+	var same []models.ProjectInfo
+	for _, p := range allProjects {
+		if p.OriginalPath != "" && strings.EqualFold(paths.BasenameCrossOS(p.OriginalPath), name) && !isWithin(p.OriginalPath, dir) {
+			same = append(same, p)
+		}
+	}
+	switch len(same) {
+	case 0:
+		return
+	case 1:
+		e.add("\nAnother project is also named %q. Run: %s", name, suggestProject(cfg.command()+" ", same[0]))
+		return
+	}
+	e.add("\n%d other projects are also named %q:", len(same), name)
+	for _, p := range same {
+		e.add("\n  %s", suggestProject(cfg.command()+" ", p))
+	}
 }
 
 // noSessionsError explains a project directory that holds no transcripts.
