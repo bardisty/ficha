@@ -303,6 +303,47 @@ func TestNestedAtHomeSaysItSkipped(t *testing.T) {
 	}
 }
 
+// At a directory whose sessions are all in the projects under it, show
+// names those projects rather than opening one elsewhere that shares the
+// directory's name, which comes up only as a hint. Tab completion offers
+// none of that other project's sessions.
+func TestShowPrefersNestedOverSameName(t *testing.T) {
+	repo, projectsDir, home := setupNestedFixture(t)
+	if err := os.RemoveAll(filepath.Join(projectsDir, paths.PathToProjectDir(repo))); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(home, "elsewhere", "repo")
+	writeCwdSession(t, filepath.Join(projectsDir, paths.PathToProjectDir(other)), other)
+
+	want := "Claude Code has no sessions for " + repo + " itself, but 2 projects under it have: fix-auth, packages/api. Pick one:"
+	for _, args := range [][]string{{"show"}, {}, {"show", "-p", repo}} {
+		_, _, err := executeCLISplit(t, args...)
+		if exitCode(err) != 1 || !strings.HasPrefix(err.Error(), want) {
+			t.Fatalf("%v: exit %d, error %v, want it to start %q", args, exitCode(err), err, want)
+		}
+		command := strings.Join(append([]string{"ficha"}, args[:min(len(args), 1)]...), " ")
+		if hint := `Another project is also named "repo". Run: ` + command + ` -p ` + shellQuote(other); !strings.Contains(err.Error(), hint) {
+			t.Errorf("%v: error %v, want the hint %q", args, err, hint)
+		}
+	}
+	if ids, _ := completeLines(t, "show", ""); len(ids) != 0 {
+		t.Errorf("completion offers %q", ids)
+	}
+	// A full session ID still opens its session wherever it is.
+	if _, _, err := executeCLISplit(t, "show", "eeeeeeee-0000-0000-0000-000000000000"); err != nil {
+		t.Errorf("show by full ID: %v", err)
+	}
+
+	// Two same-named projects are listed, not an error of their own.
+	third := filepath.Join(home, "old", "repo")
+	writeCwdSession(t, filepath.Join(projectsDir, paths.PathToProjectDir(third)), third)
+	_, _, err := executeCLISplit(t, "show")
+	if err == nil || !strings.HasPrefix(err.Error(), want) || !strings.Contains(err.Error(), `2 other projects are also named "repo":`) {
+		t.Errorf("error %v", err)
+	}
+
+}
+
 // A directory above ~, such as /home, holds every project under ~ too, so it
 // gets no note, doesn't stand in for the projects under it, and isn't
 // offered as a parent.
