@@ -16,21 +16,21 @@ import (
 func newShowCmd(cfg *config) *cobra.Command {
 	showCmd := &cobra.Command{
 		Use:   "show [session-id]",
-		Short: "Show session cost breakdown",
-		Long: `Show cost breakdown for a Claude Code session.
+		Short: "The latest session or a named one: cost, tokens, context, agents",
+		Long: `The cost, tokens, context window and agents of one Claude Code session.
 
-If no session ID is provided, shows the most recent session. The argument
-can also be the path to the session's .jsonl transcript. A path, or a full
-36-character ID, works from any directory.
-
-Examples:
-  ficha show                    Show latest session
-  ficha show abc123             Show specific session
-  ficha show -f json            Output as JSON
-  ficha show -f csv --messages  Per-message rows as CSV
+With no argument, show reads the project's latest session. Give a session
+ID, the start of one, or the path to a .jsonl transcript to read another. A
+path, or a full 36-character ID, works from any directory.
 
 --messages adds a record for each message, agents' too: a messages array
-on the session in json, one row per message in csv. The table ignores it.`,
+on the session in json, one row per message in csv. The table ignores it.
+
+Examples:
+  ficha show                    Show the latest session
+  ficha show abc123             Show one session
+  ficha show -f json            The latest session as JSON
+  ficha show -f csv --messages  One CSV row per message`,
 		Args:              sessionArgs,
 		ValidArgsFunction: completeSessionIDs(cfg),
 		RunE: func(cmd *cobra.Command, args []string) error {

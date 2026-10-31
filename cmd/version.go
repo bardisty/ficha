@@ -94,7 +94,8 @@ func commit(v string, info *debug.BuildInfo) string {
 func newVersionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "version",
-		Short:             "Print version information",
+		Short:             "The version you have",
+		Long:              "The version you have, with the commit, Go version and platform a bug report\nneeds. --version prints the same line.",
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {

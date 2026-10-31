@@ -1282,7 +1282,7 @@ func TestE2EUsageErrors(t *testing.T) {
 		wantErr string
 	}{
 		{"typo suggests the command", []string{"lst"}, `unknown command "lst" for "ficha". Did you mean "list"?`},
-		{"prefix lists every match", []string{"s"}, `unknown command "s" for "ficha". Did you mean "show", "statusline" or "summary"?`},
+		{"prefix lists every match", []string{"s"}, `unknown command "s" for "ficha". Did you mean "show", "summary" or "statusline"?`},
 		{"unrelated word points at help", []string{"frobnicate"}, `unknown command "frobnicate" for "ficha". Run 'ficha --help' to see the commands.`},
 		{"directory points at -p", []string{dir}, "unknown command " + strconv.Quote(dir) + ` for "ficha". To analyze that directory, run: ficha -p ` + shellQuote(dir)},
 		{"unmatched word in the project", []string{projFlag, "frobnicate"}, `unknown command "frobnicate" for "ficha". Run 'ficha --help' to see the commands.`},
@@ -1417,7 +1417,7 @@ func TestE2EFlagScope(t *testing.T) {
 		wantStderr string
 	}{
 		{name: "list rejects --live", args: []string{"list", projFlag, "--live"}, wantErr: "unknown flag: --live"},
-		{name: "summary rejects --no-follow", args: []string{"summary", projFlag, "--no-follow"}, wantErr: "ficha summary doesn't take --no-follow. --no-follow is a breakdown and watch flag."},
+		{name: "summary rejects --no-follow", args: []string{"summary", projFlag, "--no-follow"}, wantErr: "ficha summary doesn't take --no-follow. --no-follow is a watch and breakdown flag."},
 		{name: "global rejects -p", args: []string{"global", "-p", "."}, wantErr: "ficha global covers every project and doesn't take -p. summary covers one project."},
 		{name: "global rejects --project-dir", args: []string{"global", projFlag}, wantErr: "ficha global covers every project and doesn't take --project-dir. summary covers one project."},
 		{

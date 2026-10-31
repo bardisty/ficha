@@ -23,6 +23,9 @@ var validFormats = map[string]bool{
 // independent, which is what makes Execute re-entrant (see config).
 func newRootCmd() *cobra.Command {
 	cfg := &config{}
+	// cobra sorts the commands lazily, the first time anything lists them,
+	// so this has to be set before then.
+	cobra.EnableCommandSorting = false
 
 	rootCmd := &cobra.Command{
 		Use:   "ficha [session-id]",
@@ -125,24 +128,36 @@ Exit status:
 	addLiveFlags(rootCmd, cfg, true)
 	_ = rootCmd.Flags().MarkHidden("no-follow")
 
-	// Subcommands (each closes over the same cfg)
+	// Subcommands (each closes over the same cfg), in the order people
+	// reach for them, which the README's Usage table follows too. cobra
+	// would sort them by name; EnableCommandSorting is false above. It adds
+	// completion after these, and help last.
 	rootCmd.AddCommand(newShowCmd(cfg))
+	rootCmd.AddCommand(newWatchCmd(cfg))
+	rootCmd.AddCommand(newBreakdownCmd(cfg))
 	rootCmd.AddCommand(newListCmd(cfg))
 	rootCmd.AddCommand(newSummaryCmd(cfg))
-	rootCmd.AddCommand(newWatchCmd(cfg))
 	rootCmd.AddCommand(newGlobalCmd(cfg))
-	rootCmd.AddCommand(newBreakdownCmd(cfg))
 	rootCmd.AddCommand(newStatuslineCmd(cfg))
 	version := newVersionCmd()
 	rootCmd.AddCommand(version)
 	takeNoGlobalFlags(version)
-	rootCmd.AddCommand(newOutputHelpTopic())
 	rootCmd.AddCommand(newEnvironmentHelpTopic())
+	rootCmd.AddCommand(newOutputHelpTopic())
+	// cobra pads a help topic's path to the longest command path, which is
+	// "ficha environment" itself, so its line would be one space from its
+	// text, where the commands above have two.
+	rootCmd.SetUsageTemplate(strings.Replace(rootCmd.UsageTemplate(),
+		"{{rpad .CommandPath .CommandPathPadding}} {{.Short}}", "{{rpad .CommandPath .CommandPathPadding}}  {{.Short}}", 1))
 	// cobra adds help lazily too, but its Run reads the output streams only
 	// when it runs, so adding it here is safe.
 	rootCmd.InitDefaultHelpCmd()
 	if help := subcommandNamed(rootCmd, "help"); help != nil {
+		help.Short = "Help for a command or topic"
+		help.Long = `Help for a command, or for one of the topics listed under "Additional help
+topics" in 'ficha --help'.`
 		help.Args = helpTopicArgs
+		help.ValidArgsFunction = completeHelpTopics
 	}
 	// help and its topics take the global flags, which change nothing in
 	// their fixed text. -f is still one of them there, out of sight.
@@ -165,6 +180,12 @@ func initCompletion(root *cobra.Command) {
 	root.InitDefaultCompletionCmd()
 	for _, c := range root.Commands() {
 		if c.Name() == "completion" {
+			c.Short = "A shell completion script: bash, zsh, fish or PowerShell"
+			c.Long = `A shell completion script for bash, zsh, fish or PowerShell, which
+completes commands, flag values and session IDs.
+
+Each shell's help says how to load its script, as in
+'ficha completion zsh --help'.`
 			c.RunE = func(c *cobra.Command, _ []string) error { return c.Help() }
 			c.Args = shellArgs
 			usageArgs(c)

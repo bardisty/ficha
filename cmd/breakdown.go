@@ -9,31 +9,27 @@ import (
 func newBreakdownCmd(cfg *config) *cobra.Command {
 	breakdownCmd := &cobra.Command{
 		Use:   "breakdown [session-id]",
-		Short: "Show live per-message cost breakdown",
-		Long: `Show a live, scrollable per-message cost table for a Claude Code session.
+		Short: "Every message, live, with its agent, model, cost and tokens",
+		Long: `Every message of the project's latest Claude Code session in a live,
+scrollable table, with its agent, model, cost and tokens.
 
-Run this alongside 'ficha watch' in a separate terminal for detailed
-cost visibility during Claude Code sessions.
+New rows show up as messages arrive, highlighted briefly, and the view stays
+on the newest until you scroll up. When a new session starts, after /clear or
+a restart, breakdown switches to it. Give a session ID, the start of one, or
+a transcript path, or pass --no-follow, to stay on one session. With no
+session in the project yet, it waits for the first.
 
-Features:
-  - Live updates as new messages arrive, highlighted briefly
-  - Follows new sessions as they start; a session ID or transcript path
-    pins it to one
-  - Stays on the newest rows until you scroll up
-  - Agent rows marked in an AGENT column, with the IDs watch shows
-  - A workflow agent's AGENT cell ends in its run's initials, such as
-    rc for a review-changes run; the footer names those on screen when
-    it has room
-  - Can sort by cost, most expensive first. While sorted, the view stays
-    put as rows arrive, and time order comes back where you left it
-  - On a narrow terminal, columns give way whole, IN first; ? names the
-    ones hidden
-  - With no session in the project yet, waits for the first one
+The AGENT column marks agents' rows with the IDs watch shows. A workflow
+agent's cell ends in its run's initials, such as rc for a review-changes
+run, and the footer names those on screen when it has room. Sorted by cost
+with s, costliest first, the view stays put as rows arrive, and time order
+comes back where you left it. On a narrow terminal, columns give way whole,
+IN first, and ? names the ones hidden.
 
 Examples:
-  ficha breakdown              Show breakdown and auto-follow latest session
-  ficha breakdown --no-follow  Show breakdown for latest, don't auto-follow
-  ficha breakdown abc123       Show breakdown for specific session (pinned)
+  ficha breakdown               Follow the latest session
+  ficha breakdown --no-follow   Stay on the latest session
+  ficha breakdown abc123        Show one session
 
 ` + keysHelp(tui.BreakdownKeys()),
 		Args:              sessionArgs,

@@ -9,13 +9,14 @@ import (
 func newWatchCmd(cfg *config) *cobra.Command {
 	watchCmd := &cobra.Command{
 		Use:   "watch [session-id]",
-		Short: "Watch the latest session live, following new ones",
+		Short: "The latest session as a live dashboard, following new sessions",
 		Long: `A live dashboard for the project's latest Claude Code session: cost, tokens,
 context window and agents, updated as messages arrive.
 
 When a new session starts, after /clear or a restart, watch switches to it.
-Give a session ID or a transcript path, or pass --no-follow, to stay on one
-session.
+Give a session ID, the start of one, or a transcript path, or pass
+--no-follow, to stay on one session. With no session in the project yet, it
+waits for the first.
 
 Examples:
   ficha watch                   Follow the latest session
