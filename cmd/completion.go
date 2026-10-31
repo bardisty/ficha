@@ -62,7 +62,7 @@ func describeSessions(sessions []models.SessionEntry, now time.Time) []string {
 }
 
 // completeSessionIDs completes the positional session ID of show, watch and
-// breakdown with this project's sessions, newest first.
+// breakdown with this project's sessions, latest active first.
 func completeSessionIDs(cfg *config) cobra.CompletionFunc {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
 		if len(args) > 0 {
@@ -75,14 +75,13 @@ func completeSessionIDs(cfg *config) cobra.CompletionFunc {
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		sortSessionsByModified(sessions)
-
 		var candidates []models.SessionEntry
 		for _, s := range sessions {
 			if strings.HasPrefix(s.SessionID, strings.ToLower(toComplete)) {
 				candidates = append(candidates, s)
 			}
 		}
+		sortSessionsByLastActive(candidates)
 
 		descs := describeSessions(candidates, time.Now())
 		out := make([]cobra.Completion, 0, len(candidates))
