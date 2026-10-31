@@ -121,7 +121,7 @@ func renderContextSection(analysis *models.SessionAnalysis, width int, noColor b
 	// Fill the section after the "  Context " label; the gauge right-aligns
 	// its percentage, so "Context  95%" and "Context 100%" align.
 	gaugeWidth := width - 10
-	line, note := render.ContextGauge(*c, analysis.LastMessageModel, nil, gaugeWidth, noColor, false)
+	line, note := render.ContextGauge(*c, analysis.LastMessageModel, false, nil, gaugeWidth, noColor, false)
 	return "  Context " + line + "\n           " + note + "\n"
 }
 
@@ -222,12 +222,15 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	// Parent session cost, after 2(indent) + labelWidth + 3(spaces): column 45
 	// unless a workflow heading, a task or the width moved it
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
-	if noColor {
-		sb.WriteString(fmt.Sprintf("  %-*s   %s\n", labelWidth, "Main conversation", render.CostCell(analysis.ParentCost.TotalCost, 11)))
-	} else {
-		paddedLabel := fmt.Sprintf("%-*s", labelWidth, "Main conversation")
-		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedLabel, formatCostStyled(analysis.ParentCost.TotalCost, 11, noColor)))
+	// It names the main conversation's model. The agent rows' model column
+	// is 11 columns past the label's start and any task cell; MainRowLabel
+	// puts the model there when it can.
+	taskCell := 0
+	if taskWidth > 0 {
+		taskCell = 1 + taskWidth
 	}
+	label := render.MainRowLabel(analysis.LastMessageModel, 11+taskCell, labelWidth, false, noColor)
+	sb.WriteString("  " + label + "   " + formatCostStyled(analysis.ParentCost.TotalCost, 11, noColor) + "\n")
 	msgsGap := strings.Repeat(" ", max(1, labelWidth+3-agentRowWidth(rowMsgs, taskWidth)))
 	status := workflowStatuses(styles.GroupRule+" ", labelWidth, analysis)
 	prevWorkflow := ""

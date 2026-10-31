@@ -22,7 +22,7 @@
 
 ───────────────────────────[ AGENT SUB-SESSIONS ]───────────────────────────
 
-  Main conversation                                                  $7.90
+  Main conversation                         Opus 4.8                 $7.90
   [A1b2c3d4] Find the auth middleware       Haiku 4.5   100% ctx     $0.4200
   [Af6e5d4c] code-reviewer                  Sonnet 5     38% ctx     $1.58
   ── workflow: audit-codebase (running)                              $1.65
