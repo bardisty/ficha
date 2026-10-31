@@ -23,6 +23,31 @@ func helpTopicArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// completeHelpTopics completes `ficha help` with the commands and help
+// topics under the path typed so far, the ones helpTopicArgs accepts.
+// cobra's own leaves the topics out, since they have no Run.
+func completeHelpTopics(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	parent := cmd.Root()
+	for _, arg := range args {
+		if parent = subcommandNamed(parent, arg); parent == nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+	}
+	var commands, topics []cobra.Completion
+	for _, c := range parent.Commands() {
+		if c.Hidden || !strings.HasPrefix(c.Name(), toComplete) {
+			continue
+		}
+		switch {
+		case c.IsAvailableCommand() || c.Name() == "help":
+			commands = append(commands, cobra.CompletionWithDesc(c.Name(), c.Short))
+		case c.IsAdditionalHelpTopicCommand():
+			topics = append(topics, cobra.CompletionWithDesc(c.Name(), c.Short))
+		}
+	}
+	return append(commands, topics...), cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveKeepOrder
+}
+
 func subcommandNamed(parent *cobra.Command, name string) *cobra.Command {
 	for _, c := range parent.Commands() {
 		if c.Name() == name || c.HasAlias(name) {

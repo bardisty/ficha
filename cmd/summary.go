@@ -14,27 +14,16 @@ import (
 func newSummaryCmd(cfg *config) *cobra.Command {
 	summaryCmd := &cobra.Command{
 		Use:   "summary",
-		Short: "Show totals across this project's sessions",
-		Long: `Show aggregate statistics across all Claude Code sessions for this project.
+		Short: "Totals across this project's sessions",
+		Long: `Totals across this project's Claude Code sessions: cost by token type and
+by model, and message and session counts.
 
-This calculates the total cost and token usage across all sessions.
-
---details adds a per-session breakdown: rows in the table and in csv, a
-sessions array in json. --expand-agents, which needs --details, adds each
+--details adds each session: rows in the table and in csv, a sessions
+array in json. --expand-agents, which needs --details, adds each
 session's agents: tree rows in the table, after a row for the main
 conversation's cost, nested agents in json, agent rows in csv. --sort-by
 cost, which needs --details too, puts the costliest sessions first in all
 three, and the chart above the table stays in time order.
-
-Examples:
-  ficha summary                           Show aggregate stats
-  ficha summary --details                 Show per-session cost breakdown
-  ficha summary --details --expand-agents Include agent sub-sessions
-  ficha summary --details --sort-by cost  Costliest sessions first
-  ficha summary --details -f json         Per-session records as JSON
-  ficha summary --since 7d                The last 7 days
-  ficha summary --since 2026-09-01 --until 2026-09-30   September
-  ficha summary --nested                  Include the repo's worktrees
 
 ` + windowForms + `
 
@@ -45,7 +34,17 @@ table.
 Claude Code records a session under the directory it ran in, so a worktree
 under the repo, from claude --worktree or git worktree add, is a project of
 its own. summary notes when projects under this directory have sessions,
-and --nested counts them in. --details then names each session's project.`,
+and --nested counts them in. --details then names each session's project.
+
+Examples:
+  ficha summary                           This project's totals
+  ficha summary --details                 A row for each session
+  ficha summary --details --expand-agents Each session's agents too
+  ficha summary --details --sort-by cost  Costliest sessions first
+  ficha summary --details -f json         One record per session as JSON
+  ficha summary --since 7d                The last 7 days
+  ficha summary --since 2026-09-01 --until 2026-09-30   September
+  ficha summary --nested                  Include the repo's worktrees`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {

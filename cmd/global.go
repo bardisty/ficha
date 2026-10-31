@@ -18,28 +18,28 @@ import (
 func newGlobalCmd(cfg *config) *cobra.Command {
 	globalCmd := &cobra.Command{
 		Use:   "global",
-		Short: "Show aggregated stats across ALL projects",
-		Long: `Show aggregate statistics across all Claude Code projects.
+		Short: "Totals across every project",
+		Long: `Totals across every Claude Code project in ~/.claude/projects, or in
+$CLAUDE_CONFIG_DIR/projects when that's set, with the costliest projects in
+a table.
 
-This calculates total cost and token usage across every project in
-~/.claude/projects, or $CLAUDE_CONFIG_DIR/projects when that's set.
-
-json/csv always export every project; --top and --details only shape the
-table (filter downstream with jq/head if you need a subset). --details
-shows every project, with a cumulative cost column when sorted by cost.
-
-Examples:
-  ficha global                   Show global stats (top 10 projects)
-  ficha global --details         All projects, with a cumulative cost column
-  ficha global --top 20          Show top 20 projects
-  ficha global --sort-by name    Sort by project name
-  ficha global -f json           Output every project as JSON
-  ficha global --since 7d        Every project, the last 7 days
+The table lists the top 10. --top changes how many, and --details lists
+every project, with a cumulative cost column when sorted by cost. json and
+csv always hold every project, whatever --top and --details say.
 
 ` + windowForms + `
 
-Both count messages by their own timestamps, so a session that crosses a
-bound is split at it. They apply to json and csv as well as the table.`,
+Both count messages by their own timestamps, agents' too, so a session that
+crosses a bound is split at it. They apply to json and csv as well as the
+table.
+
+Examples:
+  ficha global                   The 10 costliest projects
+  ficha global --details         Every project, with a cumulative cost column
+  ficha global --top 20          The 20 costliest projects
+  ficha global --sort-by name    Projects by name
+  ficha global -f json           Every project as JSON
+  ficha global --since 7d        Every project, the last 7 days`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {

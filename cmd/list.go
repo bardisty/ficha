@@ -18,20 +18,13 @@ import (
 func newListCmd(cfg *config) *cobra.Command {
 	listCmd := &cobra.Command{
 		Use:   "list",
-		Short: "List available sessions",
-		Long: `List all Claude Code sessions for the current project.
+		Short: "This project's sessions, newest first",
+		Long: `This project's Claude Code sessions, one row each: when, length, model,
+agents, cost and title.
 
 Sessions are sorted by their last message, most recent first. WHEN is that
 message's time, the one show calls "Last active". --sort-by cost puts the
 costliest first instead, and json and csv follow the table's order.
-
-Examples:
-  ficha list                    List all sessions
-  ficha list --since 7d         Sessions with messages in the last 7 days
-  ficha list --sort-by cost     Costliest sessions first
-  ficha list --nested           Include the repo's worktrees
-  ficha list -f json            Output as JSON
-  ficha list -f csv             Output as CSV
 
 ` + windowForms + `
 
@@ -41,7 +34,15 @@ and so do message_count and the agent counts in json and csv.
 
 A worktree under the repo, from claude --worktree or git worktree add, is a
 project of its own. list notes when projects under this directory have
-sessions, and --nested lists them too, each titled with its project.`,
+sessions, and --nested lists them too, each titled with its project.
+
+Examples:
+  ficha list                    List this project's sessions
+  ficha list --since 7d         Sessions with messages in the last 7 days
+  ficha list --sort-by cost     Costliest sessions first
+  ficha list --nested           Include the repo's worktrees
+  ficha list -f json            The sessions as JSON
+  ficha list -f csv             The sessions as CSV`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {

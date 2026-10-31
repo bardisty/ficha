@@ -24,10 +24,10 @@ import (
 func newStatuslineCmd(cfg *config) *cobra.Command {
 	statuslineCmd := &cobra.Command{
 		Use:   "statusline",
-		Short: "Print a line for Claude Code's status line",
-		Long: `Print one line for Claude Code's status line: the model, how full the
-context window is, what recent messages cost, and the session's total with
-the agents' share.
+		Short: "A line for Claude Code's status line",
+		Long: `A line for Claude Code's status line: the model, how full the context
+window is, what recent messages cost, and the session's total with the
+agents' share.
 
 Claude Code runs the command after each message and writes JSON about the
 session on stdin. statusline reads transcript_path and model.display_name

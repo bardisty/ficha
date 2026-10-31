@@ -23,7 +23,7 @@ func TestHelpTopics(t *testing.T) {
 		wantErr string
 	}{
 		{"no topic is the root help", []string{"help"}, "Available Commands:", ""},
-		{"a command", []string{"help", "show"}, "Show cost breakdown", ""},
+		{"a command", []string{"help", "show"}, "The cost, tokens, context window and agents of one", ""},
 		{"a help topic", []string{"help", "output"}, "Reading the output", ""},
 		{"another help topic", []string{"help", "environment"}, "Environment variables", ""},
 		{"a nested command", []string{"help", "completion", "bash"}, "autocompletion script for the bash shell", ""},
@@ -34,7 +34,7 @@ func TestHelpTopics(t *testing.T) {
 		{"nothing close", []string{"help", "zzzzz"}, "",
 			`unknown help topic "zzzzz" for "ficha". Run 'ficha --help' to see the commands and help topics.`},
 		{"a typo under a command", []string{"help", "completion", "fsh"}, "",
-			`unknown help topic "fsh" for "ficha completion". Did you mean "bash", "fish" or "zsh"?`},
+			`unknown help topic "fsh" for "ficha completion". Did you mean "bash", "zsh" or "fish"?`},
 		{"a word under a command with none", []string{"help", "show", "extra"}, "",
 			`unknown help topic "extra" for "ficha show". It has no subtopics. Run 'ficha show --help'.`},
 	}
@@ -118,7 +118,7 @@ func TestNoFlagCommandsRejectGlobalFlags(t *testing.T) {
 // its script.
 func TestCompletionUnknownShell(t *testing.T) {
 	_, err := executeLikeMain(t, "completion", "bogus")
-	if want := `unknown shell "bogus": want bash, fish, powershell or zsh`; err == nil || err.Error() != want {
+	if want := `unknown shell "bogus": want bash, zsh, fish or powershell`; err == nil || err.Error() != want {
 		t.Fatalf("error:\n got: %v\nwant: %s", err, want)
 	}
 	if got := exitCode(err); got != exitUsage {
@@ -294,13 +294,13 @@ func TestSubcommandFlagHintNamesTheOwners(t *testing.T) {
 			"ficha summary doesn't take --messages. --messages is a show flag."},
 		// The live views print only a table.
 		{[]string{"summary", "-f", "json", "--no-follow"},
-			"ficha summary doesn't take --no-follow. --no-follow is a breakdown and watch flag."},
+			"ficha summary doesn't take --no-follow. --no-follow is a watch and breakdown flag."},
 		{[]string{"list", "--format=csv", "--no-follow"},
-			"ficha list doesn't take --no-follow. --no-follow is a breakdown and watch flag."},
+			"ficha list doesn't take --no-follow. --no-follow is a watch and breakdown flag."},
 		{[]string{"list", "-vfjson", "--no-follow"},
-			"ficha list doesn't take --no-follow. --no-follow is a breakdown and watch flag."},
+			"ficha list doesn't take --no-follow. --no-follow is a watch and breakdown flag."},
 		{[]string{"list", "-f", "table", "--no-follow"},
-			"ficha list doesn't take --no-follow. --no-follow is a breakdown and watch flag: ficha breakdown -f table --no-follow"},
+			"ficha list doesn't take --no-follow. --no-follow is a watch and breakdown flag: ficha watch -f table --no-follow"},
 		// pflag panics on a shorthand that isn't one byte.
 		{[]string{"list", "-é"}, "unknown shorthand flag: 'Ã' in -é"},
 		{[]string{"summary", "--top", "5", "-é"}, "ficha summary doesn't take --top. --top is a global flag."},
@@ -551,5 +551,58 @@ func TestWindowHelpListsEveryForm(t *testing.T) {
 	_, err := executeLikeMain(t, "summary", "--since", "soon")
 	if want := `invalid --since "soon": want ` + windowHelp; err == nil || err.Error() != want {
 		t.Errorf("error:\n got: %v\nwant: %s", err, want)
+	}
+}
+
+// Root help lists the commands in the order the README's Usage table does,
+// completion and help last, each with its one line. The help topics line up
+// two spaces from their text, as the commands do.
+func TestRootHelpOrderAndShorts(t *testing.T) {
+	out, err := executeLikeMain(t, "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `Available Commands:
+  show        The latest session or a named one: cost, tokens, context, agents
+  watch       The latest session as a live dashboard, following new sessions
+  breakdown   Every message, live, with its agent, model, cost and tokens
+  list        This project's sessions, newest first
+  summary     Totals across this project's sessions
+  global      Totals across every project
+  statusline  A line for Claude Code's status line
+  version     The version you have
+  completion  A shell completion script: bash, zsh, fish or PowerShell
+  help        Help for a command or topic
+`
+	if !strings.Contains(out, want) {
+		t.Errorf("root help:\n%s\nwant it to hold:\n%s", out, want)
+	}
+	topics := `Additional help topics:
+  ficha environment  Environment variables ficha reads
+  ficha output       Reading the output:`
+	if !strings.Contains(out, topics) {
+		t.Errorf("root help:\n%s\nwant it to hold:\n%s", out, topics)
+	}
+}
+
+// ficha help <Tab> offers the commands, then the help topics, which only
+// help reaches.
+func TestHelpCompletesTopics(t *testing.T) {
+	out, err := executeLikeMain(t, "__complete", "help", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		if name, _, ok := strings.Cut(line, "\t"); ok {
+			names = append(names, name)
+		}
+	}
+	want := []string{"show", "watch", "breakdown", "list", "summary", "global", "statusline", "version", "completion", "help", "environment", "output"}
+	if !slices.Equal(names, want) {
+		t.Errorf("got %q\nwant %q", names, want)
+	}
+	if out, _ := executeLikeMain(t, "__complete", "help", "completion", "z"); !strings.HasPrefix(out, "zsh\t") {
+		t.Errorf("under completion:\n%s", out)
 	}
 }
