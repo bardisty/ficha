@@ -701,10 +701,14 @@ const minContextBar = 10
 //	680.4K tokens
 //	window unknown for claude-mystery-9
 //
+// named puts model's name in the note's scope, for a view with nothing else
+// to name the main conversation's model; a window ficha doesn't know names
+// it anyway.
+//
 // agent, when set, is a running agent nearer ~compaction than c, and the
 // note names it after the main reading, in its own zone's color. It sheds
 // before the main reading does. The note comes styled unless noColor.
-func ContextGauge(c models.ContextUsage, model string, agent *ContextAgent, width int, noColor, highlight bool) (line, note string) {
+func ContextGauge(c models.ContextUsage, model string, named bool, agent *ContextAgent, width int, noColor, highlight bool) (line, note string) {
 	style := func(st lipgloss.Style, s string) string {
 		if noColor {
 			return s
@@ -743,8 +747,45 @@ func ContextGauge(c models.ContextUsage, model string, agent *ContextAgent, widt
 		line = pctStyled
 	}
 
-	forms := contextNotes(contextSize, compactAt)
+	name := ""
+	if named && model != "" {
+		name = pricing.GetModelDisplayName(model)
+	}
+	forms := contextNotes(contextSize, compactAt, name)
 	return line, gaugeNote(forms, CompactionWords(contextSize, compactAt), agent, width-1, noColor)
+}
+
+// MainRowLabel is the agent table's "Main conversation" label, padded to
+// width, naming model, the model of the main conversation's last request,
+// the way each agent row names its own. The name sits col columns in, under
+// the agent rows' model column, when the label leaves room, or two spaces
+// after the label when it doesn't, and goes when even that would run into
+// the cost. The label is dimmed when dim, and the name takes its tier's
+// color, unless noColor.
+func MainRowLabel(model string, col, width int, dim, noColor bool) string {
+	const label = "Main conversation"
+	name := ""
+	if model != "" {
+		name = ClampModel(pricing.GetModelDisplayName(model), 11)
+	}
+	at := max(col, len(label)+2)
+	head := fmt.Sprintf("%-*s", width, label)
+	if name != "" && at+lipgloss.Width(name) <= width {
+		head = fmt.Sprintf("%-*s", at, label)
+	} else {
+		name = ""
+	}
+	pad := strings.Repeat(" ", max(width-lipgloss.Width(head)-lipgloss.Width(name), 0))
+	if noColor {
+		return head + name + pad
+	}
+	if dim {
+		head = styles.DimStyle.Render(head)
+	}
+	if name != "" {
+		name = lipgloss.NewStyle().Foreground(styles.GetModelColor(name)).Render(name)
+	}
+	return head + name + pad
 }
 
 // ContextAgent is a running agent nearer ~compaction than the reading a
@@ -905,17 +946,28 @@ func AgentContextCell(c *models.ContextUsage, noColor bool) string {
 // then shed it before the reading, and a shorter reading before nothing at
 // all, so a narrow terminal never cuts the headroom figure or the warning
 // mid-word. The headroom has no shorter form: "288.8K left" beside "678.2K
-// / 1.00M" reads as room in the window.
-func contextNotes(contextSize int64, compactAt int) []string {
+// / 1.00M" reads as room in the window. A name goes in a short scope, so
+// the note at a given width reads the same whichever model it names, and
+// it keeps its place there longer than "main", which says little in a view
+// that names the model only when there are no agents.
+func contextNotes(contextSize int64, compactAt int, name string) []string {
 	if compactAt <= 0 {
 		return nil
 	}
-	const scope, shortScope = " (main conversation, last request)", " (main, last request)"
-	reading := CompactionWords(contextSize, compactAt)
-	if contextSize > int64(compactAt) {
-		return []string{reading + scope, reading + shortScope, reading, pastCompaction}
+	scopes := []string{" (main conversation, last request)", " (main, last request)"}
+	if name != "" {
+		scopes = []string{" (" + name + ", main, last request)", " (" + name + ", last request)"}
 	}
-	return []string{reading + scope, reading + shortScope, reading}
+	reading := CompactionWords(contextSize, compactAt)
+	var forms []string
+	for _, scope := range scopes {
+		forms = append(forms, reading+scope)
+	}
+	forms = append(forms, reading)
+	if contextSize > int64(compactAt) {
+		forms = append(forms, pastCompaction)
+	}
+	return forms
 }
 
 // pastCompaction is the shortest form of a reading past its mark.

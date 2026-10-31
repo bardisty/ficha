@@ -325,7 +325,9 @@ func (m Model) renderContextSection() string {
 	if near := nearestAgent(m.analysis, c, m.clock()); near != nil {
 		agent = &render.ContextAgent{ID: near.AgentID, Reading: *near.Context}
 	}
-	line, note := render.ContextGauge(*c, m.analysis.LastMessageModel, agent, width, m.noColor, m.isHighlighted("context_window"))
+	// Without agents there's no Main conversation row to name the model, so
+	// the note does.
+	line, note := render.ContextGauge(*c, m.analysis.LastMessageModel, !m.analysis.HasAgents, agent, width, m.noColor, m.isHighlighted("context_window"))
 	return "    Context " + line + "\n             " + note + "\n"
 }
 
@@ -414,12 +416,10 @@ func (m Model) renderAgentBreakdownContent() string {
 	labelWidth := 40 - m.agentShrink(tasks) + tasks.extra()
 	parentHighlighted := m.isHighlighted("parent_cost")
 	parentCostStr := render.CostStyled(a.ParentCost.TotalCost, 11, parentHighlighted, m.noColor)
-	if !m.noColor {
-		paddedLabel := fmt.Sprintf("%-*s", labelWidth, "Main conversation")
-		sb.WriteString(fmt.Sprintf("    %s   %s\n", styles.DimStyle.Render(paddedLabel), parentCostStr))
-	} else {
-		sb.WriteString(fmt.Sprintf("    %-*s   %s\n", labelWidth, "Main conversation", parentCostStr))
-	}
+	// The agent rows' model column is 11 columns past the label's start and
+	// any task cell; MainRowLabel puts the model there when it can.
+	label := render.MainRowLabel(a.LastMessageModel, 11+tasks.cell(), labelWidth, true, m.noColor)
+	sb.WriteString("    " + label + "   " + parentCostStr + "\n")
 
 	// Show each agent as [A<id>] model msgs ctx cost
 	// Format: 2(indent) + 1(dot) + 1 + 10(marker) + 1 + 11(model) + 9(msgs) + 9(ctx) + 3(gap) + cost

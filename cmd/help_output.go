@@ -67,7 +67,11 @@ Context
   a model ficha doesn't know, or a request larger than any window ficha
   knows for its model, ficha shows the tokens alone and says why. Agents
   have context windows of their own: AGENT SUB-SESSIONS reads each one's
-  the same way, from its latest request.
+  the same way, from its latest request. Its Main conversation row names
+  the model the main conversation's latest request went to, so it shows a
+  /model switch at once; an agent row names the model that cost it most.
+  In watch, a session without agents names it in the note under the bar
+  instead.
 
 ~compaction
   The context bar's tick marks where Claude Code auto-compacts the

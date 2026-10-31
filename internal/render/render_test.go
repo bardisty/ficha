@@ -516,7 +516,7 @@ func TestContextGaugeColorFollowsTheMark(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			line, _ := ContextGauge(reading(tt.size, tt.max, tt.compactAt), "Opus", nil, 60, false, false)
+			line, _ := ContextGauge(reading(tt.size, tt.max, tt.compactAt), "Opus", false, nil, 60, false, false)
 			pct := fmt.Sprintf("%3.0f%%", float64(tt.size)/float64(tt.max)*100)
 			want := lipgloss.NewStyle().Foreground(tt.want).Render(pct)
 			if !strings.HasPrefix(line, want) {
@@ -545,7 +545,7 @@ func TestContextGaugeWindowUnknown(t *testing.T) {
 		{10, ""},
 	}
 	for _, tt := range tests {
-		line, note := ContextGauge(c, "claude-mystery-9", nil, tt.width, true, false)
+		line, note := ContextGauge(c, "claude-mystery-9", false, nil, tt.width, true, false)
 		if line != "680.4K tokens" {
 			t.Errorf("width %d: line = %q, want %q", tt.width, line, "680.4K tokens")
 		}
@@ -553,7 +553,7 @@ func TestContextGaugeWindowUnknown(t *testing.T) {
 			t.Errorf("width %d: note = %q, want %q", tt.width, note, tt.wantNote)
 		}
 	}
-	if line, _ := ContextGauge(c, "claude-mystery-9", nil, 60, false, true); line != styles.HighlightStyle.Render("680.4K tokens") {
+	if line, _ := ContextGauge(c, "claude-mystery-9", false, nil, 60, false, true); line != styles.HighlightStyle.Render("680.4K tokens") {
 		t.Errorf("highlighted line = %q", line)
 	}
 
@@ -561,7 +561,7 @@ func TestContextGaugeWindowUnknown(t *testing.T) {
 	// knows, so the note says that rather than calling the model unknown.
 	over := models.ContextUsage{Tokens: 1_050_000}
 	for width, want := range map[int]string{60: "over the 1.00M window ficha knows for Opus 5.5", 30: "over the known window", 10: ""} {
-		if _, note := ContextGauge(over, "claude-opus-5-5", nil, width, true, false); note != want {
+		if _, note := ContextGauge(over, "claude-opus-5-5", false, nil, width, true, false); note != want {
 			t.Errorf("1.05M on Opus 5.5, width %d: note = %q, want %q", width, note, want)
 		}
 	}
@@ -613,11 +613,11 @@ func TestContextNote(t *testing.T) {
 		{200_000, 200_000, 10, ""},
 	}
 	for _, tt := range tests {
-		if got := firstFit(tt.width, contextNotes(tt.size, tt.compactAt)...); got != tt.want {
+		if got := firstFit(tt.width, contextNotes(tt.size, tt.compactAt, "")...); got != tt.want {
 			t.Errorf("contextNotes(%d, %d), width %d: = %q, want %q", tt.size, tt.compactAt, tt.width, got, tt.want)
 		}
 	}
-	if got := firstFit(80, contextNotes(10, 0)...); got != "" {
+	if got := firstFit(80, contextNotes(10, 0, "")...); got != "" {
 		t.Errorf("no mark: note = %q, want none", got)
 	}
 }
@@ -644,7 +644,7 @@ func TestContextGauge(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			line, note := ContextGauge(reading(tt.size, 1_000_000, 967_000), "Opus 5.5", nil, tt.width, true, false)
+			line, note := ContextGauge(reading(tt.size, 1_000_000, 967_000), "Opus 5.5", false, nil, tt.width, true, false)
 			if line != tt.wantLine {
 				t.Errorf("line = %q, want %q", line, tt.wantLine)
 			}
@@ -1387,5 +1387,46 @@ func TestTaskCell(t *testing.T) {
 	}
 	if got, want := TaskCell("", "9 msgs", 11, false), styles.DimStyle.Render("9 msgs")+"     "; got != want {
 		t.Errorf("TaskCell in color = %q, want %q", got, want)
+	}
+}
+
+// A named note keeps the name in its scope as it narrows, dropping "main"
+// before the name, and the name before the headroom figure.
+func TestContextNotesNamed(t *testing.T) {
+	for _, tt := range []struct {
+		width int
+		want  string
+	}{
+		{120, "288.8K to ~compaction (Sonnet 5.5, main, last request)"},
+		{60, "288.8K to ~compaction (Sonnet 5.5, main, last request)"},
+		{50, "288.8K to ~compaction (Sonnet 5.5, last request)"},
+		{40, "288.8K to ~compaction"},
+	} {
+		if got := firstFit(tt.width, contextNotes(678_200, 967_000, "Sonnet 5.5")...); got != tt.want {
+			t.Errorf("width %d: %q, want %q", tt.width, got, tt.want)
+		}
+	}
+}
+
+// MainRowLabel puts the model under the agent rows' model column when the
+// label leaves room, after the label when it doesn't, and drops it when it
+// would run into the cost. The label keeps its width either way.
+func TestMainRowLabel(t *testing.T) {
+	for _, tt := range []struct {
+		model      string
+		col, width int
+		want       string
+	}{
+		{"claude-sonnet-5-5", 24, 40, "Main conversation       Sonnet 5.5      "},
+		{"claude-sonnet-5-5", 11, 40, "Main conversation  Sonnet 5.5           "},
+		{"claude-sonnet-5-5", 11, 28, "Main conversation           "},
+		{"", 24, 40, "Main conversation                       "},
+	} {
+		if got := MainRowLabel(tt.model, tt.col, tt.width, true, true); got != tt.want {
+			t.Errorf("MainRowLabel(%q, %d, %d) = %q, want %q", tt.model, tt.col, tt.width, got, tt.want)
+		}
+	}
+	if got, want := MainRowLabel("claude-sonnet-5-5", 24, 40, true, false), styles.DimStyle.Render("Main conversation       ")+lipgloss.NewStyle().Foreground(styles.GetModelColor("Sonnet 5.5")).Render("Sonnet 5.5")+"      "; got != want {
+		t.Errorf("in color: %q, want %q", got, want)
 	}
 }
