@@ -27,7 +27,7 @@ func TestLightBackgroundReports(t *testing.T) {
 	for name, out := range map[string]string{
 		"show":            FormatSessionTable(goldenShowAnalysis(), false, 0),
 		"show workflows":  FormatSessionTable(goldenShowWorkflowAnalysis(), false, 0),
-		"summary details": FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, true, 0),
+		"summary details": FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, true, 0, SortByTime),
 		"list":            FormatSessionListTable(goldenListResults(), false, goldenListOptions),
 		"global":          FormatGlobalTable(goldenGlobalAnalysis(), false, goldenGlobalOptions(true)),
 	} {

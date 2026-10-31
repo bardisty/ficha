@@ -274,6 +274,17 @@ func TestSubcommandFlagHintNamesTheOwners(t *testing.T) {
 			"ficha summary doesn't take --top. --top is a global flag."},
 		{[]string{"show", "abc", "--since", "today"},
 			"ficha show doesn't take --since. --since is a list, summary and global flag."},
+		// list and summary sort sessions by time or cost, and global sorts
+		// projects by four keys of its own, so the line goes to the command
+		// that takes the value.
+		{[]string{"show", "--sort-by", "name"},
+			"ficha show doesn't take --sort-by. --sort-by is a list, summary and global flag: ficha global --sort-by name"},
+		{[]string{"show", "--sort-by=cost"},
+			"ficha show doesn't take --sort-by. --sort-by is a list, summary and global flag: ficha list --sort-by=cost"},
+		{[]string{"watch", "--sort-by", "activity"},
+			"ficha watch doesn't take --sort-by. --sort-by is a list, summary and global flag: ficha global --sort-by activity"},
+		{[]string{"show", "--sort-by", "time"},
+			"ficha show doesn't take --sort-by. --sort-by is a list, summary and global flag: ficha list --sort-by time"},
 		// list doesn't take --details, so the line goes to summary.
 		{[]string{"show", "--since", "7d", "--details"},
 			"ficha show doesn't take --since. --since is a list, summary and global flag: ficha summary --since 7d --details"},

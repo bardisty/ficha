@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,6 +41,25 @@ func TestREADMEDocumentsCLISurface(t *testing.T) {
 				t.Errorf("README.md does not mention persistent flag --%s", f.Name)
 			}
 		})
+	})
+
+	// --sort-by means one thing on global and another on list and summary,
+	// so each command that takes it must be named in a row for it.
+	t.Run("sort-by owners", func(t *testing.T) {
+		var rows []string
+		for _, line := range strings.Split(readme, "\n") {
+			if strings.HasPrefix(line, "| `--sort-by") {
+				rows = append(rows, line)
+			}
+		}
+		for _, c := range root.Commands() {
+			if c.LocalNonPersistentFlags().Lookup("sort-by") == nil {
+				continue
+			}
+			if !slices.ContainsFunc(rows, func(row string) bool { return strings.Contains(row, "`"+c.Name()+"`") }) {
+				t.Errorf("no README --sort-by row names %s", c.Name())
+			}
+		}
 	})
 
 	t.Run("command flags", func(t *testing.T) {

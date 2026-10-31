@@ -26,11 +26,11 @@ func narrowReports(t *testing.T, width int, noColor bool) map[string]string {
 		"show mixed widths":        FormatSessionTable(goldenMixedWidthAnalysis(), noColor, width),
 		"show long workflow":       FormatSessionTable(goldenShowLongWorkflowAnalysis(), noColor, width),
 		"summary":                  FormatSessionTable(goldenSummaryAnalysis(), noColor, width),
-		"summary details":          FormatSummaryTableWithDetails(analysis, results, "", noColor, false, width),
-		"summary expand":           FormatSummaryTableWithDetails(analysis, results, "", noColor, true, width),
-		"summary expand workflows": FormatSummaryTableWithDetails(wfAnalysis, wfResults, "", noColor, true, width),
-		"summary details pricey":   FormatSummaryTableWithDetails(pricey, priceyResults, "", noColor, false, width),
-		"summary expand pricey":    FormatSummaryTableWithDetails(pricey, priceyResults, "", noColor, true, width),
+		"summary details":          FormatSummaryTableWithDetails(analysis, results, "", noColor, false, width, SortByTime),
+		"summary expand":           FormatSummaryTableWithDetails(analysis, results, "", noColor, true, width, SortByTime),
+		"summary expand workflows": FormatSummaryTableWithDetails(wfAnalysis, wfResults, "", noColor, true, width, SortByTime),
+		"summary details pricey":   FormatSummaryTableWithDetails(pricey, priceyResults, "", noColor, false, width, SortByTime),
+		"summary expand pricey":    FormatSummaryTableWithDetails(pricey, priceyResults, "", noColor, true, width, SortByTime),
 	}
 }
 
@@ -287,7 +287,7 @@ func TestGoldenSessionTableShowNarrow(t *testing.T) {
 
 func TestGoldenSummaryDetailsNarrow(t *testing.T) {
 	analysis, results := summaryDetailsAnalysis(t, summaryWorkflowFixture(t))
-	checkGolden(t, "summary_details_expand_workflows_w50", FormatSummaryTableWithDetails(analysis, results, "", true, true, 50))
+	checkGolden(t, "summary_details_expand_workflows_w50", FormatSummaryTableWithDetails(analysis, results, "", true, true, 50, SortByTime))
 }
 
 // The summary chart narrows with the report, 4 columns in from each side,
@@ -307,6 +307,6 @@ func TestCostChartFitsNarrowTerminals(t *testing.T) {
 func TestGoldenSummaryDetailsModelCut(t *testing.T) {
 	analysis, results := summaryDetailsAnalysis(t, summaryDetailsFixture(t))
 	for _, width := range []int{45, 46} {
-		checkGolden(t, fmt.Sprintf("summary_details_%d", width), FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, width))
+		checkGolden(t, fmt.Sprintf("summary_details_%d", width), FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, width, SortByTime))
 	}
 }

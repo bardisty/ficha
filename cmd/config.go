@@ -33,6 +33,11 @@ type config struct {
 	showDetails  bool
 	expandAgents bool
 
+	// --sort-by on list and summary --details: time or cost. It's kept apart
+	// from globalSortBy, whose default is cost: cobra writes each command's
+	// default into its variable when it registers the flag.
+	sessionSortBy string
+
 	// --nested (summary, list): count in the projects under the directory.
 	nested bool
 	// readsNested is set while summary and list load, since they read the

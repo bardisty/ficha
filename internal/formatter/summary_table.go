@@ -19,7 +19,8 @@ import (
 // the Claude project directory, printed under the footer when it's set
 // (with -v). Color and glyph choices are driven by noColor. width is the
 // terminal's width, or 0 when stdout isn't a terminal (see reportWidth).
-func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []models.SessionResult, storageDir string, noColor bool, expandAgents bool, width int) string {
+// sortBy orders the breakdown's rows: SortByTime or SortByCost.
+func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []models.SessionResult, storageDir string, noColor bool, expandAgents bool, width int, sortBy string) string {
 	if analysis.Window != nil && analysis.MessageCount == 0 {
 		return emptyWindow(*analysis.Window)
 	}
@@ -45,11 +46,16 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 	}
 
 	// Get session breakdown data (needed for both chart and table)
-	breakdownResult := renderSessionBreakdown(results, sectionWidth, noColor, expandAgents)
+	breakdownResult := renderSessionBreakdown(results, sectionWidth, noColor, expandAgents, sortBy)
 
-	// Session breakdown section (includes chart and table)
+	// Session breakdown section (includes chart and table). The heading
+	// names the cost order, since the rows' dates no longer show it.
+	heading := "SESSION BREAKDOWN"
+	if sortBy == SortByCost {
+		heading += " (by cost)"
+	}
 	sb.WriteString("\n")
-	sb.WriteString(render.SectionHeader("SESSION BREAKDOWN", sectionWidth, noColor))
+	sb.WriteString(render.SectionHeader(heading, sectionWidth, noColor))
 	sb.WriteString("\n\n")
 
 	// Cost chart at the top of the section, for sessions that cost anything
@@ -96,12 +102,13 @@ type sessionBreakdownResult struct {
 }
 
 // renderSessionBreakdown renders one row per session, newest first like
-// list. With expandAgents each session's agents follow as a tree, costs
+// list, or costliest first under SortByCost. The chart above it stays a
+// timeline whatever the rows' order. With expandAgents each session's agents follow as a tree, costs
 // under COST; without, AGENTS is a count, since COST already includes them.
 //
 // Each result carries its session's pre-computed analysis (nil when the session
 // failed to parse, rendered as an "(error)" row); the formatter does no parsing.
-func renderSessionBreakdown(results []models.SessionResult, width int, noColor bool, expandAgents bool) sessionBreakdownResult {
+func renderSessionBreakdown(results []models.SessionResult, width int, noColor bool, expandAgents bool, sortBy string) sessionBreakdownResult {
 	var sb strings.Builder
 
 	// Oldest first, stable, as the machine detail formats order their rows
@@ -332,9 +339,13 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		}
 		return styles.DimStyle.Render(s)
 	}
-	for i := len(sorted) - 1; i >= 0; i-- {
-		r := sorted[i]
-		num := dim(fmt.Sprintf("%4d", len(sorted)-i))
+	rows := slices.Clone(sorted)
+	slices.Reverse(rows)
+	if sortBy == SortByCost {
+		SortSessionsByCost(rows)
+	}
+	for i, r := range rows {
+		num := dim(fmt.Sprintf("%4d", i+1))
 		id := fmt.Sprintf("%-8s", render.TruncateID(r.Entry.SessionID, 8))
 		whenAt := render.DateTime(r.LastActive(), now())
 		if dateOnly {

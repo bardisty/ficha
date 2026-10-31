@@ -192,7 +192,7 @@ The rest belong to particular commands:
 | `--expand-agents` | `summary` | Add each session's agents (needs `--details`) |
 | `-d, --details` | `global` | Show every project in the table, with a cumulative column when sorted by cost |
 | `-n, --top <n>` | `global` | How many projects the table shows (default 10) |
-| `--sort-by <key>` | `global` | Sort by `cost` (the default), `sessions`, `name` or `activity` |
+| `--sort-by <key>` | `list`, `summary`, `global` | `list` and `summary --details` sort sessions by `time`, newest first (the default), or `cost`, costliest first. `global` sorts projects by `cost` (the default), `sessions`, `name` or `activity` |
 | `--since <when>` | `list`, `summary`, `global` | Count only messages from then on: `2026-09-01`, `today`, `7d`, `12h` |
 | `--until <when>` | `list`, `summary`, `global` | Count only messages before then; a date includes that whole day |
 | `--nested` | `list`, `summary` | Include the projects under this directory at any depth, such as the worktrees `claude --worktree` makes |

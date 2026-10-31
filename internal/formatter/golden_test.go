@@ -578,6 +578,43 @@ func TestGoldenSessionListMultiDay(t *testing.T) {
 	checkGolden(t, "session_list_multiday", FormatSessionListTable(results, true, goldenListOptions))
 }
 
+// Under --sort-by cost the header names the order. The rows come in
+// already sorted: the costlier untitled session above the titled one, then
+// the session with no replies, then the unreadable one.
+func TestGoldenSessionListByCost(t *testing.T) {
+	results := goldenListResults()
+	results[1].Analysis.TotalCost.TotalCost = 50
+	SortSessionsByCost(results)
+	opts := goldenListOptions
+	opts.SortBy = SortByCost
+	checkGolden(t, "session_list_cost", FormatSessionListTable(results, true, opts))
+}
+
+// The cost order's name in the header never pushes anything out: at every
+// width, with and without a window, the header holds what it holds in time
+// order, plus "by cost" where that still fits.
+func TestSessionListCostOrderNameGivesWayFirst(t *testing.T) {
+	header := func(out string) string {
+		return strings.Join(strings.Fields(strings.Split(out, "\n")[1]), " ")
+	}
+	for _, window := range []*models.TimeWindow{nil, {Since: time.Date(2026, 1, 8, 0, 0, 0, 0, time.Local)}} {
+		for width := 30; width <= 100; width++ {
+			opts := goldenListOptions
+			opts.Project = "~/source/claude-code-usage"
+			opts.Window, opts.Width = window, width
+			byTime := header(FormatSessionListTable(goldenListResults(), true, opts))
+			opts.SortBy = SortByCost
+			byCost := header(FormatSessionListTable(goldenListResults(), true, opts))
+			if strings.Replace(byCost, " by cost", "", 1) != byTime {
+				t.Errorf("width %d, window %v: by cost %q, by time %q", width, window != nil, byCost, byTime)
+			}
+			if width == 100 && !strings.Contains(byCost, "by cost") {
+				t.Errorf("window %v: a wide header should name the order: %q", window != nil, byCost)
+			}
+		}
+	}
+}
+
 // forkListResults is goldenListResults' priced sessions beside two copies:
 // transcripts that hold replies, all of them already counted under another
 // session. One has its own title and one doesn't.
@@ -767,19 +804,29 @@ func summaryDetailsAnalysis(t *testing.T, entries []models.SessionEntry) (*model
 func TestGoldenSummaryDetails(t *testing.T) {
 	entries := summaryDetailsFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, 0))
+	checkGolden(t, "summary_details", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, 0, SortByTime))
 }
 
 func TestGoldenSummaryDetailsExpandAgents(t *testing.T) {
 	entries := summaryDetailsFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_expand", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0))
+	checkGolden(t, "summary_details_expand", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0, SortByTime))
+}
+
+// Under --sort-by cost the rows go costliest first, numbered in that order,
+// and the session that couldn't be read goes last. The heading names the
+// order. The chart above keeps time order.
+func TestGoldenSummaryDetailsByCost(t *testing.T) {
+	entries := summaryDetailsFixture(t)
+	analysis, results := summaryDetailsAnalysis(t, entries)
+	checkGolden(t, "summary_details_cost", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, 0, SortByCost))
+	checkGolden(t, "summary_details_cost_expand", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0, SortByCost))
 }
 
 func TestGoldenSummaryDetailsColor(t *testing.T) {
 	entries := summaryDetailsFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, false, 0))
+	checkGolden(t, "summary_details_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, false, 0, SortByTime))
 }
 
 // A session with no replies yet reads as list shows it, dashes and no cost,
@@ -798,11 +845,11 @@ func TestGoldenSummaryDetailsNoReplies(t *testing.T) {
 		Modified:  time.Date(2026, 1, 15, 8, 0, 0, 0, time.UTC),
 	}
 	analysis, results := summaryDetailsAnalysis(t, append(entries, empty))
-	checkGolden(t, "summary_details_no_replies", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, 0))
+	checkGolden(t, "summary_details_no_replies", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, 0, SortByTime))
 	// Beside one priced session, a 0 would make that session the costliest
 	// of a range and color it red.
 	analysis, results = summaryDetailsAnalysis(t, []models.SessionEntry{entries[1], empty})
-	checkGolden(t, "summary_details_no_replies_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, false, 0))
+	checkGolden(t, "summary_details_no_replies_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, false, 0, SortByTime))
 }
 
 // --- golden tests: workflow agent grouping ---
@@ -983,20 +1030,20 @@ func summaryWorkflowFixture(t *testing.T) []models.SessionEntry {
 func TestGoldenSummaryDetailsExpandWorkflows(t *testing.T) {
 	entries := summaryWorkflowFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_expand_workflows", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0))
+	checkGolden(t, "summary_details_expand_workflows", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0, SortByTime))
 }
 
 func TestGoldenSummaryDetailsExpandWorkflowsASCII(t *testing.T) {
 	useASCII(t)
 	entries := summaryWorkflowFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_expand_workflows_ascii", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0))
+	checkGolden(t, "summary_details_expand_workflows_ascii", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0, SortByTime))
 }
 
 func TestGoldenSummaryDetailsExpandWorkflowsColor(t *testing.T) {
 	entries := summaryWorkflowFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
-	checkGolden(t, "summary_details_expand_workflows_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, true, 0))
+	checkGolden(t, "summary_details_expand_workflows_color", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", false, true, 0, SortByTime))
 }
 
 // --- golden tests: glyph sets and mixed cost widths ---
@@ -1023,7 +1070,7 @@ func TestGoldenSessionTableShowASCIIColor(t *testing.T) {
 func TestGoldenSummaryDetailsExpandASCII(t *testing.T) {
 	useASCII(t)
 	analysis, results := summaryDetailsAnalysis(t, summaryDetailsFixture(t))
-	checkGolden(t, "summary_details_expand_ascii", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0))
+	checkGolden(t, "summary_details_expand_ascii", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, true, 0, SortByTime))
 }
 
 // goldenMixedWidthAnalysis gives every cost column values with different

@@ -149,7 +149,7 @@ func TestSummaryTreeTasks(t *testing.T) {
 				SessionID: "aggregate", IsSummary: true, SessionCount: 1,
 				CostByModel: map[string]models.CostBreakdown{},
 			}
-			out := FormatSummaryTableWithDetails(aggregate, []models.SessionResult{r}, "/home/user/src/app", noColor, true, tt.width)
+			out := FormatSummaryTableWithDetails(aggregate, []models.SessionResult{r}, "/home/user/src/app", noColor, true, tt.width, SortByTime)
 			plain := ansiRe.ReplaceAllString(out, "")
 			checkTaskRows(t, out, tt.width)
 			if got := strings.Contains(plain, "] Check every"); got != tt.tasks {
@@ -189,7 +189,7 @@ func TestShortTasksStayWithoutMessageCount(t *testing.T) {
 		CostByModel: map[string]models.CostBreakdown{},
 	}
 	for _, width := range []int{56, 57, 58, 59, 60} {
-		out := ansiRe.ReplaceAllString(FormatSummaryTableWithDetails(aggregate, []models.SessionResult{r}, "/home/user/src/app", true, true, width), "")
+		out := ansiRe.ReplaceAllString(FormatSummaryTableWithDetails(aggregate, []models.SessionResult{r}, "/home/user/src/app", true, true, width, SortByTime), "")
 		checkTaskRows(t, out, width)
 		if !strings.Contains(out, "] Explore ") {
 			t.Errorf("width %d: want the type-only task whole in the tree:\n%s", width, out)
@@ -281,6 +281,6 @@ func TestTasksWithBidiAndEmojiStayInColumns(t *testing.T) {
 			SessionID: "aggregate", IsSummary: true, SessionCount: 1,
 			CostByModel: map[string]models.CostBreakdown{},
 		}
-		check("summary", FormatSummaryTableWithDetails(aggregate, []models.SessionResult{r}, "/home/user/src/app", noColor, true, 80), 80)
+		check("summary", FormatSummaryTableWithDetails(aggregate, []models.SessionResult{r}, "/home/user/src/app", noColor, true, 80, SortByTime), 80)
 	}
 }

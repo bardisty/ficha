@@ -22,12 +22,15 @@ This calculates the total cost and token usage across all sessions.
 --details adds a per-session breakdown: rows in the table and in csv, a
 sessions array in json. --expand-agents, which needs --details, adds each
 session's agents: tree rows in the table, after a row for the main
-conversation's cost, nested agents in json, agent rows in csv.
+conversation's cost, nested agents in json, agent rows in csv. --sort-by
+cost, which needs --details too, puts the costliest sessions first in all
+three, and the chart above the table stays in time order.
 
 Examples:
   ficha summary                           Show aggregate stats
   ficha summary --details                 Show per-session cost breakdown
   ficha summary --details --expand-agents Include agent sub-sessions
+  ficha summary --details --sort-by cost  Costliest sessions first
   ficha summary --details -f json         Per-session records as JSON
   ficha summary --since 7d                The last 7 days
   ficha summary --since 2026-09-01 --until 2026-09-30   September
@@ -56,6 +59,7 @@ and --nested counts them in. --details then names each session's project.`,
 	summaryCmd.Flags().BoolVar(&cfg.expandAgents, "expand-agents", false, "Add each session's agents; needs --details")
 	addWindowFlags(summaryCmd, cfg)
 	addNestedFlag(summaryCmd, cfg)
+	addSessionSortFlag(summaryCmd, cfg, "Sort --details: time or cost")
 
 	return summaryCmd
 }
@@ -63,6 +67,12 @@ and --nested counts them in. --details then names each session's project.`,
 func runSummary(cfg *config) error {
 	if cfg.expandAgents && !cfg.showDetails {
 		return usageErrorf("--expand-agents requires --details")
+	}
+	if err := checkSessionSort(cfg); err != nil {
+		return err
+	}
+	if cfg.sessionSortBy != formatter.SortByTime && !cfg.showDetails {
+		return usageErrorf("--sort-by requires --details")
 	}
 	if err := checkNested(cfg); err != nil {
 		return err
@@ -128,7 +138,7 @@ func runSummary(cfg *config) error {
 	switch cfg.format {
 	case "json":
 		if cfg.showDetails {
-			output, err = formatter.FormatSummaryDetailJSON(analysis, results, cfg.expandAgents, true)
+			output, err = formatter.FormatSummaryDetailJSON(analysis, results, cfg.expandAgents, true, cfg.sessionSortBy)
 		} else {
 			output, err = formatter.FormatSessionJSON(analysis, true)
 		}
@@ -137,7 +147,7 @@ func runSummary(cfg *config) error {
 		}
 	case "csv":
 		if cfg.showDetails {
-			output, err = formatter.FormatSummaryDetailCSV(results, cfg.expandAgents)
+			output, err = formatter.FormatSummaryDetailCSV(results, cfg.expandAgents, cfg.sessionSortBy)
 		} else {
 			output, err = formatter.FormatSessionCSV(analysis, false)
 		}
@@ -152,7 +162,7 @@ func runSummary(cfg *config) error {
 			if cfg.verbose {
 				storageDir = root.dir
 			}
-			output = formatter.FormatSummaryTableWithDetails(analysis, results, storageDir, cfg.noColor, cfg.expandAgents, terminalWidth(cfg.stdout))
+			output = formatter.FormatSummaryTableWithDetails(analysis, results, storageDir, cfg.noColor, cfg.expandAgents, terminalWidth(cfg.stdout), cfg.sessionSortBy)
 		} else {
 			output = formatter.FormatSessionTable(analysis, cfg.noColor, terminalWidth(cfg.stdout))
 		}

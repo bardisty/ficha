@@ -25,6 +25,9 @@ type ListTableOptions struct {
 	// Window is the --since/--until range the results were analyzed in, or
 	// nil for none.
 	Window *models.TimeWindow
+	// SortBy is the order results are already in, SortByTime when empty.
+	// The header names the cost order, as global's heading names its own.
+	SortBy string
 }
 
 // Column widths of the list table that don't depend on the data.
@@ -44,7 +47,7 @@ const (
 	listMaxTitleWidth = 72
 )
 
-// FormatSessionListTable renders one row per session, newest first as given,
+// FormatSessionListTable renders one row per session in the order given,
 // with enough to pick one out: when, how long, which model, what it cost and
 // its title. results carries each session's analysis; a nil analysis is a
 // transcript that couldn't be read.
@@ -129,8 +132,10 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	}
 	count := render.Count(readable) + " " + sessionsWord(readable)
 	fields := []string{count}
-	if unreadable := len(results) - readable; unreadable > 0 {
-		fields[0] += ", " + render.Count(unreadable) + " unreadable"
+	unreadable := ""
+	if n := len(results) - readable; n > 0 {
+		unreadable = ", " + render.Count(n) + " unreadable"
+		fields[0] += unreadable
 	}
 	// A window stays in the header when nothing else fits: without it the
 	// rows read as all-time.
@@ -156,6 +161,18 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	}
 	if !fits(fields[0], true) && (fits(count, true) || !fits(fields[0], false)) {
 		fields[0] = count
+	}
+	// The cost order is named only where the whole header still fits, the
+	// project uncut, so it never shortens or pushes out anything above.
+	if opts.SortBy == SortByCost {
+		named := count + " by cost" + strings.TrimPrefix(fields[0], count)
+		parts := append([]string{named}, fields[1:]...)
+		if opts.Project != "" {
+			parts = append(parts, models.StripControl(opts.Project))
+		}
+		if lipgloss.Width(strings.Join(parts, "  "+styles.BoxVerticalSep+"  ")) <= panelInner(width) {
+			fields[0] = named
+		}
 	}
 	sb.WriteString(renderPanel(opts.Project, fields, giveWay, width, noColor))
 	sb.WriteString("\n\n")

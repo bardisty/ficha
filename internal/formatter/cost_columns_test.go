@@ -100,7 +100,7 @@ func TestSummaryTableLargeCostsStayAligned(t *testing.T) {
 		sessionRow("cccc3333", "claude-opus-4-8", 12, 12345.67),
 	}
 	for _, expand := range []bool{false, true} {
-		out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", true, expand, 0)
+		out := FormatSummaryTableWithDetails(aggregate, results, "/home/user/src/app", true, expand, 0, SortByTime)
 		assertRowsAligned(t, out, "WHEN", []string{"aaaa1111", "bbbb2222", "cccc3333"})
 		if !strings.Contains(out, "$13,580.48") {
 			t.Errorf("expand=%v: sum missing:\n%s", expand, out)

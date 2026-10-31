@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/bardisty/ficha/internal/analyzer"
@@ -21,11 +22,13 @@ func newListCmd(cfg *config) *cobra.Command {
 		Long: `List all Claude Code sessions for the current project.
 
 Sessions are sorted by their last message, most recent first. WHEN is that
-message's time, the one show calls "Last active".
+message's time, the one show calls "Last active". --sort-by cost puts the
+costliest first instead, and json and csv follow the table's order.
 
 Examples:
   ficha list                    List all sessions
   ficha list --since 7d         Sessions with messages in the last 7 days
+  ficha list --sort-by cost     Costliest sessions first
   ficha list --nested           Include the repo's worktrees
   ficha list -f json            Output as JSON
   ficha list -f csv             Output as CSV
@@ -50,12 +53,16 @@ sessions, and --nested lists them too, each titled with its project.`,
 	addProjectFlags(listCmd, cfg)
 	addWindowFlags(listCmd, cfg)
 	addNestedFlag(listCmd, cfg)
+	addSessionSortFlag(listCmd, cfg, "Sort sessions: time or cost")
 
 	return listCmd
 }
 
 func runList(cfg *config) error {
 	if err := checkNested(cfg); err != nil {
+		return err
+	}
+	if err := checkSessionSort(cfg); err != nil {
 		return err
 	}
 	window, err := cfg.timeWindow(time.Now())
@@ -83,7 +90,7 @@ func runList(cfg *config) error {
 		}
 	}
 	nested.mark(results)
-	sortByLastActive(results)
+	sortSessions(cfg, results)
 	for i := range results {
 		results[i].Entry = countedEntry(results[i], !window.IsZero())
 	}
@@ -194,7 +201,7 @@ func runListTable(cfg *config, window models.TimeWindow) error {
 		}
 	}
 	nested.mark(results)
-	sortByLastActive(results)
+	sortSessions(cfg, results)
 
 	skips := skipWarning{counts: "costs", details: labelSkips("", analyzer.SkipDetails(results))}
 	for _, d := range skips.details {
@@ -220,6 +227,7 @@ func runListTable(cfg *config, window models.TimeWindow) error {
 	opts := formatter.ListTableOptions{
 		Project: nestedLabel(root.name, results),
 		Width:   terminalWidth(cfg.stdout),
+		SortBy:  cfg.sessionSortBy,
 	}
 	if !window.IsZero() {
 		opts.Window = &window
@@ -227,6 +235,32 @@ func runListTable(cfg *config, window models.TimeWindow) error {
 	output := formatter.FormatSessionListTable(results, cfg.noColor, opts)
 	printReport(cfg, &warnings, output)
 	return nil
+}
+
+// addSessionSortFlag registers --sort-by for a command that lists sessions.
+func addSessionSortFlag(cmd *cobra.Command, cfg *config, usage string) {
+	cmd.Flags().StringVar(&cfg.sessionSortBy, "sort-by", formatter.SortByTime, usage)
+	_ = cmd.RegisterFlagCompletionFunc("sort-by", fixedValues(sessionSortByValues))
+}
+
+// checkSessionSort validates --sort-by on list and summary, as global
+// validates its own, and folds its case.
+func checkSessionSort(cfg *config) error {
+	sortBy := strings.ToLower(cfg.sessionSortBy)
+	if sortBy != formatter.SortByTime && sortBy != formatter.SortByCost {
+		return usageErrorf("invalid --sort-by value %q: must be one of time, cost", cfg.sessionSortBy)
+	}
+	cfg.sessionSortBy = sortBy
+	return nil
+}
+
+// sortSessions puts results in --sort-by's order: by last message, newest
+// first, or costliest first.
+func sortSessions(cfg *config, results []models.SessionResult) {
+	sortByLastActive(results)
+	if cfg.sessionSortBy == formatter.SortByCost {
+		formatter.SortSessionsByCost(results)
+	}
 }
 
 // windowSkips is the skip warning under a window, the aggregate's as summary

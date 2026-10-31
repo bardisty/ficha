@@ -96,7 +96,7 @@ A session row's `total_cost` already includes its agents, so summing the whole c
 
 Each session row also carries `parent_cost` and `agents_cost`, which add up to its `total_cost`, so the file reconciles against itself. Agent rows leave both empty, as they leave `cumulative_cost`, `project_path` and `session_file`. Join an agent row to its session through `session_id`.
 
-Session rows go oldest first by their last message, the table's order read from the bottom, and `cumulative_cost` runs in that order. A session with no messages goes by its file's mtime. `summary -d -f json`'s `sessions` array has the same order. `modified` is the file's mtime, which can be later than the last message: Claude Code goes on writing records that aren't messages after the last reply.
+Session rows go oldest first by their last message, the table's order read from the bottom, and `cumulative_cost` runs in that order. A session with no messages goes by its file's mtime. `summary -d -f json`'s `sessions` array has the same order. Under `--sort-by cost` both go costliest first, as the table does, and `cumulative_cost` follows the rows, as `global`'s cumulative column does: each row's value is what it and the costlier sessions above it add up to. Equal costs go newest first, and sessions with no replies go last. `modified` is the file's mtime, which can be later than the last message: Claude Code goes on writing records that aren't messages after the last reply.
 
 The last two columns, `agent_type` and `description`, are the agent's, as in json's [agent records](#agent-tasks). Session rows leave them empty, and so does an agent Claude Code recorded neither for.
 
@@ -112,7 +112,7 @@ Commands that read many sessions count each repeated reply once, under the sessi
 
 ## Session list (`list`)
 
-`list -f json` is an array with one record per session, newest first by last message as in the table, and `list -f csv` has a row per session with the same fields. Besides the discovery fields (`session_id`, `full_path`, `modified`, the counts and the skip counters), each record carries what the table shows: `title`, `model`, `start_time`, `duration_seconds` and `total_cost`.
+`list -f json` is an array with one record per session, in the table's order: newest first by last message, or costliest first under `--sort-by cost`, with equal costs newest first and sessions with nothing to price last. `list -f csv` has a row per session with the same fields, in the same order. Besides the discovery fields (`session_id`, `full_path`, `modified`, the counts and the skip counters), each record carries what the table shows: `title`, `model`, `start_time`, `duration_seconds` and `total_cost`.
 
 - `modified` is the transcript file's mtime, which can be later than the last message, so it doesn't always descend down the list. A session with no messages sorts by it.
 - `total_cost` is the same breakdown object as on `show` and `summary`, so `.total_cost.total_cost` reads the same on all three. csv has only the total.

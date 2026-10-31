@@ -16,6 +16,8 @@ import (
 var (
 	formatValues = []string{"table", "json", "csv"}
 	sortByValues = []string{"cost", "sessions", "name", "activity"}
+	// list's and summary's --sort-by, for sessions.
+	sessionSortByValues = []string{"time", "cost"}
 	// The common --since and --until values. Dates and other ages are
 	// typed out.
 	windowValues = []string{"today", "yesterday", "7d", "30d"}
