@@ -105,8 +105,14 @@ func runGlobal(cfg *config) error {
 	// Warn about every input the totals could not account for
 	var warnings bytes.Buffer
 	warnIgnoredIndexes(&warnings, analysis.IgnoredIndexes, cfg.verbose)
-	if analysis.SkippedProjects > 0 {
-		fmt.Fprintf(&warnings, "Warning: %s project(s) could not be analyzed\n", render.Count(analysis.SkippedProjects))
+	// One cause, such as a chown gone wrong, can hit every project, so past
+	// maxListedFiles the rest are a count unless -v asks for them.
+	for i, err := range analysis.SkippedProjectErrors {
+		if i == maxListedFiles && !cfg.verbose {
+			fmt.Fprintf(&warnings, "Warning: left out %s. Run with -v to list all %s.\n", plural(len(analysis.SkippedProjectErrors)-i, "more project"), render.Count(analysis.SkippedProjects))
+			break
+		}
+		warnings.WriteString(skippedProjectWarning(cfg, err))
 	}
 	var details []namedSkip
 	for _, p := range slices.Concat(analysis.Projects, analysis.OutOfWindow) {

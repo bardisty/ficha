@@ -127,6 +127,7 @@ func parseSession(sessionPath, sessionID string, cache *AgentParseCache) (*parse
 // each slice parallel to the entries.
 type sessionParses struct {
 	parsed []*parser.ParseResult // nil when the parse failed or never ran
+	errs   []error               // why a parse failed
 	old    []bool                // ends too long before the window to be parsed
 	agents []*sessionAgents
 }
@@ -137,6 +138,7 @@ type sessionParses struct {
 func planSessionParses(entries []models.SessionEntry, window models.TimeWindow) (*sessionParses, []parseJob) {
 	parses := &sessionParses{
 		parsed: make([]*parser.ParseResult, len(entries)),
+		errs:   make([]error, len(entries)),
 		old:    make([]bool, len(entries)),
 		agents: make([]*sessionAgents, len(entries)),
 	}
@@ -149,8 +151,8 @@ func planSessionParses(entries []models.SessionEntry, window models.TimeWindow) 
 			continue
 		}
 		jobs = append(jobs, newParseJob(entry.FullPath, func() {
-			// A failed parse leaves the slot nil.
-			parses.parsed[i], _ = parser.ParseJSONLFileWithResult(entry.FullPath)
+			// A failed parse leaves the slot nil, and its error beside it.
+			parses.parsed[i], parses.errs[i] = parser.ParseJSONLFileWithResult(entry.FullPath)
 		}))
 		jobs = append(jobs, agents.jobs(nil)...)
 	}
