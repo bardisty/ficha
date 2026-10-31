@@ -96,7 +96,7 @@ func rowSummary(rows []agentRow) []string {
 }
 
 func TestAgentRowsFoldAboveCap(t *testing.T) {
-	got := rowSummary(agentRows(foldAnalysis(), foldNow))
+	got := rowSummary(agentRows(foldAnalysis(), foldNow, false))
 	want := []string{
 		// a1 cost the most of the three finished, so it stays out.
 		"a1000000000", "2 finished", "a2000000000*",
@@ -115,7 +115,7 @@ func TestAgentRowsFoldAboveCap(t *testing.T) {
 func TestAgentRowsAtCapListEveryAgent(t *testing.T) {
 	a := foldAnalysis()
 	a.Agents = a.Agents[:agentListCap]
-	got := rowSummary(agentRows(a, foldNow))
+	got := rowSummary(agentRows(a, foldNow, false))
 	want := []string{
 		"a3000000000", "a1000000000", "a4000000000", "a2000000000*",
 		"run:wf_done", "b2000000000", "b1000000000",
@@ -134,7 +134,7 @@ func TestAgentRowsKeepAJustStartedAgent(t *testing.T) {
 	a.Agents = append(a.Agents,
 		models.AgentAnalysis{AgentID: "e0000000000"},
 		models.AgentAnalysis{AgentID: "b3000000000", WorkflowID: "wf_done"})
-	got := strings.Join(rowSummary(agentRows(a, foldNow)), " ")
+	got := strings.Join(rowSummary(agentRows(a, foldNow, false)), " ")
 	want := "a1000000000 2 finished a2000000000* e0000000000 run:wf_done b2000000000 b1000000000 b3000000000"
 	if !strings.HasPrefix(got, want) {
 		t.Errorf("rows:\n got %v\nwant prefix %v", got, want)
@@ -146,12 +146,12 @@ func TestAgentRowsKeepAJustStartedAgent(t *testing.T) {
 func TestAgentRowsEndedRunOutranksActivity(t *testing.T) {
 	a := foldAnalysis()
 	a.Agents[4].EndTime = foldNow.Add(-5 * time.Second) // b1, in wf_done
-	got := strings.Join(rowSummary(agentRows(a, foldNow)), " ")
+	got := strings.Join(rowSummary(agentRows(a, foldNow, false)), " ")
 	if !strings.Contains(got, "run:wf_done/folded") {
 		t.Errorf("completed run didn't fold: %v", got)
 	}
 	a.Agents = a.Agents[:agentListCap]
-	got = strings.Join(rowSummary(agentRows(a, foldNow)), " ")
+	got = strings.Join(rowSummary(agentRows(a, foldNow, false)), " ")
 	if !strings.Contains(got, "run:wf_done b2000000000 b1000000000 ") {
 		t.Errorf("completed run's agent has a dot: %v", got)
 	}
@@ -165,7 +165,7 @@ func TestAgentRowsKeepALoneFinishedAgent(t *testing.T) {
 	a := foldAnalysis()
 	a.Agents[0].EndTime = foldNow
 	a.Agents[2].EndTime = foldNow
-	for _, r := range agentRows(a, foldNow) {
+	for _, r := range agentRows(a, foldNow, false) {
 		if r.kind == agentRowFinished {
 			t.Fatalf("folded %d agent(s) into a line", r.count)
 		}
@@ -177,7 +177,7 @@ func TestAgentRowsKeepALoneFinishedAgent(t *testing.T) {
 func TestAgentRowsListTwoFinishedAgents(t *testing.T) {
 	a := foldAnalysis()
 	a.Agents[2].EndTime = foldNow // a4 is writing again
-	got := strings.Join(rowSummary(agentRows(a, foldNow)), " ")
+	got := strings.Join(rowSummary(agentRows(a, foldNow, false)), " ")
 	want := "a3000000000 a1000000000 a4000000000* a2000000000* run:wf_done/folded"
 	if !strings.HasPrefix(got, want) {
 		t.Errorf("rows:\n got %v\nwant prefix %v", got, want)
@@ -207,7 +207,7 @@ func costlyFinishedAnalysis() *models.SessionAnalysis {
 // The finished agent that cost the most stays listed above the fold, even
 // though every running agent is cheaper and the fold holds nine.
 func TestAgentRowsKeepTheCostliestFinishedAgentOut(t *testing.T) {
-	got := strings.Join(rowSummary(agentRows(costlyFinishedAnalysis(), foldNow)), " ")
+	got := strings.Join(rowSummary(agentRows(costlyFinishedAnalysis(), foldNow, false)), " ")
 	want := "b0000000000 9 finished c1000000000* c2000000000*"
 	if got != want {
 		t.Errorf("rows:\n got %v\nwant %v", got, want)
@@ -220,13 +220,13 @@ func TestAgentRowsKeptOutAgentStaysPut(t *testing.T) {
 	a := costlyFinishedAnalysis()
 	a.Agents[10].TotalCost.TotalCost = 25
 	a.Agents[11].TotalCost.TotalCost = 30
-	got := strings.Join(rowSummary(agentRows(a, foldNow)), " ")
+	got := strings.Join(rowSummary(agentRows(a, foldNow, false)), " ")
 	if want := "b0000000000 9 finished c1000000000* c2000000000*"; got != want {
 		t.Errorf("running agents grew:\n got %v\nwant %v", got, want)
 	}
 
 	// c2 finishes at $30: it takes b0's place, and b0 joins the fold.
-	got = strings.Join(rowSummary(agentRows(a, foldNow.Add(idleAfter))), " ")
+	got = strings.Join(rowSummary(agentRows(a, foldNow.Add(idleAfter), false)), " ")
 	if want := "c2000000000 11 finished"; got != want {
 		t.Errorf("a costlier agent finished:\n got %v\nwant %v", got, want)
 	}
@@ -238,7 +238,7 @@ func TestAgentRowsKeptOutAgentStaysPut(t *testing.T) {
 func TestAgentRowsKeptOutAgentTiesKeepTheFirstFinished(t *testing.T) {
 	a := costlyFinishedAnalysis()
 	a.Agents[11].TotalCost.TotalCost = 9.88
-	got := strings.Join(rowSummary(agentRows(a, foldNow.Add(idleAfter))), " ")
+	got := strings.Join(rowSummary(agentRows(a, foldNow.Add(idleAfter), false)), " ")
 	if want := "b0000000000 11 finished"; got != want {
 		t.Errorf("a later starter tied:\n got %v\nwant %v", got, want)
 	}
@@ -246,11 +246,11 @@ func TestAgentRowsKeptOutAgentTiesKeepTheFirstFinished(t *testing.T) {
 	a = costlyFinishedAnalysis()
 	a.Agents[0].EndTime = foldNow // a1 started before b0 and is still writing
 	a.Agents[0].TotalCost.TotalCost = 9.88
-	got = strings.Join(rowSummary(agentRows(a, foldNow)), " ")
+	got = strings.Join(rowSummary(agentRows(a, foldNow, false)), " ")
 	if want := "b0000000000 8 finished a1000000000* c1000000000* c2000000000*"; got != want {
 		t.Errorf("an earlier starter still running:\n got %v\nwant %v", got, want)
 	}
-	got = strings.Join(rowSummary(agentRows(a, foldNow.Add(idleAfter))), " ")
+	got = strings.Join(rowSummary(agentRows(a, foldNow.Add(idleAfter), false)), " ")
 	if want := "b0000000000 11 finished"; got != want {
 		t.Errorf("an earlier starter tied:\n got %v\nwant %v", got, want)
 	}
@@ -267,7 +267,7 @@ func TestAgentRowsKeepAnalyzerOrder(t *testing.T) {
 		foldAgent("r2a", "wf_b", goldenTime(10, 30, 0), goldenTime(10, 35, 0), 1, 0),
 		foldAgent("early", "", goldenTime(10, 0, 0), goldenTime(10, 5, 0), 1, 0),
 	}}
-	got := rowSummary(agentRows(a, foldNow))
+	got := rowSummary(agentRows(a, foldNow, false))
 	want := []string{"late", "early", "run:wf_a", "r1a", "r1b", "run:wf_b", "r2a"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("rows:\n got %v\nwant %v", got, want)
@@ -282,7 +282,7 @@ func TestAgentRowsKeepTotals(t *testing.T) {
 		"costly finished": costlyFinishedAnalysis(),
 	} {
 		var sum float64
-		for _, r := range agentRows(a, foldNow) {
+		for _, r := range agentRows(a, foldNow, false) {
 			switch {
 			case r.kind == agentRowFinished:
 				sum += r.cost
@@ -415,5 +415,54 @@ func TestAgentColumnsDropCountBeforeReading(t *testing.T) {
 				t.Errorf("width %d: context readings shown = %v, want %v:\n%s", tc.width, !tc.ctxs, tc.ctxs, out)
 			}
 		}
+	}
+}
+
+// Unfolded, every agent has its own row, running ones keep their dots, and
+// the rows still sum to the subtotal.
+func TestGoldenWatchAgentsUnfolded(t *testing.T) {
+	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
+	m.now = func() time.Time { return foldNow }
+	m.analysis = foldAnalysis()
+	m.agentsOpen = true
+	checkGolden(t, "watch_agents_unfolded", m.renderAgentBreakdownContent())
+}
+
+// a unfolds the list and folds it back. The unfolded list stays through a
+// reload and folds again for a new session. Scrolled below the list, the
+// reader's line stays at the top either way.
+func TestWatchAgentKeyUnfolds(t *testing.T) {
+	m := scrollToLine(t, anchorModel(t, 80, 24, 0), "Opus 4.8")
+	before := m.viewport.YOffset()
+	if m = press(t, m, "a"); !m.agentsOpen {
+		t.Fatalf("a: open %v", m.agentsOpen)
+	}
+	if got := topLine(m); !strings.Contains(got, "Opus 4.8") {
+		t.Errorf("unfolding moved the top line to %q", got)
+	}
+	if m.viewport.YOffset() <= before {
+		t.Errorf("offset %d after unfolding, want past %d", m.viewport.YOffset(), before)
+	}
+	for _, agent := range m.analysis.Agents {
+		if !strings.Contains(m.viewport.GetContent(), "[A"+agent.AgentID[1:8]) {
+			t.Errorf("unfolded list lacks agent %s", agent.AgentID)
+		}
+	}
+	if m = load(t, m, anchorAnalysis(0)); !m.agentsOpen {
+		t.Error("a reload folded the list")
+	}
+	if m = press(t, m, "a"); m.agentsOpen || m.viewport.YOffset() != before || !strings.Contains(topLine(m), "Opus 4.8") {
+		t.Errorf("a again: open %v, offset %d (want %d), top %q", m.agentsOpen, m.viewport.YOffset(), before, topLine(m))
+	}
+	m = press(t, m, "a")
+	switched, _ := m.switchTo("/fixture/other.jsonl", sessB, true)
+	if switched.(Model).agentsOpen {
+		t.Error("a new session opened unfolded")
+	}
+	// Eight agents never fold, so a has nothing to show.
+	short := load(t, sized(t, NewModel("/fixture/sess.jsonl", "sess", true, "", false), 80, 24), tallAnalysis(1))
+	short.analysis.Agents = short.analysis.Agents[:agentListCap]
+	if short = press(t, short, "a"); short.agentsOpen {
+		t.Error("a unfolded a list too short to fold")
 	}
 }

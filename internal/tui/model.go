@@ -111,6 +111,7 @@ type Model struct {
 	prevSessionID   string          // Session watched before the last switch
 	prevSessionPath string          // Its file, for the go-back key (-)
 	prevFollow      bool            // followMode as that session was left
+	agentsOpen      bool            // every agent on its own row; a toggles it
 	lastCreated     string          // The last session seen start, or the first; see isNewestSession
 	sessionWatcher  *SessionWatcher // Watches for other sessions' files
 	switched        *switchNotice   // Shown until a key or a newer hint
@@ -325,6 +326,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.followMode = !m.followMode
 			if h := followTarget(m.hint, m.clock()); m.followMode && h != nil {
 				return m.switchTo(h.path, h.id, false)
+			}
+
+		case "a":
+			// The rows the list gains or loses are above a reader past it,
+			// so refreshContent keeps their line. A list short enough never
+			// folds, and a setting it can't show would leave a later, longer
+			// list unfolded with nothing to say why.
+			if m.analysis != nil && len(m.analysis.Agents) > agentListCap {
+				m.agentsOpen = !m.agentsOpen
+				if m.ready {
+					m.refreshContent()
+				}
 			}
 
 		case "g", "home":
@@ -654,6 +667,8 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	// session's warning rows from the layout.
 	m.chosenY = 0
 	m.bodySections = nil
+	// The new session's list opens folded, as the first one did.
+	m.agentsOpen = false
 	if m.ready {
 		m.viewport.SetContent("")
 		m.viewport.GotoTop()
