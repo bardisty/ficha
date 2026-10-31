@@ -41,7 +41,7 @@ func TestBreakdownDated_PastSessionMarksFirstDay(t *testing.T) {
 	if m.viewport.YOffset() != 0 {
 		t.Errorf("g should show the first divider, offset %d", m.viewport.YOffset())
 	}
-	if rule := m.renderFooterRule(m.panelWidth()); !strings.Contains(rule, "[ rows 1-13 of 40 ]") {
+	if rule := m.renderFooterRule(m.panelWidth()); !strings.Contains(rule, "[ Thu 15 Jan • rows 1-13 of 40 ]") {
 		t.Errorf("footer rule should count message rows: %q", rule)
 	}
 }
@@ -416,5 +416,93 @@ func TestBreakdownDated_DaySkipsMidnight(t *testing.T) {
 	}
 	if _, weekOld := m.isDated(at("2026-09-11 12:00:00")); !weekOld {
 		t.Error("six days later the row should be week-old")
+	}
+}
+
+// twoDayRows is 60 rows a minute apart from Thu 15 Jan 23:30: rows 1-30 on
+// Thursday, 31-60 on Friday. Row 10 costs the most.
+func twoDayRows() []models.BreakdownMessage {
+	msgs := chromeRows(goldenTime(23, 30, 0), 60)
+	msgs[9].Cost.TotalCost = 0.5
+	return msgs
+}
+
+// ruleOf is the footer rule at the model's own width.
+func ruleOf(m BreakdownModel) string {
+	return m.renderFooterRule(m.panelWidth())
+}
+
+// In a dated session the footer rule names the day of the first row on
+// screen, wherever the reader is: on open, past a divider, after g and p.
+func TestBreakdownDated_RuleNamesFirstVisibleDay(t *testing.T) {
+	m := datedBreakdown(t, 80, 24, goldenTime(12, 0, 0).AddDate(0, 0, 2), twoDayRows())
+	if rule := ruleOf(m); !strings.Contains(rule, "[ Fri 16 Jan • rows 47-60 of 60 ]") {
+		t.Errorf("on open the rule should name Friday: %q", rule)
+	}
+	// Line 31 is Friday's divider, line 30 the last of Thursday's rows.
+	m.scrollTo(31)
+	if rule := ruleOf(m); !strings.Contains(rule, "[ Fri 16 Jan • rows 31-43 of 60") {
+		t.Errorf("under Friday's divider the rule should name Friday: %q", rule)
+	}
+	m.scrollTo(30)
+	if rule := ruleOf(m); !strings.Contains(rule, "[ Thu 15 Jan • rows 30-") {
+		t.Errorf("one line up the rule should name Thursday: %q", rule)
+	}
+	m = press(t, m, "G")
+	m = press(t, m, "g")
+	if rule := ruleOf(m); !strings.Contains(rule, "[ Thu 15 Jan • rows 1-13 of 60 ]") {
+		t.Errorf("g should name the first day: %q", rule)
+	}
+	m = press(t, m, "G", "p")
+	if rule := ruleOf(m); !strings.Contains(rule, "[ Thu 15 Jan • rows ") {
+		t.Errorf("p on Thursday's row 10 should name Thursday: %q", rule)
+	}
+}
+
+// The day is the first label the rule drops when short of room; the row
+// range follows. Sorted by cost, and in a session that's all today, the
+// rule names no day.
+func TestBreakdownDated_RuleDayGivesWay(t *testing.T) {
+	m := datedBreakdown(t, 80, 24, goldenTime(12, 0, 0).AddDate(0, 0, 2), twoDayRows())
+	full := "[ Fri 16 Jan • rows 47-60 of 60 ]"
+	// full is 33 cells, and the rule keeps 2 to its left.
+	if rule := m.renderFooterRule(35); !strings.Contains(rule, full) {
+		t.Errorf("the rule should keep the day when it just fits: %q", rule)
+	}
+	narrow := m.renderFooterRule(34)
+	if strings.Contains(narrow, "Fri") || !strings.Contains(narrow, "[ rows 47-60 of 60 ]") {
+		t.Errorf("short of room the day should go before the rows: %q", narrow)
+	}
+	if bare := m.renderFooterRule(20); strings.Contains(bare, "[") {
+		t.Errorf("with no room for the rows the rule should be plain: %q", bare)
+	}
+	sorted := press(t, m, "s")
+	if rule := ruleOf(sorted); strings.Contains(rule, "Jan") || !strings.Contains(rule, "[ sorted by cost (s) • rank") {
+		t.Errorf("sorted by cost the rule names no day: %q", rule)
+	}
+	today := datedBreakdown(t, 80, 24, goldenTime(12, 0, 0), chromeRows(goldenTime(10, 0, 0), 40))
+	if rule := ruleOf(today); !strings.Contains(rule, "[ rows 27-40 of 40 ]") {
+		t.Errorf("a session from today keeps its rule: %q", rule)
+	}
+}
+
+// Rows with no timestamp take the day of the divider above them, not of the
+// next timed row, and rows above the first divider have no day to name.
+func TestBreakdownDated_RuleDayOfUntimedRows(t *testing.T) {
+	msgs := twoDayRows()
+	for i := 24; i < 34; i++ {
+		msgs[i].Timestamp = time.Time{}
+	}
+	msgs[0].Timestamp = time.Time{}
+	m := datedBreakdown(t, 80, 24, goldenTime(12, 0, 0).AddDate(0, 0, 2), msgs)
+	// Line 0 is untimed row 1, line 1 Thursday's divider, and from there
+	// line k is row k: line 26 is untimed row 26, nine rows above Friday.
+	m.scrollTo(26)
+	if rule := ruleOf(m); !strings.Contains(rule, "[ Thu 15 Jan • rows 26-") {
+		t.Errorf("untimed rows under Thursday's divider are Thursday's: %q", rule)
+	}
+	m.scrollTo(0)
+	if rule := ruleOf(m); !strings.Contains(rule, "[ rows 1-") {
+		t.Errorf("a row above every divider has no day: %q", rule)
 	}
 }
