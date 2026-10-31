@@ -125,6 +125,38 @@ func TestBreakdownScopePeakSortAndEsc(t *testing.T) {
 	if m = press(t, m, "esc"); m.scope.on {
 		t.Errorf("second esc kept the scope %+v", m.scope)
 	}
+
+	// Scoped while sorted, s goes back to the new scope's first row at or
+	// after the row it would have gone back to.
+	m = scopedBreakdown(t, 100, 24, 150)
+	scrollToRow(t, &m, 32) // agent C's
+	m = press(t, m, "s", "a")
+	if m.scope != (rowScope{on: true}) {
+		t.Fatalf("setup: scope %+v, want the main conversation", m.scope)
+	}
+	if m = press(t, m, "s"); firstRow(m) != 34 {
+		t.Errorf("s after scoping while sorted: first row %d, want 34, the main conversation's next", firstRow(m))
+	}
+}
+
+// scrollToRow stops following and scrolls the row with display Index index
+// to the top.
+func scrollToRow(t *testing.T, m *BreakdownModel, index int) {
+	t.Helper()
+	m.setFollow(false)
+	for line, row := range m.lineRows {
+		if row == index {
+			m.scrollTo(line)
+			return
+		}
+	}
+	t.Fatalf("setup: row %d isn't in the table", index)
+}
+
+// firstRow is the display Index of the first row on screen.
+func firstRow(m BreakdownModel) int {
+	first, _ := m.visibleRows()
+	return first
 }
 
 // Following inside a scope, rows from elsewhere neither move the view nor
@@ -174,5 +206,30 @@ func TestBreakdownScopeWithNoRows(t *testing.T) {
 	updated, _ = m.Update(load)
 	if m = updated.(BreakdownModel); m.scope.on || strings.Contains(m.positionText(), "new") {
 		t.Errorf("reload emptied the main scope: scope %+v, position %q", m.scope, m.positionText())
+	}
+
+	// Every row comes back at the row number the reader was on, and so
+	// does the line s goes back to.
+	gone := scopeLoad(90)
+	for i := range gone.messages {
+		if gone.messages[i].AgentID == scopeAgentC {
+			gone.messages[i].AgentID = scopeAgentB
+		}
+	}
+	m = press(t, scopedBreakdown(t, 100, 24, 90), "a", "a")
+	scrollToRow(t, &m, 50) // agent C's
+	updated, _ = m.Update(gone)
+	if m = updated.(BreakdownModel); m.scope.on || firstRow(m) != 50 {
+		t.Errorf("reload emptied agent C's scope: scope %+v, first row %d, want every row from 50", m.scope, firstRow(m))
+	}
+	m = press(t, scopedBreakdown(t, 100, 24, 90), "a", "a")
+	scrollToRow(t, &m, 50)
+	m = press(t, m, "s", "j")
+	updated, _ = m.Update(gone)
+	if m = updated.(BreakdownModel); m.viewport.YOffset() != 0 {
+		t.Errorf("reload emptied agent C's sorted scope: view at line %d, want the costliest row at the top", m.viewport.YOffset())
+	}
+	if m = press(t, m, "s"); m.scope.on || firstRow(m) != 50 {
+		t.Errorf("reload emptied agent C's sorted scope, then s: scope %+v, first row %d, want every row from 50", m.scope, firstRow(m))
 	}
 }

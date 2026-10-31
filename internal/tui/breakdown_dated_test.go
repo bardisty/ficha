@@ -124,6 +124,55 @@ func TestBreakdownDated_PeakHasWeekday(t *testing.T) {
 	}
 }
 
+// The Peak's form comes from its own day, not the session's: in a week-old
+// session, yesterday's Peak names only its weekday, and today's only its
+// time, as show's does.
+func TestBreakdownDated_PeakDatedByItsOwnDay(t *testing.T) {
+	now := goldenTime(12, 0, 0).AddDate(0, 0, 8) // Fri 23 Jan
+	msgs := chromeRows(goldenTime(10, 0, 0), 40)
+	msgs[38].Timestamp = now.Add(-24 * time.Hour)
+	msgs[39].Timestamp = now.Add(-time.Hour)
+	for _, tt := range []struct {
+		row  int
+		want string
+	}{
+		{3, "Peak: #3 $0.0500 @ Thu 15 Jan 10:02:00 ("},
+		{39, "Peak: #39 $0.0500 @ Thu 12:00:00 ("},
+		{40, "Peak: #40 $0.0500 @ 11:00:00 ("},
+	} {
+		m := datedBreakdown(t, 100, 24, now, msgs)
+		if !m.weekOld {
+			t.Fatal("setup: the session should be week-old")
+		}
+		m.insights = &models.MessageInsights{
+			HighestCost: &models.MessageSnapshot{Index: tt.row, Timestamp: msgs[tt.row-1].Timestamp, Cost: 0.05},
+			AverageCost: 0.05, MessageCount: 40,
+		}
+		if got := m.renderCompactInsights(); !strings.Contains(got, tt.want) {
+			t.Errorf("Peak on row %d: insights %q, want %q", tt.row, got, tt.want)
+		}
+	}
+}
+
+// A Peak from another year carries the year, and gives it up first.
+func TestBreakdownDated_PeakFromAnotherYear(t *testing.T) {
+	msgs := chromeRows(goldenTime(10, 0, 0), 40)
+	now := goldenTime(12, 0, 0).AddDate(1, 0, 0)
+	for _, want := range []string{
+		"Peak: #3 $0.0500 @ Thu 15 Jan 2026 10:02:00",
+		"Peak: #3 $0.0500 @ Thu 15 Jan 10:02:00",
+	} {
+		m := datedBreakdown(t, len(want)+4, 24, now, msgs)
+		m.insights = &models.MessageInsights{
+			HighestCost: &models.MessageSnapshot{Index: 3, Timestamp: msgs[2].Timestamp, Cost: 0.05},
+			AverageCost: 0.05, MessageCount: 1,
+		}
+		if got := strings.TrimSpace(m.renderCompactInsights()); got != want {
+			t.Errorf("at %d columns: %q, want %q", m.width, got, want)
+		}
+	}
+}
+
 // The view dates itself at midnight on the clock tick, with no load.
 func TestBreakdownDated_TurnsDatedAtMidnight(t *testing.T) {
 	now := goldenTime(23, 59, 0)

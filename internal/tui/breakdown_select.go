@@ -255,9 +255,7 @@ func (m BreakdownModel) leaving() leftView {
 	}
 	v.top = m.markLine(m.lineRows, m.linePos, m.chosenY)
 	if m.sortByCost {
-		timeOrder := m
-		timeOrder.sortByCost = false
-		rows, pos := timeOrder.tableLines()
+		rows, pos := m.timeLines()
 		v.timeTop = m.markLine(rows, pos, m.timeYOffset)
 	}
 	return v
@@ -327,8 +325,7 @@ func (m *BreakdownModel) bringBack(v leftView) {
 	m.setFollow(false)
 	m.pausedAt = min(v.pausedAt, m.scopeLen())
 	if v.sorted {
-		timeOrder := *m
-		rows, pos := timeOrder.tableLines()
+		rows, pos := m.timeLines()
 		m.timeYOffset, m.timeFollow = m.lineOf(rows, pos, v.timeTop), v.timeFollow
 		m.sortByCost = true
 		m.relayout()
