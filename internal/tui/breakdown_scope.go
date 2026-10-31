@@ -101,6 +101,15 @@ func (m *BreakdownModel) setScope(scope rowScope) {
 	if first, _ := m.visibleRows(); first > 0 {
 		from = first - 1
 	}
+	// Sorted, the line s goes back to moves the same way, from the old
+	// scope's time order to the new one's.
+	var timeFrom int
+	if m.sortByCost {
+		_, pos := m.timeLines()
+		if len(pos) > 0 {
+			timeFrom = pos[min(m.timeYOffset, len(pos)-1)]
+		}
+	}
 	m.scope = scope
 	m.countScope()
 	m.scopeInsights()
@@ -111,21 +120,34 @@ func (m *BreakdownModel) setScope(scope rowScope) {
 	m.refreshViewport()
 	switch {
 	case m.sortByCost:
+		_, pos := m.timeLines()
+		m.timeYOffset = lineAtOrAfter(pos, timeFrom)
 		m.scrollTo(0)
 	case m.autoScroll:
 		m.viewport.GotoBottom()
 		m.scrollTo(m.viewport.YOffset())
 	default:
-		// With none of the scope's rows that late, the view ends on its last.
-		line := len(m.linePos) - 1
-		for i, pos := range m.linePos {
-			if pos >= from {
-				line = i
-				break
-			}
-		}
-		m.scrollTo(max(line, 0))
+		m.scrollTo(lineAtOrAfter(m.linePos, from))
 	}
+}
+
+// lineAtOrAfter is the first line of a layout from tableLines whose row is
+// at or after position from in m.messages. With none of the rows that late,
+// it's the last line.
+func lineAtOrAfter(linePos []int, from int) int {
+	for i, pos := range linePos {
+		if pos >= from {
+			return i
+		}
+	}
+	return max(len(linePos)-1, 0)
+}
+
+// timeLines is tableLines in time order, sorted or not: the layout s goes
+// back to.
+func (m BreakdownModel) timeLines() (lineRows, linePos []int) {
+	m.sortByCost = false
+	return m.tableLines()
 }
 
 // selectionInScope reports whether p's selected row is one of the scope's.

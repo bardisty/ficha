@@ -438,11 +438,23 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detectNewMessages(msg.messages)
 		anchor := m.sortAnchor()
 
-		m.messages = msg.messages
 		// A reload keeps the scope, unless its rows are gone. Every row
-		// is then on show and none of them is new.
+		// is then on show and none of them is new. In time order the view
+		// goes back to the row the reader was on, by its number, since
+		// every line moves; sorted, it opens on the costliest, as a again
+		// would. A line past the layout, kept through a shrink, is its last.
+		var top, timeTop rowMark
+		switch {
+		case m.scope.on && m.sortByCost:
+			rows, pos := m.timeLines()
+			timeTop = m.markLine(rows, pos, min(m.timeYOffset, len(rows)-1))
+		case m.scope.on:
+			top = m.markLine(m.lineRows, m.linePos, min(m.chosenY, len(m.lineRows)-1))
+		}
+		m.messages = msg.messages
 		m.countScope()
-		if m.scope.on && m.scopeCount == 0 {
+		emptied := m.scope.on && m.scopeCount == 0
+		if emptied {
 			m.scope = rowScope{}
 			m.pausedAt = len(m.messages)
 		}
@@ -486,6 +498,14 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastUpdated = time.Now()
 		m.err = nil
 		m.refreshViewport()
+		switch {
+		case emptied && m.sortByCost:
+			rows, pos := m.timeLines()
+			m.timeYOffset = m.lineOf(rows, pos, timeTop)
+			m.scrollTo(0)
+		case emptied && !m.autoScroll:
+			m.returnTo(m.lineOf(m.lineRows, m.linePos, top))
+		}
 		m.keepSortAnchor(anchor)
 		if view := m.restore; view != nil {
 			m.restore = nil
@@ -1206,12 +1226,16 @@ func (m BreakdownModel) renderCompactInsights() string {
 	peaks := []string{""}
 	if peak := m.insights.HighestCost; peak != nil {
 		short := fmt.Sprintf("Peak: #%d %s", peak.Index, render.Cost(peak.Cost))
+		// The Peak's own day picks its fullest form, as in show, and the
+		// shorter forms follow. datedOn is the day the TIME column was laid
+		// out on, so the two change on the same relayout.
 		clocks := []string{render.WeekdayDateClock(peak.Timestamp), render.WeekdayClock(peak.Timestamp), render.Clock(peak.Timestamp)}
-		switch {
-		case !m.dated:
-			clocks = clocks[2:]
-		case !m.weekOld:
-			clocks = clocks[1:]
+		full := render.ClockOn(peak.Timestamp, m.datedOn)
+		if i := slices.Index(clocks, full); i >= 0 {
+			clocks = clocks[i:]
+		} else {
+			// Another year's form, which the date without its year follows.
+			clocks = append([]string{full}, clocks...)
 		}
 		marker := ""
 		// Scoped, the label already names whose row the Peak is.
