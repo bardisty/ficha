@@ -208,13 +208,8 @@ func TestE2ESessionLookup(t *testing.T) {
 	if err := os.WriteFile(agent, []byte(agentLines), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	older, newer := time.Now().Add(-3*time.Hour), time.Now().Add(-5*time.Minute)
-	if err := os.Chtimes(filepath.Join(proj, e2eAlphaID+".jsonl"), older, older); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(filepath.Join(proj, extraID+".jsonl"), newer, newer); err != nil {
-		t.Fatal(err)
-	}
+	lastActiveAt(t, filepath.Join(proj, e2eAlphaID+".jsonl"), time.Now().Add(-3*time.Hour))
+	lastActiveAt(t, filepath.Join(proj, extraID+".jsonl"), time.Now().Add(-5*time.Minute))
 
 	for _, id := range []string{strings.ToUpper(e2eAlphaID[:8]), e2eAlphaID + ".jsonl", strings.ToUpper(e2eAlphaID) + ".JSONL"} {
 		out, _, err := executeCLISplit(t, "show", projFlag, id, "-f", "json")
@@ -240,8 +235,8 @@ func TestE2ESessionLookup(t *testing.T) {
 			"session not found: ffff. Run 'ficha list " + projFlag + "' to see this project's sessions."},
 		{"ambiguous prefix, newest first", []string{"show", projFlag, "aaaa"},
 			`ambiguous session ID "aaaa" matches 2 sessions:` +
-				"\n  " + extraID + "  modified 5m ago · 3 msgs" +
-				"\n  " + e2eAlphaID + "  modified 3h ago · 2 msgs"},
+				"\n  " + extraID + "  5m ago · 3 msgs" +
+				"\n  " + e2eAlphaID + "  3h ago · 2 msgs"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

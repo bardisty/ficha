@@ -76,9 +76,10 @@ func latestSession(sessions []models.SessionEntry) int {
 }
 
 // sortSessionsByLastActive sorts sessions by lastActive, latest first, with
-// SessionID as the tiebreaker. Unlike latestSession it reads every session's
-// tail.
-func sortSessionsByLastActive(sessions []models.SessionEntry) {
+// SessionID as the tiebreaker, and returns each one's lastActive by its
+// FullPath. Unlike latestSession it reads every session's tail, which can
+// mean the whole file, so a caller reuses the times rather than read again.
+func sortSessionsByLastActive(sessions []models.SessionEntry) map[string]time.Time {
 	at := make(map[string]time.Time, len(sessions))
 	for _, s := range sessions {
 		at[s.FullPath] = lastActive(s)
@@ -90,6 +91,7 @@ func sortSessionsByLastActive(sessions []models.SessionEntry) {
 		}
 		return a.After(b)
 	})
+	return at
 }
 
 // trulyEmpty reports whether a has no replies and nothing ficha failed to
