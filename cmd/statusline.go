@@ -37,7 +37,11 @@ from it. Add it to ~/.claude/settings.json:
 
 Near ~compaction the context part says how much room is left, as in
 "ctx 90%, 67.0K to ~compaction", and "past ~compaction" once it's over the
-mark. It's colored; --no-color turns that off.`,
+mark. It's colored; --no-color turns that off.
+
+The total is the transcript's alone. In a forked session it includes the
+replies the fork copied, which list, summary and global count under the
+session that had them first.`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {

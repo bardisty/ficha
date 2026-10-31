@@ -39,6 +39,15 @@ Messages and turns
   They cost $0, breakdown names their model "synthetic", and COST BY MODEL
   leaves them out.
 
+Forks
+  A forked session's transcript starts with copies of the original's
+  replies. list, summary and global count each reply once, under the
+  session it first appeared in, so a project's sessions add up to its
+  total. show, watch, breakdown and statusline price one transcript on
+  its own, copies included, so a fork costs more there than in list. In
+  list, a fork that added nothing reads "(copy)", before its title when
+  it has one.
+
 Message insights
   In show and watch, insights cover the main conversation only, and say
   "main conversation only, agents excluded" when agents ran. breakdown

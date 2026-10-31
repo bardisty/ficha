@@ -100,15 +100,25 @@ Session rows go oldest first by their last message, the table's order read from 
 
 The last two columns, `agent_type` and `description`, are the agent's, as in json's [agent records](#agent-tasks). Session rows leave them empty, and so does an agent Claude Code recorded neither for.
 
+## Forks and repeated history
+
+`claude --resume <id> --fork-session` writes a new transcript that starts with copies of the original's replies: the same `message.id`, `requestId`, timestamps and usage, under a new `sessionId`. In the same check, a plain `claude --resume <id>` appended to the original's transcript and repeated nothing.
+
+Commands that read many sessions count each repeated reply once, under the session it first appeared in, so their sessions add up to their totals: `list`, `summary`, `summary -d` and `global`. Commands that read one transcript price it on its own, copies included: `show`, `watch`, `breakdown` and `statusline`. So a fork costs more in `show` than in `list`, and its `show` duration starts at the first copied reply.
+
+"First appeared" goes by each transcript's earliest reply. A fork ties with its original there, and the tie goes to the session Claude Code created first, as `sessions-index.json` records it. Without that file ficha falls back to each transcript's mtime, so resuming the original after forking makes the fork the session credited with the shared history. If the original then added nothing, it's the original that `list` titles `(copy)`.
+
+`list` titles a session `(copy)` when every reply in it is counted under another session, before its own title when it has one. A fork copies the original's title along with its replies, so most copies read `(copy) <the original's title>`. `summary -d` has no title column, and shows a copy as a row of dashes, like a session with no replies.
+
 ## Session list (`list`)
 
 `list -f json` is an array with one record per session, newest first by last message as in the table, and `list -f csv` has a row per session with the same fields. Besides the discovery fields (`session_id`, `full_path`, `modified`, the counts and the skip counters), each record carries what the table shows: `title`, `model`, `start_time`, `duration_seconds` and `total_cost`.
 
 - `modified` is the transcript file's mtime, which can be later than the last message, so it doesn't always descend down the list. A session with no messages sorts by it.
 - `total_cost` is the same breakdown object as on `show` and `summary`, so `.total_cost.total_cost` reads the same on all three. csv has only the total.
-- `model`, `start_time`, `duration_seconds` and `total_cost` come from the same analysis as the session's `summary -d` record and the list table. That analysis counts a message repeated across sessions once, under the session it first appeared in. So for a resumed or forked session, which starts with a copy of earlier history, these fields describe what it added: `start_time` is its first new message, and its `total_cost` can be lower than `show`'s, which analyzes the session alone.
+- `model`, `start_time`, `duration_seconds` and `total_cost` come from the same analysis as the session's `summary -d` record and the list table. That analysis counts a message repeated across sessions once, under the session it first appeared in. So for a forked session, or any other that starts with a copy of earlier history, these fields describe what it added: `start_time` is its first new message, and its `total_cost` can be lower than `show`'s, which analyzes the session alone.
 - `title` is the session's title, as on `show`. A fork that hasn't been retitled yet carries the original's title.
-- `message_count` and `agent_count` come from the same parse as `show`'s, so the two agree, repeated history included.
+- `message_count` and `agent_count` come from the same parse as `show`'s, so the two agree, repeated history included. On a fork, that means `message_count` and `total_cost` count different messages: a fork that added 10 replies to 20 it copied has a `message_count` of 30 and the `total_cost` of its 10. A fork that added nothing has a `total_cost` of zero, and the table titles it `(copy)`.
 - `model` is the session's costliest model in its main conversation, spelled as a `cost_by_model` key, like `summary -d` csv's `model`.
 - A session that fails to parse is still listed, with `skipped_sessions: 1`. It has no `title`, `model`, `start_time`, `duration_seconds` or `total_cost`, and csv leaves those cells empty. A session that holds nothing but repeated history parses fine, so it has `total_cost` (zero) and `duration_seconds`, but no `start_time` or `model`.
 

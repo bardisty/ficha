@@ -539,6 +539,28 @@ func TestGoldenSessionListColor(t *testing.T) {
 	checkGolden(t, "session_list_color", FormatSessionListTable(goldenListResults(), false, goldenListOptions))
 }
 
+// forkListResults is goldenListResults' priced sessions beside two copies:
+// transcripts that hold replies, all of them already counted under another
+// session. One has its own title and one doesn't.
+func forkListResults() []models.SessionResult {
+	results := goldenListResults()[:2]
+	entries := goldenSessionEntries()
+	copied := entries[2]
+	titled := copied
+	titled.SessionID = "c0ffee00-0000-4000-8000-000000000000"
+	return append(results,
+		models.SessionResult{Entry: copied, Analysis: &models.SessionAnalysis{TranscriptMessages: 240}},
+		models.SessionResult{Entry: titled, Analysis: &models.SessionAnalysis{TranscriptMessages: 20, Title: "Move sessions to Redis"}},
+	)
+}
+
+// A copy of another session's replies says so, rather than reading as a
+// session with no replies yet.
+func TestGoldenSessionListFork(t *testing.T) {
+	checkGolden(t, "session_list_fork", FormatSessionListTable(forkListResults(), true, goldenListOptions))
+	checkGolden(t, "session_list_fork_color", FormatSessionListTable(forkListResults(), false, goldenListOptions))
+}
+
 // Beside one priced session, a session with no replies leaves the priced
 // one the neutral color a lone session gets, as summary --details does.
 func TestGoldenSessionListNoRepliesColor(t *testing.T) {
