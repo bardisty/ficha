@@ -570,6 +570,49 @@ func TestGoldenGlobalTableDetails(t *testing.T) {
 	checkGolden(t, "global_table_details", FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(true)))
 }
 
+// worktreeGlobalAnalysis has a repo, three of its worktrees, and worktrees
+// of two other repos, one sharing a worktree's name with the first repo's.
+func worktreeGlobalAnalysis() *models.GlobalAnalysis {
+	a := &models.GlobalAnalysis{}
+	for i, p := range []struct {
+		name string
+		cost float64
+	}{
+		{"~/work/webapp", 73.99},
+		{"~/work/webapp/.claude/worktrees/feat-x", 17.38},
+		{"~/source/billing-dashboard/.claude/worktrees/fix-rounding", 12.34},
+		{"~/source/payments-service/.claude/worktrees/grpc-client", 8.20},
+		{"~/source/payments-service/.claude/worktrees/fix-rounding", 4.70},
+		{"~/source/payments-service", 2.05},
+	} {
+		a.Projects = append(a.Projects, models.ProjectAnalysis{
+			ProjectInfo:  models.ProjectInfo{DisplayName: p.name},
+			TotalCost:    models.CostBreakdown{TotalCost: p.cost},
+			SessionCount: 1,
+			MessageCount: 40 * (i + 1),
+			LastActive:   time.Date(2026, 1, 15, 11-i, 30, 0, 0, time.UTC),
+		})
+		a.TotalCost.TotalCost += p.cost
+		a.SessionCount++
+		a.MessageCount += 40 * (i + 1)
+	}
+	a.ProjectCount = len(a.Projects)
+	return a
+}
+
+// worktreeGlobalOptions shows every row of worktreeGlobalAnalysis, without
+// the cumulative column details adds.
+func worktreeGlobalOptions() GlobalTableOptions {
+	opts := goldenGlobalOptions(false)
+	opts.TopN = 10
+	return opts
+}
+
+// Piped, worktree rows keep their repo's and their worktree's names.
+func TestGoldenGlobalTableWorktrees(t *testing.T) {
+	checkGolden(t, "global_table_worktrees", FormatGlobalTable(worktreeGlobalAnalysis(), true, worktreeGlobalOptions()))
+}
+
 // --- golden tests: FormatSummaryTableWithDetails ---
 //
 // The formatter is pure: it renders the per-session results that
