@@ -199,3 +199,62 @@ func TestSameNameHint(t *testing.T) {
 		t.Errorf("no same-named project: got %q", got)
 	}
 }
+
+// At a directory whose sessions are all in the projects under it, the live
+// views still wait, since a session may start there, and the hint names
+// those projects. They win the line over a same-named project elsewhere.
+func TestNestedHint(t *testing.T) {
+	repo, projectsDir, home := setupNestedFixture(t)
+	if err := os.RemoveAll(filepath.Join(projectsDir, paths.PathToProjectDir(repo))); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(home, "elsewhere", "repo")
+	writeCwdSession(t, filepath.Join(projectsDir, paths.PathToProjectDir(other)), other)
+
+	cfg := config{commandPath: "ficha watch"}
+	dir, _, hint, ok := waitingProject(&cfg)
+	if !ok || dir != filepath.Join(projectsDir, paths.PathToProjectDir(repo)) {
+		t.Fatalf("ok %v, dir %s", ok, dir)
+	}
+	want := []string{"2 projects under it have sessions: ficha list --nested", "2 projects under it have sessions"}
+	if !slices.Equal(hint, want) {
+		t.Errorf("hint %q\nwant %q", hint, want)
+	}
+
+	if err := os.RemoveAll(filepath.Join(projectsDir, paths.PathToProjectDir(filepath.Join(repo, "packages", "api")))); err != nil {
+		t.Fatal(err)
+	}
+	worktree := filepath.Join(repo, ".claude", "worktrees", "fix-auth")
+	cmd := "ficha watch -p " + filepath.Join("~", "work", "repo", ".claude", "worktrees", "fix-auth")
+	if runtime.GOOS == "windows" {
+		cmd = "ficha watch -p " + shellQuote(worktree)
+	}
+	want = []string{
+		"Under it, fix-auth has sessions: " + cmd,
+		"Under it, fix-auth has sessions",
+		"1 project under it has sessions",
+	}
+	if _, _, hint, _ := waitingProject(&cfg); !slices.Equal(hint, want) {
+		t.Errorf("hint %q\nwant %q", hint, want)
+	}
+
+	// repo-old is no reason to read -p repo as a typo when repo has
+	// sessions under it.
+	withP := config{commandPath: "ficha watch", projectPath: repo}
+	if _, _, hint, ok := waitingProject(&withP); !ok || !slices.Equal(hint, want) {
+		t.Errorf("-p beside a similar name: ok %v, hint %q", ok, hint)
+	}
+
+	// An empty project directory left at the root waits the same way.
+	addProject(t, filepath.Dir(projectsDir), repo, true)
+	if _, _, hint, ok := waitingProject(&cfg); !ok || !slices.Equal(hint, want) {
+		t.Errorf("empty project directory: ok %v, hint %q", ok, hint)
+	}
+
+	// Under ~, every project is nested, so home names none of them.
+	t.Setenv("HOME", repo)
+	t.Setenv("USERPROFILE", repo)
+	if _, _, hint, _ := waitingProject(&cfg); slices.ContainsFunc(hint, func(h string) bool { return strings.Contains(h, "under it") }) {
+		t.Errorf("at home: hint %q", hint)
+	}
+}

@@ -51,7 +51,8 @@ func waitingBreakdown(cfg *config) func(dir, projectPath string, hint []string) 
 // Code first runs there. Other projects that only share its name don't stop
 // the wait: whatever Claude Code starts here is recorded under this path, so
 // a live view following one of them would never see it. hint names them, so
-// someone who meant one can switch. ok is false when waiting would hide a
+// someone who meant one can switch, unless projects under this directory
+// have sessions: hint names those instead. ok is false when waiting would hide a
 // real problem or a better answer: an explicit --project-dir, a missing or
 // empty projects directory (usually a wrong CLAUDE_CONFIG_DIR), a path that
 // isn't a directory, a project that recorded this path as its own, a
@@ -90,8 +91,10 @@ func waitingProject(cfg *config) (dir, projectPath string, hint []string, ok boo
 	dir = filepath.Join(projectsDir, paths.PathToProjectDir(canonical))
 	if isDir(dir) {
 		// hasTranscripts can't tell an unreadable directory from an empty one
-		_, err := os.ReadDir(dir)
-		return dir, canonical, nil, err == nil && !hasTranscripts(dir)
+		if _, err := os.ReadDir(dir); err != nil || hasTranscripts(dir) {
+			return "", "", nil, false
+		}
+		return dir, canonical, nestedHint(cfg, canonical, projectsDir), true
 	}
 	all, err := parser.DiscoverAllProjects()
 	if err != nil || len(all) == 0 {
@@ -115,11 +118,37 @@ func waitingProject(cfg *config) (dir, projectPath string, hint []string, ok boo
 		}
 		sameName = append(sameName, p)
 	}
+	// The projects under this directory are where its sessions went, while
+	// one elsewhere that shares its name is only a guess, so they win the
+	// hint's one line. And a directory with sessions under it is no typo.
+	if hint := nestedHint(cfg, canonical, projectsDir); hint != nil {
+		return dir, canonical, hint, true
+	}
 	// Refusing with a same-named project would hand the view to it.
 	if cfg.projectPath != "" && len(sameName) == 0 && len(similarProjects(canonical, all)) > 0 {
 		return "", "", nil, false
 	}
 	return dir, canonical, sameNameHint(cfg, filepath.Base(canonical), sameName), true
+}
+
+// nestedHint is the waiting screen's line naming the projects under the
+// waiting directory that have sessions, longest form first: the one project
+// with the command that opens it, or how many there are.
+func nestedHint(cfg *config, path, projectsDir string) []string {
+	nested := nestedWithSessions(path, projectsDir)
+	switch len(nested) {
+	case 0:
+		return nil
+	case 1:
+		cmd := errCommand{text: cfg.command() + " -p ", path: nested[0].path}.onTerminal()
+		return []string{
+			"Under it, " + nested[0].name + " has sessions: " + cmd,
+			"Under it, " + nested[0].name + " has sessions",
+			"1 project under it has sessions",
+		}
+	}
+	have := plural(len(nested), "project") + " under it have sessions"
+	return []string{have + ": ficha list" + cfg.typedProjectArgs() + " --nested", have}
 }
 
 // sameNameHint is the waiting screen's line naming the projects that share
