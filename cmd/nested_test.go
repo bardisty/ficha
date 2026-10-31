@@ -353,15 +353,50 @@ func TestNestedProjectsWithoutOwnSessions(t *testing.T) {
 	}
 
 	// show, watch and breakdown read one project, so the projects under the
-	// directory don't stand in for its own.
-	t.Run("show is unchanged", func(t *testing.T) {
+	// directory don't stand in for its own. The error names them instead,
+	// with the -p that reads each, since those commands have no --nested.
+	for _, tt := range []struct {
+		name   string
+		remove func(repoProject string) error
+	}{
+		{"no project directory", os.RemoveAll},
+		{"an empty project directory", func(repoProject string) error {
+			return os.Remove(filepath.Join(repoProject, "aaaaaaaa-0000-4000-8000-000000000001.jsonl"))
+		}},
+	} {
+		t.Run("show names them, "+tt.name, func(t *testing.T) {
+			repo, projectsDir, _ := setupNestedFixture(t)
+			if err := tt.remove(filepath.Join(projectsDir, paths.PathToProjectDir(repo))); err != nil {
+				t.Fatal(err)
+			}
+			for _, command := range [][]string{{"show"}, {}} {
+				_, _, err := executeCLISplit(t, command...)
+				line := strings.Join(append([]string{"ficha"}, command...), " ")
+				want := "Claude Code has no sessions for " + repo + " itself, but 2 projects under it have: fix-auth, packages/api. Pick one:\n" +
+					"  " + line + " -p " + shellQuote(filepath.Join(repo, ".claude", "worktrees", "fix-auth")) + "\n" +
+					"  " + line + " -p " + shellQuote(filepath.Join(repo, "packages", "api"))
+				if exitCode(err) != 1 || err.Error() != want {
+					t.Errorf("%v: exit %d, error:\n%v\nwant:\n%s", command, exitCode(err), err, want)
+				}
+			}
+		})
+	}
+
+	t.Run("show with one project under the directory", func(t *testing.T) {
 		repo, projectsDir, _ := setupNestedFixture(t)
-		if err := os.RemoveAll(filepath.Join(projectsDir, paths.PathToProjectDir(repo))); err != nil {
-			t.Fatal(err)
+		for _, dir := range []string{repo, filepath.Join(repo, "packages", "api")} {
+			if err := os.RemoveAll(filepath.Join(projectsDir, paths.PathToProjectDir(dir))); err != nil {
+				t.Fatal(err)
+			}
 		}
-		_, _, err := executeCLISplit(t, "show")
-		if err == nil || strings.Contains(err.Error(), "--nested") {
-			t.Errorf("show: %v", err)
+		worktree := filepath.Join(repo, ".claude", "worktrees", "fix-auth")
+		_, _, err := executeCLISplit(t, "show", "-p", repo)
+		want := "Claude Code has no sessions for " + repo + " itself, but 1 project under it has: fix-auth. Run: ficha show -p " + shellQuote(worktree)
+		if exitCode(err) != 1 || err.Error() != want {
+			t.Fatalf("exit %d, error:\n%v\nwant:\n%s", exitCode(err), err, want)
+		}
+		if _, _, err := executeCLISplit(t, "show", "-p", worktree, "-f", "json"); err != nil {
+			t.Errorf("the suggested command fails: %v", err)
 		}
 	})
 
@@ -495,5 +530,33 @@ func TestNestedIndexWarningsOnlyWithNested(t *testing.T) {
 		if !strings.Contains(stderr, "ignoring "+index) {
 			t.Errorf("%s --nested: stderr = %q", command, stderr)
 		}
+	}
+}
+
+// Past five projects under the directory, show names five and points at
+// list --nested for the rest.
+func TestNestedOnlyErrorListsFive(t *testing.T) {
+	repo, projectsDir, _ := setupNestedFixture(t)
+	if err := os.RemoveAll(filepath.Join(projectsDir, paths.PathToProjectDir(repo))); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		wt := filepath.Join(repo, ".claude", "worktrees", name)
+		writeCwdSession(t, filepath.Join(projectsDir, paths.PathToProjectDir(wt)), wt)
+	}
+	_, _, err := executeCLISplit(t, "show", "-p", repo)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	lines := strings.Split(err.Error(), "\n")
+	want := "Claude Code has no sessions for " + repo + " itself, but 7 projects under it have: a, b, c, d, e and 2 more. Pick one:"
+	if lines[0] != want {
+		t.Errorf("first line:\n got %q\nwant %q", lines[0], want)
+	}
+	if last := lines[len(lines)-1]; last != "To list them all, run: ficha list -p "+shellQuote(repo)+" --nested" {
+		t.Errorf("last line %q", last)
+	}
+	if len(lines) != 7 {
+		t.Errorf("%d lines, want 7:\n%s", len(lines), err)
 	}
 }

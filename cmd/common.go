@@ -130,7 +130,6 @@ func loadProjectAndNestedSessions(cfg *config) ([]models.SessionEntry, reportRoo
 // onlyNestedError explains a directory with no sessions of its own but
 // some in the projects under it, which --nested counts in.
 func onlyNestedError(cfg *config, project resolvedProject, nested nestedSessions) error {
-	const maxNamed = 5
 	seen := map[string]bool{}
 	var names []string
 	for _, s := range nested.sessions {
@@ -139,6 +138,14 @@ func onlyNestedError(cfg *config, project resolvedProject, nested nestedSessions
 			names = append(names, name)
 		}
 	}
+	return fmt.Errorf("Claude Code has no sessions for %s itself, but %s. Run: %s%s --nested",
+		project.label, nestedHave(names), cfg.command(), cfg.typedProjectArgs())
+}
+
+// nestedHave says which projects under a directory have sessions, as in
+// "2 projects under it have: api, web", naming five at most. It sorts names.
+func nestedHave(names []string) string {
+	const maxNamed = 5
 	sort.Strings(names)
 	listed := strings.Join(names, ", ")
 	if len(names) > maxNamed {
@@ -148,8 +155,7 @@ func onlyNestedError(cfg *config, project resolvedProject, nested nestedSessions
 	if len(names) == 1 {
 		have = "has"
 	}
-	return fmt.Errorf("Claude Code has no sessions for %s itself, but %s under it %s: %s. Run: %s%s --nested",
-		project.label, plural(len(names), "project"), have, listed, cfg.command(), cfg.typedProjectArgs())
+	return fmt.Sprintf("%s under it %s: %s", plural(len(names), "project"), have, listed)
 }
 
 // projectSessionsIn is readProjectSessions for the project a command reads,

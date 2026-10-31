@@ -174,12 +174,9 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 	// those, it stands for itself, before a parent or a same-named project
 	// elsewhere can claim it. A project directory can outlive its
 	// transcripts, and one of those has nothing to read.
-	if cfg.readsNested {
-		root := resolvedProject{dir: exactDir, label: canonical, path: canonical}
-		if slices.ContainsFunc(nestedProjects(root), func(p nestedProject) bool { return hasTranscripts(p.dir) }) {
-			cfg.tracef("projects under %s", canonical)
-			return root, nil
-		}
+	if cfg.readsNested && len(nestedWithSessions(canonical, projectsDir)) > 0 {
+		cfg.tracef("projects under %s", canonical)
+		return resolvedProject{dir: exactDir, label: canonical, path: canonical}, nil
 	}
 
 	// A parent directory's project is far likelier to be the one meant than a
@@ -189,7 +186,7 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 	// such as a project moved or renamed on disk.
 	if parent := ancestorWithProject(canonical, projectsDir); parent != "" {
 		cfg.tracef("parent directory %s has a project", parent)
-		return resolvedProject{}, noProjectError(cfg, projPath, canonical, parent, allProjects)
+		return resolvedProject{}, noProjectError(cfg, projPath, canonical, parent, projectsDir, allProjects)
 	}
 
 	match, err := paths.FindProjectDir(projPath, allProjects)
@@ -197,7 +194,7 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 	switch {
 	case errors.Is(err, paths.ErrNoProjectFound):
 		cfg.tracef("no project among %d has the name %q", len(allProjects), filepath.Base(canonical))
-		return resolvedProject{}, noProjectError(cfg, projPath, canonical, "", allProjects)
+		return resolvedProject{}, noProjectError(cfg, projPath, canonical, "", projectsDir, allProjects)
 	case errors.As(err, &ambiguous):
 		cfg.tracef("%d projects have the name %q", len(ambiguous.Matches), ambiguous.Basename)
 		return resolvedProject{}, ambiguousProjectError(cfg, canonical, ambiguous)
@@ -238,10 +235,11 @@ func hasProjects(projectsDir string) bool {
 }
 
 // noProjectError explains a directory with no Claude project, one cause per
-// message: a -p path that doesn't exist or isn't a directory, or a real
-// directory Claude Code never ran in. Next steps are parent, the nearest
-// parent that has sessions ("" for none), and projects with a similar name.
-func noProjectError(cfg *config, projPath, canonical, parent string, allProjects []models.ProjectInfo) error {
+// message: a -p path that doesn't exist or isn't a directory, a directory
+// whose sessions are all in the projects under it, or a real directory
+// Claude Code never ran in. Next steps are parent, the nearest parent that
+// has sessions ("" for none), and projects with a similar name.
+func noProjectError(cfg *config, projPath, canonical, parent, projectsDir string, allProjects []models.ProjectInfo) error {
 	addSimilar := func(e *displayError) {
 		if projects := similarProjects(canonical, allProjects); len(projects) > 0 {
 			e.add("\nProjects with a similar name:")
@@ -259,12 +257,21 @@ func noProjectError(cfg *config, projPath, canonical, parent string, allProjects
 		return newDisplayError("not a directory: %s", errPath(projPath))
 	}
 
+	parentHint := func(e *displayError) {
+		if parent != "" {
+			e.add("\nFound sessions for parent directory %s. Run: %s", errPath(parent), errCommand{text: cfg.command() + " -p ", path: parent})
+		}
+	}
+
+	if e := nestedOnlyError(cfg, canonical, projectsDir); e != nil {
+		parentHint(e)
+		return e
+	}
+
 	e := newDisplayError("Claude Code has no sessions for %s. Sessions are recorded per directory Claude Code was started in.", errPath(canonical))
 	hint := wslHint(canonical)
 	e.add("%s", hint)
-	if parent != "" {
-		e.add("\nFound sessions for parent directory %s. Run: %s", errPath(parent), errCommand{text: cfg.command() + " -p ", path: parent})
-	}
+	parentHint(e)
 	addSimilar(e)
 	// Every project this build can list is on the Windows side, so for a
 	// directory in WSL the list is no help.
@@ -345,6 +352,15 @@ func nestedProjects(project resolvedProject) []nestedProject {
 	return nested
 }
 
+// nestedWithSessions is nestedProjects for the directory path, less the
+// projects with no session left, sorted by name.
+func nestedWithSessions(path, projectsDir string) []nestedProject {
+	root := resolvedProject{dir: filepath.Join(projectsDir, paths.PathToProjectDir(path)), path: path}
+	nested := slices.DeleteFunc(nestedProjects(root), func(p nestedProject) bool { return !hasTranscripts(p.dir) })
+	slices.SortFunc(nested, func(a, b nestedProject) int { return strings.Compare(a.name, b.name) })
+	return nested
+}
+
 // hasTranscripts reports whether a project directory holds any session.
 func hasTranscripts(projectDir string) bool {
 	entries, err := os.ReadDir(projectDir)
@@ -390,6 +406,35 @@ func ambiguousProjectError(cfg *config, dir string, e *paths.AmbiguousProjectErr
 	return d
 }
 
+// nestedOnlyError explains a directory with no sessions of its own whose
+// sessions are all in the projects under it, as for someone who only runs
+// claude --worktree, with the command that shows each. It's nil when no
+// project under it has a session.
+func nestedOnlyError(cfg *config, path, projectsDir string) *displayError {
+	const maxListed = 5
+	nested := nestedWithSessions(path, projectsDir)
+	if len(nested) == 0 {
+		return nil
+	}
+	names := make([]string, len(nested))
+	for i, p := range nested {
+		names[i] = p.name
+	}
+	e := newDisplayError("Claude Code has no sessions for %s itself, but %s.", errPath(path), nestedHave(names))
+	if len(nested) == 1 {
+		e.add(" Run: %s", errCommand{text: cfg.command() + " -p ", path: nested[0].path})
+		return e
+	}
+	e.add(" Pick one:")
+	for _, p := range nested[:min(len(nested), maxListed)] {
+		e.add("\n  %s", errCommand{text: cfg.command() + " -p ", path: p.path})
+	}
+	if len(nested) > maxListed {
+		e.add("\nTo list them all, run: %s", errWhole("ficha list"+cfg.typedProjectArgs()+" --nested"))
+	}
+	return e
+}
+
 // noSessionsError explains a project directory that holds no transcripts.
 // A real directory passed to --project-dir, rather than one under the
 // projects dir, is almost always meant for -p.
@@ -398,6 +443,11 @@ func noSessionsError(cfg *config, project resolvedProject) error {
 	if cfg.projectDir != "" && paths.LooksLikePath(cfg.projectDir) && !isWithin(project.dir, projectsDir) {
 		return newDisplayError("%s has no Claude Code sessions. --project-dir takes a directory under %s. For sessions started in %s, run: %s",
 			errPath(cfg.projectDir), errPath(projectsDir), errPath(cfg.projectDir), errCommand{text: cfg.command() + " -p ", path: cfg.projectDir})
+	}
+	if project.path != "" {
+		if e := nestedOnlyError(cfg, project.path, projectsDir); e != nil {
+			return e
+		}
 	}
 	return newDisplayError("Claude Code has no sessions for %s yet%s", errPath(project.label), wslHint(project.label))
 }
