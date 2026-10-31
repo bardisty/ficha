@@ -95,7 +95,7 @@ func runSummary(cfg *config) error {
 	// the formatter doesn't re-parse every session.
 	analysis, results, err := analyzer.AnalyzeMultipleSessionsInWindow(sessions, window)
 	if err != nil {
-		return fmt.Errorf("analyzing sessions: %w", err)
+		return noSessionReadError(err)
 	}
 	nested.mark(results)
 

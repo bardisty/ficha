@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"sort"
 
@@ -17,6 +18,18 @@ type projectResult struct {
 	// indexErr is why the project's sessions-index.json went unused, nil
 	// when it was read or isn't there.
 	indexErr error
+}
+
+// ProjectError is why a project was left out of a global analysis: its
+// directory couldn't be listed, or none of its Sessions could be read.
+type ProjectError struct {
+	Project  models.ProjectInfo
+	Sessions int
+	Err      error
+}
+
+func (e *ProjectError) Error() string {
+	return fmt.Sprintf("%s: %v", e.Project.FullPath, e.Err)
 }
 
 // AnalyzeAllProjects analyzes all projects in parallel and returns aggregated stats
@@ -84,6 +97,7 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 		}
 		if result.err != nil {
 			global.SkippedProjects++
+			global.SkippedProjectErrors = append(global.SkippedProjectErrors, &ProjectError{Project: projects[idx], Sessions: len(sessions[idx]), Err: result.err})
 			continue
 		}
 

@@ -1,7 +1,9 @@
 package analyzer
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -527,6 +529,54 @@ func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window model
 	return analyzeSessionParses(entries, window, parses)
 }
 
+// NoSessionReadError is returned when none of the sessions given could be
+// read or parsed. It carries the first session's error, in the order they
+// were given, so the message is the same from run to run.
+type NoSessionReadError struct {
+	// Sessions is how many were given.
+	Sessions int
+	// Path is the first session's transcript, and Err why it failed.
+	Path string
+	Err  error
+	// Others is how many of the rest failed for another reason than Err.
+	Others int
+}
+
+func (e *NoSessionReadError) Error() string {
+	if e.Read() {
+		return fmt.Sprintf("can't read any of %d sessions: %v", e.Sessions, e.Err)
+	}
+	return fmt.Sprintf("all %d sessions failed to parse: %v", e.Sessions, e.Err)
+}
+
+func (e *NoSessionReadError) Unwrap() error { return e.Err }
+
+// Read reports whether Err is the file system's, as for a transcript the
+// user can't open, rather than a transcript ficha read and couldn't parse.
+func (e *NoSessionReadError) Read() bool {
+	var pathErr *fs.PathError
+	return errors.As(e.Err, &pathErr)
+}
+
+// noSessionReadError builds the NoSessionReadError for entries, all of which
+// failed with errs. A nil result always comes with an error.
+func noSessionReadError(entries []models.SessionEntry, errs []error) error {
+	e := &NoSessionReadError{Sessions: len(entries), Path: entries[0].FullPath, Err: errs[0]}
+	reason := func(err error) string {
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) {
+			return pathErr.Err.Error()
+		}
+		return err.Error()
+	}
+	for _, err := range errs[1:] {
+		if reason(err) != reason(errs[0]) {
+			e.Others++
+		}
+	}
+	return e
+}
+
 // analyzeSessionParses is AnalyzeMultipleSessionsInWindow after the parse
 // step, for non-empty entries.
 func analyzeSessionParses(entries []models.SessionEntry, window models.TimeWindow, parses *sessionParses) (*models.SessionAnalysis, []models.SessionResult, error) {
@@ -679,9 +729,8 @@ func analyzeSessionParses(entries []models.SessionEntry, window models.TimeWindo
 	// aggregate carries a truthful session_count, not a zero value.
 	aggregate.SessionCount = successfulSessions
 
-	// Return error if all sessions failed to parse
 	if parsedSessions == 0 && oldSessions == 0 {
-		return nil, nil, fmt.Errorf("all %d sessions failed to parse", len(entries))
+		return nil, nil, noSessionReadError(entries, parses.errs)
 	}
 
 	// Every session the skip counters count, which takes in those outside

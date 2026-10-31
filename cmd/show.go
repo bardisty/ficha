@@ -95,7 +95,7 @@ func runShow(cfg *config, args []string, live bool) error {
 	}
 	analysis, err := analyzer.AnalyzeSession(session.FullPath, session.SessionID, scope)
 	if err != nil {
-		return fmt.Errorf("analyzing session: %w", err)
+		return sessionReadError(session.SessionID, err)
 	}
 
 	var warnings bytes.Buffer

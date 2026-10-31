@@ -1,6 +1,8 @@
 package analyzer
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -584,8 +586,14 @@ func TestAnalyzeMultipleSessions_AllFail(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when all sessions fail")
 	}
-	if !strings.Contains(err.Error(), "all") {
-		t.Errorf("error message should contain 'all', got: %s", err.Error())
+	// Both fail for the same reason, which is the file system's, so the
+	// error names the first and calls it a read, not a parse.
+	var noRead *NoSessionReadError
+	if !errors.As(err, &noRead) || noRead.Sessions != 2 || noRead.Path != entries[0].FullPath || noRead.Others != 0 || !noRead.Read() {
+		t.Errorf("error %#v", err)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("error %v doesn't wrap the first session's", err)
 	}
 	// When every session fails, no results are returned alongside the error
 	if results != nil {

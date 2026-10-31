@@ -774,6 +774,9 @@ type GlobalAnalysis struct {
 	SessionCount    int                      `json:"session_count"` // Sessions successfully analyzed (see ProjectAnalysis)
 	MessageCount    int                      `json:"message_count"`
 	SkippedProjects int                      `json:"skipped_projects"`
+	// SkippedProjectErrors says why each of SkippedProjects was left out,
+	// in the order the projects were given.
+	SkippedProjectErrors []error `json:"-"`
 
 	// The parent/agent split summed over Projects (see ProjectAnalysis).
 	ParentCost         CostBreakdown `json:"parent_cost"`
