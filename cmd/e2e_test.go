@@ -40,6 +40,24 @@ func e2eMsg(ts, id, model string, in, out, cc5m, cc1h, read int64) string {
 		ts, id, id, model, in, out, cc5m+cc1h, read, cc5m, cc1h)
 }
 
+// lastActiveAt moves every timestamp in a transcript to at, and its mtime
+// with them, so the age a picker gives it reads the same whenever the test
+// runs.
+func lastActiveAt(t *testing.T, path string, at time.Time) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = regexp.MustCompile(`"timestamp":"[^"]*"`).ReplaceAll(data, []byte(`"timestamp":"`+at.UTC().Format(time.RFC3339)+`"`))
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, at, at); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // setupE2EFixture builds a temp CLAUDE_CONFIG_DIR with two projects and points
 // the env var at it for the duration of the (sub)test. Project 1 has two
 // sessions (one with a Sonnet agent sub-session); project 2 has a single small
@@ -1526,13 +1544,8 @@ func TestE2ECompletion(t *testing.T) {
 	root := setupE2EFixture(t)
 	// Beta newer than alpha, so the newest-first order is observable.
 	proj := filepath.Join(root, "projects", e2eProjDir)
-	older, newer := time.Now().Add(-3*time.Hour), time.Now().Add(-5*time.Minute)
-	if err := os.Chtimes(filepath.Join(proj, e2eAlphaID+".jsonl"), older, older); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(filepath.Join(proj, e2eBetaID+".jsonl"), newer, newer); err != nil {
-		t.Fatal(err)
-	}
+	lastActiveAt(t, filepath.Join(proj, e2eAlphaID+".jsonl"), time.Now().Add(-3*time.Hour))
+	lastActiveAt(t, filepath.Join(proj, e2eBetaID+".jsonl"), time.Now().Add(-5*time.Minute))
 
 	// The counts in the descriptions are the ones `list` shows.
 	listOut, _, err := executeCLISplit(t, "list", projFlag, "-f", "json")
@@ -1560,11 +1573,11 @@ func TestE2ECompletion(t *testing.T) {
 	}{
 		{"show offers sessions newest first", []string{"show", projFlag, ""},
 			// beta's 4 are its 2 plus one each from its regular and workflow agents.
-			[]string{"bbbbbbbb\tmodified 5m ago · 4 msgs", "aaaaaaaa\tmodified 3h ago · 2 msgs"}, keepOrder},
+			[]string{"bbbbbbbb\t5m ago · 4 msgs", "aaaaaaaa\t3h ago · 2 msgs"}, keepOrder},
 		{"prefix narrows the sessions", []string{"watch", projFlag, "aa"},
-			[]string{"aaaaaaaa\tmodified 3h ago · 2 msgs"}, keepOrder},
+			[]string{"aaaaaaaa\t3h ago · 2 msgs"}, keepOrder},
 		{"typing past 8 chars completes the full ID", []string{"breakdown", projFlag, "aaaaaaaa-1"},
-			[]string{e2eAlphaID + "\tmodified 3h ago · 2 msgs"}, keepOrder},
+			[]string{e2eAlphaID + "\t3h ago · 2 msgs"}, keepOrder},
 		{"one session ID only", []string{"show", projFlag, e2eAlphaID, ""}, nil, noFile},
 		{"--format values", []string{"list", "-f", ""}, []string{"table", "json", "csv"}, noFile},
 		{"--sort-by values", []string{"global", "--sort-by", ""}, []string{"cost", "sessions", "name", "activity"}, noFile},
@@ -1615,31 +1628,83 @@ func TestE2ECaseInsensitiveValues(t *testing.T) {
 	}
 }
 
-// TestE2ECompletionSkipsCountsOverBudget: counting messages parses whole
-// transcripts, so past the byte budget the descriptions drop the count.
-func TestE2ECompletionSkipsCountsOverBudget(t *testing.T) {
-	root := setupE2EFixture(t)
-	big := filepath.Join(root, "projects", e2eProjDir, e2eAlphaID+".jsonl")
-	f, err := os.OpenFile(big, os.O_APPEND|os.O_WRONLY, 0o644)
+// appendLines adds lines to the end of a transcript.
+func appendLines(t *testing.T, path string, lines ...string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Blank lines are skipped by the parser and cheap to write.
-	if _, err := f.Write(bytes.Repeat([]byte("\n"), countBudgetBytes)); err != nil {
-		t.Fatal(err)
+	for _, l := range lines {
+		if _, err := f.WriteString(l + "\n"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// customTitle is the line Claude Code writes when a session is renamed.
+func customTitle(title string) string {
+	quoted, _ := json.Marshal(title)
+	return `{"type":"custom-title","customTitle":` + string(quoted) + `}`
+}
+
+// TestE2ECompletionSkipsCountsOverBudget: the title and the count take a
+// parse of whole transcripts, so past the byte budget Tab's descriptions
+// drop both. The ambiguous-ID error describes at most ten sessions and
+// parses them whatever their size.
+func TestE2ECompletionSkipsCountsOverBudget(t *testing.T) {
+	root := setupE2EFixture(t)
+	proj := filepath.Join(root, "projects", e2eProjDir)
+	big := filepath.Join(proj, e2eAlphaID+".jsonl")
+	// Blank lines are skipped by the parser and cheap to write.
+	appendLines(t, big, customTitle("add billing page"), strings.Repeat("\n", countBudgetBytes))
+	twin := filepath.Join(proj, "aaaaaaaa-9999-4999-8999-999999999999.jsonl")
+	if err := os.WriteFile(twin, []byte(e2eMsg("2026-02-01T09:00:00Z", "t1", "claude-opus-4-8", 10, 10, 0, 0, 0)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lastActiveAt(t, big, time.Now().Add(-3*time.Hour))
+	lastActiveAt(t, twin, time.Now().Add(-26*time.Hour))
 
 	got, _ := completeLines(t, "show", projFlag, "")
-	if len(got) != 2 {
-		t.Fatalf("want 2 candidates, got %q", got)
+	if len(got) != 3 {
+		t.Fatalf("want 3 candidates, got %q", got)
 	}
 	for _, c := range got {
-		if strings.Contains(c, "msgs") {
-			t.Errorf("candidate over budget should not carry a count: %q", c)
+		if strings.Contains(c, "msgs") || strings.Contains(c, "billing") {
+			t.Errorf("candidate over budget should carry no title or count: %q", c)
 		}
+	}
+
+	_, _, err := executeCLISplit(t, "show", projFlag, "aaaa")
+	want := `ambiguous session ID "aaaa" matches 2 sessions:` +
+		"\n  " + e2eAlphaID + "  add billing page · 3h ago · 2 msgs" +
+		"\n  aaaaaaaa-9999-4999-8999-999999999999  1d ago · 1 msg"
+	if err == nil || err.Error() != want {
+		t.Errorf("\n got: %v\nwant: %s", err, want)
+	}
+}
+
+// A session's title leads its description, on one line whatever it holds,
+// and cut to fit when it's long.
+func TestSessionDescriptionsLeadWithTitle(t *testing.T) {
+	root := setupE2EFixture(t)
+	proj := filepath.Join(root, "projects", e2eProjDir)
+	alpha, beta := filepath.Join(proj, e2eAlphaID+".jsonl"), filepath.Join(proj, e2eBetaID+".jsonl")
+	appendLines(t, alpha, customTitle("fix\tlogin\n\u202eredirect\u202c\x1b[31m"))
+	appendLines(t, beta, customTitle(strings.Repeat("rename the billing page ", 4)))
+	lastActiveAt(t, alpha, time.Now().Add(-3*time.Hour))
+	lastActiveAt(t, beta, time.Now().Add(-5*time.Minute))
+
+	got, _ := completeLines(t, "show", projFlag, "")
+	want := []string{
+		"bbbbbbbb\trename the billing page rename the bill… · 5m ago · 4 msgs",
+		"aaaaaaaa\tfix login redirect [31m · 3h ago · 2 msgs",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("candidates:\n got: %q\nwant: %q", got, want)
 	}
 }
 

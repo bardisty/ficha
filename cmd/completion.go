@@ -3,7 +3,9 @@ package cmd
 import (
 	"io"
 	"os"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -23,16 +25,25 @@ var (
 	windowValues = []string{"today", "yesterday", "7d", "30d"}
 )
 
-// countBudgetBytes bounds how much transcript data a session description
-// parses for message counts. Counting reads each file in full, and a single
-// long session can run to hundreds of MB, so when the sessions together are
-// larger than this the descriptions show the age alone and Tab stays fast.
+// countBudgetBytes bounds how much transcript data Tab parses for its
+// descriptions' titles and message counts. Parsing reads each file in full,
+// and a single long session can run to hundreds of MB, so when the sessions
+// together are larger than this each description is the age alone and Tab
+// stays fast.
 const countBudgetBytes = 8 << 20
 
-// describeSessions describes each session as "modified 4d ago · 10 msgs",
-// counting agent messages too, as `list` does. The count is left out when the
-// transcripts, agents included, exceed countBudgetBytes.
-func describeSessions(sessions []models.SessionEntry, now time.Time) []string {
+// describedTitleWidth caps a title in a session's description. zsh cuts a
+// description at the terminal's edge, and the age and count come after it.
+const describedTitleWidth = 40
+
+// describeSessions describes each session the way list would pick it out,
+// as in "add billing page · 2d ago · 64 msgs": its title when it has one,
+// how long ago it was last active, and its message count, agents' included.
+// active holds each session's lastActive, the time the pickers order by, as
+// sortSessionsByLastActive returns it. The title and count take a full
+// parse, so they're left out when the transcripts, agents included, add up
+// to more than budget bytes. A negative budget has no limit.
+func describeSessions(sessions []models.SessionEntry, active map[string]time.Time, now time.Time, budget int64) []string {
 	var totalBytes int64
 	for _, s := range sessions {
 		for _, path := range append([]string{s.FullPath}, s.AgentPaths...) {
@@ -41,26 +52,44 @@ func describeSessions(sessions []models.SessionEntry, now time.Time) []string {
 			}
 		}
 	}
-	count := totalBytes <= countBudgetBytes
+	parse := budget < 0 || totalBytes <= budget
 	out := make([]string, len(sessions))
+	// Each session's parse writes only its own line, so they run side by
+	// side: ten long transcripts take as long as the longest, given the cores.
+	sem := make(chan struct{}, runtime.GOMAXPROCS(0))
+	var wg sync.WaitGroup
 	for i, s := range sessions {
-		out[i] = "modified " + render.Ago(s.Modified, now)
-		if !count {
-			continue
-		}
-		res, err := parser.ParseJSONLFileWithResult(s.FullPath)
-		if err != nil {
-			continue
-		}
-		n := len(res.Messages)
-		for _, path := range s.AgentPaths {
-			if agent, err := parser.ParseJSONLFileWithResult(path); err == nil {
-				n += len(agent.Messages)
-			}
-		}
-		out[i] += " · " + render.Count(n) + " msgs"
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			out[i] = describeSession(s, render.Ago(active[s.FullPath], now), parse)
+		})
 	}
+	wg.Wait()
 	return out
+}
+
+// describeSession is describeSessions for one session last active ago, with
+// its title and count when parse is set.
+func describeSession(s models.SessionEntry, ago string, parse bool) string {
+	if !parse {
+		return ago
+	}
+	res, err := parser.ParseJSONLFileWithResult(s.FullPath)
+	if err != nil {
+		return ago
+	}
+	n := len(res.Messages)
+	for _, path := range s.AgentPaths {
+		if agent, err := parser.ParseJSONLFileWithResult(path); err == nil {
+			n += len(agent.Messages)
+		}
+	}
+	desc := ago + " · " + plural(n, "msg")
+	if title := models.OneLine(res.Title); title != "" {
+		desc = render.TruncateRight(title, describedTitleWidth) + " · " + desc
+	}
+	return desc
 }
 
 // completeSessionIDs completes the positional session ID of show, watch and
@@ -83,9 +112,8 @@ func completeSessionIDs(cfg *config) cobra.CompletionFunc {
 				candidates = append(candidates, s)
 			}
 		}
-		sortSessionsByLastActive(candidates)
-
-		descs := describeSessions(candidates, time.Now())
+		active := sortSessionsByLastActive(candidates)
+		descs := describeSessions(candidates, active, time.Now(), countBudgetBytes)
 		out := make([]cobra.Completion, 0, len(candidates))
 		for i, s := range candidates {
 			value := inTypedCase(completionValue(s.SessionID, sessions, len(toComplete)), toComplete)

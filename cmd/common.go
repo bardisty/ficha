@@ -311,11 +311,12 @@ func findSessionByPartialID(sessions []models.SessionEntry, partialID string) (*
 	}
 
 	// Multiple matches: list the latest, with what `list` would say about
-	// each, so the right one can be picked without running it.
+	// each, so the right one can be picked without running it. At most ten
+	// are described, which is few enough to parse whatever their size.
 	const displayLimit = 10
-	sortSessionsByLastActive(matches)
+	active := sortSessionsByLastActive(matches)
 	shown := matches[:min(len(matches), displayLimit)]
-	descs := describeSessions(shown, time.Now())
+	descs := describeSessions(shown, active, time.Now(), -1)
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "ambiguous session ID %q matches %d sessions:", partialID, len(matches))
 	for i, m := range shown {
