@@ -270,7 +270,7 @@ func addProjectFlags(cmd *cobra.Command, cfg *config) {
 // live view. hideLive hides --live from help while still accepting it.
 func addLiveFlags(cmd *cobra.Command, cfg *config, hideLive bool) {
 	cmd.Flags().BoolVarP(&cfg.live, "live", "l", false, "Watch the session live (same as 'ficha watch')")
-	cmd.Flags().BoolVar(&cfg.noFollow, "no-follow", false, "Stay on the starting session when a new one starts")
+	cmd.Flags().BoolVar(&cfg.noFollow, "no-follow", false, "Stay on the starting session, not new ones")
 	if hideLive {
 		_ = cmd.Flags().MarkHidden("live")
 	}

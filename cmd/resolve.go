@@ -95,6 +95,9 @@ type resolvedProject struct {
 	// path is the directory Claude Code ran in, when the project was found
 	// by it: "" for --project-dir and for a match by name elsewhere.
 	path string
+	// folder is set for a projects dir folder given as -p or run from,
+	// whose path is the one its transcripts recorded, if any.
+	folder bool
 }
 
 // resolveProjectDirectory determines which Claude project directory to use.
@@ -258,7 +261,7 @@ func projectFolderName(dir string) (string, bool) {
 // --project-dir would, under the path the project's transcripts recorded.
 func projectFolder(cfg *config, dir string) resolvedProject {
 	cfg.tracef("%s is a project folder in the projects dir", filepath.Base(dir))
-	project := resolvedProject{dir: dir, label: filepath.Base(dir)}
+	project := resolvedProject{dir: dir, label: filepath.Base(dir), folder: true}
 	if recorded := parser.ProjectOriginalPath(dir); filepath.IsAbs(recorded) {
 		project.label, project.path = recorded, recorded
 	}

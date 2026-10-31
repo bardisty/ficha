@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bardisty/ficha/internal/paths"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -27,7 +28,7 @@ func rootArgs(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 || looksLikeSessionID(args[0]) || isTranscriptPath(args[0]) {
 		return oneSessionArg(cmd, args)
 	}
-	if len(cmd.SuggestionsFor(args[0])) > 0 || isDir(args[0]) {
+	if len(cmd.SuggestionsFor(args[0])) > 0 || isDirArg(args[0]) {
 		return unknownCommandError(cmd, args[0])
 	}
 	return oneSessionArg(cmd, args)
@@ -93,7 +94,7 @@ func unknownCommandError(cmd *cobra.Command, arg string) error {
 	}
 	// A directory is the likeliest non-command word: people expect
 	// `ficha <dir>` to analyze that project.
-	if isDir(arg) {
+	if isDirArg(arg) {
 		return usageErrorf("%s To analyze that directory, run: ficha -p %s", msg, shellQuote(arg))
 	}
 	return usageErrorf("%s Run 'ficha --help' to see the commands.", msg)
@@ -130,6 +131,17 @@ func isRegularFile(path string) bool {
 func isDir(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// isDirArg is isDir for an argument as typed, whose ~ the shell leaves alone
+// in quotes. -p expands it, so a suggestion to pass the argument there works.
+func isDirArg(arg string) bool {
+	return isDir(expandHome(arg))
 }
 
 // shellQuote makes a path in a suggested command safe to paste: unchanged
@@ -169,7 +181,7 @@ func sessionArgs(cmd *cobra.Command, args []string) error {
 	if err := oneSessionArg(cmd, args); err != nil {
 		return err
 	}
-	if len(args) == 0 || looksLikeSessionID(args[0]) || isTranscriptPath(args[0]) || !isDir(args[0]) {
+	if len(args) == 0 || looksLikeSessionID(args[0]) || isTranscriptPath(args[0]) || !isDirArg(args[0]) {
 		return nil
 	}
 	if err := claudeFolderError(cmd, args[0]); err != nil {
@@ -185,12 +197,14 @@ func sessionArgs(cmd *cobra.Command, args []string) error {
 
 // noArgs replaces cobra.NoArgs, whose `unknown command "x" for "ficha list"`
 // reads as if list had subcommands. A command that takes -p points a
-// directory at it.
+// directory at it, or a path that doesn't exist: a mistyped one gets -p's own
+// error about it, which says more than this one could. A file, such as a
+// transcript, would only fail there too.
 func noArgs(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return nil
 	}
-	if cmd.Flags().Lookup("project") != nil && isDir(args[0]) {
+	if cmd.Flags().Lookup("project") != nil && (isDirArg(args[0]) || paths.LooksLikePath(args[0]) && !exists(expandHome(args[0]))) {
 		return fmt.Errorf("%s takes no arguments. For that directory's sessions, run: %s", cmd.CommandPath(), projectCommand(cmd, args[0]))
 	}
 	return fmt.Errorf("%s takes no arguments, got %q", cmd.CommandPath(), args[0])

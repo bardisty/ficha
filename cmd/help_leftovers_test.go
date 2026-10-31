@@ -498,8 +498,9 @@ func TestFormatBeforeCommand(t *testing.T) {
 
 // cobra pads the flag column and never wraps a description, so a line past
 // 80 columns wraps mid-word in a terminal that wide. Every help page, help
-// topic and completion shell's help stays within it.
-func TestHelpFitsEightyColumns(t *testing.T) {
+// topic and completion shell's help stays within helpWidth, which leaves a
+// column to spare.
+func TestHelpFitsHelpWidth(t *testing.T) {
 	root := newRootCmd()
 	initCompletion(root)
 	var pages [][]string
@@ -522,7 +523,7 @@ func TestHelpFitsEightyColumns(t *testing.T) {
 			continue
 		}
 		for _, line := range strings.Split(out, "\n") {
-			if w := lipgloss.Width(line); w > 80 {
+			if w := lipgloss.Width(line); w > helpWidth {
 				t.Errorf("ficha %s: %d columns:\n%s", strings.Join(args, " "), w, line)
 			}
 		}

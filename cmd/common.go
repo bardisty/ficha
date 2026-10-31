@@ -91,6 +91,9 @@ func loadProjectAndNestedSessions(cfg *config) ([]models.SessionEntry, reportRoo
 	if err != nil {
 		return nil, reportRoot{}, nestedSessions{}, err
 	}
+	if cfg.nested && project.path == "" && project.folder {
+		return nil, reportRoot{}, nestedSessions{}, usageErrorf("--nested looks under the directory Claude Code ran in, and no transcript in %s records one, so ficha can't tell which directories are under it.", project.label)
+	}
 	if cfg.nested && project.path == "" {
 		return nil, reportRoot{}, nestedSessions{}, usageErrorf("--nested looks under the directory Claude Code ran in, and ficha found %s by its name instead, so it can't tell which directories are under it. Give the directory with -p.", project.label)
 	}
