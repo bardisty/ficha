@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 )
@@ -123,30 +124,56 @@ func followTarget(h *sessionHint, now time.Time) *sessionHint {
 	return nil
 }
 
-// switchNoticeText is the notify row after a switch: the session now open,
-// the total of the one left behind, and the key back to it.
-func switchNoticeText(n switchNotice, id, prevID string, canGoBack bool) string {
-	lead := "switched to " + render.TruncateID(id, sessionIDDisplayLen)
+// switchNoticeText is the notify row after a switch, fitted to width: the
+// session now open, the total of the one left behind, and the key back to
+// it. The key is what the row is for, so a narrow row gives up the old
+// session's ID, then its total, then the lead's words, and keeps the key
+// to the last. The total goes after the ID because nothing else on screen
+// still shows it.
+func switchNoticeText(n switchNotice, id, prevID string, canGoBack bool, width int) string {
+	short := render.TruncateID(id, sessionIDDisplayLen)
+	lead := styles.Arrow + " switched to " + short
 	if n.auto {
-		lead = "new session " + render.TruncateID(id, sessionIDDisplayLen)
+		lead = styles.Arrow + " new session " + short
 	}
-	text := styles.Arrow + " " + lead
+	forms := []string{lead, styles.Arrow + " " + short}
 	if n.hadTotal {
-		text += fmt.Sprintf(" (previous %s: %s)",
-			render.TruncateID(prevID, sessionIDDisplayLen), render.Cost(n.prevTotal))
+		total := render.Cost(n.prevTotal)
+		forms = append([]string{
+			lead + fmt.Sprintf(" (previous %s: %s)", render.TruncateID(prevID, sessionIDDisplayLen), total),
+			lead + " (previous " + total + ")",
+		}, forms...)
 	}
+	tail := ""
 	if canGoBack {
-		text += " " + styles.Bullet + " - to go back"
+		tail = " " + styles.Bullet + " - to go back"
 	}
-	return text
+	return fitBeforeTail(forms, tail, width)
 }
 
-// hintText is the notify row for a hint.
-func hintText(h sessionHint) string {
+// hintText is the notify row for a hint, fitted to width. As in
+// switchNoticeText, the words go before the key does.
+func hintText(h sessionHint, width int) string {
 	id := render.TruncateID(h.id, sessionIDDisplayLen)
-	text := "newer activity in " + id
+	// "activity" outlasts "newer": a bare ID would read the same as a
+	// new session's.
+	forms := []string{"newer activity in " + id, "activity in " + id, id}
 	if h.created {
-		text = "new session " + id + " started"
+		forms = []string{"new session " + id + " started", "new session " + id, id}
 	}
-	return text + " " + styles.Bullet + " n to switch"
+	return fitBeforeTail(forms, " "+styles.Bullet+" n to switch", width)
+}
+
+// fitBeforeTail is the first of forms, fullest first, that fits width with
+// tail after it. When none does, the last is cut to leave tail whole, as
+// errNotice does; the caller's withinWidth handles a row too narrow even
+// for the tail.
+func fitBeforeTail(forms []string, tail string, width int) string {
+	for _, form := range forms {
+		if lipgloss.Width(form+tail) <= width {
+			return form + tail
+		}
+	}
+	last := forms[len(forms)-1]
+	return withEllipsis(last, max(width-lipgloss.Width(tail), 1)) + tail
 }

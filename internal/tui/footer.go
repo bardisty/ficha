@@ -385,9 +385,9 @@ func (m Model) renderNotifyRow(width int) string {
 		color = styles.ErrorColor
 		text = errNotice(m.err, width)
 	case m.switched != nil:
-		text = switchNoticeText(*m.switched, m.sessionID, m.prevSessionID, m.prevSessionPath != "")
+		text = switchNoticeText(*m.switched, m.sessionID, m.prevSessionID, m.prevSessionPath != "", width)
 	case m.hintVisible():
-		text = hintText(*m.hint)
+		text = hintText(*m.hint, width)
 	case shownFallback(m.fallback, m.sessionFallback).active():
 		color = styles.WarningColor
 		text = shownFallback(m.fallback, m.sessionFallback).notice(width)

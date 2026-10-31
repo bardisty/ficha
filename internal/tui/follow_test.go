@@ -11,8 +11,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 const (
@@ -772,5 +774,89 @@ func TestLeftSessionBeforeItsLoad(t *testing.T) {
 				t.Errorf("notify row %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+// A narrow notify row gives up the previous total, then the lead's words,
+// before the key the row is for, in Unicode and ASCII alike.
+func TestNotifyRowKeepsItsKeyWhenNarrow(t *testing.T) {
+	notice := switchNotice{auto: true, hadTotal: true, prevTotal: 1234.56}
+	created := sessionHint{id: sessB, created: true}
+	for _, ascii := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ascii=%t", ascii), func(t *testing.T) {
+			if ascii {
+				useASCII(t)
+			}
+			arrow, bullet := styles.Arrow, styles.Bullet
+			cases := []struct {
+				name, got, want string
+			}{
+				{"notice at 80", switchNoticeText(notice, sessB, sessA, true, 80),
+					arrow + " new session bbbbbbbb (previous aaaaaaaa: $1,234.56) " + bullet + " - to go back"},
+				{"notice at 60", switchNoticeText(notice, sessB, sessA, true, 60),
+					arrow + " new session bbbbbbbb (previous $1,234.56) " + bullet + " - to go back"},
+				{"notice at 50", switchNoticeText(notice, sessB, sessA, true, 50),
+					arrow + " new session bbbbbbbb " + bullet + " - to go back"},
+				{"notice at 30", switchNoticeText(notice, sessB, sessA, true, 30),
+					arrow + " bbbbbbbb " + bullet + " - to go back"},
+				{"switched at 30", switchNoticeText(switchNotice{}, sessB, sessA, true, 30),
+					arrow + " bbbbbbbb " + bullet + " - to go back"},
+				{"nothing to go back to at 40", switchNoticeText(notice, sessB, sessA, false, 40),
+					arrow + " new session bbbbbbbb"},
+				{"hint at 40", hintText(created, 40), "new session bbbbbbbb " + bullet + " n to switch"},
+				{"hint at 30", hintText(created, 30), "bbbbbbbb " + bullet + " n to switch"},
+				{"activity hint at 36", hintText(sessionHint{id: sessB}, 36), "activity in bbbbbbbb " + bullet + " n to switch"},
+				{"activity hint at 30", hintText(sessionHint{id: sessB}, 30), "bbbbbbbb " + bullet + " n to switch"},
+			}
+			for _, c := range cases {
+				if c.got != c.want {
+					t.Errorf("%s: %q, want %q", c.name, c.got, c.want)
+				}
+			}
+			// Wherever the key fits, the row ends in it and fits, and the
+			// total shows wherever its short form does.
+			full := lipgloss.Width(arrow + " new session bbbbbbbb (previous $1,234.56) " + bullet + " - to go back")
+			for width := 24; width <= 100; width++ {
+				got := switchNoticeText(notice, sessB, sessA, true, width)
+				if w := lipgloss.Width(got); w > width || !strings.HasSuffix(got, " - to go back") {
+					t.Errorf("width %d: %q (%d columns)", width, got, w)
+				}
+				if hasTotal := strings.Contains(got, "$1,234.56"); hasTotal != (width >= full) {
+					t.Errorf("width %d: total shown %v, its short form is %d columns", width, hasTotal, full)
+				}
+				if hint := hintText(created, width); lipgloss.Width(hint) > width || !strings.HasSuffix(hint, " n to switch") {
+					t.Errorf("width %d: hint %q", width, hint)
+				}
+			}
+		})
+	}
+}
+
+// Both views fit the notice and the hint to their own width at 40 and 60
+// columns.
+func TestNotifyRowKeepsItsKeyInBothViews(t *testing.T) {
+	rows := map[string]func(t *testing.T, width int, follow bool, msg tea.Msg) string{
+		"watch": func(t *testing.T, width int, follow bool, msg tea.Msg) string {
+			m := followModel(t, follow)
+			return send(t, m, msg).renderNotifyRow(width)
+		},
+		"breakdown": func(t *testing.T, width int, follow bool, msg tea.Msg) string {
+			// breakdown's row is the panel's width, two columns in.
+			m := loadedBreakdown(t, width+2, 24, chromeRows(goldenTime(10, 0, 0), 5))
+			m.followMode = follow
+			updated, _ := m.Update(msg)
+			return updated.(BreakdownModel).renderNotifyRow()
+		},
+	}
+	hints := map[int]string{40: "new session bbbbbbbb • n to switch", 60: "new session bbbbbbbb started • n to switch"}
+	for name, row := range rows {
+		for _, width := range []int{40, 60} {
+			if got := stripANSI(row(t, width, true, createdB)); !strings.HasSuffix(got, " • - to go back") || lipgloss.Width(strings.TrimSpace(got)) > width {
+				t.Errorf("%s at %d: notice %q", name, width, got)
+			}
+			if got := stripANSI(row(t, width, false, createdB)); strings.TrimSpace(got) != hints[width] {
+				t.Errorf("%s at %d: hint %q", name, width, got)
+			}
+		}
 	}
 }

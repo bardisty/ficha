@@ -181,16 +181,18 @@ func fitStatusHeader(p liveHeaderParams, width int) string {
 		content = buildStatusHeader(p, project, "", form)
 	}
 	if over := lipgloss.Width(content) - width; over > 0 && project != "" {
-		// Keep at least a few characters: a stub is still recognizable
-		// next to the other panes' headers.
-		if keep := lipgloss.Width(project) - over; keep >= 4 {
+		// Keep at least three letters past the ellipsis, which in ASCII
+		// takes three columns itself: a stub is still recognizable next to
+		// the other panes' headers, where one letter isn't.
+		if keep := lipgloss.Width(project) - over; keep >= 3+lipgloss.Width(styles.Ellipsis) {
 			project = withEllipsis(project, keep)
 		} else {
 			project = ""
 		}
 		content = buildStatusHeader(p, project, "", form)
-		// A dropped project frees up to 6 columns, enough for the dots of
-		// "loading..." or the article of "waiting for a session".
+		// A dropped project frees up to 6 columns, 8 under --ascii, enough
+		// for the dots of "loading..." or the article of "waiting for a
+		// session".
 		if full := buildStatusHeader(p, "", "", statusFull); project == "" && lipgloss.Width(full) <= width {
 			content = full
 		}

@@ -877,14 +877,14 @@ func (m BreakdownModel) renderNotifyRow() string {
 		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Render(text)
 	}
 	if m.switched != nil {
-		text := withinWidth(switchNoticeText(*m.switched, m.sessionID, m.prevSessionID, m.prevSessionPath != ""), m.panelWidth())
+		text := withinWidth(switchNoticeText(*m.switched, m.sessionID, m.prevSessionID, m.prevSessionPath != "", m.panelWidth()), m.panelWidth())
 		if m.noColor {
 			return "  " + text
 		}
 		return "  " + lipgloss.NewStyle().Foreground(styles.HighlightColor).Bold(true).Render(text)
 	}
 	if m.hintVisible() {
-		text := withinWidth(hintText(*m.hint), m.panelWidth())
+		text := withinWidth(hintText(*m.hint, m.panelWidth()), m.panelWidth())
 		if m.noColor {
 			return "  " + text
 		}
