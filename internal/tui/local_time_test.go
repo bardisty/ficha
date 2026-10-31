@@ -180,3 +180,75 @@ func TestBreakdownZeroTimestamp(t *testing.T) {
 		t.Errorf("zero timestamp should not draw a day marker\n%s", out)
 	}
 }
+
+// watch dates an insight time from an earlier local day than its clock,
+// and decides again on each frame, so a Peak from 23:50 gains its weekday
+// once midnight passes with the view open. A span of a day or more reads
+// in days and hours in the footer.
+func TestWatchInsightTimesDateAfterMidnight(t *testing.T) {
+	withLocal(t, time.FixedZone("UTC+1", 3600))
+	a := goldenViewAnalysis()
+	// 22:50 and 22:55 UTC on Friday 30 Oct are 23:50 and 23:55 local.
+	a.Insights.HighestCost.Timestamp = time.Date(2026, 10, 30, 22, 50, 0, 0, time.UTC)
+	a.Insights.LastMessage.Timestamp = time.Date(2026, 10, 30, 22, 55, 0, 0, time.UTC)
+	a.Duration = models.Duration(27*time.Hour + 6*time.Minute)
+
+	clock := time.Date(2026, 10, 30, 22, 58, 0, 0, time.UTC)
+	m := NewModel("/fixture/sess.jsonl", "0a1b2c3d", true, "", false)
+	m.now = func() time.Time { return clock }
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 60})
+	m = updated.(Model)
+	updated, _ = m.Update(analysisMsg{analysis: a})
+	m = updated.(Model)
+
+	before := frameOf(m)
+	for _, want := range []string{"(23:50:00)", "(23:55:00)", "1d 3h"} {
+		if !strings.Contains(before, want) {
+			t.Errorf("before midnight: missing %q\n%s", want, before)
+		}
+	}
+	if strings.Contains(before, "Fri") {
+		t.Errorf("before midnight, today's times should be bare\n%s", before)
+	}
+
+	// The minute tick that carries the clock past midnight redraws the body.
+	clock = time.Date(2026, 10, 30, 23, 5, 0, 0, time.UTC)
+	updated, _ = m.Update(clockMsg{gen: m.clockGen})
+	after := frameOf(updated.(Model))
+	for _, want := range []string{"(Fri 23:50:00)", "(Fri 23:55:00)"} {
+		if !strings.Contains(after, want) {
+			t.Errorf("after midnight: missing %q\n%s", want, after)
+		}
+	}
+}
+
+// On a narrow terminal a dated insight time takes its short form before it
+// goes, so the row never reads as a message with no time.
+func TestWatchDatedInsightTimeShortensWhenNarrow(t *testing.T) {
+	a := goldenViewAnalysis()
+	a.Insights.HighestCost.Timestamp = time.Date(2026, 10, 20, 6, 9, 32, 0, time.UTC)
+	clock := time.Date(2026, 10, 31, 8, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		width      int
+		want, gone string
+	}{
+		{100, "(Tue 20 Oct 06:09:32)  4.6x avg cost", ""},
+		{50, "(Tue 20 Oct 06:09:32)", "avg cost"},
+		{45, "(20 Oct 06:09)", "Tue"},
+	} {
+		m := NewModel("/fixture/sess.jsonl", "0a1b2c3d", true, "", false)
+		m.now = func() time.Time { return clock }
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: tc.width, Height: 60})
+		updated, _ = updated.(Model).Update(analysisMsg{analysis: a})
+		out := frameOf(updated.(Model))
+		peak := ""
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, "Peak ") {
+				peak = line
+			}
+		}
+		if !strings.Contains(peak, tc.want) || (tc.gone != "" && strings.Contains(peak, tc.gone)) {
+			t.Errorf("width %d: Peak row %q, want %q without %q", tc.width, peak, tc.want, tc.gone)
+		}
+	}
+}

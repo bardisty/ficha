@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -669,14 +670,12 @@ func (m Model) renderInsightsContent() string {
 		if !m.noColor {
 			labelStr := styles.DimStyle.Render(fmt.Sprintf("%-10s", "Last"))
 			costStr := render.CostStyled(last.Cost, 10, highlighted, m.noColor)
-			timestampStr := styles.DimStyle.Render(fmt.Sprintf("(%s)", render.Clock(last.Timestamp)))
 			componentCostStr := formatCostStyledDim(last.MainCostValue)
 			componentStr := styles.DimStyle.Render(componentLabel+":") + " " + componentCostStr
-			sb.WriteString(m.fitInsight("    "+labelStr+" "+costStr, timestampStr, componentStr))
+			sb.WriteString(m.fitTimedInsight("    "+labelStr+" "+costStr, last.Timestamp, componentStr))
 		} else {
-			sb.WriteString(m.fitInsight(fmt.Sprintf("    %-10s %s", "Last", render.CostCell(last.Cost, 10)),
-				"("+render.Clock(last.Timestamp)+")",
-				componentLabel+": "+render.Cost(last.MainCostValue)))
+			sb.WriteString(m.fitTimedInsight(fmt.Sprintf("    %-10s %s", "Last", render.CostCell(last.Cost, 10)),
+				last.Timestamp, componentLabel+": "+render.Cost(last.MainCostValue)))
 		}
 	}
 
@@ -691,12 +690,10 @@ func (m Model) renderInsightsContent() string {
 		if !m.noColor {
 			labelStr := styles.DimStyle.Render(fmt.Sprintf("%-10s", "Peak"))
 			costStr := render.CostStyled(highest.Cost, 10, highlighted, m.noColor)
-			timestampStr := styles.DimStyle.Render(fmt.Sprintf("(%s)", render.Clock(highest.Timestamp)))
-			sb.WriteString(m.fitInsight("    "+labelStr+" "+costStr, timestampStr, styles.DimStyle.Render(multiplierStr)))
+			sb.WriteString(m.fitTimedInsight("    "+labelStr+" "+costStr, highest.Timestamp, styles.DimStyle.Render(multiplierStr)))
 		} else {
-			sb.WriteString(m.fitInsight(fmt.Sprintf("    %-10s %s", "Peak", render.CostCell(highest.Cost, 10)),
-				"("+render.Clock(highest.Timestamp)+")",
-				multiplierStr))
+			sb.WriteString(m.fitTimedInsight(fmt.Sprintf("    %-10s %s", "Peak", render.CostCell(highest.Cost, 10)),
+				highest.Timestamp, multiplierStr))
 		}
 	}
 
@@ -739,19 +736,21 @@ func (m Model) renderInsightsContent() string {
 	return sb.String()
 }
 
-// fitInsight is an insight row: lead, then the rest two spaces apart.
-func (m Model) fitInsight(lead string, rest ...string) string {
-	for i := range rest {
-		rest[i] = "  " + rest[i]
+// fitTimedInsight is an insight row with a time, in the longest form that
+// fits: lead, the time, then detail. The detail goes first, then a dated
+// time takes its short form, so it shortens before it goes. The time is
+// decided against the clock on every render, so a time from before
+// midnight gains its weekday once midnight passes.
+func (m Model) fitTimedInsight(lead string, t time.Time, detail string) string {
+	style := func(clock string) string {
+		clock = "(" + clock + ")"
+		if !m.noColor {
+			clock = styles.DimStyle.Render(clock)
+		}
+		return "  " + clock
 	}
-	return m.fitRow(lead, rest...)
-}
-
-// fitRow ends a body row after the last of its pieces that fits the
-// terminal, so a narrow one loses whole pieces from the right, never half a
-// word. Each piece carries its own leading space.
-func (m Model) fitRow(lead string, rest ...string) string {
-	return joinSegments(append([]string{lead}, rest...), "", m.width) + "\n"
+	long, short := style(render.ClockOn(t, m.clock())), style(render.ClockOnShort(t, m.clock()))
+	return m.firstFit(lead+long+"  "+detail, lead+long, lead+short, lead) + "\n"
 }
 
 // fitTrend is the trend row in the longest form that fits. The direction

@@ -3,6 +3,7 @@ package formatter
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/bardisty/ficha/internal/analyzer"
@@ -367,10 +368,26 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 		sb.WriteString("  " + dim("main conversation only, agents excluded") + "\n")
 	}
 
+	fits := func(label string, fields ...string) bool {
+		return lipgloss.Width(fmt.Sprintf("  %-10s %s", label, strings.Join(fields, "  "))) <= width
+	}
+	// timed is a row's cost and time without its detail: the time in the
+	// longest of its forms that fits, so a dated time shortens before it goes
+	// and the row doesn't read as a message with no time.
+	timed := func(label, cost string, t time.Time) []string {
+		for _, clock := range []string{render.ClockOn(t, now()), render.ClockOnShort(t, now())} {
+			if fits(label, cost, dim("("+clock+")")) {
+				return []string{cost, dim("(" + clock + ")")}
+			}
+		}
+		return []string{cost}
+	}
+
 	// First and Last lose their detail together, so neither reads as a
-	// message that had none.
+	// message that had none. Each then fits its own time.
 	type messageRow struct {
 		label  string
+		msg    *models.MessageSnapshot
 		fields []string
 	}
 	var messages []messageRow
@@ -380,32 +397,38 @@ func formatInsightsSectionContent(insights *models.MessageInsights, hasAgents bo
 		if msg == nil {
 			continue
 		}
-		m := messageRow{labels[i], []string{
+		m := messageRow{labels[i], msg, []string{
 			formatCostStyled(msg.Cost, 10, noColor),
-			dim("(" + render.Clock(msg.Timestamp) + ")"),
+			dim("(" + render.ClockOn(msg.Timestamp, now()) + ")"),
 			dim(render.CostComponentLabel(msg.MainCostComponent) + ": " + render.Cost(msg.MainCostValue)),
 		}}
-		if lipgloss.Width(fmt.Sprintf("  %-10s %s", m.label, strings.Join(m.fields, "  "))) > width {
+		if !fits(m.label, m.fields...) {
 			detail = false
 		}
 		messages = append(messages, m)
 	}
 	for _, m := range messages {
 		if !detail {
-			m.fields = m.fields[:2]
+			m.fields = timed(m.label, m.fields[0], m.msg.Timestamp)
 		}
 		row(m.label, m.fields...)
 	}
 
-	// Highest cost (only if notably above average)
+	// Highest cost (only if notably above average). The multiplier goes
+	// before the time shortens.
 	if insights.HighestCost != nil {
 		highest := insights.HighestCost
 		// The multiplier is information, not a warning: nearly every session
 		// has a message well above its average.
-		row("Peak",
+		fields := []string{
 			formatCostStyled(highest.Cost, 10, noColor),
-			dim("("+render.Clock(highest.Timestamp)+")"),
-			dim(fmt.Sprintf("%.1fx avg cost", insights.CostMultiplier())))
+			dim("(" + render.ClockOn(highest.Timestamp, now()) + ")"),
+			dim(fmt.Sprintf("%.1fx avg cost", insights.CostMultiplier())),
+		}
+		if !fits("Peak", fields...) {
+			fields = timed("Peak", fields[0], highest.Timestamp)
+		}
+		row("Peak", fields...)
 	}
 
 	// Trend (only once the analyzer actually computed one — see HasTrend)
