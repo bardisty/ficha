@@ -85,10 +85,13 @@ Agents and workflows
   Agents are sub-sessions Claude started. Their cost is included in the
   session's total, and AGENT SUB-SESSIONS lists them, each with its task
   beside its ID when there's room. Agents from a workflow run are grouped
-  under the run's name, with the run's subtotal. In breakdown, a workflow
-  agent's AGENT cell ends in its run's initials, such as rc for
-  review-changes, the footer names those on screen when it has room, and a
-  wide terminal adds the task after the cell.
+  under the run's name, with the run's subtotal. In watch, a dot marks an
+  agent that wrote in the last 5 minutes, unless its workflow run has
+  ended, and the section's rule says how many are running, as in "4 of 10
+  running". In breakdown, a workflow agent's AGENT cell ends in its run's
+  initials, such as rc for review-changes, the footer names those on
+  screen when it has room, and a wide terminal adds the task after the
+  cell.
 
 Spend rate
   watch's footer shows it as $46.82/h (10m): what the last 10 minutes

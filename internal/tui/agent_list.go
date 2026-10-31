@@ -84,6 +84,17 @@ func runningAgentsKey(a *models.SessionAnalysis, now time.Time) string {
 	return strings.Join(ids, ",")
 }
 
+// runningAgentCount is how many of the session's agents are live at now.
+func runningAgentCount(a *models.SessionAnalysis, now time.Time) int {
+	n := 0
+	for _, agent := range a.Agents {
+		if agentLive(a, agent, now) {
+			n++
+		}
+	}
+	return n
+}
+
 // nearestAgent is the running agent nearest ~compaction, when it's in its
 // warning band or past its mark and nearer its own mark than main, the
 // session's reading, is to its own. Each reading measures against its own

@@ -443,6 +443,33 @@ func TestSectionHeader(t *testing.T) {
 	}
 }
 
+// SectionHeaderFit takes the longest title that leaves a rule cell on each
+// side, measured in columns rather than bytes, or the last title when none
+// fits.
+func TestSectionHeaderFit(t *testing.T) {
+	tests := []struct {
+		width int
+		want  string
+	}{
+		{40, "───────[ NAME · 3 of 12 running ]───────"},
+		{28, "─[ NAME · 3 of 12 running ]─"},
+		{27, "───[ NAME · 3 running ]────"},
+		{20, "──────[ NAME ]──────"},
+	}
+	for _, tt := range tests {
+		got := SectionHeaderFit(tt.width, true, "NAME · 3 of 12 running", "NAME · 3 running", "NAME")
+		if got != tt.want {
+			t.Errorf("width %d: got %q, want %q", tt.width, got, tt.want)
+		}
+		if w := lipgloss.Width(got); w != tt.width {
+			t.Errorf("width %d: header is %d columns wide", tt.width, w)
+		}
+	}
+	if got := SectionHeaderFit(20, true, "A TITLE FAR TOO LONG TO FIT"); got != "[ A TITLE FAR TOO LONG TO FIT ]" {
+		t.Errorf("no title fits: got %q, want the last title unruled", got)
+	}
+}
+
 func TestContextBar(t *testing.T) {
 	tests := []struct {
 		name      string

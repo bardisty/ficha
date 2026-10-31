@@ -621,6 +621,34 @@ func SectionHeader(name string, width int, noColor bool) string {
 	return styles.DimStyle.Render(leftLine) + "[ " + styles.SectionHeaderStyle.Render(name) + " ]" + styles.DimStyle.Render(rightLine)
 }
 
+// SectionHeaderFit is SectionHeader for a title that comes in several
+// lengths, longest first: it draws the first that leaves at least one rule
+// cell on each side, or the last. It measures display width, so a · in a
+// title doesn't shorten the rule the way it would in SectionHeader.
+func SectionHeaderFit(width int, noColor bool, titles ...string) string {
+	if width < 20 {
+		width = 76
+	}
+	title := titles[len(titles)-1]
+	for _, t := range titles {
+		if lipgloss.Width("[ "+t+" ]")+2 <= width {
+			title = t
+			break
+		}
+	}
+
+	bracketedLen := lipgloss.Width("[ " + title + " ]")
+	sideLen := max((width-bracketedLen)/2, 0)
+	rightLen := max(width-sideLen-bracketedLen, 0)
+	leftLine := strings.Repeat(styles.LineHorizontal, sideLen)
+	rightLine := strings.Repeat(styles.LineHorizontal, rightLen)
+
+	if noColor {
+		return leftLine + "[ " + title + " ]" + rightLine
+	}
+	return styles.DimStyle.Render(leftLine) + "[ " + styles.SectionHeaderStyle.Render(title) + " ]" + styles.DimStyle.Render(rightLine)
+}
+
 // ContextBar renders a context-window bar of width cells between brackets:
 // used (█) then free (░), with a tick (│) at compactAt, the ~compaction
 // point, so the warning survives --no-color. A mark at the end of the window

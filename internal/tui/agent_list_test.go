@@ -466,3 +466,36 @@ func TestWatchAgentKeyUnfolds(t *testing.T) {
 		t.Error("a unfolded a list too short to fold")
 	}
 }
+
+// The AGENT SUB-SESSIONS rule counts every agent, folded or not, and the
+// running ones, so a new agent below the fold still changes the first
+// screen. A narrow rule keeps the running count and drops the total.
+func TestAgentHeaderCountsAgents(t *testing.T) {
+	m := NewModel("/test/path", "sess", true, "", false)
+	m.now = func() time.Time { return foldNow }
+	a := foldAnalysis()
+	m.analysis = a
+
+	check := func(when string, width int, want string) {
+		t.Helper()
+		got := m.renderAgentHeader(width)
+		if !strings.Contains(got, "[ "+want+" ]") {
+			t.Errorf("%s at %d: header = %q, want it to read %q", when, width, got, want)
+		}
+		if w := lipgloss.Width(got); w != width {
+			t.Errorf("%s at %d: header is %d columns wide", when, width, w)
+		}
+	}
+	check("before", 76, "AGENT SUB-SESSIONS · 2 of 10 running")
+
+	a.Agents = append(a.Agents, foldAgent("e1000000000", "", foldNow.Add(-3*time.Second), foldNow.Add(-time.Second), 1, 0.01))
+	check("after an agent starts", 76, "AGENT SUB-SESSIONS · 3 of 11 running")
+	check("after an agent starts", 38, "AGENT SUB-SESSIONS · 3 running")
+
+	m.now = func() time.Time { return foldNow.Add(time.Hour) }
+	check("once every agent is quiet", 76, "AGENT SUB-SESSIONS · 0 of 11 running")
+	check("once every agent is quiet", 38, "AGENT SUB-SESSIONS · 0 running")
+
+	a.Agents = nil
+	check("with every agent file unreadable", 76, "AGENT SUB-SESSIONS")
+}

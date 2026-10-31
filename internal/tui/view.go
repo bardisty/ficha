@@ -264,7 +264,7 @@ func (m Model) renderAnalysisSections() (string, []bodySection) {
 	if a.HasAgents {
 		begin("agents")
 		sb.WriteString("\n")
-		sb.WriteString("  " + render.SectionHeader("AGENT SUB-SESSIONS", sectionWidth, m.noColor))
+		sb.WriteString("  " + m.renderAgentHeader(sectionWidth))
 		sb.WriteString("\n\n")
 		sb.WriteString(m.renderAgentBreakdownContent())
 	}
@@ -1040,6 +1040,27 @@ func (m Model) isEmptySession() bool {
 	}
 	// Session is empty if total cost is 0 and no messages
 	return m.analysis.TotalCost.TotalCost == 0 && m.analysis.MessageCount == 0
+}
+
+// renderAgentHeader is the AGENT SUB-SESSIONS rule with how many of the
+// session's agents are running, since most of the list sits below the fold
+// and a new agent's row appears there unseen. Running means what the list's
+// dot means. A narrow rule drops the total and keeps the running count:
+// whether anything is running at all is the question the header is there to
+// answer, and the list gives the total. A session whose agent files were
+// all unreadable has nothing to count, and the footer says why.
+func (m Model) renderAgentHeader(width int) string {
+	const name = "AGENT SUB-SESSIONS"
+	total := len(m.analysis.Agents)
+	if total == 0 {
+		return render.SectionHeaderFit(width, m.noColor, name)
+	}
+	running := render.Count(runningAgentCount(m.analysis, m.clock()))
+	sep := " " + styles.FieldSep + " "
+	return render.SectionHeaderFit(width, m.noColor,
+		name+sep+running+" of "+render.Count(total)+" running",
+		name+sep+running+" running",
+		name)
 }
 
 // renderCostChart renders the cost trend sparkline and its label: what a
