@@ -1364,3 +1364,28 @@ func TestSpan(t *testing.T) {
 		}
 	}
 }
+
+// TaskCell fills an agent's task cell with its count only when it has no
+// task and the caller passes one, and dims only the text, not the padding.
+func TestTaskCell(t *testing.T) {
+	if got := MsgCount(1); got != "1 msg" {
+		t.Errorf("MsgCount(1) = %q", got)
+	}
+	if got := MsgCount(1234); got != "1,234 msgs" {
+		t.Errorf("MsgCount(1234) = %q", got)
+	}
+	for _, tt := range []struct {
+		task, count, want string
+	}{
+		{"Find the router", "9 msgs", "Find the r…"},
+		{"", "9 msgs", "9 msgs     "},
+		{"", "", "           "},
+	} {
+		if got := TaskCell(tt.task, tt.count, 11, true); got != tt.want {
+			t.Errorf("TaskCell(%q, %q) = %q, want %q", tt.task, tt.count, got, tt.want)
+		}
+	}
+	if got, want := TaskCell("", "9 msgs", 11, false), styles.DimStyle.Render("9 msgs")+"     "; got != want {
+		t.Errorf("TaskCell in color = %q, want %q", got, want)
+	}
+}

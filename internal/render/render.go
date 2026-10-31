@@ -785,6 +785,32 @@ func gaugeNote(forms []string, main string, agent *ContextAgent, width int, noCo
 // enough to tell most tasks apart. A task shorter than this is never cut.
 const MinTaskWidth = 12
 
+// MsgCount is an agent's message count as its rows print it: "1 msg" or
+// "N msgs".
+func MsgCount(n int) string {
+	if n == 1 {
+		return "1 msg"
+	}
+	return Count(n) + " msgs"
+}
+
+// TaskCell is an agent's task cell, width columns wide: the task as FitTask
+// fits it, or, for an agent with no task, count, dimmed unless noColor. Rows
+// whose count column made way for the tasks pass their count, so an agent
+// without a task reads as its row would with no task column, not as a blank
+// among its neighbors' tasks. Rows that still show the count pass "".
+func TaskCell(task, count string, width int, noColor bool) string {
+	if task != "" || count == "" {
+		return FitTask(task, width)
+	}
+	cell := FitTask(count, width)
+	if noColor {
+		return cell
+	}
+	text := strings.TrimRight(cell, " ")
+	return styles.DimStyle.Render(text) + cell[len(text):]
+}
+
 // FitTask fits an agent's task, models.AgentAnalysis.TaskLabel, into width
 // display columns, padded with spaces, or cut by TruncateRight. Tasks are
 // transcript text and can hold wide characters, so it counts display

@@ -125,14 +125,6 @@ func renderContextSection(analysis *models.SessionAnalysis, width int, noColor b
 	return "  Context " + line + "\n           " + note + "\n"
 }
 
-// agentMsgs formats an agent's message count ("45 msgs", "1 msg").
-func agentMsgs(count int) string {
-	if count == 1 {
-		return "1 msg"
-	}
-	return render.Count(count) + " msgs"
-}
-
 // agentMsgsWidth returns the msgs column width for a set of agent rows: at
 // least 8 (the historical fixed width, fitting "999 msgs"), grown to the
 // longest count so an oversized count widens the column for every row instead
@@ -140,7 +132,7 @@ func agentMsgs(count int) string {
 func agentMsgsWidth(agents []models.AgentAnalysis) int {
 	width := 8
 	for _, a := range agents {
-		if l := len(agentMsgs(a.MessageCount)); l > width {
+		if l := len(render.MsgCount(a.MessageCount)); l > width {
 			width = l
 		}
 	}
@@ -168,6 +160,10 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	// workflowStatuses says.
 	msgsWidth := agentMsgsWidth(analysis.Agents)
 	taskWant := agentTaskWidth(analysis.Agents)
+	cellWant := taskWant
+	if taskWant > 0 {
+		cellWant = max(cellWant, tasklessCountWidth(analysis.Agents))
+	}
 	headingWidth := 40
 	for _, agent := range analysis.Agents {
 		if agent.WorkflowID != "" {
@@ -196,7 +192,10 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	// keeping cost aligned with parent and subtotal. Where a task wouldn't
 	// fit whole, the message count goes first, then the task is cut, and
 	// cut below render.MinTaskWidth it goes too, leaving the row as it is
-	// without one. A task shorter than that is never cut, so it stays.
+	// without one. A task shorter than that is never cut. Once the count
+	// has made way, an agent without a task shows its count in the task's
+	// cell, which is never cut either: a cell without room for it goes, and
+	// the short tasks with it.
 	// Where the context reading, " 38% ctx", would leave no gap, it takes
 	// the count's place, as in watch; labelWidth's floor always leaves it
 	// room there.
@@ -205,8 +204,8 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	showMsgs := agentRowWidth(msgsWidth, taskWant) < labelWidth+3
 	taskWidth := taskWant
 	if !showMsgs {
-		taskWidth = min(taskWant, labelWidth+3-agentRowWidth(-1, 0)-2)
-		if taskWidth < min(taskWant, render.MinTaskWidth) {
+		taskWidth = min(cellWant, labelWidth+3-agentRowWidth(-1, 0)-2)
+		if taskWidth < min(cellWant, render.MinTaskWidth) {
 			taskWidth = 0
 			labelWidth = labelFor(msgsWidth, 0)
 			showMsgs = agentRowWidth(msgsWidth, 0) < labelWidth+3
@@ -261,12 +260,16 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 		// space, or nothing where the context reading took its place
 		msgStr := ""
 		if showMsgs {
-			msgStr = fmt.Sprintf(" %*s", msgsWidth, agentMsgs(agent.MessageCount))
+			msgStr = fmt.Sprintf(" %*s", msgsWidth, render.MsgCount(agent.MessageCount))
 		}
 		ctx := " " + render.AgentContextCell(agent.Context, noColor)
 		task := ""
 		if taskWidth > 0 {
-			task = " " + render.FitTask(agent.TaskLabel(), taskWidth)
+			count := ""
+			if !showMsgs {
+				count = render.MsgCount(agent.MessageCount)
+			}
+			task = " " + render.TaskCell(agent.TaskLabel(), count, taskWidth, noColor)
 		}
 
 		if noColor {
@@ -312,6 +315,20 @@ func agentTaskWidth(agents []models.AgentAnalysis) int {
 	width := 0
 	for _, a := range agents {
 		width = max(width, lipgloss.Width(a.TaskLabel()))
+	}
+	return width
+}
+
+// tasklessCountWidth is the width of the widest message count among agents
+// with no task, which their task cell shows once the count column has made
+// way, or 0 when every agent has a task. It counts only when some row has a
+// task cell, which is the caller's to know.
+func tasklessCountWidth(agents []models.AgentAnalysis) int {
+	width := 0
+	for _, a := range agents {
+		if a.TaskLabel() == "" {
+			width = max(width, len(render.MsgCount(a.MessageCount)))
+		}
 	}
 	return width
 }

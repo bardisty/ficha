@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 // watchAt renders watch on a at width, at the fold fixture's clock.
@@ -138,5 +139,38 @@ func TestWatchFoldStaysAlignedBesideShortTasks(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// Where the task column takes the count's place, an agent without a task
+// shows its count in its task cell, dimmed, rather than a blank among its
+// neighbors' tasks. Where the count keeps its column, the cell stays blank,
+// so the count never prints twice.
+func TestWatchTasklessAgentShowsItsCount(t *testing.T) {
+	a := foldAnalysis()
+	a.Agents[3].Description = "Check every query in the billing module for rounding" // a2, running
+	rowOf := func(frame string) string {
+		for line := range strings.SplitSeq(frame, "\n") {
+			if strings.Contains(line, "[Ad2") {
+				return line
+			}
+		}
+		return ""
+	}
+	if row := rowOf(watchAt(t, a, 80)); !strings.Contains(row, "] 11 msgs ") || strings.Count(row, "msgs") != 1 {
+		t.Errorf("width 80: want the count in the task cell, once: %q", row)
+	}
+	short := foldAnalysis()
+	short.Agents[3].Description = "Find the router"
+	if row := rowOf(watchAt(t, short, 80)); strings.Count(row, "11 msgs") != 1 || strings.Contains(row, "] 11 msgs") {
+		t.Errorf("width 80, short task: want the count in its own column only: %q", row)
+	}
+
+	m := NewModel("/fixture/sess.jsonl", "sess", false, "", true)
+	m.now = func() time.Time { return foldNow }
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 80})
+	updated, _ = updated.Update(analysisMsg{analysis: a})
+	if row := rowOf(frameOf(updated.(Model))); !strings.Contains(row, styles.DimStyle.Render("11 msgs")) {
+		t.Errorf("width 80 in color: want the count dimmed: %q", row)
 	}
 }

@@ -24,7 +24,7 @@
        |  +- [Awf1]     Check every query in the bil... Opus 4.8     $0.0525
        |  `- [Awf2]     general-purpose                 Sonnet 5     $0.0280
        `- workflow: second-pass (running)                            $0.0050
-          `- [Awf3]                                     Haiku 4.5    $0.0050
+          `- [Awf3]     1 msg                           Haiku 4.5    $0.0050
   --------------------------------------------------------------------------
   Sum (1 session):                                                   $0.1100
 

@@ -19,7 +19,7 @@
   ● [Af6e5d4c] Find the auth middleware   Sonnet 5     38% ctx       $1.58                          
     [A1b2c3d4] Explore                    Haiku 4.5   100% ctx       $0.4200                        
     ── workflow: audit-codebase (completed)                          $1.65                          
-    [Aw6e5d4c]                            Sonnet 5                   $0.5500                        
+    [Aw6e5d4c] 1 msg                      Sonnet 5                   $0.5500                        
     [Aw1a2b3c] Audit the parser for unch… Opus 4.8     90% ctx       $1.10                          
     Agents subtotal                                                  $3.65                          
                                                                                                     
