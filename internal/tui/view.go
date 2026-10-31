@@ -409,7 +409,7 @@ func (m Model) renderAgentBreakdownContent() string {
 	// Uses plain white (not magnitude gradient) - model tier colors provide cost hierarchy
 	// A terminal narrower than the rows takes the columns it lacks out of
 	// the space before the cost, so the cost stays on screen.
-	rows := agentRows(a, m.clock())
+	rows := agentRows(a, m.clock(), m.agentsOpen)
 	tasks := m.agentTaskColumn(rows)
 	labelWidth := 40 - m.agentShrink(tasks) + tasks.extra()
 	parentHighlighted := m.isHighlighted("parent_cost")

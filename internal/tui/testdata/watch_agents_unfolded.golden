@@ -1,0 +1,15 @@
+    Main conversation                             $30.00  
+    [A3000000] Sonnet 5     32 msgs                $0.6800
+    [A1000000] Sonnet 5     25 msgs                $1.04  
+    [A4000000] Sonnet 5     14 msgs                $0.4400
+  ● [A2000000] Sonnet 5     22 msgs                $0.9100
+    ── workflow: review-changes (completed)        $5.30  
+    [Ab200000] Sonnet 5     17 msgs                $1.20  
+    [Ab100000] Sonnet 5     21 msgs                $4.10  
+    ── workflow: audit-codebase (running)          $2.12  
+    [Ac100000] Sonnet 5     21 msgs                $1.82  
+    [Ac200000] Sonnet 5      9 msgs                $0.3000
+    ── workflow: wf_mixed                          $0.8500
+    [Ad100000] Sonnet 5      8 msgs                $0.2500
+  ● [Ad200000] Sonnet 5     11 msgs                $0.6000
+    Agents subtotal                               $11.34  

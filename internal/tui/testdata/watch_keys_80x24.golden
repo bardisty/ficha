@@ -5,6 +5,7 @@
   space/b, pgdn/pgup  scroll a page                                       
   d/u, ctrl+d/u       scroll half a page                                  
   g/G, home/end       go to the top or bottom                             
+  a                   show all agents on/off                              
   f                   follow new sessions on/off                          
   n                   switch to the newer session                         
   -                   back to the previous session                        
@@ -12,7 +13,6 @@
   ctrl+z              suspend                                             
                                                                           
   Terms: ficha help output                                                
-                                                                          
                                                                           
                                                                           
                                                                           

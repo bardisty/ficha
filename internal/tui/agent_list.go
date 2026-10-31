@@ -129,7 +129,10 @@ func markShare(c *models.ContextUsage) float64 {
 // finished. A finished agent's cost stops changing, so the kept-out row moves
 // only when a newly finished agent costs more; comparing against running
 // agents, which keep getting dearer, would fold it back in mid-session.
-func agentRows(a *models.SessionAnalysis, now time.Time) []agentRow {
+//
+// open lists every agent on its own row, folds or no folds: the a key's
+// way to the agents a fold hides.
+func agentRows(a *models.SessionAnalysis, now time.Time, open bool) []agentRow {
 	var plain []models.AgentAnalysis
 	runs := map[string][]models.AgentAnalysis{}
 	var runOrder []string
@@ -144,7 +147,7 @@ func agentRows(a *models.SessionAnalysis, now time.Time) []agentRow {
 		runs[agent.WorkflowID] = append(runs[agent.WorkflowID], agent)
 	}
 
-	fold := len(a.Agents) > agentListCap
+	fold := !open && len(a.Agents) > agentListCap
 	var rows []agentRow
 	// Of equal costs, the one that finished first stays out, so an agent
 	// finishing later at the same cost can't move it.

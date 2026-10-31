@@ -50,15 +50,18 @@ const (
 	closeHint = "? close"
 )
 
-// WatchKeys is watch's key table, in the order the ? list shows it.
+// WatchKeys is watch's key table, in the order the ? list shows it. Its a
+// lists every agent, where breakdown's steps through their rows.
 func WatchKeys() []Key {
 	return []Key{quitKey, listKey, lineKey, pageKey, halfKey, endsKey,
+		{Keys: "a", Does: "show all agents on/off"},
 		followKey, hintedKey, backKey, reloadKey, stopKey}
 }
 
-// BreakdownKeys is breakdown's key table: watch's, plus p, s and a. Its p
-// row carries the help-line hint for p and s; a has none, so the line keeps
-// its drop order, and the footer rule says a while it's in use.
+// BreakdownKeys is breakdown's key table: watch's, plus p and s, with its
+// own a. Its p row carries the help-line hint for p and s; a has none, so
+// the line keeps its drop order, and the footer rule says a while it's in
+// use.
 func BreakdownKeys() []Key {
 	return []Key{quitKey, listKey, lineKey, pageKey, halfKey, endsKey,
 		{Keys: "p", Does: "next costliest; esc clears", hint: "p/s peak/sort"},
