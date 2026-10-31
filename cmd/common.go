@@ -57,6 +57,9 @@ func loadProjectSessionsWithDir(cfg *config) ([]models.SessionEntry, string, err
 type nestedSessions struct {
 	sessions []models.SessionEntry
 	projects map[string]nestedProject
+	// skippedHome is set when --nested ran at home or above it, where
+	// nestedProjects looks under nothing.
+	skippedHome bool
 }
 
 // mark names the nested project each result ran in, "" for the report's
@@ -98,6 +101,7 @@ func loadProjectAndNestedSessions(cfg *config) ([]models.SessionEntry, reportRoo
 		}
 	}
 	nested := nestedSessions{projects: map[string]nestedProject{}}
+	nested.skippedHome = cfg.nested && holdsHome(project.path, canonicalHome())
 	for _, p := range nestedProjects(project) {
 		// Only --nested reads these for the report itself. Without it they
 		// feed a note, and a problem with one isn't the report's to warn of.

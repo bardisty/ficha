@@ -127,9 +127,7 @@ func runList(cfg *config) error {
 		warnEstimatedCosts(&warnings, aggregate.EstimatedCostMessages)
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
-	if !cfg.nested {
-		writeNestedNote(&warnings, cfg, nested, window, root.name)
-	}
+	writeNestedNote(&warnings, cfg, nested, window, root.name)
 
 	// Cleaned as each transcript's directory is, which --project-dir isn't.
 	originalPaths := map[string]string{filepath.Clean(root.dir): parser.ProjectOriginalPath(root.dir)}
@@ -220,9 +218,7 @@ func runListTable(cfg *config, window models.TimeWindow) error {
 		warnEstimatedCosts(&warnings, aggregate.EstimatedCostMessages)
 		warnUnknownModels(&warnings, unpricedModels(aggregate.CostByModel))
 	}
-	if !cfg.nested {
-		writeNestedNote(&warnings, cfg, nested, window, root.name)
-	}
+	writeNestedNote(&warnings, cfg, nested, window, root.name)
 
 	opts := formatter.ListTableOptions{
 		Project: nestedLabel(root.name, results),
