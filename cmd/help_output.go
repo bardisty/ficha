@@ -80,6 +80,10 @@ Context
   words and colors its percentage. A running agent in its own orange band
   or past its mark, and nearer it than the main conversation is to its
   own, is named under the bar and in watch's footer, as "(agent 98%)".
+  In breakdown, a divider above the first reply after a compaction says
+  whether it was auto or manual (/compact) and how large the context was
+  when it compacted: "compacted (auto, 180.0K)". That reply writes the
+  summary to the cache, so it costs more, and the rows after it less.
 
 Agents and workflows
   Agents are sub-sessions Claude started. Their cost is included in the

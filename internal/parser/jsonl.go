@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -39,6 +40,10 @@ type ParseResult struct {
 	// shifts, so the last is the current one, but none of them replaces a
 	// rename. A rename to "" clears it, and the generated title shows again.
 	Title string
+	// Compactions are the transcript's compact_boundary records, in file
+	// order. They are kept apart from Messages, which counts and prices
+	// replies, so that only breakdown, which marks them, sees them.
+	Compactions []models.Compaction
 }
 
 // ParseJSONLFileWithResult parses a session JSONL file and returns detailed results
@@ -108,6 +113,10 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 			aiTitle = msg.AITitle
 		case msg.Type == "custom-title":
 			customTitle = msg.CustomTitle
+		case msg.Type == "system":
+			if c, ok := compaction(line, msg.Timestamp); ok {
+				result.Compactions = append(result.Compactions, c)
+			}
 		}
 	}
 
@@ -117,6 +126,32 @@ func ParseJSONLWithResult(r io.Reader) (*ParseResult, error) {
 	}
 	result.Messages = DeduplicateMessages(result.Messages)
 	return result, nil
+}
+
+// compaction reads a system record's line as a compact_boundary, the
+// record Claude Code writes where it compacted the conversation. ok is
+// false for any other subtype. The line already decoded as a record, so a
+// subtype of the wrong type makes it no boundary rather than malformed,
+// and metadata of the wrong type leaves a boundary without a trigger or
+// size, as missing metadata does.
+func compaction(line []byte, at time.Time) (c models.Compaction, ok bool) {
+	var record struct {
+		Subtype string `json:"subtype"`
+		// Only read here, before line is reused; see lineReader.next.
+		CompactMetadata json.RawMessage `json:"compactMetadata"`
+	}
+	if json.Unmarshal(line, &record) != nil || record.Subtype != "compact_boundary" {
+		return models.Compaction{}, false
+	}
+	var meta struct {
+		Trigger   string `json:"trigger"`
+		PreTokens int64  `json:"preTokens"`
+	}
+	if len(record.CompactMetadata) > 0 && json.Unmarshal(record.CompactMetadata, &meta) == nil {
+		c.Trigger, c.PreTokens = meta.Trigger, meta.PreTokens
+	}
+	c.Timestamp = at
+	return c, true
 }
 
 func (r *ParseResult) skip(lineNum int, reason string) {

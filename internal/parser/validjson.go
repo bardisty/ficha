@@ -1,6 +1,9 @@
 package parser
 
-import "bytes"
+import (
+	"bytes"
+	"encoding/json"
+)
 
 // maxJSONDepth is how deep encoding/json lets arrays and objects nest before
 // it calls the input invalid. The scan has to agree, or a line nested deeper
@@ -9,7 +12,8 @@ const maxJSONDepth = 10000
 
 // droppable reports whether line is valid JSON that the parse would decode
 // and then drop: an object whose type isn't "assistant", "ai-title" or
-// "custom-title".
+// "custom-title", and isn't a "system" record with the "compact_boundary"
+// subtype.
 // Most of a transcript's bytes are such lines (tool results, file snapshots,
 // pasted images), and one pass here costs a fraction of json.Unmarshal, which
 // validates the line and then walks it again to step over every field.
@@ -54,6 +58,12 @@ type lineScanner struct {
 	// ruling that out would take encoding/json's own key matching.
 	mayKeep bool
 	sawType bool
+	// system is set when the line's type is "system", and boundary when its
+	// subtype is "compact_boundary". Together they keep the line, which the
+	// scan can only tell once the object closes: the subtype can come
+	// first. badSubtype is a subtype neither a string nor null, which no
+	// boundary decodes with; see parser.compaction.
+	system, boundary, badSubtype bool
 }
 
 // peek returns the next byte, or 0 at the end of the line. A zero byte is
@@ -270,6 +280,9 @@ func (s *lineScanner) object(top bool) bool {
 		case '}':
 			s.i++
 			s.depth--
+			if top && s.system && s.boundary && !s.badSubtype {
+				s.mayKeep = true
+			}
 			return true
 		default:
 			return false
@@ -278,18 +291,22 @@ func (s *lineScanner) object(top bool) bool {
 }
 
 // topValue scans the value of one of the line's own keys, and sets mayKeep
-// unless the key and value leave the record's type certain.
+// unless the key and value leave the record's type certain. The subtype
+// matters only for a system record; see lineScanner.system.
 //
 // encoding/json matches keys without regard to case, with Unicode folding
 // beyond ASCII, so "TYPE" is the type key and a key with an escape or a
 // non-ASCII byte might be. When a key repeats, the last value wins, except
-// that a null leaves the earlier one in place. A second type key is left to
-// the decoder for that reason, as is any value but a string spelled without
-// escapes.
+// that a null leaves the earlier one in place. A second type or subtype key
+// is left to the decoder for that reason, as is any value but a string
+// spelled without escapes.
 func (s *lineScanner) topValue(key []byte, escaped bool) bool {
 	if escaped || !isASCII(key) {
 		s.mayKeep = true
 		return s.value()
+	}
+	if bytes.EqualFold(key, []byte("subtype")) {
+		return s.subtypeValue()
 	}
 	if !bytes.EqualFold(key, []byte("type")) {
 		return s.value()
@@ -303,11 +320,35 @@ func (s *lineScanner) topValue(key []byte, escaped bool) bool {
 	switch string(typ) {
 	case "assistant", "ai-title", "custom-title":
 		s.mayKeep = true
+	case "system":
+		s.system = true
 	}
 	if escaped {
 		s.mayKeep = true
 	}
 	return ok
+}
+
+// subtypeValue scans the value of the line's subtype key and works out
+// boundary as the decoder would: the last string wins, a null leaves the
+// one before, and any other value fails the decode.
+func (s *lineScanner) subtypeValue() bool {
+	switch s.peek() {
+	case '"':
+		raw, escaped, ok := s.str()
+		if escaped && ok {
+			// Rare enough to leave to encoding/json, which knows every escape.
+			var subtype string
+			_ = json.Unmarshal(s.b[s.i-len(raw)-2:s.i], &subtype)
+			raw = []byte(subtype)
+		}
+		s.boundary = string(raw) == "compact_boundary"
+		return ok
+	case 'n':
+		return s.value()
+	}
+	s.badSubtype = true
+	return s.value()
 }
 
 func isASCII(b []byte) bool {

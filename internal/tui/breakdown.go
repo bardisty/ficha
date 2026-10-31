@@ -77,8 +77,8 @@ type BreakdownModel struct {
 	selectedKey     string
 	selectionNotice bool
 	// lineRows maps each viewport content line to the display Index of the
-	// message on it, or 0 for a day divider; linePos to the message's
-	// position in messages. See tableLines.
+	// message on it, or dayDivider or compactionDivider for a divider;
+	// linePos to the message's position in messages. See tableLines.
 	lineRows []int
 	linePos  []int
 	// sortByCost orders the table most expensive first (s toggles it).
@@ -1455,10 +1455,16 @@ func (m BreakdownModel) renderTableSeparator(panelWidth int) string {
 	return sep
 }
 
+// Lines in tableLines that hold no row, in place of a display Index.
+const (
+	dayDivider        = 0
+	compactionDivider = -1
+)
+
 // tableLines lays the table out, one entry per viewport line: the display
-// Index of the message on it (0 for a day divider), and its position in
-// m.messages (for a divider, the message it heads). Nothing is rendered, so
-// it's cheap enough to redo on every change.
+// Index of the message on it, or a divider (dayDivider, compactionDivider),
+// and its position in m.messages (for a divider, the message it heads).
+// Nothing is rendered, so it's cheap enough to redo on every change.
 func (m BreakdownModel) tableLines() (lineRows, linePos []int) {
 	lineRows = make([]int, 0, len(m.messages))
 	linePos = make([]int, 0, len(m.messages))
@@ -1472,10 +1478,16 @@ func (m BreakdownModel) tableLines() (lineRows, linePos []int) {
 		// aren't neighbors in time: no days to mark, and TIME carries them.
 		if !m.sortByCost && !msg.Timestamp.IsZero() {
 			if prev.IsZero() && m.dated || !prev.IsZero() && !render.SameLocalDay(prev, msg.Timestamp) {
-				lineRows = append(lineRows, 0)
+				lineRows = append(lineRows, dayDivider)
 				linePos = append(linePos, i)
 			}
 			prev = msg.Timestamp
+		}
+		// Where the conversation compacted, under the day it did. Cost
+		// order has no before and after.
+		if !m.sortByCost && msg.Compacted != nil {
+			lineRows = append(lineRows, compactionDivider)
+			linePos = append(linePos, i)
 		}
 		lineRows = append(lineRows, msg.Index)
 		linePos = append(linePos, i)
@@ -1483,11 +1495,14 @@ func (m BreakdownModel) tableLines() (lineRows, linePos []int) {
 	return lineRows, linePos
 }
 
-// renderLine renders line i of the table: a message row, or a day divider.
+// renderLine renders line i of the table: a message row, or a divider.
 func (m BreakdownModel) renderLine(i int) string {
 	msg := m.messages[m.linePos[i]]
-	if m.lineRows[i] == 0 {
+	switch m.lineRows[i] {
+	case dayDivider:
 		return m.renderDayMarker(msg.Timestamp)
+	case compactionDivider:
+		return m.renderCompactionMarker(*msg.Compacted)
 	}
 	selected := m.selectedKey != "" && breakdownMsgKey(msg) == m.selectedKey
 	row := m.renderRow(msg, m.isNewMessage(msg) || (selected && !m.noColor), m.table)
@@ -1529,6 +1544,35 @@ func (m BreakdownModel) tableView() string {
 // new local day.
 func (m BreakdownModel) renderDayMarker(t time.Time) string {
 	marker := styles.GroupRule + " " + render.DayMarker(t) + " " + styles.GroupRule
+	if m.noColor {
+		return "  " + marker
+	}
+	return "  " + styles.DimStyle.Render(marker)
+}
+
+// renderCompactionMarker renders the divider above the first reply after
+// the conversation compacted, styled as the day divider is, with what set
+// it off and the context's size then: "── compacted (auto, 180.0K) ──".
+// Short of room the size goes first, then the trigger.
+func (m BreakdownModel) renderCompactionMarker(c models.Compaction) string {
+	var details []string
+	if c.Trigger != "" {
+		details = append(details, c.Trigger)
+	}
+	if c.PreTokens > 0 {
+		details = append(details, render.Number(c.PreTokens))
+	}
+	marker := ""
+	for n := len(details); n >= 0; n-- {
+		text := "compacted"
+		if n > 0 {
+			text += " (" + strings.Join(details[:n], ", ") + ")"
+		}
+		marker = styles.GroupRule + " " + text + " " + styles.GroupRule
+		if m.width <= 0 || 2+lipgloss.Width(marker) <= m.width {
+			break
+		}
+	}
 	if m.noColor {
 		return "  " + marker
 	}

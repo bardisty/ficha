@@ -703,6 +703,17 @@ type BreakdownMessage struct {
 	Model      string        // Model used for this message
 	Usage      TokenUsage    // Token usage for this message
 	Cost       CostBreakdown // Calculated cost for this message
+	// Compacted is the compaction just before this reply, the first in the
+	// main conversation after it; nil for every other row.
+	Compacted *Compaction
+}
+
+// Compaction is a point where Claude Code compacted the main conversation,
+// from the transcript's compact_boundary record.
+type Compaction struct {
+	Timestamp time.Time
+	Trigger   string // "auto", or "manual" for /compact; "" when unrecorded
+	PreTokens int64  // the context's size when it compacted; 0 when unrecorded
 }
 
 // ProjectInfo represents a discovered Claude Code project directory

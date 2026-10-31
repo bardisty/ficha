@@ -83,6 +83,7 @@ func GetBreakdownMessagesWithCache(sessionPath, sessionID string, cache *AgentPa
 		})
 	}
 	sortKeys := streamSortKeys(nil, allMessages)
+	markCompactions(allMessages, sortKeys, result.Compactions)
 
 	// Process agent sub-sessions. An unreadable subagents/ or
 	// workflow-run directory hides agents entirely, so it counts as skipped
@@ -219,6 +220,26 @@ func streamSortKeys(keys []time.Time, msgs []models.BreakdownMessage) []time.Tim
 		}
 	}
 	return keys
+}
+
+// markCompactions sets Compacted on the first of rows, the main
+// conversation's replies in file order, at or after each compaction, by
+// the rows' sort keys. Two compactions before one reply leave it the later.
+// A compaction with no time, or no reply after it yet, marks nothing.
+func markCompactions(rows []models.BreakdownMessage, keys []time.Time, compactions []models.Compaction) {
+	i := 0
+	for _, c := range compactions {
+		if c.Timestamp.IsZero() {
+			continue
+		}
+		for i < len(rows) && keys[i].Before(c.Timestamp) {
+			i++
+		}
+		if i == len(rows) {
+			return
+		}
+		rows[i].Compacted = &c
+	}
 }
 
 // breakdownAnalyses converts breakdown rows to the analyses CalculateInsights
