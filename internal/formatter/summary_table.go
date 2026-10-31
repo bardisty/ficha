@@ -59,7 +59,7 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 	sb.WriteString("\n\n")
 
 	// Cost chart at the top of the section, for sessions that cost anything
-	if chart := renderCostChart(breakdownResult.costs, sectionWidth, noColor); chart != "" {
+	if chart := renderCostChart(breakdownResult.points, sectionWidth, noColor); chart != "" {
 		sb.WriteString(chart)
 		sb.WriteString("\n")
 	}
@@ -95,10 +95,10 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 }
 
 // sessionBreakdownResult is the rendered breakdown table plus the chart's
-// points: the priced sessions' costs, oldest first.
+// points: the priced sessions, oldest first.
 type sessionBreakdownResult struct {
-	table string
-	costs []float64
+	table  string
+	points []chartPoint
 }
 
 // renderSessionBreakdown renders one row per session, newest first like
@@ -119,7 +119,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		return sorted[i].LastActive().Before(sorted[j].LastActive())
 	})
 
-	var chartCosts, costs []float64
+	var costs []float64
 	var totalCost float64
 	valid := 0
 	// WHEN is the last message's date and time, or just the date when the
@@ -138,9 +138,6 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 		// doesn't set the floor the color gradient runs from.
 		if r.Analysis.MessageCount > 0 {
 			costs = append(costs, c)
-		}
-		if c > 0 {
-			chartCosts = append(chartCosts, c)
 		}
 	}
 	var minCost, maxCost float64
@@ -355,6 +352,25 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	if sortBy == SortByCost {
 		SortSessionsByCost(rows)
 	}
+	// The chart's points are the priced sessions oldest first, each with the
+	// number its row gets below, error and no-reply rows counted, so the
+	// caption's #25 is the table's 25.
+	rowOf := make(map[*models.SessionAnalysis]int, len(rows))
+	for i, r := range rows {
+		if r.Analysis != nil {
+			rowOf[r.Analysis] = i + 1
+		}
+	}
+	var points []chartPoint
+	for _, r := range sorted {
+		if r.Analysis != nil && r.Analysis.TotalCost.TotalCost > 0 {
+			points = append(points, chartPoint{
+				cost: r.Analysis.TotalCost.TotalCost,
+				row:  rowOf[r.Analysis],
+				id:   render.TruncateID(r.Entry.SessionID, 8),
+			})
+		}
+	}
 	for i, r := range rows {
 		num := dim(fmt.Sprintf("%4d", i+1))
 		id := fmt.Sprintf("%-8s", render.TruncateID(r.Entry.SessionID, 8))
@@ -426,7 +442,7 @@ func renderSessionBreakdown(results []models.SessionResult, width int, noColor b
 	}
 	sb.WriteString(fmt.Sprintf("  %-*s  %s\n", sumLabelWidth, sumLabel, sumCost))
 
-	return sessionBreakdownResult{table: sb.String(), costs: chartCosts}
+	return sessionBreakdownResult{table: sb.String(), points: points}
 }
 
 // Agent tree rows: a 7-space indent puts the connectors under SESSION, and
