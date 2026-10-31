@@ -401,6 +401,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(load, m.spinnerCmd())
 
 	case tea.WindowSizeMsg:
+		// p's row was on screen, so the resize keeps it there; read off the
+		// viewport as drawn, since chosenY can be past what this size showed.
+		keepSelected := m.ready && !m.autoScroll && m.selectedOnScreen()
 		m.width = msg.Width
 		m.height = msg.Height
 		m.relayout()
@@ -415,6 +418,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetHeight(vpHeight)
 		}
 		m.refreshViewport()
+		if keepSelected {
+			m.showSelected()
+		}
 
 	case spinner.TickMsg:
 		// Let the spinner stop once nothing shows it; spinnerCmd restarts it.

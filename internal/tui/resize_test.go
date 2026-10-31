@@ -146,3 +146,47 @@ func TestBreakdownSortKeepsChosenLineThroughZoom(t *testing.T) {
 		t.Errorf("after leaving cost order while grown the view is at %d, want %d", m.viewport.YOffset(), chosen)
 	}
 }
+
+// peakRows is 100 rows whose five costliest sit mid-table, so p centers a
+// row a shorter pane can't reach from the same first row.
+func peakRows() []models.BreakdownMessage {
+	rows := chromeRows(goldenTime(10, 0, 0), 100)
+	for i, index := range []int{50, 40, 60, 30, 70} {
+		rows[index-1].Cost.TotalCost = 1 - float64(i)/10
+	}
+	return rows
+}
+
+// While p's selection holds and its row was on screen, a resize keeps it
+// on screen, through shrinking and growing back, in time and cost order.
+// Sorted, p's rows are the first five lines, so only a pane two rows tall
+// can lose one.
+func TestBreakdownResizeKeepsSelectedRow(t *testing.T) {
+	sizes := [][2]int{{100, 24}, {80, 24}, {60, 12}, {60, 8}, {80, 24}, {100, 40}}
+	for _, keys := range [][]string{{"p", "p", "p"}, {"s", "p", "p", "p"}} {
+		m := press(t, loadedBreakdown(t, 100, 40, peakRows()), keys...)
+		if !m.selectedOnScreen() {
+			t.Fatalf("%v: setup: the selected row should be on screen", keys)
+		}
+		for _, size := range sizes {
+			if m = resizeBreakdown(t, m, size[0], size[1]); !m.selectedOnScreen() {
+				t.Errorf("%v, then %dx%d: the selected row is off screen, view at line %d", keys, size[0], size[1], m.viewport.YOffset())
+			}
+		}
+	}
+}
+
+// A selected row the reader scrolled off screen doesn't pull the view back
+// on a resize: the first row holds, as with no selection.
+func TestBreakdownResizeLeavesSelectionScrolledOff(t *testing.T) {
+	m := press(t, loadedBreakdown(t, 100, 40, peakRows()), "p")
+	for m.selectedOnScreen() {
+		m = press(t, m, "j")
+	}
+	chosen := m.viewport.YOffset()
+	for _, size := range [][2]int{{100, 24}, {60, 12}, {100, 40}} {
+		if m = resizeBreakdown(t, m, size[0], size[1]); m.viewport.YOffset() != chosen {
+			t.Errorf("at %dx%d the view is at line %d, want %d", size[0], size[1], m.viewport.YOffset(), chosen)
+		}
+	}
+}
