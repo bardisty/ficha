@@ -7,6 +7,7 @@
   g/G, home/end       go to the top or bottom            
   p                   next costliest; esc clears         
   s                   sort by cost on/off                
+  a                   step through main and agents       
   f                   follow new sessions on/off         
   n                   switch to the newer session        
   -                   back to the previous session       
@@ -14,7 +15,6 @@
   ctrl+z              suspend                            
                                                          
   hidden: IN, C_WR, C_RD, OUT; widen to 85               
-                                                         
                                                          
                                                          
                                                          

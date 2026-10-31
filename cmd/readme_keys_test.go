@@ -9,37 +9,64 @@ import (
 )
 
 // readmeKeysTable is the README's Keys table as the key tables have it:
-// breakdown's rows in order, the ones watch lacks marked as breakdown's.
+// breakdown's rows in order, the ones watch lacks marked as breakdown's. A
+// key watch has with its own meaning follows breakdown's row for it, marked
+// as watch's.
 func readmeKeysTable() string {
-	inWatch := map[string]bool{}
+	inWatch := map[tui.Key]bool{}
+	watchOnly := map[string][]tui.Key{}
 	for _, k := range tui.WatchKeys() {
-		inWatch[k.Keys] = true
+		inWatch[k] = true
+		if !inBreakdown(k) {
+			watchOnly[k.Keys] = append(watchOnly[k.Keys], k)
+		}
 	}
 	lines := []string{"| Key | Does |", "| --- | --- |"}
-	for _, k := range tui.BreakdownKeys() {
+	row := func(k tui.Key, view string) string {
 		keys := "`" + strings.Join(strings.Split(k.Keys, ", "), "`, `") + "`"
 		does := k.Does
 		if k.Note != "" {
 			does += "; " + k.Note
 		}
-		if !inWatch[k.Keys] {
-			does = "breakdown: " + does
+		if view != "" {
+			does = view + ": " + does
 		}
-		lines = append(lines, "| "+keys+" | "+does+" |")
+		return "| " + keys + " | " + does + " |"
+	}
+	for _, k := range tui.BreakdownKeys() {
+		view := ""
+		if !inWatch[k] {
+			view = "breakdown"
+		}
+		lines = append(lines, row(k, view))
+		for _, w := range watchOnly[k.Keys] {
+			lines = append(lines, row(w, "watch"))
+		}
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
 
+// inBreakdown reports whether breakdown has watch's row k as it is.
+func inBreakdown(k tui.Key) bool {
+	for _, b := range tui.BreakdownKeys() {
+		if b == k {
+			return true
+		}
+	}
+	return false
+}
+
 // The README's Keys table must match the views' key tables, which also
-// build the help line, the ? list and each view's --help.
+// build the help line, the ? list and each view's --help. A row only watch
+// has must share its key with one of breakdown's, which places it.
 func TestREADMEKeysTable(t *testing.T) {
 	for _, k := range tui.WatchKeys() {
-		found := false
+		placed := inBreakdown(k)
 		for _, b := range tui.BreakdownKeys() {
-			found = found || b == k
+			placed = placed || b.Keys == k.Keys
 		}
-		if !found {
-			t.Fatalf("watch's %q row isn't breakdown's; the README table has no place for it", k.Keys)
+		if !placed {
+			t.Fatalf("watch's %q row has no breakdown row to follow; the README table has no place for it", k.Keys)
 		}
 	}
 	data, err := os.ReadFile("../README.md")

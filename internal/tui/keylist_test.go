@@ -231,36 +231,39 @@ func TestKeyListPointsToTheGlossary(t *testing.T) {
 }
 
 // A trailing line, such as breakdown's hidden columns, takes the glossary
-// pointer's place, and stays as rows run short: the title goes first, then
-// the blank before it, then the last keys.
+// pointer's place. As rows run short the title goes first, then the blank
+// before it, then the line itself rather than a key, and last the keys.
 func TestKeyListKeepsTheTrailingLine(t *testing.T) {
 	pinSuspend(t, true)
 	keys := WatchKeys()
 	n := len(keys)
 	const trailing = "hidden: IN"
 	for rows, want := range map[int]struct {
-		head, blank bool
-		more        bool
+		head, blank, line bool
+		more              bool
 	}{
-		n + 3: {head: true, blank: true},
-		n + 2: {blank: true},
-		n + 1: {},
-		n:     {more: true},
+		n + 3: {head: true, blank: true, line: true},
+		n + 2: {blank: true, line: true},
+		n + 1: {line: true},
+		n:     {},
 		5:     {more: true},
 	} {
 		lines := keyList("watch", keys, 80, rows, true, trailing)
 		got := strings.Join(lines, "\n")
-		if len(lines) != rows || strings.TrimSpace(lines[rows-1]) != trailing {
-			t.Errorf("rows %d: want %d lines ending in %q:\n%s", rows, rows, trailing, got)
+		if len(lines) != rows {
+			t.Errorf("rows %d: %d lines:\n%s", rows, len(lines), got)
 			continue
 		}
+		if line := strings.TrimSpace(lines[rows-1]) == trailing; line != want.line {
+			t.Errorf("rows %d: trailing line shown = %v, want %v:\n%s", rows, line, want.line, got)
+		}
 		if strings.Contains(got, "Terms:") {
-			t.Errorf("rows %d: the glossary pointer showed beside the trailing line", rows)
+			t.Errorf("rows %d: the glossary pointer showed in the trailing line's place", rows)
 		}
 		if head := strings.TrimSpace(lines[0]) == "Keys"; head != want.head {
 			t.Errorf("rows %d: title shown = %v, want %v", rows, head, want.head)
 		}
-		if blank := lines[rows-2] == ""; blank != want.blank {
+		if blank := lines[rows-2] == ""; want.line && blank != want.blank {
 			t.Errorf("rows %d: blank before the line = %v, want %v", rows, blank, want.blank)
 		}
 		if more := strings.Contains(got, "more in ficha watch --help"); more != want.more {

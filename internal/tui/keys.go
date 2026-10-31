@@ -56,12 +56,14 @@ func WatchKeys() []Key {
 		followKey, hintedKey, backKey, reloadKey, stopKey}
 }
 
-// BreakdownKeys is breakdown's key table: watch's, plus p and s. Its p row
-// carries the help-line hint for both.
+// BreakdownKeys is breakdown's key table: watch's, plus p, s and a. Its p
+// row carries the help-line hint for p and s; a has none, so the line keeps
+// its drop order, and the footer rule says a while it's in use.
 func BreakdownKeys() []Key {
 	return []Key{quitKey, listKey, lineKey, pageKey, halfKey, endsKey,
 		{Keys: "p", Does: "next costliest; esc clears", hint: "p/s peak/sort"},
 		{Keys: "s", Does: "sort by cost on/off"},
+		{Keys: "a", Does: "step through main and agents"},
 		followKey, hintedKey, backKey, reloadKey, stopKey}
 }
 
@@ -132,8 +134,10 @@ func helpLine(keys []Key, width int, listOpen, pinned, noColor bool) string {
 // then the title, and past that it cuts the list with a pointer to
 // --help, which has all of it. A terminal too narrow for every row whole
 // gets each row's first keys only, and --help has the others. A trailing
-// line, such as breakdown's hidden columns, takes the pointer's place, and
-// outranks the title and the last key rows: it says what nothing else does.
+// line, such as breakdown's hidden columns, takes the pointer's place and
+// outranks the title, since it says what nothing else on screen does. It
+// gives way to the keys, which are what ? is for: where it would push one
+// out, it goes.
 func keyList(view string, keys []Key, width, rows int, noColor bool, trailing string) []string {
 	var shown []Key
 	for _, k := range keys {
@@ -176,7 +180,7 @@ func keyList(view string, keys []Key, width, rows int, noColor bool, trailing st
 		lines = append(lines, "", style(styles.DimStyle, "  "+tail))
 	case trailing != "" && len(entries)+2 == rows:
 		lines = append(entries, "", style(styles.DimStyle, "  "+tail))
-	case trailing != "":
+	case trailing != "" && len(entries) < rows:
 		lines = append(keyList(view, keys, width, rows-1, noColor, ""), style(styles.DimStyle, "  "+tail))
 	case len(entries) < rows:
 		lines = append([]string{"  " + style(styles.HeaderStyle, "Keys")}, entries...)

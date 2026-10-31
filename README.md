@@ -149,7 +149,7 @@ ficha can only report sessions whose transcripts still exist, and Claude Code de
 
 Run `watch` and `breakdown` side by side, with session totals in one terminal and per-message costs in the other. When a new session starts, after `/clear` or a restart, both switch to it. A session ID, a transcript path or `--no-follow` keeps them on one session.
 
-Press `?` in either view for the keys. `breakdown` has all of `watch`'s keys, plus `p` and `s`. On a narrow terminal `breakdown` drops whole columns, IN first, and its `?` list names the ones it hid.
+Press `?` in either view for the keys. `breakdown` has all of `watch`'s keys, plus `p`, `s` and `a`. On a narrow terminal `breakdown` drops whole columns, IN first, and its `?` list names the ones it hid.
 
 | Key | Does |
 | --- | --- |
@@ -161,6 +161,7 @@ Press `?` in either view for the keys. `breakdown` has all of `watch`'s keys, pl
 | `g/G`, `home/end` | go to the top or bottom |
 | `p` | breakdown: next costliest; esc clears |
 | `s` | breakdown: sort by cost on/off |
+| `a` | breakdown: step through main and agents |
 | `f` | follow new sessions on/off |
 | `n` | switch to the newer session |
 | `-` | back to the previous session |

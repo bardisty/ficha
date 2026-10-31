@@ -137,7 +137,7 @@ func (m *BreakdownModel) setFollow(on bool) {
 		return
 	}
 	if m.autoScroll && !on {
-		m.pausedAt = len(m.messages)
+		m.pausedAt = m.scopeLen()
 		m.pausePending = m.loading && len(m.messages) == 0
 	}
 	m.autoScroll = on
@@ -250,25 +250,38 @@ func (m BreakdownModel) positionText() string {
 
 // footerMarks lists the footer rule's texts from fullest to barest, and the
 // rule shows the first that fits. Each step drops one label, in this order:
-// the day of the first row on screen, then the row range itself. A label
-// that should outlast the day goes left of it in the fuller texts and stays
-// in the shorter ones.
+// the key that steps the scope on, the day of the first row on screen, the
+// row range, and last the scope, which names whose rows these are where
+// the AGENT column has no room.
 func (m BreakdownModel) footerMarks() []string {
-	if m.sortByCost {
-		return []string{m.sortedPositionText(), sortedLabel}
-	}
-	position := m.rowsText()
-	if position == "" {
-		return nil
-	}
 	var marks []string
-	if day := m.firstVisibleDay(); day != "" {
-		marks = append(marks, day+" "+styles.Bullet+" "+position)
+	if m.sortByCost {
+		marks = []string{m.sortedPositionText(), sortedLabel}
+	} else if position := m.rowsText(); position != "" {
+		if day := m.firstVisibleDay(); day != "" {
+			marks = append(marks, day+" "+styles.Bullet+" "+position)
+		}
+		marks = append(marks, position)
 	}
-	return append(marks, position)
+	scope := m.ruleScope()
+	if scope == "" {
+		return marks
+	}
+	sep := " " + styles.Bullet + " "
+	full := scope + sep + scopeKeyHint
+	if len(marks) > 0 {
+		full = scope + sep + marks[0] + sep + scopeKeyHint
+	}
+	scoped := []string{full}
+	for _, mark := range marks {
+		scoped = append(scoped, scope+sep+mark)
+	}
+	return append(scoped, scope)
 }
 
 // rowsText is the row range and new-row count of positionText, with no day.
+// Scoped, it counts the scope's rows: the range is where they are among
+// those, not the session's row numbers, which skip.
 func (m BreakdownModel) rowsText() string {
 	if !m.ready || m.viewport.TotalLineCount() <= m.viewport.Height() {
 		return ""
@@ -277,11 +290,26 @@ func (m BreakdownModel) rowsText() string {
 	if first == 0 {
 		return ""
 	}
-	text := fmt.Sprintf("rows %s-%s of %s", render.Count(first), render.Count(last), render.Count(len(m.messages)))
-	if n := len(m.messages) - m.pausedAt; !m.autoScroll && n > 0 {
+	if m.scope.on {
+		first, last = m.scopeRank(first), m.scopeRank(last)
+	}
+	text := fmt.Sprintf("rows %s-%s of %s", render.Count(first), render.Count(last), render.Count(m.scopeLen()))
+	if n := m.scopeLen() - m.pausedAt; !m.autoScroll && n > 0 {
 		text += fmt.Sprintf(" %s %s new %s (G)", styles.Bullet, render.Count(n), styles.MoreBelow)
 	}
 	return text
+}
+
+// scopeRank is where the row with display Index index falls among the
+// scope's rows in time order, from 1.
+func (m BreakdownModel) scopeRank(index int) int {
+	rank := 0
+	for i := range min(index, len(m.messages)) {
+		if m.inScope(m.messages[i]) {
+			rank++
+		}
+	}
+	return rank
 }
 
 // firstVisibleDay names the day of the first row on screen, as its divider
@@ -324,7 +352,7 @@ func (m BreakdownModel) sortedPositionText() string {
 	if m.ready && m.viewport.TotalLineCount() > m.viewport.Height() {
 		first := m.viewport.YOffset() + 1
 		last := min(m.viewport.YOffset()+m.viewport.Height(), m.viewport.TotalLineCount())
-		text += fmt.Sprintf(" %s rank %s-%s of %s", styles.Bullet, render.Count(first), render.Count(last), render.Count(len(m.messages)))
+		text += fmt.Sprintf(" %s rank %s-%s of %s", styles.Bullet, render.Count(first), render.Count(last), render.Count(m.scopeLen()))
 	}
 	return text
 }

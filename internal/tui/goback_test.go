@@ -322,3 +322,15 @@ func TestGoBackFollowsTheOpenedSessionBeforeAnyStart(t *testing.T) {
 		})
 	}
 }
+
+// - brings back the agent scope the reader left, with its rows.
+func TestBreakdownGoBackKeepsTheScope(t *testing.T) {
+	dir, paths := goBackProject(t, sessA, sessB)
+	m := goBackBreakdown(t, dir, paths[0])
+	updated, _ := m.Update(breakdownMsgsMsg{messages: scopeRows(30), insights: &models.MessageInsights{}})
+	m = press(t, updated.(BreakdownModel), "a", "a")
+	m = awayAndBack(t, m, paths[1], scopeRows(30))
+	if m.scope != (rowScope{on: true, agent: scopeAgentC}) || len(rowNumbers(m)) != 10 {
+		t.Errorf("after -: scope %+v, %d rows", m.scope, len(rowNumbers(m)))
+	}
+}

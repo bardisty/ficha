@@ -25,13 +25,10 @@ func isDownKey(km viewport.KeyMap, msg tea.KeyPressMsg) bool {
 // topCount is how many of the most expensive rows p cycles through.
 const topCount = 5
 
-// byCost returns the positions in m.messages, most expensive first; ties go
-// to the earlier row.
+// byCost returns the positions in m.messages of the scope's rows, most
+// expensive first; ties go to the earlier row.
 func (m BreakdownModel) byCost() []int {
-	pos := make([]int, len(m.messages))
-	for i := range pos {
-		pos[i] = i
-	}
+	pos := m.timeOrder()
 	sort.SliceStable(pos, func(a, b int) bool {
 		return m.messages[pos[a]].Cost.TotalCost > m.messages[pos[b]].Cost.TotalCost
 	})
@@ -45,15 +42,23 @@ func (m BreakdownModel) topByCost() []int {
 	return pos[:min(topCount, len(pos))]
 }
 
-// rowOrder returns the positions in m.messages in the order the table draws
-// them: by time, or by cost while sorted.
+// rowOrder returns the positions in m.messages of the scope's rows in the
+// order the table draws them: by time, or by cost while sorted.
 func (m BreakdownModel) rowOrder() []int {
 	if m.sortByCost {
 		return m.byCost()
 	}
-	pos := make([]int, len(m.messages))
-	for i := range pos {
-		pos[i] = i
+	return m.timeOrder()
+}
+
+// timeOrder returns the positions in m.messages of the scope's rows, by
+// time.
+func (m BreakdownModel) timeOrder() []int {
+	pos := make([]int, 0, len(m.messages))
+	for i, msg := range m.messages {
+		if m.inScope(msg) {
+			pos = append(pos, i)
+		}
 	}
 	return pos
 }
@@ -227,6 +232,7 @@ type leftView struct {
 	timeFollow bool
 	selected   string // p's selection, as selectedKey
 	pausedAt   int    // rows when following stopped: any past it are new
+	scope      rowScope
 }
 
 // rowMark is a table line held by the row on it. divider marks the day
@@ -242,9 +248,10 @@ func (m BreakdownModel) leaving() leftView {
 	v := leftView{
 		path: m.sessionPath, follow: m.followMode, autoScroll: m.autoScroll,
 		sorted: m.sortByCost, timeFollow: m.timeFollow, selected: m.selectedKey, pausedAt: m.pausedAt,
+		scope: m.scope,
 	}
 	if m.autoScroll {
-		v.pausedAt = len(m.messages)
+		v.pausedAt = m.scopeLen()
 	}
 	v.top = m.markLine(m.lineRows, m.linePos, m.chosenY)
 	if m.sortByCost {
@@ -303,6 +310,14 @@ func (m *BreakdownModel) bringBack(v leftView) {
 	if !m.ready || len(m.messages) == 0 {
 		return
 	}
+	if v.scope.on {
+		m.scope = v.scope
+		if m.countScope(); m.scopeLen() == 0 {
+			m.scope = rowScope{}
+		}
+		m.scopeInsights()
+		m.refreshViewport()
+	}
 	if slices.ContainsFunc(m.messages, func(msg models.BreakdownMessage) bool { return breakdownMsgKey(msg) == v.selected }) {
 		m.selectedKey = v.selected
 	}
@@ -310,7 +325,7 @@ func (m *BreakdownModel) bringBack(v leftView) {
 		return
 	}
 	m.setFollow(false)
-	m.pausedAt = min(v.pausedAt, len(m.messages))
+	m.pausedAt = min(v.pausedAt, m.scopeLen())
 	if v.sorted {
 		timeOrder := *m
 		rows, pos := timeOrder.tableLines()
