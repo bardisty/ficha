@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -314,4 +315,159 @@ func TestGoldenWatchWindowUnknown(t *testing.T) {
 		}
 	}
 	checkGolden(t, "watch_window_unknown_120x40_color", goldenWatchViewOf(t, windowUnknownAnalysis(), false, 120, 40))
+}
+
+// taggedUnknownBreakdown is breakdown at width on the fixture's 618 rows,
+// alternating between an audit-codebase run and a review-changes run, one
+// of them on a model ficha can't price.
+func taggedUnknownBreakdown(t *testing.T, width int, noColor bool) BreakdownModel {
+	t.Helper()
+	return taggedUnknownBreakdownFrom(t, width, noColor, 0)
+}
+
+// taggedUnknownBreakdownFrom is taggedUnknownBreakdown with the first
+// untagged rows the main conversation's.
+func taggedUnknownBreakdownFrom(t *testing.T, width int, noColor bool, untagged int) BreakdownModel {
+	t.Helper()
+	rows := chromeRows(goldenTime(1, 0, 0), 618)
+	for i := range rows[untagged:] {
+		i += untagged
+		rows[i].AgentID, rows[i].WorkflowID = "a1111111111111111", "wf_a"
+		if i%2 == 1 {
+			rows[i].AgentID, rows[i].WorkflowID = "a2222222222222222", "wf_b"
+		}
+	}
+	rows[610].Model = "claude-zeta-7-20261001"
+	m := NewBreakdownModel("/fixture/sess.jsonl", "bdd640fb", noColor, "", false)
+	m.now = func() time.Time { return goldenTime(12, 0, 0) }
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+	updated, _ = updated.Update(breakdownMsgsMsg{
+		messages: rows, totalCost: 73.98, insights: &models.MessageInsights{}, hasAgents: true,
+		unknownModels: []string{"claude-zeta-7-20261001"},
+		workflows:     []models.WorkflowMeta{{RunID: "wf_a", Name: "audit-codebase"}, {RunID: "wf_b", Name: "review-changes"}},
+	})
+	return updated.(BreakdownModel)
+}
+
+// The run-tag key for the rows on screen outranks the model IDs in the
+// fallback note, which shrinks for it, but not what the asterisk means: at
+// 80 columns the note's plainest form leaves room for one entry.
+func TestBreakdownRunTagKeyOutranksUnknownModelIDs(t *testing.T) {
+	const totals = "  Messages: 618 │ Total: $73.98 │ "
+	for _, tc := range []struct {
+		width int
+		want  string
+	}{
+		{80, "⚠ * = fallback pricing │ ac = audit-codebase"},
+		{100, "⚠ * = fallback pricing │ ac = audit-codebase, rc = review-changes"},
+		{120, "⚠ * claude-zeta-7-20261001 │ ac = audit-codebase, rc = review-changes"},
+		{150, "⚠ * claude-zeta-7-20261001: fallback pricing, see ficha show bdd640fb │ ac = audit-codebase, rc = review-changes"},
+	} {
+		for _, noColor := range []bool{true, false} {
+			m := taggedUnknownBreakdown(t, tc.width, noColor)
+			if !m.table.runTags {
+				t.Fatalf("width %d: setup: the table should draw run tags", tc.width)
+			}
+			line := stripANSI(m.renderStatsLine(m.table))
+			if line != totals+tc.want {
+				t.Errorf("width %d, noColor %v:\n got %q\nwant %q", tc.width, noColor, line, totals+tc.want)
+			}
+			if w := lipgloss.Width(line); w > tc.width {
+				t.Errorf("width %d: line is %d wide", tc.width, w)
+			}
+		}
+	}
+}
+
+// The ? list names every run tag in the scope's rows, on screen or not,
+// after the hidden-columns line, and none when the table draws no tags.
+func TestBreakdownKeyListNamesRunTags(t *testing.T) {
+	m := taggedUnknownBreakdown(t, 80, true)
+	m = press(t, m, "?")
+	frame := frameOf(m)
+	if !strings.Contains(frame, "\n  ac = audit-codebase, rc = review-changes ") {
+		t.Errorf("? list at 80 lacks the run-tag key:\n%s", frame)
+	}
+	if strings.Index(frame, "rc = review-changes") < strings.Index(frame, "hidden") {
+		t.Errorf("the run-tag key should come after the hidden-columns line:\n%s", frame)
+	}
+	m = press(t, press(t, m, "?"), "a")
+	if m = press(t, m, "?"); strings.Contains(frameOf(m), "rc = review-changes") {
+		t.Errorf("scoped to the audit-codebase agent, the ? list names review-changes:\n%s", frameOf(m))
+	}
+	plain := press(t, loadedBreakdown(t, 80, 24, chromeRows(goldenTime(10, 0, 0), 10)), "?")
+	if strings.Contains(frameOf(plain), " = ") {
+		t.Errorf("? list names run tags for a session with none:\n%s", frameOf(plain))
+	}
+}
+
+// The ? list's run-tag key wraps between whole entries, and only a line
+// that goes on ends in a comma.
+func TestBreakdownRunTagKeyWraps(t *testing.T) {
+	m := taggedUnknownBreakdown(t, 80, true)
+	for _, tc := range []struct {
+		width int
+		want  string
+	}{
+		{42, "ac = audit-codebase, rc = review-changes"},
+		{41, "ac = audit-codebase,\nrc = review-changes"},
+	} {
+		// The layout stays the 80-column one, which draws the tags.
+		m.width = tc.width
+		if got := m.runTagKeyLines(); got != tc.want {
+			t.Errorf("at %d columns: %q, want %q", tc.width, got, tc.want)
+		}
+	}
+}
+
+// The fallback note's form depends on the width and the scope's tags, not
+// on the rows on screen, so it holds while the reader scrolls past rows
+// with no tag; the key itself names only the tags on screen.
+func TestBreakdownUnknownNoteHoldsWhileScrolling(t *testing.T) {
+	m := press(t, taggedUnknownBreakdownFrom(t, 80, true, 300), "g")
+	if got := stripANSI(m.renderStatsLine(m.table)); got != "  Messages: 618 │ Total: $73.98 │ ⚠ * = fallback pricing" {
+		t.Errorf("at the top, with no tag on screen: %q", got)
+	}
+	if m = press(t, m, "G"); !strings.HasSuffix(stripANSI(m.renderStatsLine(m.table)), "│ ⚠ * = fallback pricing │ ac = audit-codebase") {
+		t.Errorf("at the bottom, with tags on screen: %q", stripANSI(m.renderStatsLine(m.table)))
+	}
+}
+
+// A run whose key entry can't fit beside even the plainest note doesn't
+// cost another run's entry its room, nor does a short pair of entries cost
+// a wide single one: with one run's rows on screen, the note leaves room
+// for its entry whenever the plainest note does.
+func TestBreakdownUnknownNoteLeavesRoomForTheTagOnScreen(t *testing.T) {
+	const wide = "audit-the-whole-codebase-for-security"
+	for _, tc := range []struct {
+		width int
+		names []string
+		want  string
+	}{
+		{80, []string{wide, "review-changes"}, "⚠ * = fallback pricing │ rc = review-changes"},
+		{104, []string{"audit", "review", wide}, "⚠ * = fallback pricing │ at = " + wide},
+	} {
+		rows := chromeRows(goldenTime(1, 0, 0), 618)
+		var runs []models.WorkflowMeta
+		for i, name := range tc.names {
+			runs = append(runs, models.WorkflowMeta{RunID: fmt.Sprintf("wf_%d", i), Name: name})
+		}
+		for i := range rows {
+			// Each run has an equal share of the rows, in run order.
+			run := i * len(runs) / len(rows)
+			rows[i].AgentID, rows[i].WorkflowID = fmt.Sprintf("a%016d", run), runs[run].RunID
+		}
+		rows[610].Model = "claude-zeta-7-20261001"
+		m := NewBreakdownModel("/fixture/sess.jsonl", "bdd640fb", true, "", false)
+		m.now = func() time.Time { return goldenTime(12, 0, 0) }
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: tc.width, Height: 24})
+		updated, _ = updated.Update(breakdownMsgsMsg{
+			messages: rows, totalCost: 73.98, insights: &models.MessageInsights{}, hasAgents: true,
+			unknownModels: []string{"claude-zeta-7-20261001"}, workflows: runs,
+		})
+		m = updated.(BreakdownModel)
+		if got, want := stripANSI(m.renderStatsLine(m.table)), "  Messages: 618 │ Total: $73.98 │ "+tc.want; got != want {
+			t.Errorf("%d runs at %d columns:\n got %q\nwant %q", len(runs), tc.width, got, want)
+		}
+	}
 }

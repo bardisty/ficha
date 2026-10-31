@@ -346,6 +346,7 @@ func (m *BreakdownModel) bringBack(v leftView) {
 		m.scope = v.scope
 		if m.countScope(); m.scopeLen() == 0 {
 			m.scope = rowScope{}
+			m.countScope()
 		}
 		m.scopeInsights()
 		m.refreshViewport()

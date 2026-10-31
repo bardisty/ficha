@@ -43,14 +43,19 @@ func (m BreakdownModel) scopeLen() int {
 	return m.scopeCount
 }
 
-// countScope works out scopeCount and scopeCost, after the rows or the
-// scope change.
+// countScope works out scopeCount, scopeCost and scopeTagKey, after the
+// rows, their run tags or the scope change.
 func (m *BreakdownModel) countScope() {
 	m.scopeCount, m.scopeCost = 0, 0
+	tagged := make(map[string]bool)
 	for _, msg := range m.scopeRows() {
 		m.scopeCount++
 		m.scopeCost += msg.Cost.TotalCost
+		if tag := m.runTag(msg); tag != "" {
+			tagged[tag] = true
+		}
 	}
+	m.scopeTagKey = m.runTagEntries(tagged)
 }
 
 // scopeSteps is the order a steps through: every row, the main

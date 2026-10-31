@@ -95,6 +95,9 @@ type BreakdownModel struct {
 	// by countScope so a frame doesn't walk every row for them.
 	scopeCount int
 	scopeCost  float64
+	// scopeTagKey is the run-tag key's entries for every row in the scope,
+	// on screen or not, kept by countScope as well.
+	scopeTagKey []string
 
 	// Header state: project name, and the newest message timestamp (else the
 	// session file's mtime, with activityFromFile set) that the header ages.
@@ -458,10 +461,18 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			top = m.markLine(m.lineRows, m.linePos, min(m.chosenY, len(m.lineRows)-1))
 		}
 		m.messages = msg.messages
+		m.runTags = workflowRunTags(msg.workflows)
+		m.runNames = make(map[string]string, len(msg.workflows))
+		m.runOrder = nil
+		for _, run := range msg.workflows {
+			m.runNames[m.runTags[run.RunID]] = runName(run)
+			m.runOrder = append(m.runOrder, m.runTags[run.RunID])
+		}
 		m.countScope()
 		emptied := m.scope.on && m.scopeCount == 0
 		if emptied {
 			m.scope = rowScope{}
+			m.countScope()
 			m.pausedAt = len(m.messages)
 		}
 		if m.pausePending {
@@ -478,15 +489,8 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.estimatedCosts = msg.estimatedCosts
 		m.unknownModels = msg.unknownModels
 		m.hasAgents = msg.hasAgents
-		m.runTags = workflowRunTags(msg.workflows)
 		m.tasks = msg.tasks
 		m.title = msg.title
-		m.runNames = make(map[string]string, len(msg.workflows))
-		m.runOrder = nil
-		for _, run := range msg.workflows {
-			m.runNames[m.runTags[run.RunID]] = runName(run)
-			m.runOrder = append(m.runOrder, m.runTags[run.RunID])
-		}
 		m.relayout()
 		slowClock := m.clockInterval() > time.Second
 		m.lastActivity, m.activityFromFile = breakdownLastActivity(msg.messages, msg.modTime)
@@ -732,6 +736,7 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	m.runTags = nil
 	m.runNames = nil
 	m.runOrder = nil
+	m.scopeTagKey = nil
 	m.tasks = nil
 	m.title = ""
 	m.totalCost = 0
@@ -898,7 +903,7 @@ func (m BreakdownModel) frame() string {
 		return renderTooSmall(m.width, m.height, m.minWidth(), tooSmallHeight)
 	}
 	if m.keysOpen {
-		lines := append(keyList("breakdown", BreakdownKeys(), m.width, m.height-1, m.noColor, m.hiddenColumnsLine()), m.renderHelpLine())
+		lines := append(keyList("breakdown", BreakdownKeys(), m.width, m.height-1, m.noColor, m.hiddenColumnsLine(), m.runTagKeyLines()), m.renderHelpLine())
 		return clipToWidth(strings.Join(lines, "\n"), m.width)
 	}
 	layout := m.table
@@ -1031,21 +1036,60 @@ func (m BreakdownModel) runTagKey() []string {
 	if !m.ready {
 		return nil
 	}
-	visible := make(map[string]bool)
+	tagged := make(map[string]bool)
 	top := m.viewport.YOffset()
 	for _, index := range m.lineRows[min(top, len(m.lineRows)):min(top+m.viewport.Height(), len(m.lineRows))] {
 		if index >= 1 && index <= len(m.messages) {
 			if tag := m.runTag(m.messages[index-1]); tag != "" {
-				visible[tag] = true
+				tagged[tag] = true
 			}
 		}
 	}
+	return m.runTagEntries(tagged)
+}
+
+// runTagKeyLines is the ? list's key to every run tag in the scope's rows,
+// on screen or not, each entry whole, wrapped to the width, its lines
+// joined by newlines so the list keeps or drops the key whole. "" when the
+// layout draws no tags: the key would explain nothing in the table.
+func (m BreakdownModel) runTagKeyLines() string {
+	if !m.table.runTags {
+		return ""
+	}
+	var lines []string
+	line := ""
+	entries := m.scopeTagKey
+	for i, entry := range entries {
+		// The list indents each line by 2, and a line that goes on ends
+		// in a comma.
+		next := line + ", " + entry
+		if i < len(entries)-1 {
+			next += ","
+		}
+		if line != "" && m.width > 0 && 2+lipgloss.Width(next) > m.width {
+			lines = append(lines, line+",")
+			line = ""
+		}
+		if line != "" {
+			line += ", "
+		}
+		line += entry
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// runTagEntries is the key's entries for the tags set in tagged, in the
+// order runTagKey describes.
+func (m BreakdownModel) runTagEntries(tagged map[string]bool) []string {
 	var entries []string
 	for _, tag := range slices.Concat(m.runOrder, []string{workflowRunTag("")}) {
-		if !visible[tag] {
+		if !tagged[tag] {
 			continue
 		}
-		visible[tag] = false
+		tagged[tag] = false
 		name := m.runNames[tag]
 		if name == "" {
 			name = "workflow"
@@ -1088,7 +1132,7 @@ func (m BreakdownModel) renderStatsTotals() string {
 	}
 	if m.noColor {
 		line := fmt.Sprintf("  Messages: %s%sTotal: %s", count, sep, total)
-		accounting, unknown := m.fitStatsNotes(line, sep)
+		accounting, unknown := m.fitStatsNotes(line, sep, m.runTagReserves(sep))
 		for _, note := range []string{accounting, unknown} {
 			if note != "" {
 				line += sep + note
@@ -1109,7 +1153,7 @@ func (m BreakdownModel) renderStatsTotals() string {
 	sb.WriteString(lipgloss.NewStyle().Foreground(styles.SuccessColor).Render(total))
 	// Surface parse warnings so an incomplete breakdown doesn't look
 	// complete, and explain the MODEL column's fallback-pricing asterisk.
-	accounting, unknown := m.fitStatsNotes(sb.String(), sep)
+	accounting, unknown := m.fitStatsNotes(sb.String(), sep, m.runTagReserves(sep))
 	for _, note := range []string{accounting, unknown} {
 		if note != "" {
 			sb.WriteString(sepStyled)
@@ -1127,20 +1171,31 @@ func (m BreakdownModel) renderStatsTotals() string {
 // shortest: the totals missing something matters more than what an
 // asterisk means, but both are worth a few words before either gets more.
 // The bare warning sign doesn't count as a few words, so the accounting
-// note never shrinks to it to make room.
-func (m BreakdownModel) fitStatsNotes(line, sep string) (accounting, unknown string) {
+// note never shrinks to it to make room. The fallback note then leaves
+// room for the run-tag key after it: the largest of reserves any of its
+// forms can. So the key outranks the model IDs but not what the asterisk
+// means.
+func (m BreakdownModel) fitStatsNotes(line, sep string, reserves []int) (accounting, unknown string) {
 	notes := accountingNotes(m.skippedAgents, m.skippedLines, m.estimatedCosts)
 	var unknowns []string
 	if len(m.unknownModels) > 0 {
 		unknowns = unknownModelNotes(m.unknownModels, m.sessionID)
 	}
-	first := func(head string, forms []string) string {
+	within := func(head string, forms []string, reserve int) string {
 		for _, form := range forms {
-			if m.width <= 0 || lipgloss.Width(head+sep+form) <= m.width {
+			if m.width <= 0 || lipgloss.Width(head+sep+form)+reserve <= m.width {
 				return form
 			}
 		}
 		return ""
+	}
+	fallback := func(head string) string {
+		for _, reserve := range reserves {
+			if form := within(head, unknowns, reserve); form != "" {
+				return form
+			}
+		}
+		return within(head, unknowns, 0)
 	}
 	if len(unknowns) > 0 && len(notes) > 0 {
 		// The last form is the plainest, but a short model ID can make the
@@ -1148,14 +1203,36 @@ func (m BreakdownModel) fitStatsNotes(line, sep string) (accounting, unknown str
 		least := slices.MinFunc(unknowns, func(a, b string) int { return lipgloss.Width(a) - lipgloss.Width(b) })
 		for _, note := range notes[:len(notes)-1] {
 			if m.width <= 0 || lipgloss.Width(line+sep+note+sep+least) <= m.width {
-				return note, first(line+sep+note, unknowns)
+				return note, fallback(line + sep + note)
 			}
 		}
 	}
-	if accounting = first(line, notes); accounting != "" {
+	if accounting = within(line, notes, 0); accounting != "" {
 		line += sep + accounting
 	}
-	return accounting, first(line, unknowns)
+	return accounting, fallback(line)
+}
+
+// runTagReserves is the room the stats line's run-tag key can need, led by
+// sep, widest first: for the scope's first tags, from all of them down to
+// two, and for each tag alone. It counts the scope's tags rather than
+// those on screen, so the fallback note's form holds while the reader
+// scrolls, and the single entries leave room for whichever tag is on
+// screen. None when the table draws no tags.
+func (m BreakdownModel) runTagReserves(sep string) []int {
+	if !m.table.runTags {
+		return nil
+	}
+	entries := m.scopeTagKey
+	var reserves []int
+	for n := len(entries); n > 1; n-- {
+		reserves = append(reserves, lipgloss.Width(sep+strings.Join(entries[:n], ", ")))
+	}
+	for _, entry := range entries {
+		reserves = append(reserves, lipgloss.Width(sep+entry))
+	}
+	slices.SortFunc(reserves, func(a, b int) int { return b - a })
+	return reserves
 }
 
 // renderHelpLine is the key-hint row: watch's, plus p and s, which only
@@ -1579,12 +1656,13 @@ func (m BreakdownModel) layout() breakdownLayout {
 	return l
 }
 
-// hiddenColumnsLine ends the ? list when the table hides columns at this
-// width: what's hidden and the width that shows it all, in the longest form
-// that fits, down to the names alone. Those fit the narrowest frame drawn,
-// all five names in 36 columns. Beyond the list, only the table header's
-// "+N" says columns are missing, so it shows wherever it leaves every key
-// room; see keyList. "" when none are.
+// hiddenColumnsLine is the ? list's first trailing line, ahead of the
+// run-tag key, when the table hides columns at this width: what's hidden
+// and the width that shows it all, in the longest form that fits, down to
+// the names alone. Those fit the narrowest frame drawn, all five names in
+// 36 columns. Beyond the list, only the table header's "+N" says columns
+// are missing, so it shows wherever it leaves every key room, and the key
+// gives way first; see keyList. "" when none are.
 func (m BreakdownModel) hiddenColumnsLine() string {
 	hidden := m.table.hidden()
 	if len(hidden) == 0 {

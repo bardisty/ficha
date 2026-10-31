@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -276,4 +277,52 @@ func TestKeyListKeepsTheTrailingLine(t *testing.T) {
 func TestGoldenBreakdownKeyListHidden(t *testing.T) {
 	pinSuspend(t, true)
 	checkGolden(t, "breakdown_keys_hidden_60x24", frameOf(press(t, goldenBreakdownModel(t, true, 60, 24), "?")))
+}
+
+// Several trailing strings keep their order. As rows run short the title
+// goes first, then the blank, then the trailing strings from the last, each
+// whole with all its lines, and never a key.
+func TestKeyListTrailingLinesGiveWayFromTheLast(t *testing.T) {
+	pinSuspend(t, true)
+	keys := WatchKeys()
+	n := len(keys)
+	hidden, tags, tags2 := "hidden: IN", "ac = audit-codebase,", "rc = review-changes"
+	for rows, want := range map[int]struct {
+		head, blank bool
+		tail        []string
+	}{
+		n + 5: {head: true, blank: true, tail: []string{hidden, tags, tags2}},
+		n + 4: {blank: true, tail: []string{hidden, tags, tags2}},
+		n + 3: {tail: []string{hidden, tags, tags2}},
+		n + 2: {blank: true, tail: []string{hidden}},
+		n + 1: {tail: []string{hidden}},
+		n:     {},
+	} {
+		lines := keyList("watch", keys, 80, rows, true, hidden, tags+"\n"+tags2)
+		got := strings.Join(lines, "\n")
+		if len(lines) != rows {
+			t.Errorf("rows %d: %d lines:\n%s", rows, len(lines), got)
+			continue
+		}
+		var tail []string
+		for _, line := range lines {
+			if s := strings.TrimSpace(line); s == hidden || s == tags || s == tags2 {
+				tail = append(tail, s)
+			}
+		}
+		if strings.Join(tail, "|") != strings.Join(want.tail, "|") {
+			t.Errorf("rows %d: trailing lines %q, want %q:\n%s", rows, tail, want.tail, got)
+		}
+		if head := strings.TrimSpace(lines[0]) == "Keys"; head != want.head {
+			t.Errorf("rows %d: title shown = %v, want %v", rows, head, want.head)
+		}
+		if blank := slices.Contains(lines, ""); len(want.tail) > 0 && blank != want.blank {
+			t.Errorf("rows %d: blank before the lines = %v, want %v:\n%s", rows, blank, want.blank, got)
+		}
+		for _, k := range keys {
+			if !strings.Contains(got, k.Does) {
+				t.Errorf("rows %d: a trailing line pushed out %q:\n%s", rows, k.Keys, got)
+			}
+		}
+	}
 }

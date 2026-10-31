@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -136,12 +137,13 @@ func helpLine(keys []Key, width int, listOpen, pinned, noColor bool) string {
 // would read as one more key. When the rows are short that goes first,
 // then the title, and past that it cuts the list with a pointer to
 // --help, which has all of it. A terminal too narrow for every row whole
-// gets each row's first keys only, and --help has the others. A trailing
-// line, such as breakdown's hidden columns, takes the pointer's place and
-// outranks the title, since it says what nothing else on screen does. It
-// gives way to the keys, which are what ? is for: where it would push one
-// out, it goes.
-func keyList(view string, keys []Key, width, rows int, noColor bool, trailing string) []string {
+// gets each row's first keys only, and --help has the others. Trailing
+// text, such as breakdown's hidden columns and run tags, takes the
+// pointer's place and outranks the title, since it says what nothing else
+// on screen does. It gives way to the keys, which are what ? is for: where
+// it would push one out, the last trailing string goes first, whole, with
+// every line it holds.
+func keyList(view string, keys []Key, width, rows int, noColor bool, trailing ...string) []string {
 	var shown []Key
 	for _, k := range keys {
 		if !k.suspend || canSuspend() {
@@ -172,27 +174,43 @@ func keyList(view string, keys []Key, width, rows int, noColor bool, trailing st
 		entries = append(entries, "  "+style(styles.SectionHeaderStyle, k.Keys)+pad+"  "+k.Does)
 	}
 
-	tail := "Terms: ficha help output"
-	if trailing != "" {
-		tail = trailing
+	dim := func(s string) string { return style(styles.DimStyle, "  "+s) }
+	title := "  " + style(styles.HeaderStyle, "Keys")
+	// untrailed is the list with no trailing line in rows rows, with the
+	// glossary pointer when terms is set and there's room for it.
+	untrailed := func(rows int, terms bool) []string {
+		switch {
+		case terms && len(entries)+2 < rows:
+			return slices.Concat([]string{title}, entries, []string{"", dim("Terms: ficha help output")})
+		case len(entries) < rows:
+			return append([]string{title}, entries...)
+		case len(entries) <= rows:
+			return entries
+		}
+		keep := max(rows-1, 0)
+		return append(entries[:keep:keep], dim(fmt.Sprintf("%s %d more in ficha %s --help", styles.Ellipsis, len(entries)-keep, view)))
+	}
+	var tails []string
+	for _, text := range trailing {
+		if text == "" {
+			continue
+		}
+		for line := range strings.SplitSeq(text, "\n") {
+			tails = append(tails, dim(line))
+		}
 	}
 	var lines []string
-	switch {
-	case len(entries)+2 < rows:
-		lines = append([]string{"  " + style(styles.HeaderStyle, "Keys")}, entries...)
-		lines = append(lines, "", style(styles.DimStyle, "  "+tail))
-	case trailing != "" && len(entries)+2 == rows:
-		lines = append(entries, "", style(styles.DimStyle, "  "+tail))
-	case trailing != "" && len(entries) < rows:
-		lines = append(keyList(view, keys, width, rows-1, noColor, ""), style(styles.DimStyle, "  "+tail))
-	case len(entries) < rows:
-		lines = append([]string{"  " + style(styles.HeaderStyle, "Keys")}, entries...)
-	case len(entries) <= rows:
-		lines = entries
+	switch n := len(tails); {
+	case n == 0:
+		lines = untrailed(rows, true)
+	case len(entries)+n+2 <= rows:
+		lines = slices.Concat([]string{title}, entries, []string{""}, tails)
+	case len(entries)+n+1 == rows:
+		lines = slices.Concat(entries, []string{""}, tails)
+	case len(entries)+n <= rows:
+		lines = append(untrailed(rows-n, false), tails...)
 	default:
-		keep := max(rows-1, 0)
-		more := fmt.Sprintf("  %s %d more in ficha %s --help", styles.Ellipsis, len(entries)-keep, view)
-		lines = append(entries[:keep:keep], style(styles.DimStyle, more))
+		return keyList(view, keys, width, rows, noColor, trailing[:len(trailing)-1]...)
 	}
 	for len(lines) < rows {
 		lines = append(lines, "")

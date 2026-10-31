@@ -37,7 +37,9 @@ func unknownModelFootnote(ids []string, sessionID string) string {
 // unknownModelNotes is unknownModelFootnote's forms, from the most it says to
 // the least, for a line that takes the first that fits: the note, the note
 // without its pointer, the IDs alone, then what the marker means. Each drops
-// whole words, and the IDs go last, since they're what a pricing update needs.
+// whole words. In breakdown's stats line the run-tag key outranks the IDs,
+// since nothing else there names a workflow, and ficha show still names
+// the models.
 func unknownModelNotes(ids []string, sessionID string) []string {
 	full := unknownModelFootnote(ids, sessionID)
 	if len(ids) == 0 {
