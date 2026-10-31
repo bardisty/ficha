@@ -18,6 +18,7 @@
      # SESSION   WHEN          MODEL                                    COST
   ──────────────────────────────────────────────────────────────────────────
      1 dddd4444  Jan 20 09:20  Opus 4.8                              $0.1100
+       ├─ Main conversation                                          $0.0175
        ├─ [Areg1]    Find the auth middleware        Haiku 4.5       $0.0070
        ├─ workflow: audit-codebase (completed)                       $0.0805
        │  ├─ [Awf1]     Check every query in the billi… Opus 4.8     $0.0525
@@ -28,6 +29,7 @@
   Sum (1 session):                                                   $0.1100
 
 ════════════════════════════════════════════════════════════════════════════
-Total: $0.1100  │  Messages: 5 (1 main, 4 agents)  │  Sessions: 1
+Total: $0.1100 (agents $0.0925)
+Messages: 5 (1 main, 4 agents)  │  Sessions: 1
 ────────────────────────────────────────────────────────────────────────────
 Storage: /home/user/src/app

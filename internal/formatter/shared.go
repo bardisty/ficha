@@ -423,6 +423,27 @@ func messagesField(total, parent, agents int) string {
 	return fmt.Sprintf("Messages: %s (%s main, %s agents)", render.Count(total), render.Count(parent), render.Count(agents))
 }
 
+// totalField is a footer's total, with the agents' share in a parenthesis
+// worded as statusline words it: "Total: $73.99 (agents $42.86)". A span
+// with no agent spend leaves the parenthesis out, and so does a footer too
+// narrow for it on a line of its own.
+func totalField(total, agents float64, width int) string {
+	field := "Total: " + render.Cost(total)
+	if withAgents := field + " (agents " + render.Cost(agents) + ")"; agents > 0 && lipgloss.Width(withAgents) <= width {
+		return withAgents
+	}
+	return field
+}
+
+// splitMessagesField is messagesField where the footer may be narrow: the
+// main/agents split goes when it can't fit on a line of its own.
+func splitMessagesField(total, parent, agents, width int) string {
+	if field := messagesField(total, parent, agents); lipgloss.Width(field) <= width {
+		return field
+	}
+	return messagesField(total, total, 0)
+}
+
 // footerSep is the field separator used inside footer stat lines.
 func footerSep() string {
 	return styles.BoxVerticalSep

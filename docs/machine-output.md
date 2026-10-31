@@ -194,7 +194,7 @@ Counts describe only what the totals cover. `session_count` is the sessions that
 
 ## Parent/agent split
 
-Agent spend is never hidden. `show` and `summary` both carry the split that adds up to the total they report. `parent_cost`, `agents_cost` and `total_cost` are objects, so compare their `total_cost` fields:
+Agent spend is never hidden. `show`, `summary` and `global` all carry the split that adds up to the total they report. `parent_cost`, `agents_cost` and `total_cost` are objects, so compare their `total_cost` fields:
 
 ```sh
 jq '.parent_cost.total_cost + .agents_cost.total_cost == .total_cost.total_cost'
@@ -202,7 +202,9 @@ jq '.parent_cost.total_cost + .agents_cost.total_cost == .total_cost.total_cost'
 
 The sum can be off in the last float digit, so a script should compare with a tolerance: `((.parent_cost.total_cost + .agents_cost.total_cost - .total_cost.total_cost) | fabs) < 1e-9`. Adding the objects themselves (`.parent_cost + .agents_cost`) merges them in jq instead of adding them. The other costs, `workflows[].cost` and the costs under `insights`, are plain numbers.
 
-On the `summary` aggregate that split spans every session, alongside `agent_count`, `workflow_count`, `has_agents` and `parent_cost_by_model`; the per-agent records themselves live under `summary --details`. (`global` reports project totals only, with no parent/agent split.)
+On the `summary` aggregate that split spans every session, alongside `agent_count`, `workflow_count`, `has_agents` and `parent_cost_by_model`; the per-agent records themselves live under `summary --details`.
+
+`global` carries `parent_cost`, `agents_cost`, `agent_count`, `parent_message_count` and `agent_message_count` at the top level and on each record in `projects[]`, with the same names and meaning as on the `summary` aggregate. A project's split is its `summary` aggregate's, and the top level sums the projects. `global` csv has `parent_cost` and `agents_cost` columns, numbers like `total_cost`, after it.
 
 ## Durations
 
@@ -250,7 +252,7 @@ csv is one flat table per command, so anything nested stays json-only:
 
 - `show` and `summary`: the per-model split (`cost_by_model`, `parent_cost_by_model`), token counts, `insights`, `context`, `agents`, `workflows`, `title`, start and end times, and the window.
 - `summary -d`: the same, except that each row names its costliest `model`, and `--expand-agents` adds agent rows.
-- `global`: the totals row, the per-model split and token counts, and `original_path`. Projects are named by `project` (the display name), `encoded_path` and `full_path`. `full_path` is the same value as `summary`'s and `show`'s `project_path`, so join on it.
+- `global`: the totals row, the per-model split and token counts, `agent_count`, `parent_message_count`, `agent_message_count` and `original_path`. Projects are named by `project` (the display name), `encoded_path` and `full_path`. `full_path` is the same value as `summary`'s and `show`'s `project_path`, so join on it.
 - `list`: `agent_paths`, and `total_cost` is the total only, not the breakdown.
 - `show --messages`: the session summary. The rows carry the session's skip and estimate counters, but not its totals.
 

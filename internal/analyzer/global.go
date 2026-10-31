@@ -105,6 +105,11 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 		global.ProjectCount++
 		global.SessionCount += analysis.SessionCount
 		global.MessageCount += analysis.MessageCount
+		global.ParentCost.Add(analysis.ParentCost)
+		global.AgentsCost.Add(analysis.AgentsCost)
+		global.AgentCount += analysis.AgentCount
+		global.ParentMessageCount += analysis.ParentMessageCount
+		global.AgentMessageCount += analysis.AgentMessageCount
 		global.EstimatedCostMessages += analysis.EstimatedCostMessages
 		global.TotalCost.Add(analysis.TotalCost)
 		global.TotalUsage.Add(analysis.TotalUsage)
@@ -195,6 +200,11 @@ func analyzeProject(project models.ProjectInfo, sessions []models.SessionEntry, 
 		CostByModel:           aggregate.CostByModel,
 		SessionCount:          aggregate.SessionCount,
 		MessageCount:          aggregate.MessageCount,
+		ParentCost:            aggregate.ParentCost,
+		AgentsCost:            aggregate.AgentsCost,
+		AgentCount:            aggregate.AgentCount,
+		ParentMessageCount:    aggregate.ParentMessageCount,
+		AgentMessageCount:     aggregate.AgentMessageCount,
 		SkippedSessions:       aggregate.SkippedSessions,
 		SkippedAgents:         aggregate.SkippedAgents,
 		SkippedLines:          aggregate.SkippedLines,

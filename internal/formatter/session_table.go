@@ -84,11 +84,15 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool, width in
 	sb.WriteString(renderFooterDoubleRule(sectionWidth, noColor))
 	sb.WriteString("\n")
 
-	// Footer stats
-	fields := []string{
-		"Total: " + render.Cost(analysis.TotalCost.TotalCost),
-		messagesField(analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount),
+	// Footer stats. summary's total names the agents' share, which show
+	// already gives as its own subtotal row.
+	total := "Total: " + render.Cost(analysis.TotalCost.TotalCost)
+	messages := messagesField(analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount)
+	if isSummary {
+		total = totalField(analysis.TotalCost.TotalCost, analysis.AgentsCost.TotalCost, sectionWidth)
+		messages = splitMessagesField(analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount, sectionWidth)
 	}
+	fields := []string{total, messages}
 	if isSummary {
 		if sessionCount := analysis.SessionCount; sessionCount > 0 {
 			fields = append(fields, "Sessions: "+render.Count(sessionCount))

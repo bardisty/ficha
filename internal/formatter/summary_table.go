@@ -67,8 +67,8 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 
 	// Footer stats
 	sb.WriteString(footerStats([]string{
-		"Total: " + render.Cost(analysis.TotalCost.TotalCost),
-		messagesField(analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount),
+		totalField(analysis.TotalCost.TotalCost, analysis.AgentsCost.TotalCost, sectionWidth),
+		splitMessagesField(analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount, sectionWidth),
 		"Sessions: " + render.Count(analysis.SessionCount),
 	}, sectionWidth, noColor))
 	sb.WriteString("\n")
@@ -450,10 +450,13 @@ type treeLayout struct {
 
 // renderAgentTreeRows renders a session's agents as a tree under its row,
 // each cost in a costWidth cell starting at costCol, under the session's
-// COST, and each model cut when it would run into it. A workflow run is a
-// node carrying its subtotal, dimmed since the agents under it repeat it,
-// with its agents one level deeper:
+// COST, and each model cut when it would run into it. The main
+// conversation's cost comes first, named as show names it, so the rows add
+// up to the session's. A workflow run is a node carrying its subtotal,
+// dimmed since the agents under it repeat it, with its agents one level
+// deeper:
 //
+//	├─ Main conversation                $2.40
 //	├─ [Aa1b2c3d] Haiku 4.5   12 msgs   $0.4200
 //	└─ workflow: audit (completed)      $1.65
 //	   ├─ [Aw1a2b3c] Opus 4.8 21 msgs   $1.10
@@ -543,6 +546,7 @@ func renderAgentTreeRows(analysis *models.SessionAnalysis, noColor bool, layout 
 		return line(left, agent.TotalCost.TotalCost, styles.SecondaryColor)
 	}
 
+	sb.WriteString(line(indent+dim(connector(false))+"Main conversation", analysis.ParentCost.TotalCost, styles.SecondaryColor))
 	for i, n := range nodes {
 		last := i == len(nodes)-1
 		prefix := indent + dim(connector(last))

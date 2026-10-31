@@ -83,8 +83,8 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 	sb.WriteString("\n")
 
 	sb.WriteString(footerStats([]string{
-		"Total: " + render.Cost(analysis.TotalCost.TotalCost),
-		messagesField(analysis.MessageCount, analysis.MessageCount, 0),
+		totalField(analysis.TotalCost.TotalCost, analysis.AgentsCost.TotalCost, sectionWidth),
+		splitMessagesField(analysis.MessageCount, analysis.ParentMessageCount, analysis.AgentMessageCount, sectionWidth),
 		"Sessions: " + render.Count(analysis.SessionCount),
 		"Projects: " + render.Count(analysis.ProjectCount),
 	}, sectionWidth, noColor))
@@ -475,6 +475,8 @@ func FormatGlobalCSV(analysis *models.GlobalAnalysis) (string, error) {
 		"cache_write_1h_cost",
 		"cache_read_cost",
 		"total_cost",
+		"parent_cost",
+		"agents_cost",
 		"cache_savings",
 		"first_active",
 		"last_active",
@@ -502,6 +504,8 @@ func FormatGlobalCSV(analysis *models.GlobalAnalysis) (string, error) {
 			fmt.Sprintf("%.6f", p.TotalCost.CacheWrite1hCost),
 			fmt.Sprintf("%.6f", p.TotalCost.CacheReadCost),
 			fmt.Sprintf("%.6f", p.TotalCost.TotalCost),
+			fmt.Sprintf("%.6f", p.ParentCost.TotalCost),
+			fmt.Sprintf("%.6f", p.AgentsCost.TotalCost),
 			fmt.Sprintf("%.6f", p.TotalCost.CacheSavings),
 			models.MachineTime(p.FirstActive),
 			models.MachineTime(p.LastActive),
