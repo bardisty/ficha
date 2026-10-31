@@ -22,7 +22,7 @@ import (
 // sortBy orders the breakdown's rows: SortByTime or SortByCost.
 func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []models.SessionResult, storageDir string, noColor bool, expandAgents bool, width int, sortBy string) string {
 	if analysis.Window != nil && analysis.MessageCount == 0 {
-		return emptyWindow(*analysis.Window)
+		return emptyWindow(*analysis.Window, analysis.Project)
 	}
 	var sb strings.Builder
 	sectionWidth := reportWidth(width)

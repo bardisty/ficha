@@ -123,35 +123,48 @@ func spanOrWindow(w *models.TimeWindow, first, last time.Time) string {
 }
 
 // windowLabel renders a --since/--until window: "Sep 21 → now",
-// "Sep 01 → Sep 30". An end at midnight is the exclusive bound of a whole
-// day given as a date, so it shows as the day before, the one typed.
+// "Sep 01 → Sep 30", "up to Sep 30" without a start, or "Oct 31" for one
+// whole day, as span gives a one-day range. An end at midnight is the
+// exclusive bound of a whole day given as a date, so it shows as the day
+// before, the one typed. Only whole days fold: "--since 2h --until 1h"
+// keeps both times.
 func windowLabel(w models.TimeWindow) string {
-	point := func(t time.Time) string {
+	midnight := func(t time.Time) bool {
 		l := t.Local()
-		if l.Hour() == 0 && l.Minute() == 0 && l.Second() == 0 {
+		return l.Hour() == 0 && l.Minute() == 0 && l.Second() == 0 && l.Nanosecond() == 0
+	}
+	point := func(t time.Time) string {
+		if midnight(t) {
 			return render.Date(t, now())
 		}
 		return render.DateTime(t, now())
 	}
-	from, to := "start", "now"
-	if !w.Since.IsZero() {
-		from = point(w.Since)
-	}
+	to := "now"
 	if !w.Until.IsZero() {
 		until := w.Until
-		l := until.Local()
-		if l.Hour() == 0 && l.Minute() == 0 && l.Second() == 0 {
+		if midnight(until) {
 			until = until.AddDate(0, 0, -1)
 		}
 		to = point(until)
 	}
-	return from + " " + styles.Arrow + " " + to
+	switch {
+	case w.Since.IsZero():
+		return "up to " + to
+	case midnight(w.Since) && w.Until.Equal(w.Since.Local().AddDate(0, 0, 1)):
+		return point(w.Since)
+	}
+	return point(w.Since) + " " + styles.Arrow + " " + to
 }
 
 // emptyWindow is the one line a windowed report prints when nothing falls
-// inside the window, instead of a report of empty sections.
-func emptyWindow(w models.TimeWindow) string {
-	return "No messages in " + windowLabel(w) + "."
+// inside the window, instead of a report of empty sections. It names the
+// project the header would have, or, for global, says it looked at every
+// project.
+func emptyWindow(w models.TimeWindow, project string) string {
+	if project = models.StripControl(project); project == "" {
+		project = "any project"
+	}
+	return "No messages in " + project + ": " + windowLabel(w) + "."
 }
 
 // span renders a first-to-last range as dates, "Sep 08 → Sep 28", or one

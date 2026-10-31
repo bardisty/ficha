@@ -440,7 +440,7 @@ func TestSessionListEmptyWindow(t *testing.T) {
 	opts := goldenListOptions
 	opts.Window = &models.TimeWindow{Since: time.Date(2026, 1, 8, 0, 0, 0, 0, time.Local)}
 	got := FormatSessionListTable(goldenListResults()[2:], true, opts)
-	if want := emptyWindow(*opts.Window); got != want {
+	if want := emptyWindow(*opts.Window, opts.Project); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }

@@ -42,6 +42,12 @@ func (cfg *config) timeWindow(now time.Time) (models.TimeWindow, error) {
 			return w, usageErrorf("invalid --until %q: %w", cfg.until, err)
 		}
 	}
+	// A --since still to come is a typo'd year or month far more often than
+	// a choice, and its empty report would read as nothing spent. An
+	// --until to come is a fair way to say "so far".
+	if w.Since.After(now) {
+		return w, usageErrorf("--since %s is after now", cfg.since)
+	}
 	if !w.Since.IsZero() && !w.Until.IsZero() && !w.Since.Before(w.Until) {
 		return w, usageErrorf("--since %s is not before --until %s", cfg.since, cfg.until)
 	}
