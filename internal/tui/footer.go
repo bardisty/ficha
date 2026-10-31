@@ -265,7 +265,7 @@ func (m Model) statsSegments(label, agent bool) []string {
 	}
 	segs = append(segs, style(msgStyle, msgs))
 
-	return append(segs, style(styles.FooterStyle, render.Duration(a.Duration.Duration())))
+	return append(segs, style(styles.FooterStyle, render.Span(a.Duration.Duration())))
 }
 
 // warningRows returns the accounting warnings fitted to width in at most

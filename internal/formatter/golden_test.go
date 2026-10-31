@@ -20,14 +20,16 @@ var update = flag.Bool("update", false, "rewrite .golden files with current rend
 
 // TestMain pins the process timezone and the reports' clock: dates render
 // in local time, and carry their year only when it isn't the current one, so
-// goldens would otherwise depend on the machine's TZ and on the date.
+// goldens would otherwise depend on the machine's TZ and on the date. The
+// clock is late on the day the golden sessions ran, so their insight times
+// are today's and print bare; the multi-day goldens move it themselves.
 //
 // The palette is dark unless a test calls styles.SetDark(false), and colored
 // output always carries its xterm-256 escapes. Nothing here looks at a
 // terminal: cmd does, and cuts the escapes down to what stdout takes.
 func TestMain(m *testing.M) {
 	time.Local = time.UTC
-	now = func() time.Time { return time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC) }
+	now = func() time.Time { return time.Date(2026, 1, 15, 23, 0, 0, 0, time.UTC) }
 	os.Exit(m.Run())
 }
 
@@ -350,6 +352,28 @@ func TestGoldenSessionTableShowWindowUnknown(t *testing.T) {
 	checkGolden(t, "session_table_show_window_unknown_w45", FormatSessionTable(a, true, 45))
 }
 
+// multiDayShowAnalysis is goldenShowAnalysis picked up eleven days after it
+// began: its first message from then, its peak from yesterday and its last
+// from today.
+func multiDayShowAnalysis() *models.SessionAnalysis {
+	a := goldenShowAnalysis()
+	a.StartTime = goldenTime(10, 0, 0).AddDate(0, 0, -11)
+	a.Duration = models.Duration(a.EndTime.Sub(a.StartTime))
+	a.Insights.FirstMessage.Timestamp = goldenTime(10, 0, 5).AddDate(0, 0, -11)
+	a.Insights.HighestCost.Timestamp = goldenTime(10, 42, 13).AddDate(0, 0, -1)
+	return a
+}
+
+// A session that spans days reads its length in days and hours, and its
+// insight times carry the day they're from: the weekday for yesterday, the
+// date too for eleven days back, nothing for today. At 45 columns First and
+// Last drop their detail together, and First's dated time, too wide beside
+// its cost, takes its short form.
+func TestGoldenSessionTableShowMultiDay(t *testing.T) {
+	checkGolden(t, "session_table_show_multiday", FormatSessionTable(multiDayShowAnalysis(), true, 0))
+	checkGolden(t, "session_table_show_multiday_w45", FormatSessionTable(multiDayShowAnalysis(), true, 45))
+}
+
 func TestGoldenSessionTableSummary(t *testing.T) {
 	checkGolden(t, "session_table_summary", FormatSessionTable(goldenSummaryAnalysis(), true, 0))
 }
@@ -537,6 +561,14 @@ func TestSessionListBidiOnlyProjectTakesNoRoom(t *testing.T) {
 
 func TestGoldenSessionListColor(t *testing.T) {
 	checkGolden(t, "session_list_color", FormatSessionListTable(goldenListResults(), false, goldenListOptions))
+}
+
+// Sessions of a day or more read LENGTH in days and hours.
+func TestGoldenSessionListMultiDay(t *testing.T) {
+	results := goldenListResults()[:2]
+	results[0].Analysis.Duration = models.Duration(27*time.Hour + 6*time.Minute)
+	results[1].Analysis.Duration = models.Duration(264*time.Hour + 9*time.Minute)
+	checkGolden(t, "session_list_multiday", FormatSessionListTable(results, true, goldenListOptions))
 }
 
 // forkListResults is goldenListResults' priced sessions beside two copies:

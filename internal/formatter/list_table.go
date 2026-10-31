@@ -78,7 +78,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 	listDurationWidth := len("LENGTH")
 	for _, r := range results {
 		if r.Analysis != nil && r.Analysis.MessageCount > 0 {
-			listDurationWidth = max(listDurationWidth, len(render.Duration(r.Analysis.Duration.Duration())))
+			listDurationWidth = max(listDurationWidth, len(render.Span(r.Analysis.Duration.Duration())))
 		}
 	}
 
@@ -220,7 +220,7 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 			continue
 		}
 
-		duration := fmt.Sprintf("%*s", listDurationWidth, render.Duration(a.Duration.Duration()))
+		duration := fmt.Sprintf("%*s", listDurationWidth, render.Span(a.Duration.Duration()))
 		modelName := parentPrimaryModel(a)
 		model := fmt.Sprintf("%-*s", listModelWidth, render.ClampModel(modelName, listModelWidth))
 		agents := fmt.Sprintf("%*s", listAgentsWidth, "-")

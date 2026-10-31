@@ -144,9 +144,8 @@ func groupThousands(digits string) string {
 	return digits
 }
 
-// Duration formats a span with hours as the largest unit (no day rollup), for
-// single-session and per-message durations. Use DurationLong for aggregate
-// spans that can reach days.
+// Duration formats a span with hours as the largest unit (no day rollup).
+// Span rolls a session's length up to days.
 func Duration(d time.Duration) string {
 	if d < time.Minute {
 		return fmt.Sprintf("%ds", int(d.Seconds()))
@@ -172,6 +171,16 @@ func DurationLong(d time.Duration) string {
 	}
 	days := int(d.Hours() / 24)
 	return fmt.Sprintf("%dd", days)
+}
+
+// Span is Duration for one session, rolled up to days and hours from 24h
+// on ("11d 0h"), so a session picked up days later doesn't read "264h 9m".
+// Under a day it's Duration's form.
+func Span(d time.Duration) string {
+	if d < 24*time.Hour {
+		return Duration(d)
+	}
+	return fmt.Sprintf("%dd %dh", int(d.Hours()/24), int(d.Hours())%24)
 }
 
 // Ago renders how long before now t was, coarsely: "just now", "5m ago",
@@ -284,6 +293,57 @@ func WeekdayDateClock(t time.Time) string {
 		return Clock(t)
 	}
 	return t.Local().Format("Mon 02 Jan 15:04:05")
+}
+
+// ClockOn is t's time as of now, in the form breakdown's rows take when a
+// session spans days: the bare Clock for today, WeekdayClock for an earlier
+// day in the last six, and WeekdayDateClock before that, where a weekday
+// could name a day this week too. A date from another year than now's
+// carries the year, as DateTime's does. A t later than now counts as today,
+// so a clock a little behind the transcript's doesn't date a live message.
+func ClockOn(t, now time.Time) string {
+	if t.IsZero() {
+		return Clock(t)
+	}
+	day, today := localDay(t), localDay(now)
+	switch {
+	case !day.Before(today):
+		return Clock(t)
+	case !day.Before(today.AddDate(0, 0, -5)):
+		return WeekdayClock(t)
+	case day.Year() != today.Year():
+		return t.Local().Format("Mon 02 Jan 2006 15:04:05")
+	default:
+		return WeekdayDateClock(t)
+	}
+}
+
+// ClockOnShort is ClockOn for a row with little room: a dated time drops its
+// seconds, and the weekday before a date ("Fri 08:29", "20 Oct 06:09"),
+// the short forms breakdown's TIME column takes. Today's time is Clock in
+// both, so it never needs the short form.
+func ClockOnShort(t, now time.Time) string {
+	if t.IsZero() {
+		return Clock(t)
+	}
+	day, today := localDay(t), localDay(now)
+	switch {
+	case !day.Before(today):
+		return Clock(t)
+	case !day.Before(today.AddDate(0, 0, -5)):
+		return WeekdayClockShort(t)
+	case day.Year() != today.Year():
+		return t.Local().Format("02 Jan 2006 15:04")
+	default:
+		return DateClockShort(t)
+	}
+}
+
+// localDay is t's local date as a UTC midnight. Comparing dates that way
+// works in a zone that skips midnight, which has no local one.
+func localDay(t time.Time) time.Time {
+	y, m, d := t.Local().Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 // DayMarker labels a local calendar day ("Tue 29 Sep"), for the divider

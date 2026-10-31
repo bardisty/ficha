@@ -1288,3 +1288,76 @@ func TestWorkflowLabelCutsByWidth(t *testing.T) {
 		t.Errorf("a cut after a space: %q, want %q", got, want)
 	}
 }
+
+// ClockOn dates a time only when it's from an earlier local day than now:
+// the weekday within six days, the date too before that, as breakdown's
+// rows do. ClockOnShort drops the seconds of a dated time, and its weekday
+// before a date.
+func TestClockOn(t *testing.T) {
+	orig := time.Local
+	time.Local = time.FixedZone("UTC+1", 3600)
+	t.Cleanup(func() { time.Local = orig })
+	// Saturday 31 Oct, 08:44 local.
+	now := time.Date(2026, 10, 31, 7, 44, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		t    time.Time
+		want string
+	}{
+		{"earlier today", time.Date(2026, 10, 31, 6, 9, 32, 0, time.UTC), "07:09:32"},
+		// 23:30 UTC on the 30th is 00:30 local on the 31st: today.
+		{"today by the local date", time.Date(2026, 10, 30, 23, 30, 0, 0, time.UTC), "00:30:00"},
+		{"later than now", time.Date(2026, 10, 31, 9, 0, 0, 0, time.UTC), "10:00:00"},
+		{"yesterday", time.Date(2026, 10, 30, 7, 29, 56, 0, time.UTC), "Fri 08:29:56"},
+		{"five days back", time.Date(2026, 10, 26, 7, 0, 0, 0, time.UTC), "Mon 08:00:00"},
+		{"six days back", time.Date(2026, 10, 25, 7, 0, 0, 0, time.UTC), "Sun 25 Oct 08:00:00"},
+		{"eleven days back", time.Date(2026, 10, 20, 5, 9, 32, 0, time.UTC), "Tue 20 Oct 06:09:32"},
+		{"last year", time.Date(2025, 10, 20, 5, 9, 32, 0, time.UTC), "Mon 20 Oct 2025 06:09:32"},
+		{"no timestamp", time.Time{}, Clock(time.Time{})},
+	}
+	for _, tt := range tests {
+		if got := ClockOn(tt.t, now); got != tt.want {
+			t.Errorf("%s: ClockOn = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+
+	short := map[string]string{
+		"earlier today":           "07:09:32",
+		"today by the local date": "00:30:00",
+		"later than now":          "10:00:00",
+		"yesterday":               "Fri 08:29",
+		"five days back":          "Mon 08:00",
+		"six days back":           "25 Oct 08:00",
+		"eleven days back":        "20 Oct 06:09",
+		"last year":               "20 Oct 2025 06:09",
+		"no timestamp":            Clock(time.Time{}),
+	}
+	for _, tt := range tests {
+		if got := ClockOnShort(tt.t, now); got != short[tt.name] {
+			t.Errorf("%s: ClockOnShort = %q, want %q", tt.name, got, short[tt.name])
+		}
+	}
+}
+
+// Span reads a session's length as Duration does under a day, and in days
+// and hours from 24h on.
+func TestSpan(t *testing.T) {
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{45 * time.Second, "45s"},
+		{9*time.Minute + 45*time.Second, "9m 45s"},
+		{3*time.Hour + 6*time.Minute, "3h 6m"},
+		{23*time.Hour + 59*time.Minute, "23h 59m"},
+		{24 * time.Hour, "1d 0h"},
+		{27*time.Hour + 6*time.Minute, "1d 3h"},
+		{264*time.Hour + 9*time.Minute, "11d 0h"},
+		{100*24*time.Hour + 23*time.Hour + 59*time.Minute, "100d 23h"},
+	}
+	for _, tt := range tests {
+		if got := Span(tt.d); got != tt.want {
+			t.Errorf("Span(%v) = %q, want %q", tt.d, got, tt.want)
+		}
+	}
+}

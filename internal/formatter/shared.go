@@ -108,7 +108,7 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 	}
 	return renderPanel(analysis.Project, []string{
 		"Session: " + render.TruncateID(analysis.SessionID, 8),
-		"Duration: " + render.Duration(analysis.Duration.Duration()),
+		"Duration: " + render.Span(analysis.Duration.Duration()),
 	}, []int{1, panelLead}, width, noColor)
 }
 
