@@ -1134,6 +1134,46 @@ func TestAnalyzeMultipleSessions_ForkAttribution_OriginalMtimeLater(t *testing.T
 	}
 }
 
+// Without sessions-index.json an entry's Created is its file's mtime. A
+// fork ties with its original on the earliest message, so resuming the
+// original after forking, which pushes its mtime past the fork's, hands the
+// fork the shared history: the original keeps only what it added since.
+// This pins that limit of the tie-break. The totals still count each reply
+// once, and TranscriptMessages still counts the whole file.
+func TestAnalyzeMultipleSessions_ForkAttribution_NoIndexFollowsMtime(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	originalPath := filepath.Join(tmpDir, "original.jsonl")
+	writeJSONLFile(t, originalPath, []string{forkMsg1, forkMsg2, forkMsg3})
+	forkPath := filepath.Join(tmpDir, "fork.jsonl")
+	writeJSONLFile(t, forkPath, []string{forkMsg1, forkMsg2})
+
+	forkTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	resumed := time.Date(2024, 1, 16, 10, 0, 0, 0, time.UTC)
+	entries := []models.SessionEntry{
+		{SessionID: "original", FullPath: originalPath, Created: resumed, Modified: resumed},
+		{SessionID: "fork", FullPath: forkPath, Created: forkTime, Modified: forkTime},
+	}
+
+	aggregate, results, err := AnalyzeMultipleSessions(entries)
+	if err != nil {
+		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
+	}
+	if aggregate.MessageCount != 3 || !almostEqual(aggregate.TotalCost.TotalCost, 0.036, 0.0001) {
+		t.Errorf("aggregate: got %d messages, $%f; want 3, $0.036", aggregate.MessageCount, aggregate.TotalCost.TotalCost)
+	}
+	original, fork := results[0].Analysis, results[1].Analysis
+	if fork.MessageCount != 2 || !almostEqual(fork.TotalCost.TotalCost, 0.015, 0.0001) {
+		t.Errorf("fork: got %d messages, $%f; want the shared 2, $0.015", fork.MessageCount, fork.TotalCost.TotalCost)
+	}
+	if original.MessageCount != 1 || !almostEqual(original.TotalCost.TotalCost, 0.021, 0.0001) {
+		t.Errorf("original: got %d messages, $%f; want its own 1, $0.021", original.MessageCount, original.TotalCost.TotalCost)
+	}
+	if original.TranscriptMessages != 3 || fork.TranscriptMessages != 2 {
+		t.Errorf("TranscriptMessages: original %d, fork %d; want 3 and 2", original.TranscriptMessages, fork.TranscriptMessages)
+	}
+}
+
 // Index-sourced entries can carry zero Modified times. Ordering must come
 // from the message timestamps — deterministic, no panic, and no arbitrary
 // grab of the shared history by whichever entry sorted first.

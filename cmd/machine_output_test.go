@@ -405,6 +405,65 @@ func TestE2EListCarriesTheTableFields(t *testing.T) {
 	}
 }
 
+// TestE2EListNamesACopy: a fork that added nothing holds only replies
+// alpha already has. list counts them under alpha, so the fork has nothing
+// to price, and its row says it's a copy rather than a session with no
+// replies yet. json keeps message_count as show's, copies included, beside
+// a total_cost of zero.
+func TestE2EListNamesACopy(t *testing.T) {
+	root := setupE2EFixture(t)
+	dir := filepath.Join(root, "projects", e2eProjDir)
+	alpha, err := os.ReadFile(filepath.Join(dir, e2eAlphaID+".jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const forkID = "ffffffff-1111-2222-3333-444444444444"
+	forkPath := filepath.Join(dir, forkID+".jsonl")
+	if err := os.WriteFile(forkPath, alpha, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The fork's file is the newer one, so alpha keeps the shared replies.
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(forkPath, later, later); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := executeCLI(t, "list", projFlag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := ""
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, forkID[:8]) {
+			row = line
+		}
+	}
+	if !strings.Contains(row, "(copy)") || strings.Contains(out, "(no replies yet)") {
+		t.Errorf("the fork's row should say it's a copy:\n%s", out)
+	}
+
+	type listRecord struct {
+		SessionID    string `json:"session_id"`
+		MessageCount int    `json:"message_count"`
+		TotalCost    struct {
+			TotalCost float64 `json:"total_cost"`
+		} `json:"total_cost"`
+	}
+	var list []listRecord
+	jsonOut, err := executeCLI(t, "list", projFlag, "-f", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustJSON(t, jsonOut, &list)
+	i := slices.IndexFunc(list, func(r listRecord) bool { return r.SessionID == forkID })
+	if i < 0 {
+		t.Fatalf("the fork is missing from list json:\n%s", jsonOut)
+	}
+	if list[i].MessageCount != 2 || list[i].TotalCost.TotalCost != 0 {
+		t.Errorf("fork: message_count %d, total_cost %v; want show's 2 and 0", list[i].MessageCount, list[i].TotalCost.TotalCost)
+	}
+}
+
 // TestE2EListKeepsUnreadableSessions: the table lists a session that failed
 // to parse as unreadable, and json and csv keep it too, with its skip
 // counter and without the fields only a parse can give.

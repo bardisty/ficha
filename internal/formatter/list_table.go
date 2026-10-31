@@ -203,9 +203,9 @@ func FormatSessionListTable(results []models.SessionResult, noColor bool, opts L
 		when := fmt.Sprintf("%-*s", listWhenWidth, render.Ago(r.LastActive(), opts.Now))
 		a := r.Analysis
 
-		// A session with no replies yet, or one that couldn't be read, has
-		// nothing to price. Its row stays, dimmed, so the list still accounts
-		// for every transcript.
+		// A session with no replies yet, a copy of another session's, or one
+		// that couldn't be read has nothing to price. Its row stays, dimmed,
+		// so the list still accounts for every transcript.
 		if a == nil || a.MessageCount == 0 {
 			row := join(id, when,
 				fmt.Sprintf("%*s", listDurationWidth, "-"),
@@ -288,13 +288,22 @@ func shortSessionIDs(results []models.SessionResult) []string {
 
 // rowTitle is what a row prints in TITLE before it's cut: the session's
 // title, or a placeholder for a session with nothing to price.
+//
+// A session whose transcript holds replies but none of its own is a copy:
+// a fork repeats the replies it was forked from, and list counts each reply
+// once, under the session that has it first. Its row says so, since show
+// prices the same file on its own and finds a cost.
 func rowTitle(r models.SessionResult) string {
 	a := r.Analysis
 	if a == nil {
 		return nestedTitle(r, "(unreadable)")
 	}
 	title := models.OneLine(a.Title)
-	if title == "" && a.MessageCount == 0 {
+	switch {
+	case a.MessageCount > 0:
+	case a.TranscriptMessages > 0:
+		title = strings.TrimSpace("(copy) " + title)
+	case title == "":
 		title = "(no replies yet)"
 	}
 	return nestedTitle(r, title)
