@@ -260,15 +260,9 @@ func findSession(cfg *config, args []string) (*models.SessionEntry, string, bool
 		return session, projectDir, true, nil
 	}
 
-	// Get latest session (sort by modified time, SessionID tiebreaker)
-	sort.SliceStable(sessions, func(i, j int) bool {
-		if sessions[i].Modified.Equal(sessions[j].Modified) {
-			return sessions[i].SessionID < sessions[j].SessionID
-		}
-		return sessions[i].Modified.After(sessions[j].Modified)
-	})
-	// Note: len(sessions) == 0 is already handled by loadProjectSessionsWithDir
-	return &sessions[0], projectDir, false, nil
+	// len(sessions) == 0 is already handled by loadProjectSessionsWithDir
+	sortSessionsByModified(sessions)
+	return &sessions[latestSession(sessions)], projectDir, false, nil
 }
 
 // findSessionByPartialID finds a session by partial ID match, ignoring case
@@ -304,10 +298,10 @@ func findSessionByPartialID(sessions []models.SessionEntry, partialID string) (*
 		return &matches[0], nil
 	}
 
-	// Multiple matches: list the newest, with what `list` would say about
+	// Multiple matches: list the latest, with what `list` would say about
 	// each, so the right one can be picked without running it.
 	const displayLimit = 10
-	sortSessionsByModified(matches)
+	sortSessionsByLastActive(matches)
 	shown := matches[:min(len(matches), displayLimit)]
 	descs := describeSessions(shown, time.Now())
 	var sb strings.Builder
