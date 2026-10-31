@@ -158,6 +158,14 @@ type BreakdownModel struct {
 	seen            sessionsSeen    // Other sessions' last writes, for what's news
 	hint            *sessionHint    // Another session's activity; n switches to it
 	keysOpen        bool            // The ? key list covers the frame
+	// prevView is how the reader left the previous session, for - to bring
+	// it back; restore is a view - is bringing back, applied by the first
+	// load of its session.
+	prevView *leftView
+	restore  *leftView
+	// lastCreated is the last session seen start, or the first; see
+	// isNewestSession.
+	lastCreated string
 
 	// Last subagent-tree fingerprint; the poll reloads when it changes
 	// (fsnotify never sees subagent/workflow writes — see subagentPollCmd)
@@ -207,6 +215,7 @@ func NewBreakdownModel(sessionPath, sessionID string, noColor bool, projectDir s
 
 	m := BreakdownModel{
 		sessionPath: sessionPath,
+		lastCreated: sessionPath,
 		sessionID:   sessionID,
 		noColor:     noColor,
 		loading:     true,
@@ -311,10 +320,17 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toggleSort()
 
 		case "-":
-			// Back to the previous session, as in watch; it pins there too.
+			// Back to the previous session as the reader left it. As in
+			// watch, an older session pins, and the newest gets back the
+			// follow mode it was left in.
 			if m.prevSessionPath != "" {
-				m.followMode = false
-				return m.switchTo(m.prevSessionPath, m.prevSessionID, false)
+				view := m.prevView
+				follow := view != nil && view.follow && isNewestSession(m.lastCreated, m.prevSessionPath)
+				next, cmd := m.switchTo(m.prevSessionPath, m.prevSessionID, false)
+				back := next.(BreakdownModel)
+				back.followMode = follow
+				back.restore = view
+				return back, cmd
 			}
 
 		case "n":
@@ -445,6 +461,12 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.refreshViewport()
 		m.keepSortAnchor(anchor)
+		if view := m.restore; view != nil {
+			m.restore = nil
+			if view.path == m.sessionPath {
+				m.bringBack(*view)
+			}
+		}
 		// Re-arm the file watcher only when no waiter is in flight: this reload
 		// may have been poll-triggered, in which case the file-change waiter is
 		// still blocked on the watcher
@@ -555,6 +577,9 @@ func (m BreakdownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(load, m.spinnerCmd())
 
 	case sessionActivityMsg:
+		if msg.created {
+			m.lastCreated = msg.path
+		}
 		outcome, hint := onSessionActivity(msg, m.sessionID, m.waiting(), m.followMode, m.hint, m.clock())
 		if outcome == activitySwitch {
 			return m.switchTo(msg.path, msg.id, true)
@@ -625,7 +650,18 @@ func (m BreakdownModel) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd
 	}
 	m.switched = &switchNotice{auto: auto, prevTotal: prevTotal, hadTotal: len(m.messages) > 0}
 	m.seen.left(m.sessionID, m.lastActivity, m.fileWrite, m.clock())
-	m.prevSessionID, m.prevSessionPath = m.sessionID, m.sessionPath
+	// A waiting view's first session is the one following is on.
+	if m.waiting() {
+		m.lastCreated = path
+	}
+	// A view - is still bringing back hasn't been drawn yet: it's the one
+	// the reader left this session in.
+	left := m.leaving()
+	if m.restore != nil {
+		left = *m.restore
+	}
+	m.prevSessionID, m.prevSessionPath, m.prevView = m.sessionID, m.sessionPath, &left
+	m.restore = nil
 	m.sessionID = id
 	m.sessionPath = path
 	if m.hint != nil && m.hint.id == id {

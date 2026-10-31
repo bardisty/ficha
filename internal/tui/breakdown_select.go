@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/bardisty/ficha/internal/models"
 	"github.com/bardisty/ficha/internal/render"
 	"github.com/bardisty/ficha/internal/styles"
 )
@@ -210,4 +212,112 @@ func (m BreakdownModel) selectionText() string {
 		}
 	}
 	return joinSegments([]string{prefix, "p next"}, sep, width)
+}
+
+// leftView is how the reader left a session: enough for - to bring it back
+// as it was, by row rather than by line, since the session may have grown
+// and its day dividers moved while the reader was away.
+type leftView struct {
+	path       string
+	follow     bool // following new sessions
+	autoScroll bool // on the newest row
+	top        rowMark
+	sorted     bool
+	timeTop    rowMark // while sorted, the time-order line s goes back to
+	timeFollow bool
+	selected   string // p's selection, as selectedKey
+	pausedAt   int    // rows when following stopped: any past it are new
+}
+
+// rowMark is a table line held by the row on it. divider marks the day
+// divider above the row rather than the row.
+type rowMark struct {
+	key     string // breakdownMsgKey
+	index   int    // the row's number, for when its key is gone
+	divider bool
+}
+
+// leaving is the view as the reader leaves it.
+func (m BreakdownModel) leaving() leftView {
+	v := leftView{
+		path: m.sessionPath, follow: m.followMode, autoScroll: m.autoScroll,
+		sorted: m.sortByCost, timeFollow: m.timeFollow, selected: m.selectedKey, pausedAt: m.pausedAt,
+	}
+	if m.autoScroll {
+		v.pausedAt = len(m.messages)
+	}
+	v.top = m.markLine(m.lineRows, m.linePos, m.chosenY)
+	if m.sortByCost {
+		timeOrder := m
+		timeOrder.sortByCost = false
+		rows, pos := timeOrder.tableLines()
+		v.timeTop = m.markLine(rows, pos, m.timeYOffset)
+	}
+	return v
+}
+
+// markLine marks line y of a layout from tableLines, or the zero mark when
+// y is past it.
+func (m BreakdownModel) markLine(lineRows, linePos []int, y int) rowMark {
+	if y < 0 || y >= len(lineRows) {
+		return rowMark{}
+	}
+	msg := m.messages[linePos[y]]
+	return rowMark{key: breakdownMsgKey(msg), index: msg.Index, divider: lineRows[y] == 0}
+}
+
+// lineOf finds mark in a layout from tableLines. A row whose key is gone,
+// the transcript having been rewritten, gives way to the row now under its
+// number, or the last row.
+func (m BreakdownModel) lineOf(lineRows, linePos []int, mark rowMark) int {
+	if mark.key == "" || len(lineRows) == 0 {
+		return 0
+	}
+	byIndex := -1
+	for line, index := range lineRows {
+		if index == 0 {
+			continue
+		}
+		if breakdownMsgKey(m.messages[linePos[line]]) == mark.key {
+			if mark.divider && line > 0 && lineRows[line-1] == 0 {
+				return line - 1
+			}
+			return line
+		}
+		if index == mark.index {
+			byIndex = line
+		}
+	}
+	if byIndex < 0 {
+		return len(lineRows) - 1
+	}
+	return byIndex
+}
+
+// bringBack applies a view - went back to, once its session's first load
+// has landed: the sort, p's selection if its row is still there, and the
+// first row on screen, or the newest row if the reader was on it. Rows
+// that arrived meanwhile count as new, with those already new when the
+// reader left, as they would had the reader stayed scrolled up.
+func (m *BreakdownModel) bringBack(v leftView) {
+	if !m.ready || len(m.messages) == 0 {
+		return
+	}
+	if slices.ContainsFunc(m.messages, func(msg models.BreakdownMessage) bool { return breakdownMsgKey(msg) == v.selected }) {
+		m.selectedKey = v.selected
+	}
+	if v.autoScroll && !v.sorted {
+		return
+	}
+	m.setFollow(false)
+	m.pausedAt = min(v.pausedAt, len(m.messages))
+	if v.sorted {
+		timeOrder := *m
+		rows, pos := timeOrder.tableLines()
+		m.timeYOffset, m.timeFollow = m.lineOf(rows, pos, v.timeTop), v.timeFollow
+		m.sortByCost = true
+		m.relayout()
+		m.refreshViewport()
+	}
+	m.returnTo(m.lineOf(m.lineRows, m.linePos, v.top))
 }

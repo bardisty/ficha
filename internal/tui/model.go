@@ -110,6 +110,8 @@ type Model struct {
 	followMode      bool            // Whether to auto-follow new sessions
 	prevSessionID   string          // Session watched before the last switch
 	prevSessionPath string          // Its file, for the go-back key (-)
+	prevFollow      bool            // followMode as that session was left
+	lastCreated     string          // The last session seen start, or the first; see isNewestSession
 	sessionWatcher  *SessionWatcher // Watches for other sessions' files
 	switched        *switchNotice   // Shown until a key or a newer hint
 	seen            sessionsSeen    // Other sessions' last writes, for what's news
@@ -195,6 +197,7 @@ func NewModel(sessionPath, sessionID string, noColor bool, projectDir string, fo
 	closeOnce := &sync.Once{}
 	m := Model{
 		sessionPath: sessionPath,
+		lastCreated: sessionPath,
 		sessionID:   sessionID,
 		noColor:     noColor,
 		loading:     true,
@@ -302,10 +305,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "-":
 			// Back to the previous session, like cd -. breakdown has the same
 			// key, and p there means peak, so neither view uses p for this.
-			// Going back is a deliberate choice of session, so it pins.
+			// Going back to an older session is a deliberate choice of it,
+			// so it pins. Back on the newest, which following would be on,
+			// the mode is what it was when the reader left.
 			if m.prevSessionPath != "" {
-				m.followMode = false
-				return m.switchTo(m.prevSessionPath, m.prevSessionID, false)
+				follow := m.prevFollow && isNewestSession(m.lastCreated, m.prevSessionPath)
+				next, cmd := m.switchTo(m.prevSessionPath, m.prevSessionID, false)
+				back := next.(Model)
+				back.followMode = follow
+				return back, cmd
 			}
 
 		case "n":
@@ -556,6 +564,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(load, m.spinnerCmd())
 
 	case sessionActivityMsg:
+		if msg.created {
+			m.lastCreated = msg.path
+		}
 		outcome, hint := onSessionActivity(msg, m.sessionID, m.waiting(), m.followMode, m.hint, m.clock())
 		if outcome == activitySwitch {
 			return m.switchTo(msg.path, msg.id, true)
@@ -613,7 +624,12 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	}
 	m.switched = notice
 	m.seen.left(m.sessionID, m.lastActivity, m.fileWrite, m.clock())
+	// A waiting view's first session is the one following is on.
+	if m.waiting() {
+		m.lastCreated = path
+	}
 	m.prevSessionID, m.prevSessionPath = m.sessionID, m.sessionPath
+	m.prevFollow = m.followMode
 	m.sessionID, m.sessionPath = id, path
 	if m.hint != nil && m.hint.id == id {
 		m.hint = nil
