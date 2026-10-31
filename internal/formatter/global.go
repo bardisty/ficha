@@ -337,7 +337,7 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 		// Truncate project name from the left if needed, then pad by
 		// display width: fmt's %-Ns counts runes, so a wide (CJK/emoji) name
 		// would under-pad and shift every column to its right.
-		name := truncateLeft(models.StripControl(p.DisplayName), layout.project)
+		name := fitProjectName(models.StripControl(p.DisplayName), layout.project)
 		name += strings.Repeat(" ", layout.project-lipgloss.Width(name))
 
 		rank := fmt.Sprintf("%*d", rankWidth, i+1)
@@ -382,6 +382,32 @@ func writeProjectRows(sb *strings.Builder, analysis *models.GlobalAnalysis, noCo
 	}
 
 	sb.WriteString(rule + "\n")
+}
+
+// worktreeSep is where claude --worktree puts a worktree under its repo.
+// Claude Code records each worktree as a project of its own.
+const worktreeSep = "/.claude/worktrees/"
+
+// fitProjectName fits a project name into maxWidth columns. A worktree's
+// name gives up its shared .claude/worktrees/ segment first, then the left
+// of its repo's path, so two repos' worktrees of the same name stay apart
+// ("…payments-service/…/fix-rounding"). Any other name is cut by
+// truncateLeft. Names come from recorded paths with forward slashes; one
+// built from an encoded directory name has no slash and takes the plain cut.
+func fitProjectName(s string, maxWidth int) string {
+	i := strings.LastIndex(s, worktreeSep)
+	if i < 0 || lipgloss.Width(s) <= maxWidth {
+		return truncateLeft(s, maxWidth)
+	}
+	ell := styles.Ellipsis
+	repo, tail := s[:i], "/"+ell+"/"+s[i+len(worktreeSep):]
+	// Two letters of the repo are enough to tell apart same-named worktrees
+	// of different repos on a narrow terminal ("…ce/…/fix-rounding").
+	budget := maxWidth - lipgloss.Width(tail)
+	if budget >= lipgloss.Width(ell)+2 || budget >= lipgloss.Width(repo) {
+		return truncateLeft(repo, budget) + tail
+	}
+	return truncateLeft(ell+"/"+s[i+len(worktreeSep):], maxWidth)
 }
 
 // truncateLeft fits a project name into maxWidth display columns by cutting

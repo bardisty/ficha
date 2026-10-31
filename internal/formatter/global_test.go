@@ -221,6 +221,87 @@ func TestTruncateLeft(t *testing.T) {
 	})
 }
 
+// A worktree's name spends its cut on the shared .claude/worktrees/ segment
+// and the left of its repo's path, keeping the worktree's name whole.
+func TestFitProjectName(t *testing.T) {
+	const (
+		billing  = "~/source/billing-dashboard/.claude/worktrees/fix-rounding"
+		payments = "~/source/payments-service/.claude/worktrees/fix-rounding"
+	)
+	tests := []struct {
+		name  string
+		width int
+		want  string
+	}{
+		{billing, 100, billing},
+		{billing, 34, "…/billing-dashboard/…/fix-rounding"},
+		{billing, 31, "…lling-dashboard/…/fix-rounding"},
+		{payments, 31, "…ayments-service/…/fix-rounding"},
+		{"~/source/payments-service/.claude/worktrees/grpc-client", 31, "…payments-service/…/grpc-client"},
+		{"~/work/webapp/.claude/worktrees/feat-x", 31, "~/work/webapp/…/feat-x"},
+		// Two letters of the repo still tell same-named worktrees apart.
+		{payments, 18, "…ce/…/fix-rounding"},
+		{billing, 18, "…rd/…/fix-rounding"},
+		// At the narrowest column the repo has no room left, and the
+		// worktree's name stays whole.
+		{payments, minProjectWidth, "…/fix-rounding"},
+		{"~/src/app/.claude/worktrees/a-much-longer-worktree-name", minProjectWidth, "…r-worktree-name"},
+		{"~/a/.claude/worktrees/feature-login", 20, "~/a/…/feature-login"},
+		// A worktree of a worktree keeps its own name and cuts the rest.
+		{"~/r/.claude/worktrees/x/.claude/worktrees/y", 16, "…worktrees/x/…/y"},
+		// Without the segment, the cut is truncateLeft's.
+		{"~/source/github.com/acme/billing-service/worktrees/fix-invoice-rounding", 45,
+			truncateLeft("~/source/github.com/acme/billing-service/worktrees/fix-invoice-rounding", 45)},
+		{"source-billing-dashboard--claude-worktrees-fix-rounding", 31,
+			truncateLeft("source-billing-dashboard--claude-worktrees-fix-rounding", 31)},
+	}
+	for _, tt := range tests {
+		got := fitProjectName(tt.name, tt.width)
+		if got != tt.want {
+			t.Errorf("fitProjectName(%q, %d) = %q, want %q", tt.name, tt.width, got, tt.want)
+		}
+		if w := lipgloss.Width(got); w > tt.width {
+			t.Errorf("fitProjectName(%q, %d) is %d columns wide", tt.name, tt.width, w)
+		}
+	}
+
+	t.Run("ascii", func(t *testing.T) {
+		useASCII(t)
+		// The ASCII ellipsis is three columns, so the repo keeps four
+		// fewer letters.
+		if got, want := fitProjectName(billing, 31), "...g-dashboard/.../fix-rounding"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+		if got := fitProjectName(payments, minProjectWidth); got != ".../fix-rounding" {
+			t.Errorf("got %q, want %q", got, ".../fix-rounding")
+		}
+	})
+}
+
+// Worktrees of two repos that share a worktree name get distinct rows, on
+// an 80-column terminal and piped.
+func TestGlobalTableKeepsWorktreeRowsApart(t *testing.T) {
+	for _, width := range []int{0, 80} {
+		opts := worktreeGlobalOptions()
+		opts.Width = width
+		out := FormatGlobalTable(worktreeGlobalAnalysis(), true, opts)
+		seen := map[string]bool{}
+		for _, line := range strings.Split(out, "\n") {
+			if !strings.Contains(line, "/"+styles.Ellipsis+"/") {
+				continue
+			}
+			name := strings.Fields(line)[1]
+			if seen[name] {
+				t.Errorf("width %d: two rows read %q:\n%s", width, name, out)
+			}
+			seen[name] = true
+		}
+		if len(seen) != 4 {
+			t.Errorf("width %d: want 4 worktree rows, got %d:\n%s", width, len(seen), out)
+		}
+	}
+}
+
 // maxLineWidth is the widest line of out in display columns.
 func maxLineWidth(out string) int {
 	w := 0
