@@ -346,6 +346,16 @@ func TestGoldenSessionTableShowColor(t *testing.T) {
 	checkGolden(t, "session_table_show_color", FormatSessionTable(goldenShowAnalysis(), false, 0))
 }
 
+// A titled session's header carries its title on a second line, cut to the
+// panel and dimmed in color; the first line keeps its fields at any width.
+func TestGoldenSessionTableShowTitle(t *testing.T) {
+	a := goldenShowAnalysis()
+	a.Title = "Migrate the billing service from the legacy monolith to the new payments platform"
+	checkGolden(t, "session_table_show_title", FormatSessionTable(a, true, 0))
+	checkGolden(t, "session_table_show_title_w45", FormatSessionTable(a, true, 45))
+	checkGolden(t, "session_table_show_title_color", FormatSessionTable(a, false, 0))
+}
+
 // A model ficha doesn't know has no window: the gauge gives the tokens and
 // says why, and so does an agent's cell, in the same 8 columns.
 func TestGoldenSessionTableShowWindowUnknown(t *testing.T) {

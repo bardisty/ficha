@@ -106,10 +106,37 @@ func renderHeaderPanel(analysis *models.SessionAnalysis, width int, noColor bool
 			when,
 		}, giveWay, width, noColor)
 	}
-	return renderPanel(analysis.Project, []string{
+	panel := renderPanel(analysis.Project, []string{
 		"Session: " + render.TruncateID(analysis.SessionID, 8),
 		"Duration: " + render.Span(analysis.Duration.Duration()),
 	}, []int{1, panelLead}, width, noColor)
+	return withTitleLine(panel, analysis.Title, width, noColor)
+}
+
+// withTitleLine adds a session's title to its header panel, on a line of
+// its own above the bottom border, so the first line keeps its fields at
+// any width, and a total pasted elsewhere carries a name a reader knows the
+// session by. The title is transcript text, so it's made one line and cut
+// to fit. It's dim, so the eye still lands on the first line's fields. A
+// panel for a session without a title is left as it is.
+func withTitleLine(panel, title string, width int, noColor bool) string {
+	title = models.OneLine(title)
+	if title == "" {
+		return panel
+	}
+	if width <= 0 {
+		width = 76
+	}
+	inner := panelInner(width)
+	title = render.TruncateRight(title, inner)
+	pad := strings.Repeat(" ", max(inner-lipgloss.Width(title), 0))
+	side := styles.BoxVertical
+	if !noColor {
+		side = styles.PanelBorderStyle.Render(side)
+		title = styles.DimStyle.Render(title)
+	}
+	bottom := strings.LastIndex(panel, "\n")
+	return panel[:bottom] + "\n" + side + "  " + title + pad + "  " + side + panel[bottom:]
 }
 
 // spanOrWindow is the header's time field: the --since/--until window when
