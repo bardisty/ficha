@@ -552,6 +552,24 @@ func TestNestedAfterANameMatch(t *testing.T) {
 	}
 }
 
+// A projects dir folder whose transcripts record no directory has nothing
+// to look under either, and -p is what was given, so the error doesn't
+// suggest it.
+func TestNestedInAProjectFolderWithoutAPath(t *testing.T) {
+	root := setupE2EFixture(t)
+	folder := filepath.Join(root, "projects", e2eProjDir)
+	if _, _, err := executeCLISplit(t, "list", "-p", folder); err != nil {
+		t.Fatalf("the folder itself fails: %v", err)
+	}
+	want := "--nested looks under the directory Claude Code ran in, and no transcript in " + e2eProjDir + " records one, so ficha can't tell which directories are under it."
+	for _, command := range []string{"summary", "list"} {
+		_, _, err := executeCLISplit(t, command, "-p", folder, "--nested")
+		if exitCode(err) != 2 || err.Error() != want {
+			t.Errorf("%s --nested: exit %d, error %v", command, exitCode(err), err)
+		}
+	}
+}
+
 // A worktree session that resumed one of the repo's own starts with a copy
 // of its history, which --nested counts once. The note prices the nested
 // sessions alone, so its figure is a bound on what --nested adds, and it

@@ -1464,6 +1464,41 @@ func TestRootHelp(t *testing.T) {
 	}
 }
 
+// A path the shell left alone, as a quoted ~ is, or one that doesn't exist,
+// is still pointed at -p, which expands ~ and says what's wrong with a path
+// it can't use. A word that isn't written like a path isn't, and nor is a
+// file, which -p would refuse too.
+func TestPathArgsPointAtProjectFlag(t *testing.T) {
+	root := setupE2EFixture(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := os.Mkdir(filepath.Join(home, "work"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(t.TempDir(), "nowhere")
+	transcript := filepath.Join(root, "projects", e2eProjDir, e2eAlphaID+".jsonl")
+	const listHint = "ficha list takes no arguments. For that directory's sessions, run: ficha list -p "
+	for _, tt := range []struct {
+		args    []string
+		wantErr string
+	}{
+		{[]string{"list", "~/work"}, listHint + "~/work"},
+		{[]string{"list", "~/nowhere"}, listHint + "~/nowhere"},
+		{[]string{"list", "~"}, listHint + "~"},
+		{[]string{"list", missing}, listHint + shellQuote(missing)},
+		{[]string{"list", "nowhere"}, `ficha list takes no arguments, got "nowhere"`},
+		{[]string{"summary", transcript}, "ficha summary takes no arguments, got " + strconv.Quote(transcript)},
+		{[]string{"show", "~/work"}, `"~/work" is a directory, not a session. To show that directory's latest session, run: ficha show -p ~/work`},
+		{[]string{"~/work"}, `unknown command "~/work" for "ficha". To analyze that directory, run: ficha -p ~/work`},
+	} {
+		_, _, err := executeCLISplit(t, tt.args...)
+		if exitCode(err) != 2 || err.Error() != tt.wantErr {
+			t.Errorf("%q: exit %d, error:\n got: %v\nwant: %s", tt.args, exitCode(err), err, tt.wantErr)
+		}
+	}
+}
+
 // completeLines runs cobra's hidden __complete command and returns the
 // candidate lines and the trailing ":<directive>" line.
 func completeLines(t *testing.T, args ...string) (candidates []string, directive string) {

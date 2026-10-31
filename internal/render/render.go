@@ -156,23 +156,6 @@ func Duration(d time.Duration) string {
 	return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
 }
 
-// DurationLong rolls up to days once a span reaches 24h, for aggregate headers
-// (summary, global) where a total can span weeks and "336h" would be unreadable.
-// Note minutes drop their trailing seconds here, unlike Duration.
-func DurationLong(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	}
-	if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	}
-	if d < 24*time.Hour {
-		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
-	}
-	days := int(d.Hours() / 24)
-	return fmt.Sprintf("%dd", days)
-}
-
 // Span is Duration for one session, rolled up to days and hours from 24h
 // on ("11d 0h"), so a session picked up days later doesn't read "264h 9m".
 // Under a day it's Duration's form.

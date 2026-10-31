@@ -159,30 +159,6 @@ func TestDuration(t *testing.T) {
 	}
 }
 
-// The last three cases mirror the exact spans in the summary, summary-details,
-// and global golden fixtures, so they pin how each header rolls up.
-func TestDurationLong(t *testing.T) {
-	tests := []struct {
-		input time.Duration
-		want  string
-	}{
-		{30 * time.Second, "30s"},
-		{90 * time.Second, "1m"}, // minutes drop the seconds, unlike Duration
-		{time.Hour, "1h 0m"},
-		{2*time.Hour + 30*time.Minute, "2h 30m"},
-		{23*time.Hour + 59*time.Minute, "23h 59m"},
-		{24 * time.Hour, "1d"},
-		{57*time.Hour + 20*time.Minute, "2d"},  // summary_details golden
-		{104*time.Hour + 45*time.Minute, "4d"}, // summary golden
-		{45 * 24 * time.Hour, "45d"},           // global golden
-	}
-	for _, tc := range tests {
-		if got := DurationLong(tc.input); got != tc.want {
-			t.Errorf("DurationLong(%v) = %q, want %q", tc.input, got, tc.want)
-		}
-	}
-}
-
 // Covers both budgets the callers pass: 8 for the compact live header, 40 for
 // the static session header. Truncation is a plain prefix, no ellipsis.
 func TestTruncateID(t *testing.T) {

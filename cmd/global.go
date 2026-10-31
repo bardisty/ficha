@@ -48,7 +48,7 @@ bound is split at it. They apply to json and csv as well as the table.`,
 	}
 
 	addFormatFlag(globalCmd, cfg, false)
-	globalCmd.Flags().BoolVarP(&cfg.globalDetails, "details", "d", false, "Show every project; cumulative column if sorted by cost")
+	globalCmd.Flags().BoolVarP(&cfg.globalDetails, "details", "d", false, "Show every project; cumulative column in cost order")
 	globalCmd.Flags().IntVarP(&cfg.globalTopN, "top", "n", 10, "How many projects the table shows")
 	globalCmd.Flags().StringVar(&cfg.globalSortBy, "sort-by", "cost", "Sort: cost, sessions, name, activity")
 	globalCmd.Flags().BoolVar(&cfg.globalNoCache, "no-cache", false, "Skip cache, force fresh analysis (reserved for future use)")
