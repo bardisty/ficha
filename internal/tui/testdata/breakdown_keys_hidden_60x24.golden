@@ -15,7 +15,7 @@
   ctrl+z              suspend                            
                                                          
   hidden: IN, C_WR, C_RD, OUT; widen to 85               
-                                                         
+  ac = audit-codebase                                    
                                                          
                                                          
                                                          
