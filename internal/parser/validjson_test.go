@@ -6,15 +6,18 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bardisty/ficha/internal/models"
 )
 
 // kept is the parse's own rule for which decoded records it holds on to.
-func kept(msg models.JSONLMessage) bool {
+func kept(line []byte, msg models.JSONLMessage) bool {
+	_, boundary := compaction(line, msg.Timestamp)
 	return (msg.Type == "assistant" && msg.Message != nil) ||
 		(msg.Type == "ai-title" && msg.AITitle != "") ||
-		msg.Type == "custom-title"
+		msg.Type == "custom-title" ||
+		(msg.Type == "system" && boundary)
 }
 
 // scanCases are lines the scan could get wrong, each with whether it is
@@ -35,6 +38,24 @@ var scanCases = []struct {
 	{"ai-title", `{"type":"ai-title","aiTitle":"Fix the parser"}`, true, false},
 	{"custom-title", `{"type":"custom-title","customTitle":"parser-fix"}`, true, false},
 	{"empty custom-title", `{"type":"custom-title","customTitle":""}`, true, false},
+
+	// A system record is kept only as a compact_boundary, and the subtype
+	// can come before the type
+	{"compact boundary", `{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"auto","preTokens":180000}}`, true, false},
+	{"subtype before type", `{"subtype":"compact_boundary","type":"system"}`, true, false},
+	{"other system line", `{"type":"system","subtype":"local_command","content":"x"}`, true, true},
+	{"system without a subtype", `{"type":"system","content":"x"}`, true, true},
+	{"boundary subtype on a user line", `{"type":"user","subtype":"compact_boundary"}`, true, true},
+	{"subtype nested in a system line", `{"type":"system","a":{"subtype":"compact_boundary"}}`, true, true},
+	{"upper-case subtype key", `{"type":"system","SUBTYPE":"compact_boundary"}`, true, false},
+	{"escaped subtype", `{"type":"system","subtype":"compact\u005fboundary"}`, true, false},
+	{"escaped subtype that isn't one", `{"type":"system","subtype":"loc\u0061l"}`, true, true},
+	{"subtype twice, boundary last", `{"type":"system","subtype":"local","subtype":"compact_boundary"}`, true, false},
+	{"subtype twice, boundary first", `{"type":"system","subtype":"compact_boundary","subtype":"local"}`, true, true},
+	{"boundary, then a null subtype", `{"type":"system","subtype":"compact_boundary","SubType":null}`, true, false},
+	{"boundary, then a number subtype", `{"type":"system","subtype":"compact_boundary","subtype":5}`, true, true},
+	{"number subtype", `{"type":"system","subtype":5}`, true, true},
+	{"null subtype", `{"type":"system","subtype":null}`, true, true},
 
 	// Only the line's own type counts
 	{"type nested in message", `{"type":"user","message":{"type":"assistant"}}`, true, true},
@@ -129,7 +150,7 @@ func TestScanLine(t *testing.T) {
 			if tt.drop {
 				var msg models.JSONLMessage
 				_ = json.Unmarshal(line, &msg)
-				if kept(msg) {
+				if kept(line, msg) {
 					t.Errorf("the case is wrong: the parse keeps this line (type %q)", msg.Type)
 				}
 			}
@@ -179,6 +200,53 @@ func TestParseDoesNotCountMistypedLinesItDrops(t *testing.T) {
 	}
 	if len(result.Messages) != 1 || result.Messages[0].Message.ID != "m2" {
 		t.Errorf("got %d messages, want only m2", len(result.Messages))
+	}
+}
+
+// compact_boundary records reach ParseResult.Compactions, in file order,
+// with their trigger and size, and never Messages. Other system records are
+// no skipped line, and a boundary with mistyped or no metadata still marks
+// where the conversation compacted.
+// A system line that isn't a boundary stays undecoded, so a mistyped field
+// in it never counts as a skipped line, whatever its subtype looks like.
+func TestParseDoesNotCountSystemLinesThatAreNoBoundary(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"system","subtype":5,"timestamp":"yesterday"}`,
+		`{"type":"system","subtype":null,"timestamp":"yesterday"}`,
+		`{"type":"system","subtype":"compact_boundary","subtype":"local","timestamp":"yesterday"}`,
+		`{"type":"system","subtype":"loc\u0061l","timestamp":"yesterday"}`,
+		`{"type":"system","subtype":"compact_boundary","timestamp":"yesterday"}`,
+	}, "\n")
+	result, err := ParseJSONLWithResult(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []models.SkippedLine{{Line: 5, Reason: models.SkipMalformed}}
+	if !reflect.DeepEqual(result.SkippedAt, want) {
+		t.Errorf("skipped %v, want only the boundary with a bad timestamp, %v", result.SkippedAt, want)
+	}
+}
+
+func TestParseKeepsCompactBoundaries(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"assistant","timestamp":"2026-09-01T10:00:00Z","message":{"id":"m1"}}`,
+		`{"type":"system","subtype":"local_command","timestamp":"yesterday"}`,
+		`{"subtype":"compact_boundary","type":"system","timestamp":"2026-09-01T10:01:00Z","compactMetadata":{"trigger":"auto","preTokens":180000}}`,
+		`{"type":"assistant","timestamp":"2026-09-01T10:02:00Z","message":{"id":"m2"}}`,
+		`{"type":"system","subtype":"compact_boundary","timestamp":"2026-09-01T10:03:00Z","compactMetadata":"manual"}`,
+		`{"type":"system","subtype":"compact_boundary","timestamp":"2026-09-01T10:04:00Z"}`,
+	}, "\n")
+	result, err := ParseJSONLWithResult(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := func(min int) time.Time { return time.Date(2026, 9, 1, 10, min, 0, 0, time.UTC) }
+	want := []models.Compaction{{Timestamp: at(1), Trigger: "auto", PreTokens: 180000}, {Timestamp: at(3)}, {Timestamp: at(4)}}
+	if !reflect.DeepEqual(result.Compactions, want) {
+		t.Errorf("compactions %+v, want %+v", result.Compactions, want)
+	}
+	if len(result.Messages) != 2 || result.SkippedLines != 0 {
+		t.Errorf("%d messages and %d skipped lines, want 2 and 0", len(result.Messages), result.SkippedLines)
 	}
 }
 
@@ -235,6 +303,10 @@ func decodeEveryLine(data []byte) *ParseResult {
 			aiTitle = msg.AITitle
 		case msg.Type == "custom-title":
 			customTitle = msg.CustomTitle
+		case msg.Type == "system":
+			if c, ok := compaction(line, msg.Timestamp); ok {
+				result.Compactions = append(result.Compactions, c)
+			}
 		}
 	}
 	result.Title = aiTitle
@@ -259,7 +331,7 @@ func FuzzDroppedLinesAreNeverKept(f *testing.F) {
 			}
 			var msg models.JSONLMessage
 			_ = json.Unmarshal(line, &msg)
-			if kept(msg) || msg.Type == "assistant" || msg.Type == "ai-title" || msg.Type == "custom-title" {
+			if kept(line, msg) || msg.Type == "assistant" || msg.Type == "ai-title" || msg.Type == "custom-title" {
 				t.Fatalf("dropped a line that decodes to type %q: %q", msg.Type, line)
 			}
 		}
@@ -274,7 +346,7 @@ func FuzzDroppedLinesAreNeverKept(f *testing.F) {
 			t.Fatal(err)
 		}
 		want := decodeEveryLine(data)
-		if !reflect.DeepEqual(got.Messages, want.Messages) || got.Title != want.Title {
+		if !reflect.DeepEqual(got.Messages, want.Messages) || got.Title != want.Title || !reflect.DeepEqual(got.Compactions, want.Compactions) {
 			t.Fatalf("parse differs from decoding every line, for %q\n got: %+v\nwant: %+v", data, got, want)
 		}
 		counted := map[models.SkippedLine]bool{}

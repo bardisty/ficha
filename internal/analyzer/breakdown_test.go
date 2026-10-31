@@ -851,3 +851,57 @@ func TestGetBreakdownMessages_Title(t *testing.T) {
 		t.Errorf("Title = %q", result.Title)
 	}
 }
+
+// A compact_boundary marks the first main-conversation reply at or after it,
+// past an agent's reply that comes between, and only the last of two
+// boundaries before one reply. A streamed reply's chunks collapse to one
+// row first, and a boundary with no reply after it marks nothing. Totals and
+// row counts are as they'd be with no boundary.
+func TestGetBreakdownMessages_MarksCompactions(t *testing.T) {
+	dir := t.TempDir()
+	sessionPath := filepath.Join(dir, "compact.jsonl")
+	reply := func(id, ts string, out int) string {
+		return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"requestId":"r-%s","message":{"id":"m-%s","model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":%d}}}`, ts, id, id, out)
+	}
+	boundary := func(ts, trigger string, pre int) string {
+		return fmt.Sprintf(`{"type":"system","subtype":"compact_boundary","timestamp":%q,"compactMetadata":{"trigger":%q,"preTokens":%d}}`, ts, trigger, pre)
+	}
+	parent := strings.Join([]string{
+		reply("1", "2026-09-01T10:00:00Z", 5),
+		boundary("2026-09-01T10:01:00Z", "auto", 180000),
+		boundary("2026-09-01T10:01:30Z", "manual", 20000),
+		reply("2", "2026-09-01T10:03:00Z", 5),
+		reply("2", "2026-09-01T10:03:00Z", 9), // the same reply, streamed further
+		reply("3", "2026-09-01T10:04:00Z", 5),
+		boundary("2026-09-01T10:05:00Z", "auto", 50000),
+	}, "\n")
+	if err := os.WriteFile(sessionPath, []byte(parent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	agents := filepath.Join(dir, "compact", "subagents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agents, "agent-a1.jsonl"), []byte(reply("a", "2026-09-01T10:02:00Z", 5)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := GetBreakdownMessages(sessionPath, "compact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var marks []string
+	for _, msg := range result.Messages {
+		mark := "-"
+		if c := msg.Compacted; c != nil {
+			mark = fmt.Sprintf("%s %d", c.Trigger, c.PreTokens)
+		}
+		marks = append(marks, fmt.Sprintf("%s:%s", msg.AgentID, mark))
+	}
+	if got, want := strings.Join(marks, " | "), ":- | a1:- | :manual 20000 | :-"; got != want {
+		t.Errorf("rows %q, want %q", got, want)
+	}
+	if out := result.Messages[2].Usage.OutputTokens; out != 9 {
+		t.Errorf("the marked reply has %d output tokens, want the last chunk's 9", out)
+	}
+}

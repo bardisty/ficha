@@ -214,7 +214,7 @@ func (m BreakdownModel) renderEmptyState() string {
 }
 
 // visibleRows returns the display Index of the first and last message rows
-// in the viewport, skipping day dividers, or 0, 0 when none is visible.
+// in the viewport, skipping dividers, or 0, 0 when none is visible.
 func (m BreakdownModel) visibleRows() (first, last int) {
 	top := m.viewport.YOffset()
 	bottom := min(top+m.viewport.Height(), len(m.lineRows)) - 1
@@ -325,14 +325,14 @@ func (m BreakdownModel) firstVisibleDay() string {
 	top := m.viewport.YOffset()
 	bottom := min(top+m.viewport.Height(), len(m.lineRows))
 	first := top
-	for first < bottom && m.lineRows[first] == 0 {
+	for first < bottom && m.lineRows[first] <= 0 {
 		first++
 	}
 	if first == bottom {
 		return ""
 	}
 	for i := first; i >= 0; i-- {
-		if m.lineRows[i] == 0 {
+		if m.lineRows[i] == dayDivider {
 			return render.DayMarker(m.messages[m.linePos[i]].Timestamp)
 		}
 	}

@@ -222,7 +222,9 @@ const minSplitShare = 0.05
 // they can't say which part made the row expensive; this can. The labels
 // are the ones watch and show use. When the line doesn't fit, components go
 // from the smallest end, then the split, before p next: without the hint,
-// p's next press is a guess.
+// p's next press is a guess. Sorted, where no divider shows, the first
+// reply after a compaction says so in place of the split, since that's why
+// it cost what it did.
 func (m BreakdownModel) selectionText() string {
 	// Runs on every frame; don't sort the rows when there's nothing to say
 	if !m.selectionNotice || m.selectedKey == "" {
@@ -241,6 +243,9 @@ func (m BreakdownModel) selectionText() string {
 			break
 		}
 		split = append(split, render.CostComponentLabel(c.Name)+" "+render.Cost(c.Cost))
+	}
+	if m.sortByCost && msg.Compacted != nil {
+		split = []string{"first reply after compaction"}
 	}
 	sep := " " + styles.Bullet + " "
 	width := m.width - 2
@@ -269,12 +274,12 @@ type leftView struct {
 	scope      rowScope
 }
 
-// rowMark is a table line held by the row on it. divider marks the day
-// divider above the row rather than the row.
+// rowMark is a table line held by the row on it. above counts the lines
+// the mark sits above the row, on the dividers that head it.
 type rowMark struct {
-	key     string // breakdownMsgKey
-	index   int    // the row's number, for when its key is gone
-	divider bool
+	key   string // breakdownMsgKey
+	index int    // the row's number, for when its key is gone
+	above int
 }
 
 // leaving is the view as the reader leaves it.
@@ -302,7 +307,11 @@ func (m BreakdownModel) markLine(lineRows, linePos []int, y int) rowMark {
 		return rowMark{}
 	}
 	msg := m.messages[linePos[y]]
-	return rowMark{key: breakdownMsgKey(msg), index: msg.Index, divider: lineRows[y] == 0}
+	above := 0
+	for line := y; line < len(lineRows) && lineRows[line] <= 0; line++ {
+		above++
+	}
+	return rowMark{key: breakdownMsgKey(msg), index: msg.Index, above: above}
 }
 
 // lineOf finds mark in a layout from tableLines. A row whose key is gone,
@@ -314,14 +323,16 @@ func (m BreakdownModel) lineOf(lineRows, linePos []int, mark rowMark) int {
 	}
 	byIndex := -1
 	for line, index := range lineRows {
-		if index == 0 {
+		if index <= 0 {
 			continue
 		}
 		if breakdownMsgKey(m.messages[linePos[line]]) == mark.key {
-			if mark.divider && line > 0 && lineRows[line-1] == 0 {
-				return line - 1
+			// As far up its dividers as the mark was, of those it has now.
+			back := 0
+			for back < mark.above && line-back > 0 && lineRows[line-back-1] <= 0 {
+				back++
 			}
-			return line
+			return line - back
 		}
 		if index == mark.index {
 			byIndex = line

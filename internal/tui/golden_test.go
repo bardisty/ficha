@@ -329,10 +329,13 @@ func goldenBreakdownMessages() []models.BreakdownMessage {
 			Usage: models.TokenUsage{InputTokens: 300, OutputTokens: 900, CacheReadInputTokens: 15000},
 			Cost:  models.CostBreakdown{TotalCost: 0.01},
 		},
+		// The first reply after the conversation compacted, with the divider
+		// above it.
 		{
 			Index: 5, Timestamp: goldenTime(10, 42, 13), Model: "claude-opus-4-8",
-			Usage: models.TokenUsage{InputTokens: 90, OutputTokens: 4200, CacheReadInputTokens: 50000},
-			Cost:  models.CostBreakdown{TotalCost: 1.87},
+			Usage:     models.TokenUsage{InputTokens: 90, OutputTokens: 4200, CacheReadInputTokens: 50000},
+			Cost:      models.CostBreakdown{TotalCost: 1.87},
+			Compacted: &models.Compaction{Timestamp: goldenTime(10, 42, 0), Trigger: "auto", PreTokens: 180000},
 		},
 		// A workflow agent with a real-shaped ID ("a" + 16 hex): the marker
 		// drops the constant "a", and the run tag follows it.
