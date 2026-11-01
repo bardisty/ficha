@@ -364,6 +364,13 @@ type SessionAnalysis struct {
 	// check as its stderr warning.
 	UnpricedModels []string `json:"unpriced_models,omitempty"`
 	IsSummary      bool     `json:"-"` // True for aggregate summaries
+	// Copies is the part of the transcript other sessions in its project
+	// also hold, which list and summary count under one of them. Set by show
+	// and watch on a session that has any; json leaves it out.
+	Copies *CopiedReplies `json:"-"`
+	// Days is the aggregate's spend by local calendar day, newest first,
+	// when --by-day asks for it; json leaves it out otherwise.
+	Days []DayCost `json:"days,omitzero"`
 	// SkipDetails names the sessions behind the aggregate's skip counters,
 	// for -v, including any a window left out of the report. Set only on the
 	// aggregate AnalyzeMultipleSessions returns.
@@ -373,6 +380,31 @@ type SessionAnalysis struct {
 	// consumers can pair it with skipped_sessions to compute coverage, like
 	// global's session_count.
 	SessionCount int `json:"session_count"`
+}
+
+// CopiedReplies is the replies a session's transcript shares with other
+// sessions in its project: a fork's copies of its original's, or an
+// original's that a fork copied and that list credits to the fork.
+type CopiedReplies struct {
+	// Messages is how many replies, and Cost their price.
+	Messages int
+	Cost     float64
+	// SessionID is the session list and summary count them under, or ""
+	// when they're split over Sessions sessions.
+	SessionID string
+	Sessions  int
+}
+
+// DayCost is one local calendar day of a --by-day report: the messages
+// timestamped on it, their cost, and the sessions they're from. A session
+// with messages on several days counts on each.
+type DayCost struct {
+	// Date is the day as "2006-01-02" in the local zone, or "" for the
+	// messages that carry no timestamp, which no day can hold.
+	Date         string        `json:"date"`
+	SessionCount int           `json:"session_count"`
+	MessageCount int           `json:"message_count"`
+	TotalCost    CostBreakdown `json:"total_cost"`
 }
 
 // ContextUsage is how full a context window was at one request, as Claude
@@ -736,6 +768,9 @@ type ProjectInfo struct {
 // session-file mtimes.
 type ProjectAnalysis struct {
 	ProjectInfo
+	// Days is the project's share of GlobalAnalysis.Days, which json gives
+	// for every project together only.
+	Days         []DayCost                `json:"-"`
 	TotalCost    CostBreakdown            `json:"total_cost"`
 	TotalUsage   TokenUsage               `json:"total_usage"`
 	CostByModel  map[string]CostBreakdown `json:"cost_by_model"`
@@ -818,4 +853,7 @@ type GlobalAnalysis struct {
 	FirstActive    time.Time `json:"first_active"`
 	LastActive     time.Time `json:"last_active"`
 	Duration       Duration  `json:"duration"`
+	// Days is every project's spend by local calendar day, newest first,
+	// when --by-day asks for it (see SessionAnalysis.Days).
+	Days []DayCost `json:"days,omitzero"`
 }

@@ -59,6 +59,9 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool, width in
 		sb.WriteString("\n\n")
 		sb.WriteString(formatCostByModelContent(analysis, noColor))
 	}
+	if days := renderDaysSection(analysis.Days, sectionWidth, noColor); days != "" {
+		sb.WriteString("\n" + days)
+	}
 
 	// Agent breakdown (shown when agents exist). The summary aggregate sets
 	// HasAgents/AgentsCost without collecting the per-agent records, and every
@@ -103,11 +106,27 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool, width in
 	}
 	sb.WriteString(footerStats(fields, sectionWidth, noColor))
 	sb.WriteString("\n")
+	if !isSummary && analysis.Copies != nil {
+		sb.WriteString(copiesNote(analysis, sectionWidth, noColor))
+	}
 
 	// Single-line help separator
 	sb.WriteString(renderFooterSingleRule(sectionWidth, noColor))
 
 	return trimLineEnds(sb.String())
+}
+
+// copiesNote is show's note under the footer on the messages its file
+// shares with other sessions, wrapped to width.
+func copiesNote(a *models.SessionAnalysis, width int, noColor bool) string {
+	note := render.CopiesNoteFor(*a.Copies, a.MessageCount, a.TotalCost.TotalCost)
+	lines := strings.Split(render.WrapHanging(note, width), "\n")
+	if !noColor {
+		for i, l := range lines {
+			lines[i] = styles.FooterStyle.Render(l)
+		}
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // renderContextSection renders the context window section: the gauge line,

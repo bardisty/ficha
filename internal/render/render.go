@@ -329,6 +329,17 @@ func localDay(t time.Time) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
+// CalendarDate labels a local calendar date held as localDay holds one, a
+// UTC midnight, as Date labels a moment: "Oct 31", with the year when it
+// isn't now's. Read in the local zone, that midnight could be the day
+// before, so it's formatted as it is.
+func CalendarDate(day, now time.Time) string {
+	if day.Year() != now.Local().Year() {
+		return day.Format("Jan 02 2006")
+	}
+	return day.Format("Jan 02")
+}
+
 // DayMarker labels a local calendar day ("Tue 29 Sep"), for the divider
 // a per-message table draws where the day changes, since its rows show only
 // a time.
@@ -1166,4 +1177,50 @@ func wrapHangingLine(line string, width int) string {
 		}
 	}
 	return sb.String()
+}
+
+// CopiesNote says which of a session's messages other sessions also hold,
+// for watch, which counts the file alone, where list and summary count each
+// shared reply once. It reads c alone, so as the session grows the note
+// keeps its lines and the body below it stays put.
+func CopiesNote(c models.CopiedReplies) string {
+	return copiesHeld(c) + " list and summary count " + copiesPronoun(c) + " there."
+}
+
+// CopiesNoteFor is CopiesNote for show, which draws one frame and so can
+// also give what list shows the session at, from its own messages and
+// total: the number a reader comparing the two needs. list's LENGTH starts
+// at the session's first message of its own, so it's shorter than show's
+// Duration, which starts at the first copy; the note points at that rather
+// than at Duration, whose label show drops at 45 columns. A session that's
+// all copies says list titles it (copy).
+func CopiesNoteFor(c models.CopiedReplies, messages int, total float64) string {
+	if c.Messages >= messages {
+		return fmt.Sprintf("Every message here (%s) is also in %s. list and summary count them there, and list titles this session (copy).",
+			Cost(c.Cost), copiesWhere(c))
+	}
+	return fmt.Sprintf("%s list and summary count %s there, so list shows this session at %s with a shorter length.",
+		copiesHeld(c), copiesPronoun(c), Cost(total-c.Cost))
+}
+
+func copiesHeld(c models.CopiedReplies) string {
+	what, verb := Count(c.Messages)+" messages", "are"
+	if c.Messages == 1 {
+		what, verb = "1 message", "is"
+	}
+	return fmt.Sprintf("%s here (%s) %s also in %s.", what, Cost(c.Cost), verb, copiesWhere(c))
+}
+
+func copiesWhere(c models.CopiedReplies) string {
+	if c.SessionID == "" {
+		return Count(c.Sessions) + " other sessions"
+	}
+	return "session " + TruncateID(c.SessionID, 8)
+}
+
+func copiesPronoun(c models.CopiedReplies) string {
+	if c.Messages == 1 {
+		return "it"
+	}
+	return "them"
 }

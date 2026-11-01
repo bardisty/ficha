@@ -41,10 +41,28 @@ func AnalyzeAllProjects(projects []models.ProjectInfo) (*models.GlobalAnalysis, 
 // messages inside window. A project with nothing inside it is left out, like
 // one with no sessions, except in the skip counters (see OutOfWindow).
 func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.TimeWindow) (*models.GlobalAnalysis, error) {
+	return analyzeAllProjects(projects, window, false)
+}
+
+// AnalyzeAllProjectsByDay is AnalyzeAllProjectsInWindow with Days filled in,
+// summed from each project's in input order, like the totals.
+func AnalyzeAllProjectsByDay(projects []models.ProjectInfo, window models.TimeWindow) (*models.GlobalAnalysis, error) {
+	return analyzeAllProjects(projects, window, true)
+}
+
+func analyzeAllProjects(projects []models.ProjectInfo, window models.TimeWindow, byDay bool) (*models.GlobalAnalysis, error) {
+	var days dayTotals
+	if byDay {
+		days = dayTotals{}
+	}
 	if len(projects) == 0 {
-		return &models.GlobalAnalysis{
+		g := &models.GlobalAnalysis{
 			CostByModel: make(map[string]models.CostBreakdown),
-		}, nil
+		}
+		if days != nil {
+			g.Days = days.list()
+		}
+		return g, nil
 	}
 
 	// Every project's transcripts go in one queue. A queue per project would
@@ -71,7 +89,7 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 	// run to run.
 	forEachParallel(len(projects), func(idx int) {
 		if results[idx].err == nil {
-			results[idx].analysis, results[idx].err = analyzeProject(projects[idx], sessions[idx], parses[idx], window)
+			results[idx].analysis, results[idx].err = analyzeProject(projects[idx], sessions[idx], parses[idx], window, byDay)
 		}
 	})
 
@@ -127,6 +145,9 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 		global.EstimatedCostMessages += analysis.EstimatedCostMessages
 		global.TotalCost.Add(analysis.TotalCost)
 		global.TotalUsage.Add(analysis.TotalUsage)
+		if days != nil {
+			days.addDays(analysis.Days)
+		}
 
 		// Merge cost by model
 		for model, cost := range analysis.CostByModel {
@@ -150,6 +171,10 @@ func AnalyzeAllProjectsInWindow(projects []models.ProjectInfo, window models.Tim
 				global.LastActive = analysis.LastActive
 			}
 		}
+	}
+
+	if days != nil {
+		global.Days = days.list()
 	}
 
 	// Calculate duration
@@ -186,7 +211,7 @@ func discoverProjectSessions(project models.ProjectInfo) (sessions []models.Sess
 
 // analyzeProject builds a project's analysis from its sessions and their
 // parses.
-func analyzeProject(project models.ProjectInfo, sessions []models.SessionEntry, parses *sessionParses, window models.TimeWindow) (*models.ProjectAnalysis, error) {
+func analyzeProject(project models.ProjectInfo, sessions []models.SessionEntry, parses *sessionParses, window models.TimeWindow, byDay bool) (*models.ProjectAnalysis, error) {
 	if len(sessions) == 0 {
 		return &models.ProjectAnalysis{
 			ProjectInfo: project,
@@ -199,7 +224,7 @@ func analyzeProject(project models.ProjectInfo, sessions []models.SessionEntry, 
 	// fork-copied transcripts happens inside AnalyzeMultipleSessions, scoped
 	// per project: forks never land in another project's directory, and a
 	// project-local seen set keeps the parallel project workers lock-free.
-	aggregate, _, err := analyzeSessionParses(sessions, window, parses)
+	aggregate, _, err := analyzeSessionParses(sessions, window, parses, byDay)
 	if err != nil {
 		return nil, err
 	}
@@ -224,6 +249,7 @@ func analyzeProject(project models.ProjectInfo, sessions []models.SessionEntry, 
 		SkippedLines:          aggregate.SkippedLines,
 		SkipDetails:           aggregate.SkipDetails,
 		EstimatedCostMessages: aggregate.EstimatedCostMessages,
+		Days:                  aggregate.Days,
 	}
 
 	// Activity span comes from message timestamps, as it does on every other

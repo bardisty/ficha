@@ -44,6 +44,9 @@ func FormatSummaryTableWithDetails(analysis *models.SessionAnalysis, results []m
 		sb.WriteString("\n\n")
 		sb.WriteString(formatCostByModelContent(analysis, noColor))
 	}
+	if days := renderDaysSection(analysis.Days, sectionWidth, noColor); days != "" {
+		sb.WriteString("\n" + days)
+	}
 
 	// Get session breakdown data (needed for both chart and table)
 	breakdownResult := renderSessionBreakdown(results, sectionWidth, noColor, expandAgents, sortBy)

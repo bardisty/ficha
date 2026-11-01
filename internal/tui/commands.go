@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/bardisty/ficha/internal/analyzer"
+	"github.com/bardisty/ficha/internal/models"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -60,15 +61,40 @@ func (m Model) loadAnalysis() tea.Msg {
 	// re-parsing unchanged agent sub-sessions on each reload. AllMessages so
 	// the chart's minutes count agent spend too; rebuildCostChart buckets
 	// them by timestamp on every reload, whatever order the analyzer keeps.
+	// The first load also looks for what the file shares with other
+	// sessions, beside the analysis rather than after it, so the note comes
+	// in the same frame as the body and never pushes it down later.
+	var copies chan copiesResult
+	if m.copiesFor != m.sessionPath {
+		copies = make(chan copiesResult, 1)
+		go func() {
+			var r copiesResult
+			r.copies, r.checked = analyzer.FindCopies(m.sessionPath, m.sessionID)
+			copies <- r
+		}()
+	}
 	analysis, err := analyzer.AnalyzeSessionWithCache(m.sessionPath, m.sessionID, analyzer.AllMessages, m.agentCache)
 	if err != nil {
 		return errorMsg{err: err, sessionPath: m.sessionPath}
 	}
 	msg := analysisMsg{analysis: analysis, sessionPath: m.sessionPath}
+	if copies != nil {
+		r := <-copies
+		// A session with no reply yet has nothing to compare, so a later
+		// load looks again.
+		msg.copiesFound = r.checked || analysis.ParentMessageCount > 0
+		msg.copies = r.copies
+	}
 	if info, err := os.Stat(m.sessionPath); err == nil {
 		msg.modTime = info.ModTime()
 	}
 	return msg
+}
+
+// copiesResult is FindCopies' answer for one load.
+type copiesResult struct {
+	copies  *models.CopiedReplies
+	checked bool
 }
 
 // watcherStartedMsg is sent when the watcher is successfully created.
