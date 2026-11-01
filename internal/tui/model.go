@@ -842,6 +842,13 @@ func (m *Model) relayoutContent() {
 func (m *Model) setBody() {
 	m.layoutViewport()
 	m.runningAgents = runningAgentsKey(m.analysis, m.clock())
+	// The too-small screen replaces the frame, so the body behind it is never
+	// drawn. Building it there would only risk a panic in a layout no one sees.
+	if m.tooSmall() {
+		m.bodySections = nil
+		m.viewport.SetContent("")
+		return
+	}
 	raw, sections := m.renderAnalysisSections()
 	body, at := fitBody(clipToWidth(raw, m.width), m.compact())
 	for i := range sections {
