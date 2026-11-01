@@ -229,6 +229,18 @@ func FindProjectDir(path string, allProjects []models.ProjectInfo) (*ProjectMatc
 	}, nil
 }
 
+// DirError is ResolveProjectDir's error for a value that names no
+// directory. Its message is Before, Path and After run together, worded for
+// a person already. Path is kept apart so cmd can show it as ~/… on a
+// terminal.
+type DirError struct {
+	Before, Path, After string
+}
+
+func (e *DirError) Error() string {
+	return e.Before + e.Path + e.After
+}
+
 // ResolveProjectDir resolves a --project-dir flag value to a full project directory path.
 // The value can be either an encoded directory name or a full path.
 func ResolveProjectDir(projectDirFlag string) (string, error) {
@@ -260,12 +272,16 @@ func ResolveProjectDir(projectDirFlag string) (string, error) {
 			return "", err
 		}
 		if fullPath == projectDirFlag || LooksLikePath(projectDirFlag) {
-			return "", fmt.Errorf("no such directory: %s", projectDirFlag)
+			return "", &DirError{Before: "no such directory: ", Path: projectDirFlag}
 		}
-		return "", fmt.Errorf("no project directory %s in %s. --project-dir=<Tab> completes the names, or pass the project's own directory with -p.", projectDirFlag, filepath.Dir(fullPath))
+		return "", &DirError{
+			Before: "no project directory " + projectDirFlag + " in ",
+			Path:   filepath.Dir(fullPath),
+			After:  ". --project-dir=<Tab> completes the names, or pass the project's own directory with -p.",
+		}
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("not a directory: %s", fullPath)
+		return "", &DirError{Before: "not a directory: ", Path: fullPath}
 	}
 
 	return fullPath, nil

@@ -145,8 +145,15 @@ func onlyNestedError(cfg *config, project resolvedProject, nested nestedSessions
 			names = append(names, name)
 		}
 	}
-	return fmt.Errorf("Claude Code has no sessions for %s itself, but %s. Run: %s%s --nested",
-		project.label, nestedHave(names), cfg.command(), cfg.typedProjectArgs())
+	e := newDisplayError("Claude Code has no sessions for %s itself, but %s. Run: ", errPath(project.label), nestedHave(names))
+	// -p's value is a word of its own, where the shell expands a ~ again.
+	// --project-dir='s comes after an =, where it doesn't.
+	if cfg.projectDir == "" && cfg.projectPath != "" {
+		e.add("%s", errCommand{text: cfg.command() + " -p ", path: cfg.projectPath, rest: " --nested"})
+	} else {
+		e.add("%s", errWhole(cfg.command()+cfg.typedProjectArgs()+" --nested"))
+	}
+	return e
 }
 
 // nestedHave says which projects under a directory have sessions, as in

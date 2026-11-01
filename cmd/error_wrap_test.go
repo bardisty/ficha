@@ -176,6 +176,111 @@ func TestProjectFlagExpandsHome(t *testing.T) {
 	}
 }
 
+// The errors that name a directory someone passed read ~/… on a terminal,
+// in the message and in the command to run, and keep the whole path piped.
+func TestDirectoryErrorsShowHomeAsTilde(t *testing.T) {
+	// shellQuote quotes a path with backslashes, so on Windows the commands
+	// keep their absolute paths.
+	if runtime.GOOS == "windows" {
+		t.Skip("the suggested commands quote their paths on Windows")
+	}
+	home := setupErrorFixture(t)
+	config := filepath.Join(home, ".claude")
+	if err := os.CopyFS(config, os.DirFS(os.Getenv("CLAUDE_CONFIG_DIR"))); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", config)
+	projects := filepath.Join(config, "projects")
+	work := filepath.Join(home, "work")
+	webapp := filepath.Join(work, "webapp")
+	folder := filepath.Join(projects, paths.PathToProjectDir(webapp))
+	// ~/work gets a project with no sessions, so summary -p ~/work finds
+	// only webapp's, under it.
+	if err := os.Mkdir(filepath.Join(projects, paths.PathToProjectDir(work)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		args          []string
+		piped, onTerm string
+	}{
+		{
+			[]string{"list", "--project-dir", "nope"},
+			"no project directory nope in " + projects + ". --project-dir=<Tab> completes the names, or pass the project's own directory with -p.",
+			"no project directory nope in ~/.claude/projects. --project-dir=<Tab> completes the names, or pass the project's own directory with -p.",
+		},
+		{
+			[]string{"list", "--project-dir", filepath.Join(work, "gone")},
+			"no such directory: " + filepath.Join(work, "gone"),
+			"no such directory: ~/work/gone",
+		},
+		{
+			[]string{"show", webapp},
+			`"` + webapp + `" is a directory, not a session. To show that directory's latest session, run: ficha show -p ` + webapp,
+			`"~/work/webapp" is a directory, not a session. To show that directory's latest session, run: ficha show -p ~/work/webapp`,
+		},
+		{
+			[]string{"list", webapp, "--sort-by", "cost"},
+			"ficha list takes no arguments. For that directory's sessions, run: ficha list -p " + webapp + " --sort-by cost",
+			"ficha list takes no arguments. For that directory's sessions, run: ficha list -p ~/work/webapp --sort-by cost",
+		},
+		{
+			[]string{webapp},
+			`unknown command "` + webapp + `" for "ficha". To analyze that directory, run: ficha -p ` + webapp,
+			`unknown command "~/work/webapp" for "ficha". To analyze that directory, run: ficha -p ~/work/webapp`,
+		},
+		{
+			[]string{"show", folder},
+			`"` + folder + `" is a Claude project folder, not a session. To show its latest session, run: ficha show --project-dir=` + filepath.Base(folder),
+			`"~/.claude/projects/` + filepath.Base(folder) + `" is a Claude project folder, not a session. To show its latest session, run: ficha show --project-dir=` + filepath.Base(folder),
+		},
+		{
+			[]string{"summary", "-p", work},
+			"Claude Code has no sessions for " + work + " itself, but 1 project under it has: webapp. Run: ficha summary -p " + work + " --nested",
+			"Claude Code has no sessions for ~/work itself, but 1 project under it has: webapp. Run: ficha summary -p ~/work --nested",
+		},
+		{
+			// The command repeats --project= as -p and a word of its own,
+			// where the shell expands ~.
+			[]string{"summary", "--project=" + work},
+			"Claude Code has no sessions for " + work + " itself, but 1 project under it has: webapp. Run: ficha summary -p " + work + " --nested",
+			"Claude Code has no sessions for ~/work itself, but 1 project under it has: webapp. Run: ficha summary -p ~/work --nested",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			_, err := executeLikeMain(t, tt.args...)
+			if err == nil || err.Error() != tt.piped {
+				t.Fatalf("piped:\n got: %v\nwant: %s", err, tt.piped)
+			}
+			// Wide enough for the whole message on one line, however long
+			// the temp dir in it is.
+			withStderrWidth(t, len(errorLabel)+len(tt.piped))
+			if got, want := formatError(nil, err), errorLabel+tt.onTerm+"\n"; got != want {
+				t.Errorf("on a terminal:\n got: %q\nwant: %q", got, want)
+			}
+		})
+	}
+}
+
+// A path the shell has to quote keeps its quotes, and so its full path, in
+// the command: a ~ inside quotes isn't expanded.
+func TestQuotedDirectoryCommandKeepsFullPath(t *testing.T) {
+	home := setupErrorFixture(t)
+	spaced := filepath.Join(home, "my work")
+	if err := os.Mkdir(spaced, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := executeLikeMain(t, "list", spaced)
+	want := "ficha list takes no arguments. For that directory's sessions, run: ficha list -p " + shellQuote(spaced)
+	if err == nil || err.Error() != want {
+		t.Fatalf("\n got: %v\nwant: %s", err, want)
+	}
+	withStderrWidth(t, len(errorLabel)+len(want))
+	if got := formatError(nil, err); got != errorLabel+want+"\n" {
+		t.Errorf("on a terminal:\n got: %q\nwant: %q", got, errorLabel+want+"\n")
+	}
+}
+
 func TestExpandHome(t *testing.T) {
 	home := realDir(t, "home")
 	t.Setenv("HOME", home)

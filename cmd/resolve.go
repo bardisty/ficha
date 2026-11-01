@@ -117,6 +117,10 @@ func resolveProjectDirectory(cfg *config) (resolvedProject, error) {
 			if !paths.LooksLikePath(cfg.projectDir) && !hasProjects(projectsDir) {
 				return resolvedProject{}, noDataError(projectsDir)
 			}
+			var dirErr *paths.DirError
+			if errors.As(err, &dirErr) {
+				return resolvedProject{}, newDisplayError("%s%s%s", dirErr.Before, errPath(dirErr.Path), dirErr.After)
+			}
 			return resolvedProject{}, err
 		}
 		cfg.tracef("--project-dir %s is %s", cfg.projectDir, dir)

@@ -127,6 +127,8 @@ func (e *displayError) onTerminal() string {
 			switch a := a.(type) {
 			case errPath:
 				args[i] = render.NoBreak(tildePath(string(a)))
+			case errQuotedPath:
+				args[i] = render.NoBreak(strconv.Quote(tildePath(string(a))))
 			case errWhole:
 				args[i] = render.NoBreak(string(a))
 			case errCommand:
@@ -144,27 +146,35 @@ func (e *displayError) onTerminal() string {
 // is how a typed ~/… reads too, as the shell expanded it.
 type errPath string
 
+// errQuotedPath is errPath in double quotes, as %q would print it, for a
+// path that's the argument someone typed.
+type errQuotedPath string
+
+func (p errQuotedPath) String() string {
+	return strconv.Quote(string(p))
+}
+
 // errWhole is text a terminal keeps on one line, as a command with no path
 // in it.
 type errWhole string
 
 // errCommand is a command to paste back, as in "ficha list -p ~/work/webapp":
-// text, then path quoted for the shell. A terminal shows path under home as
-// ~/… unless the shell needs it quoted, since a shell doesn't expand ~
-// inside quotes.
+// text, then path quoted for the shell, then rest. A terminal shows path
+// under home as ~/… where the shell would expand it again: unquoted, and at
+// the start of a word, so not after --project-dir=.
 type errCommand struct {
-	text, path string
+	text, path, rest string
 }
 
 func (c errCommand) String() string {
-	return c.text + shellQuote(c.path)
+	return c.text + shellQuote(c.path) + c.rest
 }
 
 func (c errCommand) onTerminal() string {
-	if shellQuote(c.path) != c.path {
+	if shellQuote(c.path) != c.path || c.text != "" && !strings.HasSuffix(c.text, " ") {
 		return c.String()
 	}
-	return c.text + tildePath(c.path)
+	return c.text + tildePath(c.path) + c.rest
 }
 
 // writeNote writes "Note: " and the formatted text to stderr as one line,

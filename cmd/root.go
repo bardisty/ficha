@@ -188,9 +188,11 @@ Each shell's help says how to load its script, as in
 'ficha completion zsh --help'.`
 			c.RunE = func(c *cobra.Command, _ []string) error { return c.Help() }
 			c.Args = shellArgs
-			usageArgs(c)
 			takeNoGlobalFlags(c)
 			for _, shell := range c.Commands() {
+				// In place of cobra.NoArgs, whose `unknown command "x" for
+				// "ficha completion bash"` reads as if bash had subcommands.
+				shell.Args = noArgs
 				takeNoGlobalFlags(shell)
 				// cobra's one line past 80 columns, which a terminal of that
 				// width would wrap mid-word.
@@ -198,6 +200,7 @@ Each shell's help says how to load its script, as in
 					"If it is not installed already, you can install it via your OS's package manager.",
 					"If it is not installed already, install it with your OS's package manager.", 1)
 			}
+			usageArgs(c)
 		}
 	}
 }
