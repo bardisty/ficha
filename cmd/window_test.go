@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/bardisty/ficha/internal/render"
 )
@@ -49,6 +50,40 @@ func TestParseWindowBound(t *testing.T) {
 		if _, err := parseWindowBound(bad, now, false); err == nil {
 			t.Errorf("%q should be rejected", bad)
 		}
+	}
+}
+
+// Santiago's clocks jump from 00:00 to 01:00 on 2026-09-06, so that date's
+// first instant is 01:00, and --until 2026-09-05 ends there too.
+func TestDateStartsAfterSkippedMidnight(t *testing.T) {
+	loc, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := time.Local
+	time.Local = loc
+	t.Cleanup(func() { time.Local = orig })
+
+	now := time.Date(2026, 10, 31, 15, 30, 0, 0, loc)
+	want := time.Date(2026, 9, 6, 1, 0, 0, 0, loc)
+	for _, tt := range []struct {
+		in  string
+		end bool
+	}{{"2026-09-06", false}, {"2026-09-05", true}} {
+		got, err := parseWindowBound(tt.in, now, tt.end)
+		if err != nil {
+			t.Fatalf("%q: %v", tt.in, err)
+		}
+		if !got.Equal(want) {
+			t.Errorf("%q (end=%v) = %v, want %v", tt.in, tt.end, got, want)
+		}
+	}
+
+	// At 00:30 on the 7th, yesterday is the 6th. The 6th's 00:30 doesn't
+	// exist, so stepping the clock back a day would land on the 5th.
+	late := time.Date(2026, 9, 7, 0, 30, 0, 0, loc)
+	if got, err := parseWindowBound("yesterday", late, false); err != nil || !got.Equal(want) {
+		t.Errorf("yesterday at %v = %v (err %v), want %v", late, got, err, want)
 	}
 }
 
