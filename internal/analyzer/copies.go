@@ -10,21 +10,19 @@ import (
 	"github.com/bardisty/ficha/internal/paths"
 )
 
-// FindCopies returns the replies in a session's transcript that another
-// session in its project also holds, priced, along with the session list and
-// summary count them under. It returns nil when there are none.
+// FindCopies returns the replies in a session's transcript that list and
+// summary count under another session in its project, priced, and which
+// session that is. It returns nil when there are none.
 //
-// Which session keeps a shared reply follows AnalyzeMultipleSessions, over
-// the sessions that share any. A fork copies its original from the start, so
-// those are the sessions whose first reply is this one's. Reading each other
-// transcript only as far as its first reply finds them, and only that family
-// is parsed. Agent transcripts are never copied, so only the project's
-// top-level ones are read.
+// Only the sessions sharing a reply with this one matter to who keeps it,
+// and a fork copies its original from the start, so those are the sessions
+// whose first reply is this one's. Comparing first replies reads a few KB of
+// each transcript where searching them whole would read the project, and
+// only that family gets parsed. Agent transcripts are never copied.
 //
-// checked is false only while the session has no reply with an ID to search
-// for, so a caller watching a new session knows to try again once it has.
-// A transcript outside the projects directory has no neighbors to compare
-// with, and gets nil, checked.
+// checked is false only while the session has no reply with an ID yet, so
+// watch knows to look again. A transcript outside the projects directory
+// has no neighbors to compare with, and gets nil, checked.
 func FindCopies(sessionPath, sessionID string) (copies *models.CopiedReplies, checked bool) {
 	sessionPath, err := filepath.Abs(sessionPath)
 	if err != nil {
@@ -82,9 +80,9 @@ func FindCopies(sessionPath, sessionID string) (copies *models.CopiedReplies, ch
 	return familyCopies(family, self), true
 }
 
-// projectSessions lists a project's sessions as list does, from its
-// transcripts and its index, so that ties in attribution break the same way.
-// An unreadable index leaves the transcripts alone; list warns of it.
+// projectSessions lists a project's sessions as list does, index and all,
+// since the index's creation times break ties in attribution. list warns of
+// an index it can't read; here it's left out the same way.
 func projectSessions(projectDir string) []models.SessionEntry {
 	disk, err := parser.DiscoverSessionsFromDisk(projectDir)
 	if err != nil {
@@ -109,6 +107,8 @@ func familyCopies(family []models.SessionEntry, self int) *models.CopiedReplies 
 	if parsed[self] == nil {
 		return nil
 	}
+	// Only the sessions ahead of this one in list's order can take its
+	// replies from it.
 	seen := make(map[parser.DedupKey]string)
 	for _, i := range attributionOrder(family, parsed, make([]bool, len(family))) {
 		if i == self {
