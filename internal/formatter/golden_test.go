@@ -416,6 +416,29 @@ func TestGoldenSessionTableSummary(t *testing.T) {
 	checkGolden(t, "session_table_summary", FormatSessionTable(goldenSummaryAnalysis(), true, 0))
 }
 
+// goldenDays is a --by-day report's days: one a session crossed into, one
+// last year, which gets its year, and the messages no day holds.
+func goldenDays() []models.DayCost {
+	return []models.DayCost{
+		{Date: "2026-01-15", SessionCount: 3, MessageCount: 1_204, TotalCost: models.CostBreakdown{TotalCost: 1_042.5}},
+		{Date: "2026-01-14", SessionCount: 1, MessageCount: 18, TotalCost: models.CostBreakdown{TotalCost: 0.4072}},
+		{Date: "2025-12-31", SessionCount: 2, MessageCount: 96, TotalCost: models.CostBreakdown{TotalCost: 7.25}},
+		{Date: "", SessionCount: 1, MessageCount: 1, TotalCost: models.CostBreakdown{TotalCost: 0.01}},
+	}
+}
+
+// --by-day puts COST BY DAY after COST BY MODEL, newest first. At 45
+// columns the weekday goes before a row would wrap.
+func TestGoldenSessionTableSummaryByDay(t *testing.T) {
+	a := goldenSummaryAnalysis()
+	a.Days = goldenDays()
+	checkGolden(t, "session_table_summary_by_day", FormatSessionTable(a, true, 0))
+	checkGolden(t, "session_table_summary_by_day_w45", FormatSessionTable(a, true, 45))
+	checkGolden(t, "session_table_summary_by_day_color", FormatSessionTable(a, false, 0))
+	useASCII(t)
+	checkGolden(t, "session_table_summary_by_day_ascii", FormatSessionTable(a, true, 0))
+}
+
 // --- golden tests: FormatSessionListTable ---
 
 // goldenListResults pairs goldenSessionEntries with analyses: a titled
@@ -691,6 +714,16 @@ func TestGoldenGlobalTable(t *testing.T) {
 	checkGolden(t, "global_table", FormatGlobalTable(goldenGlobalAnalysis(), true, goldenGlobalOptions(false)))
 }
 
+// global's days come between COST BY MODEL and PROJECTS.
+func TestGoldenGlobalTableByDay(t *testing.T) {
+	a := goldenGlobalAnalysis()
+	a.Days = goldenDays()
+	checkGolden(t, "global_table_by_day", FormatGlobalTable(a, true, goldenGlobalOptions(false)))
+	opts := goldenGlobalOptions(false)
+	opts.Width = 45
+	checkGolden(t, "global_table_by_day_w45", FormatGlobalTable(a, true, opts))
+}
+
 func TestGoldenGlobalTableColor(t *testing.T) {
 	checkGolden(t, "global_table_color", FormatGlobalTable(goldenGlobalAnalysis(), false, goldenGlobalOptions(false)))
 }
@@ -836,6 +869,15 @@ func TestGoldenSummaryDetails(t *testing.T) {
 	entries := summaryDetailsFixture(t)
 	analysis, results := summaryDetailsAnalysis(t, entries)
 	checkGolden(t, "summary_details", FormatSummaryTableWithDetails(analysis, results, "/home/user/src/app", true, false, 0, SortByTime))
+}
+
+// With --details the days come before the session breakdown.
+func TestGoldenSummaryDetailsByDay(t *testing.T) {
+	entries := summaryDetailsFixture(t)
+	analysis, results := summaryDetailsAnalysis(t, entries)
+	analysis.Days = goldenDays()
+	checkGolden(t, "summary_details_by_day", FormatSummaryTableWithDetails(analysis, results, "", true, false, 0, SortByTime))
+	checkGolden(t, "summary_details_by_day_w45", FormatSummaryTableWithDetails(analysis, results, "", true, false, 45, SortByTime))
 }
 
 func TestGoldenSummaryDetailsExpandAgents(t *testing.T) {

@@ -329,6 +329,17 @@ func localDay(t time.Time) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
+// CalendarDate labels a local calendar date held as localDay holds one, a
+// UTC midnight, as Date labels a moment: "Oct 31", with the year when it
+// isn't now's. Read in the local zone, that midnight could be the day
+// before, so it's formatted as it is.
+func CalendarDate(day, now time.Time) string {
+	if day.Year() != now.Local().Year() {
+		return day.Format("Jan 02 2006")
+	}
+	return day.Format("Jan 02")
+}
+
 // DayMarker labels a local calendar day ("Tue 29 Sep"), for the divider
 // a per-message table draws where the day changes, since its rows show only
 // a time.

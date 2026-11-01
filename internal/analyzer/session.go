@@ -560,12 +560,23 @@ func AnalyzeMultipleSessions(entries []models.SessionEntry) (*models.SessionAnal
 // The transcripts, agents' included, are parsed in parallel. The analysis of
 // those parses is serial and ordered, so the totals are the same on every run.
 func AnalyzeMultipleSessionsInWindow(entries []models.SessionEntry, window models.TimeWindow) (*models.SessionAnalysis, []models.SessionResult, error) {
+	return analyzeMultipleSessions(entries, window, false)
+}
+
+// AnalyzeMultipleSessionsByDay is AnalyzeMultipleSessionsInWindow with the
+// aggregate's Days filled in, from the same messages its totals count, so
+// the days add up to them.
+func AnalyzeMultipleSessionsByDay(entries []models.SessionEntry, window models.TimeWindow) (*models.SessionAnalysis, []models.SessionResult, error) {
+	return analyzeMultipleSessions(entries, window, true)
+}
+
+func analyzeMultipleSessions(entries []models.SessionEntry, window models.TimeWindow, byDay bool) (*models.SessionAnalysis, []models.SessionResult, error) {
 	if len(entries) == 0 {
 		return nil, nil, fmt.Errorf("no sessions to analyze")
 	}
 	parses, jobs := planSessionParses(entries, window)
 	runParseJobs(jobs)
-	return analyzeSessionParses(entries, window, parses)
+	return analyzeSessionParses(entries, window, parses, byDay)
 }
 
 // NoSessionReadError is returned when none of the sessions given could be
@@ -617,8 +628,8 @@ func noSessionReadError(entries []models.SessionEntry, errs []error) error {
 }
 
 // analyzeSessionParses is AnalyzeMultipleSessionsInWindow after the parse
-// step, for non-empty entries.
-func analyzeSessionParses(entries []models.SessionEntry, window models.TimeWindow, parses *sessionParses) (*models.SessionAnalysis, []models.SessionResult, error) {
+// step, for non-empty entries. byDay fills in the aggregate's Days.
+func analyzeSessionParses(entries []models.SessionEntry, window models.TimeWindow, parses *sessionParses, byDay bool) (*models.SessionAnalysis, []models.SessionResult, error) {
 	aggregate := &models.SessionAnalysis{
 		SessionID:         "aggregate",
 		CostByModel:       make(map[string]models.CostBreakdown),
@@ -641,6 +652,10 @@ func analyzeSessionParses(entries []models.SessionEntry, window models.TimeWindo
 	oldSessions := 0
 	outside := make([]bool, len(entries))
 	seen := make(map[parser.DedupKey]string)
+	var days dayTotals
+	if byDay {
+		days = dayTotals{}
+	}
 
 	// Every parent is parsed up front: processing order derives from each
 	// session's earliest message timestamp, which only the parse can provide.
@@ -675,7 +690,17 @@ func analyzeSessionParses(entries []models.SessionEntry, window models.TimeWindo
 			results[idx] = models.SessionResult{Entry: entry, Analysis: nil}
 			continue
 		}
-		sessionAnalysis := analyzeParsedSession(parsed[idx], entry.FullPath, entry.SessionID, NoMessages, parses.agents[idx], seen, window)
+		// The days need each message the totals count. Only they keep the
+		// list, so a report without them builds none.
+		scope := NoMessages
+		if days != nil {
+			scope = AllMessages
+		}
+		sessionAnalysis := analyzeParsedSession(parsed[idx], entry.FullPath, entry.SessionID, scope, parses.agents[idx], seen, window)
+		if days != nil {
+			days.addSession(sessionAnalysis.Messages)
+			sessionAnalysis.Messages = nil
+		}
 		parsedSessions++
 		if !window.IsZero() && sessionAnalysis.MessageCount == 0 {
 			// Nothing inside the window, so it isn't in the report. What
@@ -732,6 +757,9 @@ func analyzeSessionParses(entries []models.SessionEntry, window models.TimeWindo
 		aggregate.Duration = models.Duration(lastTime.Sub(firstTime))
 	}
 
+	if days != nil {
+		aggregate.Days = days.list()
+	}
 	aggregate.SkippedSessions = skippedSessions
 	// Count only the sessions the totals actually cover — an unparseable
 	// session lands in SkippedSessions, so pairing it into the count would sit

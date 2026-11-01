@@ -59,6 +59,9 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool, width in
 		sb.WriteString("\n\n")
 		sb.WriteString(formatCostByModelContent(analysis, noColor))
 	}
+	if days := renderDaysSection(analysis.Days, sectionWidth, noColor); days != "" {
+		sb.WriteString("\n" + days)
+	}
 
 	// Agent breakdown (shown when agents exist). The summary aggregate sets
 	// HasAgents/AgentsCost without collecting the per-agent records, and every

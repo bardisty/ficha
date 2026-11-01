@@ -49,6 +49,8 @@ type config struct {
 	// Window flags (summary, global): --since and --until as typed.
 	since string
 	until string
+	// --by-day (summary, global): a row per local day in table and json.
+	byDay bool
 
 	// global flags.
 	globalDetails bool

@@ -70,6 +70,9 @@ func FormatGlobalTable(analysis *models.GlobalAnalysis, noColor bool, opts Globa
 		sb.WriteString("\n\n")
 		sb.WriteString(formatGlobalCostByModel(analysis.CostByModel, noColor))
 	}
+	if days := renderDaysSection(analysis.Days, sectionWidth, noColor); days != "" {
+		sb.WriteString("\n" + days)
+	}
 
 	// Projects section
 	sb.WriteString("\n")

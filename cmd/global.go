@@ -33,13 +33,18 @@ Both count messages by their own timestamps, agents' too, so a session that
 crosses a bound is split at it. They apply to json and csv as well as the
 table.
 
+--by-day adds a row for each local day with messages in the window, or in
+all of history without --since, newest first: a days array in json. A
+session counts on every day it has messages on. csv has no days.
+
 Examples:
   ficha global                   The 10 costliest projects
   ficha global --details         Every project, with a cumulative cost column
   ficha global --top 20          The 20 costliest projects
   ficha global --sort-by name    Projects by name
   ficha global -f json           Every project as JSON
-  ficha global --since 7d        Every project, the last 7 days`,
+  ficha global --since 7d        Every project, the last 7 days
+  ficha global --by-day          A row per day, newest first`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -56,6 +61,7 @@ Examples:
 	_ = globalCmd.RegisterFlagCompletionFunc("sort-by", fixedValues(sortByValues))
 	_ = globalCmd.RegisterFlagCompletionFunc("top", cobra.NoFileCompletions)
 	addWindowFlags(globalCmd, cfg)
+	addByDayFlag(globalCmd, cfg)
 
 	return globalCmd
 }
@@ -97,13 +103,18 @@ func runGlobal(cfg *config) error {
 	pickPalette(cfg)
 
 	// Analyze all projects (analyzeProject handles empty-session projects internally)
-	analysis, err := analyzer.AnalyzeAllProjectsInWindow(projects, window)
+	analyze := analyzer.AnalyzeAllProjectsInWindow
+	if cfg.byDay {
+		analyze = analyzer.AnalyzeAllProjectsByDay
+	}
+	analysis, err := analyze(projects, window)
 	if err != nil {
 		return fmt.Errorf("analyzing projects: %w", err)
 	}
 
 	// Warn about every input the totals could not account for
 	var warnings bytes.Buffer
+	warnByDayCSV(cfg, &warnings)
 	warnIgnoredIndexes(&warnings, analysis.IgnoredIndexes, cfg.verbose)
 	// One cause, such as a chown gone wrong, can hit every project, so past
 	// maxListedFiles the rest are a count unless -v asks for them.
