@@ -263,11 +263,11 @@ type DedupKey struct {
 	ReqID string
 }
 
-// dedupKey returns the key for a line and whether it has one. Lines without a
+// DedupKeyOf returns the key for a line and whether it has one. Lines without a
 // message id (ok=false) must never be collapsed together — an empty id
 // identifies nothing. A missing requestId still yields a key (degraded), so two
 // lines sharing an id and both missing requestId do collapse, as before.
-func dedupKey(msg models.JSONLMessage) (DedupKey, bool) {
+func DedupKeyOf(msg models.JSONLMessage) (DedupKey, bool) {
 	if msg.Message == nil || msg.Message.ID == "" {
 		return DedupKey{}, false
 	}
@@ -288,7 +288,7 @@ func DeduplicateMessages(messages []models.JSONLMessage) []models.JSONLMessage {
 	seenIdx := make(map[DedupKey]int)
 
 	for _, msg := range messages {
-		key, ok := dedupKey(msg)
+		key, ok := DedupKeyOf(msg)
 		if !ok {
 			deduped = append(deduped, msg)
 			continue
@@ -315,7 +315,7 @@ func DeduplicateMessages(messages []models.JSONLMessage) []models.JSONLMessage {
 func ExcludeSeenMessages(messages []models.JSONLMessage, seen map[DedupKey]string, sessionID string) []models.JSONLMessage {
 	kept := make([]models.JSONLMessage, 0, len(messages))
 	for _, msg := range messages {
-		key, ok := dedupKey(msg)
+		key, ok := DedupKeyOf(msg)
 		if !ok {
 			kept = append(kept, msg)
 			continue
@@ -332,7 +332,7 @@ func ExcludeSeenMessages(messages []models.JSONLMessage, seen map[DedupKey]strin
 // KeptBy returns the session ExcludeSeenMessages recorded as keeping msg's
 // API response in seen, and whether one did.
 func KeptBy(msg models.JSONLMessage, seen map[DedupKey]string) (string, bool) {
-	key, ok := dedupKey(msg)
+	key, ok := DedupKeyOf(msg)
 	if !ok {
 		return "", false
 	}

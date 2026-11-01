@@ -97,18 +97,18 @@ type copiesResult struct {
 }
 
 // copiesMsg ends a recheck of the fork family, for the session numbered
-// gen. family is nil when nothing moved.
+// gen. family is nil when the family is as it was.
 type copiesMsg struct {
 	gen    int
 	family *analyzer.ForkFamily
 }
 
 // recheckCopies rechecks who keeps the copies after a member of the family
-// wrote. Without sessions-index.json each write moves its file's mtime,
-// which can move the credit, the watched file's writes included. One runs
-// at a time, and a write during it asks for one more from its result: a
-// recheck that parses can take longer than a later one that only stats,
-// and landing last, would undo it.
+// wrote. Without sessions-index.json a member's first reply of its own can
+// move the credit, the watched file's included. One runs at a time, and a
+// write during it asks for one more from its result: a recheck that parses
+// can take longer than a later one that only stats, and landing last,
+// would undo it.
 func (m *Model) recheckCopies() tea.Cmd {
 	if m.family == nil {
 		return nil

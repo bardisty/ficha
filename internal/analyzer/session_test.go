@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1142,43 +1143,103 @@ func TestAnalyzeMultipleSessions_ForkAttribution_OriginalMtimeLater(t *testing.T
 	}
 }
 
-// Without sessions-index.json an entry's Created is its file's mtime. A
-// fork ties with its original on the earliest message, so resuming the
-// original after forking, which pushes its mtime past the fork's, hands the
-// fork the shared history: the original keeps only what it added since.
-// This pins that limit of the tie-break. The totals still count each reply
-// once, and TranscriptMessages still counts the whole file.
-func TestAnalyzeMultipleSessions_ForkAttribution_NoIndexFollowsMtime(t *testing.T) {
-	tmpDir := t.TempDir()
+// forkReply is copiesReply as one line for writeJSONLFile.
+func forkReply(ts, id string) string {
+	return strings.TrimSuffix(copiesReply(ts, id), "\n")
+}
 
-	originalPath := filepath.Join(tmpDir, "original.jsonl")
-	writeJSONLFile(t, originalPath, []string{forkMsg1, forkMsg2, forkMsg3})
-	forkPath := filepath.Join(tmpDir, "fork.jsonl")
-	writeJSONLFile(t, forkPath, []string{forkMsg1, forkMsg2})
-
-	forkTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
-	resumed := time.Date(2024, 1, 16, 10, 0, 0, 0, time.UTC)
-	entries := []models.SessionEntry{
-		{SessionID: "original", FullPath: originalPath, Created: resumed, Modified: resumed},
-		{SessionID: "fork", FullPath: forkPath, Created: forkTime, Modified: forkTime},
+// Without sessions-index.json a fork and its original tie on their first
+// message, and the session that diverged from the shared history last keeps
+// it. File mtimes never decide it, so writes to either file that don't add
+// a first reply of its own move nothing.
+func TestAnalyzeMultipleSessions_ForkAttribution_NoIndexLastToDivergeKeeps(t *testing.T) {
+	shared := []string{forkReply("2024-01-15T10:00:00Z", "1"), forkReply("2024-01-15T10:10:00Z", "2")}
+	type want struct{ original, fork int }
+	tests := []struct {
+		name           string
+		original, fork []string
+		want           want
+	}{
+		// The fork never replied, so it diverged from nothing, and goes
+		// first.
+		{"abandoned fork", append(slices.Clone(shared), forkReply("2024-01-16T09:00:00Z", "o")), shared, want{1, 2}},
+		{"original replied last", append(slices.Clone(shared), forkReply("2024-01-16T09:00:00Z", "o")), append(slices.Clone(shared), forkReply("2024-01-15T12:00:00Z", "f")), want{3, 1}},
+		{"fork replied last", append(slices.Clone(shared), forkReply("2024-01-15T12:00:00Z", "o")), append(slices.Clone(shared), forkReply("2024-01-16T09:00:00Z", "f")), want{1, 3}},
+		// Neither has diverged, so the session IDs settle it.
+		{"neither replied", shared, shared, want{2, 0}},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			originalPath := filepath.Join(dir, "aaaaaaaa.jsonl")
+			forkPath := filepath.Join(dir, "ffffffff.jsonl")
+			writeJSONLFile(t, originalPath, tt.original)
+			writeJSONLFile(t, forkPath, tt.fork)
+			check := func(when string) {
+				t.Helper()
+				entries, err := parser.DiscoverSessionsFromDisk(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				aggregate, results, err := AnalyzeMultipleSessions(entries)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got := map[string]int{}
+				for _, r := range results {
+					got[r.Entry.SessionID] = r.Analysis.MessageCount
+				}
+				if got["aaaaaaaa"] != tt.want.original || got["ffffffff"] != tt.want.fork {
+					t.Errorf("%s: original %d, fork %d; want %d and %d", when, got["aaaaaaaa"], got["ffffffff"], tt.want.original, tt.want.fork)
+				}
+				if total := len(tt.original) + len(tt.fork) - len(shared); aggregate.MessageCount != total {
+					t.Errorf("%s: aggregate %d messages, want %d", when, aggregate.MessageCount, total)
+				}
+			}
+			day := time.Date(2024, 1, 20, 0, 0, 0, 0, time.UTC)
+			for i, newer := range []string{originalPath, forkPath, originalPath} {
+				older := forkPath
+				if newer == forkPath {
+					older = originalPath
+				}
+				if err := os.Chtimes(older, day, day); err != nil {
+					t.Fatal(err)
+				}
+				at := day.Add(time.Duration(i+1) * time.Hour)
+				if err := os.Chtimes(newer, at, at); err != nil {
+					t.Fatal(err)
+				}
+				check(filepath.Base(newer) + " written last")
+			}
+		})
+	}
+}
 
-	aggregate, results, err := AnalyzeMultipleSessions(entries)
+// With three sessions in a tie, a session diverges at its first reply that
+// neither of the others holds. B forked from A, and C from B after B's
+// first reply, so B's first reply is shared with C and B diverges at its
+// second. C diverged last: it keeps all it holds, A keeps its one reply of
+// its own, and B its second.
+func TestAnalyzeMultipleSessions_ForkAttribution_ForkOfAFork(t *testing.T) {
+	dir := t.TempDir()
+	m1, m2 := forkReply("2024-01-15T10:00:00Z", "1"), forkReply("2024-01-15T10:10:00Z", "2")
+	b3 := forkReply("2024-01-15T11:00:00Z", "b3")
+	writeJSONLFile(t, filepath.Join(dir, "aaaaaaaa.jsonl"), []string{m1, m2, forkReply("2024-01-15T13:00:00Z", "a3")})
+	writeJSONLFile(t, filepath.Join(dir, "bbbbbbbb.jsonl"), []string{m1, m2, b3, forkReply("2024-01-15T12:00:00Z", "b4")})
+	writeJSONLFile(t, filepath.Join(dir, "cccccccc.jsonl"), []string{m1, m2, b3, forkReply("2024-01-15T14:00:00Z", "c4")})
+	entries, err := parser.DiscoverSessionsFromDisk(dir)
 	if err != nil {
-		t.Fatalf("AnalyzeMultipleSessions failed: %v", err)
+		t.Fatal(err)
 	}
-	if aggregate.MessageCount != 3 || !almostEqual(aggregate.TotalCost.TotalCost, 0.036, 0.0001) {
-		t.Errorf("aggregate: got %d messages, $%f; want 3, $0.036", aggregate.MessageCount, aggregate.TotalCost.TotalCost)
+	_, results, err := AnalyzeMultipleSessions(entries)
+	if err != nil {
+		t.Fatal(err)
 	}
-	original, fork := results[0].Analysis, results[1].Analysis
-	if fork.MessageCount != 2 || !almostEqual(fork.TotalCost.TotalCost, 0.015, 0.0001) {
-		t.Errorf("fork: got %d messages, $%f; want the shared 2, $0.015", fork.MessageCount, fork.TotalCost.TotalCost)
-	}
-	if original.MessageCount != 1 || !almostEqual(original.TotalCost.TotalCost, 0.021, 0.0001) {
-		t.Errorf("original: got %d messages, $%f; want its own 1, $0.021", original.MessageCount, original.TotalCost.TotalCost)
-	}
-	if original.TranscriptMessages != 3 || fork.TranscriptMessages != 2 {
-		t.Errorf("TranscriptMessages: original %d, fork %d; want 3 and 2", original.TranscriptMessages, fork.TranscriptMessages)
+	want := map[string]int{"aaaaaaaa": 1, "bbbbbbbb": 1, "cccccccc": 4}
+	for _, r := range results {
+		if got := r.Analysis.MessageCount; got != want[r.Entry.SessionID] {
+			t.Errorf("%s: %d messages, want %d", r.Entry.SessionID, got, want[r.Entry.SessionID])
+		}
 	}
 }
 

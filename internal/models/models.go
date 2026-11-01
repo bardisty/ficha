@@ -501,12 +501,15 @@ type SummaryDetail struct {
 
 // SessionEntry represents an entry in sessions-index.json
 type SessionEntry struct {
-	SessionID    string    `json:"sessionId"`
-	FullPath     string    `json:"fullPath"`
-	MessageCount int       `json:"messageCount"`
-	Created      time.Time `json:"created"`
-	Modified     time.Time `json:"modified"`
-	ProjectPath  string    `json:"projectPath,omitempty"` // Original project path
+	SessionID    string `json:"sessionId"`
+	FullPath     string `json:"fullPath"`
+	MessageCount int    `json:"messageCount"`
+	// Created is when the session began, from sessions-index.json. It's zero
+	// for a session the index doesn't list: a file's mtime moves on every
+	// write, so it can't stand in.
+	Created     time.Time `json:"created"`
+	Modified    time.Time `json:"modified"`
+	ProjectPath string    `json:"projectPath,omitempty"` // Original project path
 	// Agent-related fields
 	AgentPaths        []string `json:"agent_paths,omitempty"`
 	AgentCount        int      `json:"agent_count"`

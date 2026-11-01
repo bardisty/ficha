@@ -31,15 +31,16 @@ type ForkFamily struct {
 
 	members []models.SessionEntry
 	self    int
-	// indexed marks the members whose Created came from sessions-index.json.
-	// The rest take their file's mtime, which moves on every write.
-	indexed []bool
-	// earliest is each member's first message time, from the parse that
-	// found Copies. Appends don't change it.
-	earliest []time.Time
 	// ahead is the members ahead of self in attribution order, which alone
 	// decide Copies.
 	ahead []int
+	// open is the members that can still move the order: they tie with
+	// others and hold no reply of their own yet (see orderByEarliest).
+	// sizes is their files' sizes before the parse, and held counts the
+	// members that held each reply then.
+	open  []int
+	sizes []int64
+	held  map[parser.DedupKey]int
 }
 
 // FindFamily returns the session's fork family, or nil when no other
@@ -75,7 +76,7 @@ func FindFamily(sessionPath, sessionID string) (family *ForkFamily, checked bool
 		return nil, false
 	}
 
-	entries, index := projectSessions(projectDir)
+	entries := projectSessions(projectDir)
 	self := -1
 	for i, e := range entries {
 		if e.SessionID == sessionID && filepath.Clean(e.FullPath) == sessionPath {
@@ -103,7 +104,6 @@ func FindFamily(sessionPath, sessionID string) (family *ForkFamily, checked bool
 				f.self = len(f.members)
 			}
 			f.members = append(f.members, e)
-			f.indexed = append(f.indexed, index[e.SessionID])
 		}
 	}
 	if len(f.members) < 2 {
@@ -123,45 +123,67 @@ func (f *ForkFamily) Includes(sessionID string) bool {
 	return false
 }
 
-// Recheck returns the family with its copies found again, or nil when the
-// members ahead of this session are as they were, and so are the copies.
-// Without sessions-index.json a fork and its original tie on their first
-// message and go by file mtime, so a write to either can move the credit.
-// A recheck stats each member's file, and parses the family only when the
-// order moved.
+// Recheck returns the family with its copies found again, or nil when it's
+// as it was. Only a member with no reply of its own can move the order, by
+// gaining one, so a recheck stats those alone, and parses one only when its
+// file grew. Once every member has a reply of its own, it does neither.
 func (f *ForkFamily) Recheck() *ForkFamily {
-	members := slices.Clone(f.members)
-	for i := range members {
-		info, err := os.Stat(members[i].FullPath)
+	diverged := false
+	for j, i := range f.open {
+		info, err := os.Stat(f.members[i].FullPath)
+		if err != nil || info.Size() == f.sizes[j] {
+			continue
+		}
+		p, err := parser.ParseJSONLFileWithResult(f.members[i].FullPath)
 		if err != nil {
 			continue
 		}
-		members[i].Modified = info.ModTime()
-		if !f.indexed[i] {
-			members[i].Created = info.ModTime()
+		// A member's new reply can't be in another's file, so one the
+		// family didn't hold at the parse is its own.
+		if slices.ContainsFunc(p.Messages, func(msg models.JSONLMessage) bool {
+			k, ok := parser.DedupKeyOf(msg)
+			return ok && !msg.Timestamp.IsZero() && f.held[k] == 0
+		}) {
+			diverged = true
+			break
 		}
 	}
-	if slices.Equal(aheadOf(orderByEarliest(members, f.earliest), f.self), f.ahead) {
+	if !diverged {
 		return nil
 	}
-	next := &ForkFamily{members: members, self: f.self, indexed: f.indexed}
+	// The order may hold, but the member that diverged leaves open, so the
+	// next recheck doesn't parse it again.
+	next := &ForkFamily{members: f.members, self: f.self}
 	next.find()
 	return next
 }
 
-// find parses the family's transcripts and sets Copies, earliest and ahead.
+// find parses the family's transcripts and sets Copies, and what Recheck
+// reads.
 func (f *ForkFamily) find() {
+	sizes := make([]int64, len(f.members))
+	for i, m := range f.members {
+		if info, err := os.Stat(m.FullPath); err == nil {
+			sizes[i] = info.Size()
+		}
+	}
 	parsed := make([]*parser.ParseResult, len(f.members))
 	forEachParallel(len(f.members), func(i int) {
 		parsed[i], _ = parser.ParseJSONLFileWithResult(f.members[i].FullPath)
 	})
-	f.earliest = make([]time.Time, len(f.members))
+	earliest := make([]time.Time, len(f.members))
 	for i, p := range parsed {
 		if p != nil {
-			f.earliest[i] = earliestMessageTime(p.Messages)
+			earliest[i] = earliestMessageTime(p.Messages)
 		}
 	}
-	f.ahead = aheadOf(orderByEarliest(f.members, f.earliest), f.self)
+	var order []int
+	order, f.open, f.held = orderByEarliest(f.members, parsed, earliest)
+	f.sizes = make([]int64, len(f.open))
+	for j, i := range f.open {
+		f.sizes[j] = sizes[i]
+	}
+	f.ahead = aheadOf(order, f.self)
 	f.Copies = familyCopies(f.members, parsed, f.ahead, f.self)
 }
 
@@ -171,23 +193,16 @@ func aheadOf(order []int, self int) []int {
 }
 
 // projectSessions lists a project's sessions as list does, index and all,
-// since the index's creation times break ties in attribution, and the IDs
-// the index holds. An index it can't read is left out, as list leaves it
-// out after warning.
-func projectSessions(projectDir string) ([]models.SessionEntry, map[string]bool) {
+// since the index's creation times break ties in attribution. An index it
+// can't read is left out, as list leaves it out after warning.
+func projectSessions(projectDir string) []models.SessionEntry {
 	disk, err := parser.DiscoverSessionsFromDisk(projectDir)
 	if err != nil {
-		return nil, nil
+		return nil
 	}
 	index, _ := parser.ParseSessionsIndex(paths.GetSessionsIndexPath(projectDir))
 	entries, _ := parser.MergeSessionSources(index, disk, projectDir)
-	indexed := map[string]bool{}
-	if index != nil {
-		for _, e := range index.Entries {
-			indexed[e.SessionID] = true
-		}
-	}
-	return entries, indexed
+	return entries
 }
 
 // familyCopies returns the replies family[self] holds that a member ahead
