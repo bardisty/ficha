@@ -165,6 +165,77 @@ func TestClaudeFolderArguments(t *testing.T) {
 	}
 }
 
+// After --, an argument can't be moved in front of it, and a flag can't
+// stay behind it. Each suggestion here is run as printed, the way a user
+// would paste it.
+func TestClaudeFolderAfterDashes(t *testing.T) {
+	root := setupE2EFixture(t)
+	t.Chdir(filepath.Join(root, "projects"))
+	folder := filepath.Join(root, "projects", e2eProjDir)
+	// From inside the projects dir, an agents folder's relative path starts
+	// with -, as a flag does.
+	agents := filepath.Join(e2eProjDir, e2eBetaID)
+	agentsCmd := shellQuote(agents + ".jsonl")
+
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--", folder}, "ficha --project-dir=" + e2eProjDir},
+		{[]string{"-v", "--", folder}, "ficha -v --project-dir=" + e2eProjDir},
+		{[]string{"show", "--", folder}, "ficha show --project-dir=" + e2eProjDir},
+		{[]string{"--", agents}, "ficha -- " + agentsCmd},
+		{[]string{"show", "--", agents}, "ficha show -- " + agentsCmd},
+	}
+	for _, tt := range tests {
+		_, err := executeLikeMain(t, tt.args...)
+		if exitCode(err) != 2 {
+			t.Errorf("%v: exit %d: %v", tt.args, exitCode(err), err)
+			continue
+		}
+		msg := err.Error()
+		suggested := msg[strings.LastIndex(msg, "un: ")+len("un: "):]
+		if suggested != tt.want {
+			t.Errorf("%v suggests %s, want %s", tt.args, suggested, tt.want)
+		}
+		words := shellWords(suggested)
+		if _, err := executeLikeMain(t, words[1:]...); err != nil {
+			t.Errorf("%v: the suggested %s fails: %v", tt.args, suggested, err)
+		}
+	}
+}
+
+// shellWords splits a line quoteLine built back into its words.
+func shellWords(line string) []string {
+	var words []string
+	var word strings.Builder
+	inWord, quoted, escaped := false, false, false
+	for _, r := range line {
+		switch {
+		case escaped:
+			word.WriteRune(r)
+			escaped = false
+		case r == '\\' && !quoted:
+			escaped, inWord = true, true
+		case r == '\'':
+			quoted, inWord = !quoted, true
+		case r == ' ' && !quoted:
+			if inWord {
+				words = append(words, word.String())
+				word.Reset()
+				inWord = false
+			}
+		default:
+			word.WriteRune(r)
+			inWord = true
+		}
+	}
+	if inWord {
+		words = append(words, word.String())
+	}
+	return words
+}
+
 // A folder in the projects dir given as -p, or run from, reads as that
 // project, the way --project-dir does. A config dir reached through a
 // symlink, as ~/.claude can be, still counts.

@@ -114,12 +114,12 @@ func claudeFolderError(cmd *cobra.Command, arg string) error {
 		if todo == "" {
 			todo = "show its latest session"
 		}
-		line, _ := rewriteArg(cmd, arg, "--project-dir="+name)
+		line, _ := rewriteArg(cmd, arg, true, "--project-dir="+name)
 		return usageError(newDisplayError("%s is a Claude project folder, not a session. To %s, run: %s", errQuotedPath(arg), todo, errWhole(quoteLine(line))))
 	}
 	transcript := strings.TrimRight(arg, `/\`) + ".jsonl"
 	if id := trimJSONL(filepath.Base(transcript)); id != "" && looksLikeSessionID(id) && isDir(arg) && isRegularFile(transcript) {
-		line, at := rewriteArg(cmd, arg, transcript)
+		line, at := rewriteArg(cmd, arg, false, transcript)
 		return usageError(newDisplayError("%s holds the agents of session %s, not a session. Run: %s", errQuotedPath(arg), shortSessionID(id), pathCommand(line, at)))
 	}
 	return nil
@@ -216,7 +216,7 @@ func noArgs(cmd *cobra.Command, args []string) error {
 // from an argument to -p right after the command's name. A project flag
 // already on the line is dropped, since -p replaces it.
 func projectCommand(cmd *cobra.Command, dir string) errCommand {
-	line, at := rewriteArg(cmd, dir, "-p", dir)
+	line, at := rewriteArg(cmd, dir, true, "-p", dir)
 	return pathCommand(line, at+1)
 }
 
@@ -240,23 +240,25 @@ func quoteLine(tokens []string) string {
 }
 
 // rewriteArg is the command line ficha was run with, as tokens, with arg
-// replaced by tokens right after the command's name, or in arg's place for
-// bare ficha, and any project flag dropped. at is the index of tokens'
-// first one in out.
-func rewriteArg(cmd *cobra.Command, arg string, tokens ...string) (out []string, at int) {
+// replaced by tokens and any project flag dropped. Tokens go right after the
+// command's name, or in arg's place for bare ficha. When arg came after a
+// --, only the caller knows whether tokens are a flag, and so asFlag says:
+// a flag goes in front of the --, where it still reads as one, and anything
+// else stays in arg's place, where a path that starts with - can't. at is
+// the index of tokens' first one in out.
+func rewriteArg(cmd *cobra.Command, arg string, asFlag bool, tokens ...string) (out []string, at int) {
 	line, ok := commandLine(cmd.Context())
 	if !ok {
 		out = strings.Fields(cmd.CommandPath())
 		return append(out, tokens...), len(out)
 	}
-	at = -1
 	out = []string{cmd.Root().Name()}
-	named, moved, afterDashes := false, false, false
+	nameAt, argAt, dashesAt := -1, -1, -1
 	for i := 0; i < len(line); i++ {
 		a := line[i]
-		if !afterDashes {
+		if dashesAt < 0 {
 			if a == "--" {
-				afterDashes = true
+				dashesAt = len(out)
 				out = append(out, a)
 				continue
 			}
@@ -277,32 +279,39 @@ func rewriteArg(cmd *cobra.Command, arg string, tokens ...string) (out []string,
 				i += n - 1
 				continue
 			}
-			if !named && (a == cmd.Name() || slices.Contains(cmd.Aliases, a)) {
-				named = true
+			if nameAt < 0 && (a == cmd.Name() || slices.Contains(cmd.Aliases, a)) {
 				out = append(out, a)
-				at = len(out)
-				out = append(out, tokens...)
+				nameAt = len(out)
 				continue
 			}
 		}
-		if !moved && a == arg {
-			moved = true
-			// Bare ficha has no command name on the line to follow.
-			if !cmd.HasParent() {
-				at = len(out)
-				out = append(out, tokens...)
-			}
+		if argAt < 0 && a == arg {
+			argAt = len(out)
 			continue
 		}
 		out = append(out, a)
 	}
+	afterDashes := dashesAt >= 0 && argAt > dashesAt
+	switch {
+	case afterDashes && !asFlag:
+		at = argAt
+	case nameAt >= 0:
+		at = nameAt
+	case afterDashes:
+		at = dashesAt
+	case argAt >= 0 && !cmd.HasParent():
+		// Bare ficha has no command name on the line to follow.
+		at = argAt
+	default:
+		// A line that names neither the command nor arg still gets tokens.
+		if out[len(out)-1] == "--" {
+			out = out[:len(out)-1]
+		}
+		at = len(out)
+	}
+	out = slices.Insert(out, at, tokens...)
 	if out[len(out)-1] == "--" {
 		out = out[:len(out)-1]
-	}
-	// A line that names neither the command nor arg still gets tokens.
-	if at < 0 {
-		at = len(out)
-		out = append(out, tokens...)
 	}
 	return out, at
 }
