@@ -38,13 +38,13 @@ all of history without --since, newest first: a days array in json. A
 session counts on every day it has messages on. csv has no days.
 
 Examples:
-  ficha global                   The 10 costliest projects
-  ficha global --details         Every project, with a cumulative cost column
-  ficha global --top 20          The 20 costliest projects
-  ficha global --sort-by name    Projects by name
-  ficha global -f json           Every project as JSON
-  ficha global --since 7d        Every project, the last 7 days
-  ficha global --by-day          A row per day, newest first`,
+  ficha global                      The 10 costliest projects
+  ficha global --details            Every project, with cumulative cost
+  ficha global --top 20             The 20 costliest projects
+  ficha global --sort-by name       Projects by name
+  ficha global -f json              Every project as JSON
+  ficha global --since 7d           Every project, the last 7 days
+  ficha global --since 7d --by-day  The last 7 days, a row per day`,
 		Args:              noArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
