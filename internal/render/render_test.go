@@ -1430,3 +1430,54 @@ func TestMainRowLabel(t *testing.T) {
 		t.Errorf("in color: %q, want %q", got, want)
 	}
 }
+
+// The fork note doesn't end on a word alone: the line above hands down its
+// last word when the pair fits. Nothing else about the wrap changes, so
+// it keeps every word, its line count and the width.
+func TestWrapNoRunt(t *testing.T) {
+	underADollar := CopiesNoteFor(models.CopiedReplies{Messages: 20, Cost: 0.4072, SessionID: "66666666-ffff-4fff-8fff-000000000006", Sessions: 1}, 30, 0.6558)
+	want := "20 messages here ($0.4072) are also in session 66666666. list and summary\n" +
+		"count them there, so list shows this session at $0.2486 with a\n" +
+		"shorter length."
+	if got := WrapNoRunt(underADollar, 76); got != want {
+		t.Errorf("at 76:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+	if got := WrapNoRunt(underADollar, 200); got != underADollar {
+		t.Errorf("a note that fits changed:\n%s", got)
+	}
+
+	var notes []string
+	for _, c := range []models.CopiedReplies{
+		{Messages: 1, Cost: 0.0205, SessionID: "66666666-ffff-4fff-8fff-000000000006", Sessions: 1},
+		{Messages: 20, Cost: 0.4072, SessionID: "66666666-ffff-4fff-8fff-000000000006", Sessions: 1},
+		{Messages: 1_204, Cost: 31.27, SessionID: "66666666-ffff-4fff-8fff-000000000006", Sessions: 1},
+		{Messages: 12, Cost: 3.13, Sessions: 2},
+	} {
+		notes = append(notes, CopiesNote(c))
+		for _, total := range []float64{c.Cost + 0.2486, c.Cost + 9.49, c.Cost} {
+			notes = append(notes, CopiesNoteFor(c, c.Messages+5, total), CopiesNoteFor(c, c.Messages, total))
+		}
+	}
+	for _, note := range notes {
+		for width := 20; width <= 120; width++ {
+			got := strings.Split(WrapNoRunt(note, width), "\n")
+			greedy := strings.Split(WrapHanging(note, width), "\n")
+			if len(got) != len(greedy) || !reflect.DeepEqual(strings.Fields(strings.Join(got, " ")), strings.Fields(note)) {
+				t.Fatalf("at %d the words or lines changed:\n%s", width, strings.Join(got, "\n"))
+			}
+			for _, line := range got {
+				if lipgloss.Width(line) > width {
+					t.Fatalf("at %d a line is %d columns: %q", width, lipgloss.Width(line), line)
+				}
+			}
+			n := len(got)
+			if n < 2 || strings.Contains(got[n-1], " ") {
+				continue
+			}
+			above := strings.Fields(got[n-2])
+			if len(above) > 1 && lipgloss.Width(above[len(above)-1]+" "+got[n-1]) <= width {
+				t.Errorf("at %d the last word stands alone with room to pair it:\n%s", width, strings.Join(got, "\n"))
+			}
+		}
+	}
+}

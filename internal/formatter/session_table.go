@@ -120,7 +120,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool, width in
 // shares with other sessions, wrapped to width.
 func copiesNote(a *models.SessionAnalysis, width int, noColor bool) string {
 	note := render.CopiesNoteFor(*a.Copies, a.MessageCount, a.TotalCost.TotalCost)
-	lines := strings.Split(render.WrapHanging(note, width), "\n")
+	lines := strings.Split(render.WrapNoRunt(note, width), "\n")
 	if !noColor {
 		for i, l := range lines {
 			lines[i] = styles.FooterStyle.Render(l)

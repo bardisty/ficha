@@ -1179,6 +1179,33 @@ func wrapHangingLine(line string, width int) string {
 	return sb.String()
 }
 
+// WrapNoRunt is WrapHanging for one line of prose, such as the fork note,
+// that shouldn't end on a word alone: when the last line holds one word,
+// the line above gives it its last word, if the pair fits in width and the
+// line above keeps a word of its own. Otherwise the greedy wrap stands. It
+// splits only at single spaces, so text must hold no marked path.
+func WrapNoRunt(text string, width int) string {
+	lines := strings.Split(WrapHanging(text, width), "\n")
+	n := len(lines)
+	if n < 2 {
+		return lines[0]
+	}
+	last := lines[n-1]
+	word := strings.TrimLeft(last, " ")
+	indent := last[:len(last)-len(word)]
+	above := lines[n-2]
+	cut := strings.LastIndexByte(above, ' ')
+	if word == "" || strings.Contains(word, " ") || cut < 0 || strings.TrimSpace(above[:cut]) == "" {
+		return strings.Join(lines, "\n")
+	}
+	pair := indent + above[cut+1:] + " " + word
+	if lipgloss.Width(pair) > width {
+		return strings.Join(lines, "\n")
+	}
+	lines[n-2], lines[n-1] = strings.TrimRight(above[:cut], " "), pair
+	return strings.Join(lines, "\n")
+}
+
 // CopiesNote says which of a session's messages other sessions also hold,
 // for watch, which counts the file alone, where list and summary count each
 // shared reply once. It reads c alone, so as the session grows the note

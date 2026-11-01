@@ -315,7 +315,7 @@ func (m Model) renderCopiesNote() string {
 	if m.width > 0 {
 		width = min(width, m.width-2)
 	}
-	text := render.WrapHanging(render.CopiesNote(*m.copies), width-2)
+	text := render.WrapNoRunt(render.CopiesNote(*m.copies), width-2)
 	var sb strings.Builder
 	for _, line := range strings.Split(text, "\n") {
 		if !m.noColor {
