@@ -371,15 +371,18 @@ func TestGoldenSessionTableShowWindowUnknown(t *testing.T) {
 
 // A fork's file holds replies another session in its project also has. Its
 // footer says how many, their cost, where list and summary count them and
-// what list shows the session at, wrapped to the width, dim in color, and in
-// plain words under --ascii. Copies credited to several sessions name none
-// of them, and a file that's all copies says list calls it one.
+// what list shows the session at, wrapped to the width without ending on a
+// word alone, dim in color, and in plain words under --ascii. Copies
+// credited to several sessions name none of them, and a file that's all
+// copies says list calls it one.
 func TestGoldenSessionTableShowFork(t *testing.T) {
 	a := multiDayShowAnalysis()
 	a.Copies = &models.CopiedReplies{Messages: 20, Cost: 0.4072, SessionID: "66666666-ffff-4fff-8fff-000000000006", Sessions: 1}
 	checkGolden(t, "session_table_show_fork", FormatSessionTable(a, true, 0))
 	checkGolden(t, "session_table_show_fork_w45", FormatSessionTable(a, true, 45))
 	checkGolden(t, "session_table_show_fork_color", FormatSessionTable(a, false, 0))
+	a.Copies = &models.CopiedReplies{Messages: 20, Cost: a.TotalCost.TotalCost - 0.2486, SessionID: "66666666-ffff-4fff-8fff-000000000006", Sessions: 1}
+	checkGolden(t, "session_table_show_fork_rest_under_a_dollar", FormatSessionTable(a, true, 0))
 	a.Copies = &models.CopiedReplies{Messages: 1, Cost: 0.0205, Sessions: 1, SessionID: "66666666-ffff-4fff-8fff-000000000006"}
 	checkGolden(t, "session_table_show_fork_one_w45", FormatSessionTable(a, true, 45))
 	a.Copies = &models.CopiedReplies{Messages: 12, Cost: 3.13, Sessions: 2}
