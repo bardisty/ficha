@@ -6,7 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/bardisty/ficha/internal/analyzer"
-	"github.com/bardisty/ficha/internal/models"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -69,7 +68,7 @@ func (m Model) loadAnalysis() tea.Msg {
 		copies = make(chan copiesResult, 1)
 		go func() {
 			var r copiesResult
-			r.copies, r.checked = analyzer.FindCopies(m.sessionPath, m.sessionID)
+			r.family, r.checked = analyzer.FindFamily(m.sessionPath, m.sessionID)
 			copies <- r
 		}()
 	}
@@ -83,7 +82,7 @@ func (m Model) loadAnalysis() tea.Msg {
 		// A session with no reply yet has nothing to compare, so a later
 		// load looks again.
 		msg.copiesFound = r.checked || analysis.ParentMessageCount > 0
-		msg.copies = r.copies
+		msg.family = r.family
 	}
 	if info, err := os.Stat(m.sessionPath); err == nil {
 		msg.modTime = info.ModTime()
@@ -91,10 +90,36 @@ func (m Model) loadAnalysis() tea.Msg {
 	return msg
 }
 
-// copiesResult is FindCopies' answer for one load.
+// copiesResult is FindFamily's answer for one load.
 type copiesResult struct {
-	copies  *models.CopiedReplies
+	family  *analyzer.ForkFamily
 	checked bool
+}
+
+// copiesMsg ends a recheck of the fork family, for the session numbered
+// gen. family is nil when nothing moved.
+type copiesMsg struct {
+	gen    int
+	family *analyzer.ForkFamily
+}
+
+// recheckCopies rechecks who keeps the copies after a member of the family
+// wrote. Without sessions-index.json each write moves its file's mtime,
+// which can move the credit, the watched file's writes included. One runs
+// at a time, and a write during it asks for one more from its result: a
+// recheck that parses can take longer than a later one that only stats,
+// and landing last, would undo it.
+func (m *Model) recheckCopies() tea.Cmd {
+	if m.family == nil {
+		return nil
+	}
+	if m.rechecking {
+		m.recheckAgain = true
+		return nil
+	}
+	m.rechecking = true
+	gen, f := m.copiesGen, m.family
+	return func() tea.Msg { return copiesMsg{gen: gen, family: f.Recheck()} }
 }
 
 // watcherStartedMsg is sent when the watcher is successfully created.

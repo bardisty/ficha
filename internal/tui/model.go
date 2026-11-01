@@ -59,10 +59,17 @@ type Model struct {
 
 	// copies is what the session's file shares with other sessions, found
 	// once per session: a fork's copies are its file's head, which doesn't
-	// change as it grows. copiesFor is the session file they were found
-	// for, "" until a load has looked.
+	// change as it grows. Who keeps them can, so family is the fork family
+	// they were found in, rechecked when a member writes. copiesFor is the
+	// session file they were found for, "" until a load has looked.
 	copies    *models.CopiedReplies
+	family    *analyzer.ForkFamily
 	copiesFor string
+	// rechecking is set while a recheck runs, and recheckAgain when a
+	// member wrote during it. copiesGen counts session switches, so a
+	// recheck for a session left behind is dropped.
+	rechecking, recheckAgain bool
+	copiesGen                int
 
 	// Change tracking for highlight animation
 	changedAt   map[string]time.Time
@@ -181,7 +188,7 @@ type (
 		// copiesFound is set when the load looked for copies, which it
 		// does until one finds the session's replies to go by.
 		copiesFound bool
-		copies      *models.CopiedReplies
+		family      *analyzer.ForkFamily
 	}
 	// errorMsg carries a reload/watcher failure and the session it belongs to;
 	// a stale error for the old session must not stamp over the new one.
@@ -450,8 +457,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.analysis = msg.analysis
+		var recheck tea.Cmd
 		if msg.copiesFound {
-			m.copies, m.copiesFor = msg.copies, m.sessionPath
+			m.setFamily(msg.family)
+			m.copiesFor = m.sessionPath
+		} else {
+			recheck = m.recheckCopies()
 		}
 		m.loading = false
 		m.lastUpdated = time.Now()
@@ -481,7 +492,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Call before return: the arm must mutate the m the caller receives
 		armCmd := m.armFileWaiter()
 		m.setTitle()
-		return m, tea.Batch(armCmd, tick, clock)
+		return m, tea.Batch(armCmd, tick, clock, recheck)
 
 	case errorMsg:
 		if msg.sessionPath != "" && msg.sessionPath != m.sessionPath {
@@ -602,7 +613,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.switched = nil
 		}
 		m.hint = hint
+		if m.family != nil && m.family.Includes(msg.id) {
+			// Call before return: the recheck must mark the m the caller
+			// receives
+			recheck := m.recheckCopies()
+			return m, tea.Batch(m.waitForNewSession(), recheck)
+		}
 		return m, m.waitForNewSession()
+
+	case copiesMsg:
+		if msg.gen != m.copiesGen {
+			return m, nil
+		}
+		m.rechecking = false
+		if msg.family != nil {
+			m.setFamily(msg.family)
+			if m.ready {
+				m.refreshContent()
+			}
+		}
+		if m.recheckAgain {
+			m.recheckAgain = false
+			recheck := m.recheckCopies()
+			return m, recheck
+		}
+		return m, nil
 
 	case tickMsg:
 		// Clean up stale change tracking entries to prevent unbounded map growth
@@ -640,6 +675,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// setFamily takes f as the session's fork family, nil for none, and its
+// copies for the note.
+func (m *Model) setFamily(f *analyzer.ForkFamily) {
+	m.family, m.copies = f, nil
+	if f != nil {
+		m.copies = f.Copies
+	}
+}
+
 // switchTo moves the view to another session. auto marks a follow-mode
 // switch to a new session, as opposed to a key press. The previous session
 // is remembered for the go-back key.
@@ -673,7 +717,9 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	m.deltaCount = 0
 	// Drop the previous session's cached agent parses
 	m.agentCache = analyzer.NewAgentParseCache()
-	m.copies, m.copiesFor = nil, ""
+	m.copies, m.family, m.copiesFor = nil, nil, ""
+	m.rechecking, m.recheckAgain = false, false
+	m.copiesGen++
 	// Fingerprint the new session's subagent tree; the pending reload
 	// covers anything already on disk
 	m.subagentSig = subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)
