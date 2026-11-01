@@ -78,6 +78,13 @@ func TestDateStartsAfterSkippedMidnight(t *testing.T) {
 			t.Errorf("%q (end=%v) = %v, want %v", tt.in, tt.end, got, want)
 		}
 	}
+
+	// At 00:30 on the 7th, yesterday is the 6th. The 6th's 00:30 doesn't
+	// exist, so stepping the clock back a day would land on the 5th.
+	late := time.Date(2026, 9, 7, 0, 30, 0, 0, loc)
+	if got, err := parseWindowBound("yesterday", late, false); err != nil || !got.Equal(want) {
+		t.Errorf("yesterday at %v = %v (err %v), want %v", late, got, err, want)
+	}
 }
 
 func TestTimeWindowRejectsBackwardsRange(t *testing.T) {

@@ -70,7 +70,11 @@ func parseWindowBound(s string, now time.Time, end bool) (time.Time, error) {
 	case "today":
 		return bound(now.Local().Date()), nil
 	case "yesterday":
-		return bound(now.Local().AddDate(0, 0, -1).Date()), nil
+		// Count back on the date, not the clock: an hour after a skipped
+		// midnight, the same clock time a day earlier doesn't exist, and Go
+		// moves it into the day before that.
+		y, m, d := now.Local().Date()
+		return bound(y, m, d-1), nil
 	}
 	// Read the date's parts directly: a local time.Date for a midnight that
 	// daylight saving skipped would already have moved to the day before.
