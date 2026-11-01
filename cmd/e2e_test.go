@@ -117,6 +117,9 @@ func setupE2EFixture(t *testing.T) string {
 // while warnings on stderr are checked independently.
 func executeCLISplit(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
+	// Each run sets the process-wide glyph set from its own flags, so put the
+	// default back when the test ends; otherwise a later test inherits --ascii.
+	t.Cleanup(func() { styles.SetASCII(false) })
 	var outBuf, errBuf bytes.Buffer
 	root := newRootCmd()
 	root.SetOut(&outBuf)

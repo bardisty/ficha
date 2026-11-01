@@ -3,6 +3,8 @@ package cmd
 import (
 	"strings"
 	"testing"
+
+	"github.com/bardisty/ficha/internal/styles"
 )
 
 func TestNoColorEnvMatchesFlag(t *testing.T) {
@@ -100,5 +102,21 @@ func TestASCIIWithNoColor(t *testing.T) {
 	}
 	if strings.Contains(out, "\x1b[") {
 		t.Error("--no-color must emit no escapes alongside --ascii")
+	}
+}
+
+// The glyph set is process-wide, so a run that sets ASCII must put Unicode
+// back when its test ends, or whichever test runs next sees ASCII.
+func TestASCIIGlyphsRestoredAfterTest(t *testing.T) {
+	unicode := styles.Bullet
+	t.Run("ascii", func(t *testing.T) {
+		setupE2EFixture(t)
+		fakeTerminal(t)
+		if _, _, err := executeCLISplit(t, "summary", projFlag, "-d", "--ascii"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if styles.Bullet != unicode {
+		t.Errorf("ASCII glyphs leaked past the subtest: Bullet %q, want %q", styles.Bullet, unicode)
 	}
 }
