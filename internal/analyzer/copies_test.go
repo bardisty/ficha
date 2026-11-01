@@ -71,10 +71,12 @@ func TestFindCopies(t *testing.T) {
 	}
 }
 
-// Without sessions-index.json a fork and its original go by file mtime, so
-// a write to either can move the copies to the other. Recheck finds that,
-// and returns nil while the order holds. With an index, creation times
-// decide and writes move nothing.
+// Without sessions-index.json the session that diverged from the shared
+// history last keeps it, so the copies can move once at most: while neither
+// session has a reply of its own the ID decides, and the first to reply
+// goes behind. Recheck finds that move, and returns nil for any other
+// write, mtime included. With an index, creation times decide and writes
+// move nothing.
 func TestForkFamilyRecheck(t *testing.T) {
 	for _, indexed := range []bool{false, true} {
 		t.Run(fmt.Sprintf("indexed=%v", indexed), func(t *testing.T) {
@@ -84,25 +86,32 @@ func TestForkFamilyRecheck(t *testing.T) {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
+			day := time.Date(2026, 2, 5, 0, 0, 0, 0, time.UTC)
 			touch := func(path string, at time.Time) {
 				t.Helper()
 				if err := os.Chtimes(path, at, at); err != nil {
 					t.Fatal(err)
 				}
 			}
-			day := time.Date(2026, 2, 5, 0, 0, 0, 0, time.UTC)
-			write := func(name, data string, mtime time.Time) string {
+			appendTo := func(path, data string) {
 				t.Helper()
-				path := filepath.Join(dir, name+".jsonl")
-				if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+				f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+				if err != nil {
 					t.Fatal(err)
 				}
-				touch(path, mtime)
-				return path
+				defer f.Close()
+				if _, err := f.WriteString(data); err != nil {
+					t.Fatal(err)
+				}
 			}
-			a1, a2 := copiesReply("2026-02-01T10:00:00Z", "a1"), copiesReply("2026-02-01T10:01:00Z", "a2")
-			orig := write("aaaaaaaa", a1+a2, day)
-			fork := write("ffffffff", a1+a2+copiesReply("2026-02-03T10:00:00Z", "f1"), day.Add(time.Hour))
+			shared := copiesReply("2026-02-01T10:00:00Z", "a1") + copiesReply("2026-02-01T10:01:00Z", "a2")
+			orig := filepath.Join(dir, "aaaaaaaa.jsonl")
+			fork := filepath.Join(dir, "ffffffff.jsonl")
+			for _, path := range []string{orig, fork} {
+				if err := os.WriteFile(path, []byte(shared), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if indexed {
 				index := fmt.Sprintf(`{"version":1,"entries":[{"sessionId":"aaaaaaaa","fullPath":%q,"created":"2026-02-01T10:00:00Z"},{"sessionId":"ffffffff","fullPath":%q,"created":"2026-02-03T09:00:00Z"}]}`, orig, fork)
 				if err := os.WriteFile(filepath.Join(dir, "sessions-index.json"), []byte(index), 0o644); err != nil {
@@ -120,30 +129,61 @@ func TestForkFamilyRecheck(t *testing.T) {
 			if next := f.Recheck(); next != nil {
 				t.Fatalf("nothing was written, yet the copies moved: %+v", next.Copies)
 			}
-			// A write to the fork keeps it the later file.
-			touch(fork, day.Add(2*time.Hour))
+			touch(orig, day.Add(time.Hour))
+			touch(fork, day)
 			if next := f.Recheck(); next != nil {
-				t.Fatalf("a write to the fork moved the copies: %+v", next.Copies)
+				t.Fatalf("mtimes moved the copies: %+v", next.Copies)
+			}
+			// A prompt isn't a reply. The fork comes back at its new size,
+			// so the next recheck doesn't parse it again.
+			appendTo(fork, `{"type":"user","timestamp":"2026-02-03T09:59:00Z","message":{"role":"user","content":"go on"}}`+"\n")
+			next := f.Recheck()
+			if indexed && next != nil {
+				t.Fatalf("with an index a prompt rechecked the family: %+v", next)
+			}
+			if !indexed {
+				if next == nil || next.Copies == nil || next.Copies.SessionID != "aaaaaaaa" || next.Copies.Messages != f.Copies.Messages {
+					t.Fatalf("a prompt moved the copies: %+v", next)
+				}
+				if again := next.Recheck(); again != nil {
+					t.Fatalf("the fork's size didn't move with the prompt: %+v", again)
+				}
+				f = next
 			}
 
-			// The original resumed: its file is now the later one.
-			touch(orig, day.Add(3*time.Hour))
-			next := f.Recheck()
+			// The original replies first, so it diverged first, and the
+			// fork, which hasn't yet, keeps the shared replies.
+			appendTo(orig, copiesReply("2026-02-03T10:00:00Z", "a3"))
+			next = f.Recheck()
 			if indexed {
 				if next != nil {
-					t.Errorf("with an index a write moved the copies: %+v", next.Copies)
+					t.Errorf("with an index a reply moved the copies: %+v", next.Copies)
 				}
 				return
 			}
 			if next == nil || next.Copies != nil {
-				t.Fatalf("after the original's write the fork should keep its replies: %+v", next)
-			}
-			if again := next.Recheck(); again != nil {
-				t.Errorf("a second recheck moved them again: %+v", again.Copies)
+				t.Fatalf("after the original's reply the fork should keep its replies: %+v", next)
 			}
 			o, _ := FindFamily(orig, "aaaaaaaa")
 			if o == nil || o.Copies == nil || o.Copies.SessionID != "ffffffff" || o.Copies.Messages != 2 {
 				t.Errorf("the original should now hold 2 copies the fork keeps: %+v", o)
+			}
+
+			// The fork's reply comes later, so it keeps them. That moves
+			// nothing, and after it no write is even looked at.
+			appendTo(fork, copiesReply("2026-02-03T11:00:00Z", "f1"))
+			last := next.Recheck()
+			if last == nil || last.Copies != nil {
+				t.Fatalf("the fork replied last, so it keeps its replies: %+v", last)
+			}
+			if len(last.open) != 0 {
+				t.Errorf("both have replied, yet %v can still move the order", last.open)
+			}
+			appendTo(orig, copiesReply("2026-02-04T10:00:00Z", "a4"))
+			appendTo(fork, copiesReply("2026-02-04T11:00:00Z", "f2"))
+			touch(orig, day.Add(3*time.Hour))
+			if again := last.Recheck(); again != nil {
+				t.Errorf("writes after both replied moved the copies: %+v", again.Copies)
 			}
 		})
 	}

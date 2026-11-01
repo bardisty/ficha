@@ -289,8 +289,9 @@ func TestE2EUnpricedModelsAgree(t *testing.T) {
 // project the way show does.
 func TestE2EListCarriesTheTableFields(t *testing.T) {
 	root := setupE2EFixture(t)
-	// A resumed session repeats alpha's first message; summary -d counts it
-	// under alpha only, and list must agree.
+	// A resumed session repeats alpha's first message. Its own reply came
+	// after alpha's, so summary -d counts the shared one under it only, and
+	// list must agree.
 	const resumedID = "eeeeeeee-1111-2222-3333-444444444444"
 	resumed := `{"type":"ai-title","aiTitle":"Resumed work"}` + "\n" +
 		e2eMsg("2026-02-01T10:00:00Z", "a1", "claude-opus-4-8", 1200, 800, 3000, 1000, 20000) + "\n" +
@@ -365,12 +366,18 @@ func TestE2EListCarriesTheTableFields(t *testing.T) {
 		}
 	}
 	// The dedup is what the comparison above tests, so make sure it happened.
-	if resumedAlone := summaryCost[resumedID]; resumedAlone <= 0 {
-		t.Fatalf("resumed session cost %v", resumedAlone)
+	if alphaAlone := summaryCost[e2eAlphaID]; alphaAlone <= 0 {
+		t.Fatalf("alpha cost %v", alphaAlone)
+	}
+	var alphaShow struct {
+		TotalCost cost `json:"total_cost"`
+	}
+	mustJSON(t, run("show", projFlag, e2eAlphaID, "-f", "json"), &alphaShow)
+	if alphaShow.TotalCost.TotalCost <= summaryCost[e2eAlphaID] {
+		t.Error("the fixture should give alpha a duplicate that show counts and summary -d doesn't")
 	}
 	var resumedShow struct {
-		TotalCost cost   `json:"total_cost"`
-		Title     string `json:"title"`
+		Title string `json:"title"`
 	}
 	mustJSON(t, run("show", projFlag, resumedID, "-f", "json"), &resumedShow)
 	// The title isn't deduplicated: it's the transcript's latest, as on show.
@@ -378,9 +385,6 @@ func TestE2EListCarriesTheTableFields(t *testing.T) {
 		if r.SessionID == resumedID && (r.Title != resumedShow.Title || r.Title != "Resumed work") {
 			t.Errorf("resumed session title %q, show has %q", r.Title, resumedShow.Title)
 		}
-	}
-	if resumedShow.TotalCost.TotalCost <= summaryCost[resumedID] {
-		t.Error("the fixture should give the resumed session a duplicate that show counts and summary -d doesn't")
 	}
 
 	// A --project-dir typed with a trailing separator still joins with show.
@@ -527,13 +531,13 @@ func TestE2EShowNamesAForksCopies(t *testing.T) {
 		}
 	})
 
-	t.Run("original resumed after its fork, without an index", func(t *testing.T) {
-		// Without the index, the tie between a fork and its original goes
-		// to the file written first. Resuming the original after forking
-		// makes that the fork, which then keeps the shared replies.
+	t.Run("original resumed before its fork's first reply, without an index", func(t *testing.T) {
+		// Without the index, the session that diverged from the shared
+		// history last keeps it. The original's own reply came first, so
+		// that's the fork, though the original's file is the older one.
 		f := setup(t)
-		write(t, filepath.Join(f.dir, forkID+".jsonl"), append(f.alpha, line("2026-02-06T10:00:00Z", "f1")...), base)
-		write(t, filepath.Join(f.dir, e2eAlphaID+".jsonl"), append(f.alpha, line("2026-02-07T10:00:00Z", "a3")...), base.Add(time.Hour))
+		write(t, filepath.Join(f.dir, e2eAlphaID+".jsonl"), append(f.alpha, line("2026-02-06T10:30:00Z", "a3")...), base)
+		write(t, filepath.Join(f.dir, forkID+".jsonl"), append(f.alpha, line("2026-02-06T11:00:00Z", "f1")...), base.Add(time.Hour))
 		if got, want := note(t, e2eAlphaID), wantNote(t, e2eAlphaID, 2, forkID, 1); got != want {
 			t.Errorf("original's note:\n got %q\nwant %q", got, want)
 		}

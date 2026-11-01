@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 
@@ -389,30 +390,11 @@ func earliestMessageTime(messages []models.JSONLMessage) time.Time {
 	return earliest
 }
 
-// createdOrModified returns the entry's Created time, falling back to Modified
-// when the index never supplied one — a zero Created must not outrank entries
-// with real creation times.
-func createdOrModified(entry models.SessionEntry) time.Time {
-	if entry.Created.IsZero() {
-		return entry.Modified
-	}
-	return entry.Created
-}
-
 // attributionOrder is the order sessions take up their replies in, so that
-// shared history is credited to the original session, not the file written
-// to last: the first session in it to hold a reply keeps it. entries and
-// parsed are parallel. A session skip marks sorts by its mtime: its caller
-// passes it over, so its place is moot.
-//
-// Sessions go in ascending order of their earliest message. A fork clones
-// the original transcript verbatim, timestamps included, so within a fork
-// family those tie, and the entry's Created time (genuine session creation
-// when the index supplied it) breaks the tie: the original predates its
-// forks. Disk-only entries carry Created == Modified, so without the index
-// attribution degrades to mtime order. Remaining ties keep input order. A
-// nil parse failed, and sorts by the file's mtime: it consumes no keys, so
-// its place is moot.
+// shared history is credited to one session, not the file written to last:
+// the first session in it to hold a reply keeps it. entries and parsed are
+// parallel. A session skip marks sorts by its mtime: its caller passes it
+// over, so its place is moot.
 func attributionOrder(entries []models.SessionEntry, parsed []*parser.ParseResult, skip []bool) []int {
 	earliest := make([]time.Time, len(entries))
 	for i := range entries {
@@ -420,12 +402,36 @@ func attributionOrder(entries []models.SessionEntry, parsed []*parser.ParseResul
 			earliest[i] = earliestMessageTime(parsed[i].Messages)
 		}
 	}
-	return orderByEarliest(entries, earliest)
+	order, _, _ := orderByEarliest(entries, parsed, earliest)
+	return order
 }
 
 // orderByEarliest is attributionOrder given each entry's earliest message
-// time, zero for an entry that sorts by its mtime.
-func orderByEarliest(entries []models.SessionEntry, earliest []time.Time) []int {
+// time, zero for an entry that sorts by its mtime: a nil parse, which
+// consumes no keys, so its place is moot.
+//
+// Sessions go in ascending order of their earliest message. A fork clones
+// the original transcript verbatim, timestamps included, so within a fork
+// family those tie. When the index gave every session in a tie its Created
+// time, that settles it: it's real creation time, and the original
+// predates its forks. Otherwise the session that diverged from the shared
+// history last goes first and keeps it: the tie goes by each session's
+// first reply that no other session in the tie holds, latest first, and a
+// session with no such reply goes ahead of them all. Session IDs settle
+// what's left, so input order and mtime never matter.
+//
+// That order holds still as files grow. Appends only add later replies, so
+// a session's first unshared reply is fixed once it exists, and is later
+// than any already fixed. The order can change only when a session with no
+// unshared reply gains one, and with two sessions that happens at most
+// once: the first to diverge goes behind the other, and nothing moves
+// after that.
+//
+// open is the sessions in ties settled that way with no unshared reply
+// yet, the only ones whose writes can move the order, and held counts the
+// sessions in their tie that hold each reply. Only sessions in a tie have
+// their replies compared.
+func orderByEarliest(entries []models.SessionEntry, parsed []*parser.ParseResult, earliest []time.Time) (order, open []int, held map[parser.DedupKey]int) {
 	sortKeys := make([]time.Time, len(entries))
 	for i, entry := range entries {
 		sortKeys[i] = entry.Modified
@@ -433,17 +439,93 @@ func orderByEarliest(entries []models.SessionEntry, earliest []time.Time) []int 
 			sortKeys[i] = earliest[i]
 		}
 	}
-	order := make([]int, len(entries))
+	order = make([]int, len(entries))
 	for i := range order {
 		order[i] = i
 	}
 	sort.SliceStable(order, func(a, b int) bool {
-		if !sortKeys[order[a]].Equal(sortKeys[order[b]]) {
-			return sortKeys[order[a]].Before(sortKeys[order[b]])
-		}
-		return createdOrModified(entries[order[a]]).Before(createdOrModified(entries[order[b]]))
+		return sortKeys[order[a]].Before(sortKeys[order[b]])
 	})
-	return order
+	for start := 0; start < len(order); {
+		end := start + 1
+		for !earliest[order[start]].IsZero() && end < len(order) && earliest[order[end]].Equal(earliest[order[start]]) {
+			end++
+		}
+		tie := order[start:end]
+		start = end
+		if len(tie) < 2 {
+			continue
+		}
+		if !slices.ContainsFunc(tie, func(i int) bool { return entries[i].Created.IsZero() }) {
+			sort.SliceStable(tie, func(a, b int) bool {
+				return entries[tie[a]].Created.Before(entries[tie[b]].Created)
+			})
+			continue
+		}
+		diverged, tieHeld := divergence(tie, parsed)
+		sort.SliceStable(tie, func(a, b int) bool {
+			da, db := diverged[tie[a]], diverged[tie[b]]
+			switch {
+			case da.Equal(db):
+				return entries[tie[a]].SessionID < entries[tie[b]].SessionID
+			case da.IsZero() || db.IsZero():
+				return da.IsZero()
+			}
+			return da.After(db)
+		})
+		for _, i := range tie {
+			if diverged[i].IsZero() {
+				open = append(open, i)
+			}
+		}
+		if held == nil {
+			held = tieHeld
+		} else {
+			for k, n := range tieHeld {
+				held[k] += n
+			}
+		}
+	}
+	return order, open, held
+}
+
+// divergence returns when each session in tie first replied with a reply
+// no other session in tie holds, absent when it never did, and how many of
+// them hold each reply. A reply is its dedup key, as list's cross-file
+// dedup counts copies, and one without a key or a timestamp never counts.
+func divergence(tie []int, parsed []*parser.ParseResult) (diverged map[int]time.Time, held map[parser.DedupKey]int) {
+	replies := make([]map[parser.DedupKey]time.Time, len(tie))
+	held = make(map[parser.DedupKey]int)
+	for j, i := range tie {
+		replies[j] = replyTimes(parsed[i].Messages)
+		for k := range replies[j] {
+			held[k]++
+		}
+	}
+	diverged = make(map[int]time.Time, len(tie))
+	for j, i := range tie {
+		for k, at := range replies[j] {
+			if held[k] == 1 && !at.IsZero() && (diverged[i].IsZero() || at.Before(diverged[i])) {
+				diverged[i] = at
+			}
+		}
+	}
+	return diverged, held
+}
+
+// replyTimes maps each reply's dedup key to its earliest timestamp.
+func replyTimes(messages []models.JSONLMessage) map[parser.DedupKey]time.Time {
+	times := make(map[parser.DedupKey]time.Time)
+	for _, msg := range messages {
+		k, ok := parser.DedupKeyOf(msg)
+		if !ok {
+			continue
+		}
+		if at, seen := times[k]; !seen || !msg.Timestamp.IsZero() && (at.IsZero() || msg.Timestamp.Before(at)) {
+			times[k] = msg.Timestamp
+		}
+	}
+	return times
 }
 
 // AnalyzeSessionFromMessages analyzes already-parsed messages. It discovers no
@@ -536,9 +618,9 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 // Sessions share a cross-file dedup set: fork/branch flows copy the prior
 // transcript (billed assistant lines included) into a new session file, and
 // summing file-local totals would bill those responses once per file. Files
-// are processed in ascending earliest-message-timestamp order (session
-// Created time, then input order, break ties — see attributionOrder) so
-// shared history is attributed to the original session; later copies are
+// are processed in ascending earliest-message-timestamp order (see
+// attributionOrder for how ties break), so shared history is attributed to
+// one session; later copies are
 // excluded from both the aggregate and their session's result, so
 // per-session results sum to the aggregate. Single-session views price the
 // file alone, and show names the part it shares (see FindCopies).

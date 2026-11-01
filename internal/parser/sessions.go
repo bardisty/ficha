@@ -142,7 +142,6 @@ func buildDiskEntry(projectDir, sessionID, fullPath string, modTime time.Time) m
 	return models.SessionEntry{
 		SessionID:     sessionID,
 		FullPath:      fullPath,
-		Created:       modTime, // Best approximation
 		Modified:      modTime,
 		AgentPaths:    agentPaths,
 		AgentCount:    len(agentPaths),
