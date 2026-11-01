@@ -129,6 +129,19 @@ func TestCompletionUnknownShell(t *testing.T) {
 	}
 }
 
+// A shell's command takes no arguments, and says so as list does.
+func TestCompletionShellRejectsArgs(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
+		_, err := executeLikeMain(t, "completion", shell, "x")
+		if want := `ficha completion ` + shell + ` takes no arguments, got "x"`; err == nil || err.Error() != want {
+			t.Errorf("error:\n got: %v\nwant: %s", err, want)
+		}
+		if got := exitCode(err); got != exitUsage {
+			t.Errorf("completion %s x: exit %d, want %d", shell, got, exitUsage)
+		}
+	}
+}
+
 func TestNoFlagCommandsHideGlobalFlags(t *testing.T) {
 	for _, args := range [][]string{{"version", "--help"}, {"completion", "--help"}, {"completion", "zsh", "--help"}} {
 		out, err := executeLikeMain(t, args...)

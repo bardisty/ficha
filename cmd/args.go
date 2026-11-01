@@ -95,7 +95,7 @@ func unknownCommandError(cmd *cobra.Command, arg string) error {
 	// A directory is the likeliest non-command word: people expect
 	// `ficha <dir>` to analyze that project.
 	if isDirArg(arg) {
-		return usageErrorf("%s To analyze that directory, run: ficha -p %s", msg, shellQuote(arg))
+		return usageError(newDisplayError("unknown command %s for %q. To analyze that directory, run: %s", errQuotedPath(arg), cmd.CommandPath(), errCommand{text: "ficha -p ", path: arg}))
 	}
 	return usageErrorf("%s Run 'ficha --help' to see the commands.", msg)
 }
@@ -114,11 +114,13 @@ func claudeFolderError(cmd *cobra.Command, arg string) error {
 		if todo == "" {
 			todo = "show its latest session"
 		}
-		return usageErrorf("%q is a Claude project folder, not a session. To %s, run: %s", arg, todo, rewriteArg(cmd, arg, "--project-dir="+name))
+		line, _ := rewriteArg(cmd, arg, "--project-dir="+name)
+		return usageError(newDisplayError("%s is a Claude project folder, not a session. To %s, run: %s", errQuotedPath(arg), todo, errWhole(quoteLine(line))))
 	}
 	transcript := strings.TrimRight(arg, `/\`) + ".jsonl"
 	if id := trimJSONL(filepath.Base(transcript)); id != "" && looksLikeSessionID(id) && isDir(arg) && isRegularFile(transcript) {
-		return usageErrorf("%q holds the agents of session %s, not a session. Run: %s", arg, shortSessionID(id), rewriteArg(cmd, arg, transcript))
+		line, at := rewriteArg(cmd, arg, transcript)
+		return usageError(newDisplayError("%s holds the agents of session %s, not a session. Run: %s", errQuotedPath(arg), shortSessionID(id), pathCommand(line, at)))
 	}
 	return nil
 }
@@ -192,7 +194,7 @@ func sessionArgs(cmd *cobra.Command, args []string) error {
 		"watch":     "watch that directory's sessions",
 		"breakdown": "break down that directory's sessions",
 	}[cmd.Name()]
-	return fmt.Errorf("%q is a directory, not a session. To %s, run: %s", args[0], todo, projectCommand(cmd, args[0]))
+	return newDisplayError("%s is a directory, not a session. To %s, run: %s", errQuotedPath(args[0]), todo, projectCommand(cmd, args[0]))
 }
 
 // noArgs replaces cobra.NoArgs, whose `unknown command "x" for "ficha list"`
@@ -205,7 +207,7 @@ func noArgs(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	if cmd.Flags().Lookup("project") != nil && (isDirArg(args[0]) || paths.LooksLikePath(args[0]) && !exists(expandHome(args[0]))) {
-		return fmt.Errorf("%s takes no arguments. For that directory's sessions, run: %s", cmd.CommandPath(), projectCommand(cmd, args[0]))
+		return newDisplayError("%s takes no arguments. For that directory's sessions, run: %s", cmd.CommandPath(), projectCommand(cmd, args[0]))
 	}
 	return fmt.Errorf("%s takes no arguments, got %q", cmd.CommandPath(), args[0])
 }
@@ -213,23 +215,42 @@ func noArgs(cmd *cobra.Command, args []string) error {
 // projectCommand is the command line ficha was run with, with dir moved
 // from an argument to -p right after the command's name. A project flag
 // already on the line is dropped, since -p replaces it.
-func projectCommand(cmd *cobra.Command, dir string) string {
-	return rewriteArg(cmd, dir, "-p", dir)
+func projectCommand(cmd *cobra.Command, dir string) errCommand {
+	line, at := rewriteArg(cmd, dir, "-p", dir)
+	return pathCommand(line, at+1)
 }
 
-// rewriteArg is the command line ficha was run with, with arg replaced by
-// tokens right after the command's name, or in arg's place for bare ficha,
-// and any project flag dropped.
-func rewriteArg(cmd *cobra.Command, arg string, tokens ...string) string {
+// pathCommand is line as a command to paste back, whose token at i is a
+// path.
+func pathCommand(line []string, i int) errCommand {
+	c := errCommand{text: quoteLine(line[:i]) + " ", path: line[i]}
+	if i+1 < len(line) {
+		c.rest = " " + quoteLine(line[i+1:])
+	}
+	return c
+}
+
+// quoteLine joins tokens into a command line, each quoted for the shell.
+func quoteLine(tokens []string) string {
+	quoted := make([]string, len(tokens))
+	for i, t := range tokens {
+		quoted[i] = shellQuote(t)
+	}
+	return strings.Join(quoted, " ")
+}
+
+// rewriteArg is the command line ficha was run with, as tokens, with arg
+// replaced by tokens right after the command's name, or in arg's place for
+// bare ficha, and any project flag dropped. at is the index of tokens'
+// first one in out.
+func rewriteArg(cmd *cobra.Command, arg string, tokens ...string) (out []string, at int) {
 	line, ok := commandLine(cmd.Context())
 	if !ok {
-		out := []string{cmd.CommandPath()}
-		for _, t := range tokens {
-			out = append(out, shellQuote(t))
-		}
-		return strings.Join(out, " ")
+		out = strings.Fields(cmd.CommandPath())
+		return append(out, tokens...), len(out)
 	}
-	out := []string{cmd.Root().Name()}
+	at = -1
+	out = []string{cmd.Root().Name()}
 	named, moved, afterDashes := false, false, false
 	for i := 0; i < len(line); i++ {
 		a := line[i]
@@ -258,7 +279,9 @@ func rewriteArg(cmd *cobra.Command, arg string, tokens ...string) string {
 			}
 			if !named && (a == cmd.Name() || slices.Contains(cmd.Aliases, a)) {
 				named = true
-				out = append(append(out, a), tokens...)
+				out = append(out, a)
+				at = len(out)
+				out = append(out, tokens...)
 				continue
 			}
 		}
@@ -266,6 +289,7 @@ func rewriteArg(cmd *cobra.Command, arg string, tokens ...string) string {
 			moved = true
 			// Bare ficha has no command name on the line to follow.
 			if !cmd.HasParent() {
+				at = len(out)
 				out = append(out, tokens...)
 			}
 			continue
@@ -275,10 +299,12 @@ func rewriteArg(cmd *cobra.Command, arg string, tokens ...string) string {
 	if out[len(out)-1] == "--" {
 		out = out[:len(out)-1]
 	}
-	for i, a := range out {
-		out[i] = shellQuote(a)
+	// A line that names neither the command nor arg still gets tokens.
+	if at < 0 {
+		at = len(out)
+		out = append(out, tokens...)
 	}
-	return strings.Join(out, " ")
+	return out, at
 }
 
 // lineFlag is the flag a command line token sets, if any, and whether its

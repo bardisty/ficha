@@ -7,6 +7,7 @@
 // projects by the path their transcripts recorded.
 //
 // A miss or an ambiguous name comes back as an error value that cmd rewords
-// with commands to try. ResolveProjectDir's errors for a bad -p are the
-// exception: they're worded for a person already, and cmd passes them on.
+// with commands to try. ResolveProjectDir's errors for a bad --project-dir
+// are the exception: they're worded for a person already, and cmd only
+// shortens the path in them on a terminal.
 package paths
