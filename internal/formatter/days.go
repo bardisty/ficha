@@ -17,8 +17,9 @@ func renderDaysSection(days []models.DayCost, width int, noColor bool) string {
 		return ""
 	}
 	// A day is labeled like every other date ficha prints, the year added
-	// when it isn't this one's, with its weekday ahead of it. A narrow
-	// terminal drops the weekday before a row would wrap.
+	// when it isn't this one's, with its weekday ahead of it. A terminal too
+	// narrow for every column drops the weekday, then SESSIONS, before a
+	// row would wrap, as PROJECTS gives up its columns.
 	labels := dayLabels(days, true)
 	costs := make([]float64, len(days))
 	msgsWidth := len("MESSAGES")
@@ -40,6 +41,7 @@ func renderDaysSection(days []models.DayCost, width int, noColor bool) string {
 		labels = dayLabels(days, false)
 		dayWidth = widest(labels)
 	}
+	showSessions := fixed+dayWidth <= width
 	minCost, maxCost := costs[0], costs[0]
 	for _, c := range costs[1:] {
 		minCost, maxCost = min(minCost, c), max(maxCost, c)
@@ -50,14 +52,21 @@ func renderDaysSection(days []models.DayCost, width int, noColor bool) string {
 	sb.WriteString("\n\n")
 	indent := strings.Repeat(" ", rowIndent)
 	gap := strings.Repeat(" ", columnGap)
-	header := indent + fmt.Sprintf("%-*s", dayWidth, "DAY") + gap + fmt.Sprintf("%*s", sessionsWidth, "SESSIONS") +
-		gap + fmt.Sprintf("%*s", msgsWidth, "MESSAGES") + gap + fmt.Sprintf("%*s", costWidth, "COST")
-	rule := strings.Repeat(styles.LineHorizontal, width-rowIndent)
-	if noColor {
-		sb.WriteString(header + "\n" + indent + rule + "\n")
-	} else {
-		sb.WriteString(styles.HeaderStyle.Render(header) + "\n" + indent + styles.DimStyle.Render(rule) + "\n")
+	row := func(day, sessions, msgs, cost string) string {
+		cells := []string{day}
+		if showSessions {
+			cells = append(cells, sessions)
+		}
+		return indent + strings.Join(append(cells, msgs, cost), gap)
 	}
+	header := row(fmt.Sprintf("%-*s", dayWidth, "DAY"), fmt.Sprintf("%*s", sessionsWidth, "SESSIONS"),
+		fmt.Sprintf("%*s", msgsWidth, "MESSAGES"), fmt.Sprintf("%*s", costWidth, "COST"))
+	rule := indent + strings.Repeat(styles.LineHorizontal, width-rowIndent)
+	if !noColor {
+		header = styles.HeaderStyle.Render(header)
+		rule = indent + styles.DimStyle.Render(strings.Repeat(styles.LineHorizontal, width-rowIndent))
+	}
+	sb.WriteString(header + "\n" + rule + "\n")
 	for i, d := range days {
 		sessions := fmt.Sprintf("%*s", sessionsWidth, render.Count(d.SessionCount))
 		msgs := fmt.Sprintf("%*s", msgsWidth, render.Count(d.MessageCount))
@@ -66,8 +75,11 @@ func renderDaysSection(days []models.DayCost, width int, noColor bool) string {
 			sessions, msgs = styles.DimStyle.Render(sessions), styles.DimStyle.Render(msgs)
 			cost = render.CostColored(d.TotalCost.TotalCost, styles.GetCostGradientColor(d.TotalCost.TotalCost, minCost, maxCost), costWidth)
 		}
-		sb.WriteString(strings.TrimRight(indent+fmt.Sprintf("%-*s", dayWidth, labels[i])+gap+sessions+gap+msgs+gap+cost, " ") + "\n")
+		sb.WriteString(strings.TrimRight(row(fmt.Sprintf("%-*s", dayWidth, labels[i]), sessions, msgs, cost), " ") + "\n")
 	}
+	// Closed like PROJECTS and SESSION BREAKDOWN, so a long run of days
+	// doesn't run into the next heading.
+	sb.WriteString(rule + "\n")
 	return sb.String()
 }
 
