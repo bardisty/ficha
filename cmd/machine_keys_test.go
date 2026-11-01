@@ -125,6 +125,10 @@ func keyCases() []keyCase {
 		{"summary-d", withWindow("summary", keysProj, "-d")},
 		{"summary-d-expand-agents", withWindow("summary", keysProj, "-d", "--expand-agents")},
 		{"global", withWindow("global")},
+		// --by-day adds days to json, and leaves csv as it is.
+		{"summary-by-day", withWindow("summary", keysProj, "--by-day")},
+		{"summary-d-by-day", withWindow("summary", keysProj, "-d", "--by-day")},
+		{"global-by-day", withWindow("global", "--by-day")},
 	}
 }
 

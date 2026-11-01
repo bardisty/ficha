@@ -57,6 +57,7 @@ One rule decides it:
 | `summary --details` | per-session records |
 | `summary --expand-agents` | per-agent records (nested / rows) |
 | `show --messages` | per-message records: json keeps the session object and adds `messages`, csv switches to one row per message |
+| `summary --by-day`, `global --by-day` | per-day records in json (see [Days](#days---by-day)). csv has nowhere to put them, so it stays as it is, and ficha says so on stderr |
 
 **Flags that only shape the table do NOT change json/csv:**
 
@@ -248,10 +249,24 @@ One `agent_id` key space throughout: the same ID joins these rows, the json `age
 
 The accounting counters ride along in `--messages` csv too: each row ends with the session-level `skipped_agents`, `skipped_lines` and `estimated_cost_messages`, repeated verbatim (denormalized, like any flat export of a parent/child shape) — so a consumer summing rows can tell when the rows are incomplete or estimated without leaving the file. json `--messages` carries the same counters once, on the session object enclosing the messages array.
 
+## Days (`--by-day`)
+
+With `--by-day`, `summary` json gains `days` on the aggregate (under `.summary` with `-d`), and `global` json gains it at the top level. Without the flag the key isn't there. It's an array with one record per local calendar day that has messages, newest first:
+
+| Key | Meaning |
+| --- | --- |
+| `date` | the day as `YYYY-MM-DD` in the local zone, which `TZ` sets. `""` for messages with no timestamp, which only a report without `--since` or `--until` counts. That record comes last |
+| `session_count` | the sessions with a message that day, main conversation or agent. A session with messages on several days counts on each, so these add up to more than the report's `session_count` when a session crosses midnight |
+| `message_count` | the messages timestamped that day, agents' included |
+| `total_cost` | their cost, the same breakdown object as the report's `total_cost` |
+
+The days cover the same messages as the report's totals, so `message_count` and `total_cost.total_cost` add up to the report's, with any difference in the last float digits. A message counts on the day of its own timestamp, so a session that runs past midnight splits at it. A fork's copied replies count once, on the day they were first written, under the session that keeps them (see [Forks and repeated history](#forks-and-repeated-history)). Under `--since` or `--until`, a day the window cuts through holds only its part inside the window. Without `--since`, the days cover all of history, and a day with no messages gets no record. Change `TZ` and the days move, while the totals stay the same.
+
 ## What csv leaves out
 
 csv is one flat table per command, so anything nested stays json-only:
 
+- `summary --by-day` and `global --by-day`: the days.
 - `show` and `summary`: the per-model split (`cost_by_model`, `parent_cost_by_model`), token counts, `insights`, `context`, `agents`, `workflows`, `title`, start and end times, and the window.
 - `summary -d`: the same, except that each row names its costliest `model`, and `--expand-agents` adds agent rows.
 - `global`: the totals row, the per-model split and token counts, `agent_count`, `parent_message_count`, `agent_message_count` and `original_path`. Projects are named by `project` (the display name), `encoded_path` and `full_path`. `full_path` is the same value as `summary`'s and `show`'s `project_path`, so join on it.

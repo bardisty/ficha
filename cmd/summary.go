@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"path/filepath"
 	"time"
 
@@ -31,6 +32,10 @@ Both count messages by their own timestamps, agents' too, so a session that
 crosses a bound is split at it. They apply to json and csv as well as the
 table.
 
+--by-day adds a row for each local day with messages in the window, or in
+all of history without --since, newest first: a days array in json. A
+session counts on every day it has messages on. csv has no days.
+
 Claude Code records a session under the directory it ran in, so a worktree
 under the repo, from claude --worktree or git worktree add, is a project of
 its own. summary notes when projects under this directory have sessions,
@@ -43,6 +48,7 @@ Examples:
   ficha summary --details --sort-by cost  Costliest sessions first
   ficha summary --details -f json         One record per session as JSON
   ficha summary --since 7d                The last 7 days
+  ficha summary --since 7d --by-day       The last 7 days, a row per day
   ficha summary --since 2026-09-01 --until 2026-09-30   September
   ficha summary --nested                  Include the repo's worktrees`,
 		Args:              noArgs,
@@ -57,6 +63,7 @@ Examples:
 	summaryCmd.Flags().BoolVarP(&cfg.showDetails, "details", "d", false, "Add a per-session breakdown")
 	summaryCmd.Flags().BoolVar(&cfg.expandAgents, "expand-agents", false, "Add each session's agents; needs --details")
 	addWindowFlags(summaryCmd, cfg)
+	addByDayFlag(summaryCmd, cfg)
 	addNestedFlag(summaryCmd, cfg)
 	addSessionSortFlag(summaryCmd, cfg, "Sort --details: time or cost")
 
@@ -92,13 +99,18 @@ func runSummary(cfg *config) error {
 
 	// Analyze all sessions. The per-session results feed the --details view so
 	// the formatter doesn't re-parse every session.
-	analysis, results, err := analyzer.AnalyzeMultipleSessionsInWindow(sessions, window)
+	analyze := analyzer.AnalyzeMultipleSessionsInWindow
+	if cfg.byDay {
+		analyze = analyzer.AnalyzeMultipleSessionsByDay
+	}
+	analysis, results, err := analyze(sessions, window)
 	if err != nil {
 		return noSessionReadError(err)
 	}
 	nested.mark(results)
 
 	var warnings bytes.Buffer
+	warnByDayCSV(cfg, &warnings)
 	skipWarning{
 		counts:   "totals",
 		sessions: analysis.SkippedSessions,
@@ -167,4 +179,18 @@ func runSummary(cfg *config) error {
 
 	printReport(cfg, &warnings, output)
 	return nil
+}
+
+// addByDayFlag registers --by-day, which adds a row per local day.
+func addByDayFlag(cmd *cobra.Command, cfg *config) {
+	cmd.Flags().BoolVar(&cfg.byDay, "by-day", false, "Add a row per day to the table and json")
+}
+
+// warnByDayCSV says --by-day does nothing to csv, whose one row per project
+// or session has nowhere to put days, as show says of --messages and the
+// table.
+func warnByDayCSV(cfg *config, w io.Writer) {
+	if cfg.byDay && cfg.format == "csv" {
+		fmt.Fprintln(w, "Warning: --by-day has no effect on csv output (use the table or -f json)")
+	}
 }

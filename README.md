@@ -138,6 +138,7 @@ ficha list -p ~/code/api      # another project's sessions
 ficha summary --since 7d      # this project, the last 7 days
 ficha global --top 5          # the 5 costliest projects
 ficha global --since today    # every project, today
+ficha global --since 7d --by-day  # every project, a row per day
 ficha -f json > out.json      # the latest session as json
 ficha summary -d -f csv       # one csv row per session
 ficha show -f csv --messages  # one csv row per message
@@ -198,6 +199,7 @@ The rest belong to particular commands:
 | `--since <when>` | `list`, `summary`, `global` | Count only messages from then on: `2026-09-01`, `today`, `7d`, `12h` |
 | `--until <when>` | `list`, `summary`, `global` | Count only messages before then; a date includes that whole day |
 | `--nested` | `list`, `summary` | Include the projects under this directory at any depth, such as the worktrees `claude --worktree` makes |
+| `--by-day` | `summary`, `global` | Add a row per local day with messages, newest first, to the table and json. Without `--since` it covers all history |
 
 `watch`, `breakdown` and `statusline` print only a table, so they reject `-f json` and `-f csv`.
 
