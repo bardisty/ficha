@@ -306,12 +306,13 @@ func DeduplicateMessages(messages []models.JSONLMessage) []models.JSONLMessage {
 
 // ExcludeSeenMessages drops messages whose dedup key (message.id + requestId)
 // is already recorded in seen — the same API response was kept from an
-// earlier file — and records the keys of the messages it keeps. Claude Code's
-// fork/branch flows clone the prior transcript (assistant lines included,
-// with billed usage) into a new session file, so without a cross-file seen
-// set aggregates bill those responses once per file. Messages without a
-// message id are always kept: an empty key identifies nothing.
-func ExcludeSeenMessages(messages []models.JSONLMessage, seen map[DedupKey]struct{}) []models.JSONLMessage {
+// earlier file — and records the keys of the messages it keeps under
+// sessionID, the session that keeps them. Claude Code's fork flow clones the
+// prior transcript (assistant lines included, with billed usage) into a new
+// session file, so without a cross-file seen set aggregates bill those
+// responses once per file. Messages without a message id are always kept: an
+// empty key identifies nothing.
+func ExcludeSeenMessages(messages []models.JSONLMessage, seen map[DedupKey]string, sessionID string) []models.JSONLMessage {
 	kept := make([]models.JSONLMessage, 0, len(messages))
 	for _, msg := range messages {
 		key, ok := dedupKey(msg)
@@ -322,10 +323,21 @@ func ExcludeSeenMessages(messages []models.JSONLMessage, seen map[DedupKey]struc
 		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[key] = struct{}{}
+		seen[key] = sessionID
 		kept = append(kept, msg)
 	}
 	return kept
+}
+
+// KeptBy returns the session ExcludeSeenMessages recorded as keeping msg's
+// API response in seen, and whether one did.
+func KeptBy(msg models.JSONLMessage, seen map[DedupKey]string) (string, bool) {
+	key, ok := dedupKey(msg)
+	if !ok {
+		return "", false
+	}
+	sessionID, ok := seen[key]
+	return sessionID, ok
 }
 
 // ExtractUsageFromMessages extracts token usage data from parsed messages.

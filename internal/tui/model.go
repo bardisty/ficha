@@ -57,6 +57,13 @@ type Model struct {
 	// parent-file write doesn't re-parse every unchanged agent.
 	agentCache *analyzer.AgentParseCache
 
+	// copies is what the session's file shares with other sessions, found
+	// once per session: a fork's copies are its file's head, which doesn't
+	// change as it grows. copiesFor is the session file they were found
+	// for, "" until a load has looked.
+	copies    *models.CopiedReplies
+	copiesFor string
+
 	// Change tracking for highlight animation
 	changedAt   map[string]time.Time
 	deltaTokens map[string]int64 // Delta values for token counts
@@ -171,6 +178,10 @@ type (
 		analysis    *models.SessionAnalysis
 		sessionPath string
 		modTime     time.Time // session file mtime; zero when unknown
+		// copiesFound is set when the load looked for copies, which it
+		// does until one finds the session's replies to go by.
+		copiesFound bool
+		copies      *models.CopiedReplies
 	}
 	// errorMsg carries a reload/watcher failure and the session it belongs to;
 	// a stale error for the old session must not stamp over the new one.
@@ -439,6 +450,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.analysis = msg.analysis
+		if msg.copiesFound {
+			m.copies, m.copiesFor = msg.copies, m.sessionPath
+		}
 		m.loading = false
 		m.lastUpdated = time.Now()
 		m.staleSince = time.Time{}
@@ -659,6 +673,7 @@ func (m Model) switchTo(path, id string, auto bool) (tea.Model, tea.Cmd) {
 	m.deltaCount = 0
 	// Drop the previous session's cached agent parses
 	m.agentCache = analyzer.NewAgentParseCache()
+	m.copies, m.copiesFor = nil, ""
 	// Fingerprint the new session's subagent tree; the pending reload
 	// covers anything already on disk
 	m.subagentSig = subagentTreeSignature(filepath.Dir(m.sessionPath), m.sessionID)

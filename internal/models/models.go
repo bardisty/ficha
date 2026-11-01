@@ -364,6 +364,10 @@ type SessionAnalysis struct {
 	// check as its stderr warning.
 	UnpricedModels []string `json:"unpriced_models,omitempty"`
 	IsSummary      bool     `json:"-"` // True for aggregate summaries
+	// Copies is the part of the transcript other sessions in its project
+	// also hold, which list and summary count under one of them. Set by show
+	// and watch on a session that has any; json leaves it out.
+	Copies *CopiedReplies `json:"-"`
 	// SkipDetails names the sessions behind the aggregate's skip counters,
 	// for -v, including any a window left out of the report. Set only on the
 	// aggregate AnalyzeMultipleSessions returns.
@@ -373,6 +377,19 @@ type SessionAnalysis struct {
 	// consumers can pair it with skipped_sessions to compute coverage, like
 	// global's session_count.
 	SessionCount int `json:"session_count"`
+}
+
+// CopiedReplies is the replies a session's transcript shares with other
+// sessions in its project: a fork's copies of its original's, or an
+// original's that a fork copied and that list credits to the fork.
+type CopiedReplies struct {
+	// Messages is how many replies, and Cost their price.
+	Messages int
+	Cost     float64
+	// SessionID is the session list and summary count them under, or ""
+	// when they're split over Sessions sessions.
+	SessionID string
+	Sessions  int
 }
 
 // ContextUsage is how full a context window was at one request, as Claude

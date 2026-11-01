@@ -582,9 +582,9 @@ func TestExcludeSeenMessagesColonAliasing(t *testing.T) {
 	fileA := mustParse(t, `{"type":"assistant","timestamp":"2024-01-01T12:00:00Z","requestId":"a:b","message":{"id":"msg_1","model":"claude-opus-4-5","usage":{"output_tokens":10}}}`)
 	fileB := mustParse(t, `{"type":"assistant","timestamp":"2024-01-01T12:01:00Z","requestId":"b","message":{"id":"msg_1:a","model":"claude-opus-4-5","usage":{"output_tokens":20}}}`)
 
-	seen := make(map[DedupKey]struct{})
-	keptA := ExcludeSeenMessages(fileA, seen)
-	keptB := ExcludeSeenMessages(fileB, seen)
+	seen := make(map[DedupKey]string)
+	keptA := ExcludeSeenMessages(fileA, seen, "a")
+	keptB := ExcludeSeenMessages(fileB, seen, "b")
 
 	if len(keptA) != 1 {
 		t.Fatalf("file A: got %d kept, want 1", len(keptA))

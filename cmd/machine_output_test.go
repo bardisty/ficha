@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bardisty/ficha/internal/models"
+	"github.com/bardisty/ficha/internal/render"
 )
 
 // machineOutputs is every command shape that has json and csv output.
@@ -403,6 +404,199 @@ func TestE2EListCarriesTheTableFields(t *testing.T) {
 			t.Errorf("%s: list csv total_cost %v, summary -d %v", r[id], got, summaryCost[r[id]])
 		}
 	}
+}
+
+// TestE2EShowNamesAForksCopies: show prices a fork's file alone, and its
+// table says how many of those messages list and summary count under
+// another session, and which. The session it names is the one list
+// credits, so the copies' cost is exactly what show has and list doesn't.
+func TestE2EShowNamesAForksCopies(t *testing.T) {
+	const forkID = "ffffffff-1111-2222-3333-444444444444"
+	const fork2ID = "dddddddd-1111-2222-3333-444444444444"
+	type fixture struct {
+		dir   string
+		alpha []byte
+	}
+	setup := func(t *testing.T) fixture {
+		root := setupE2EFixture(t)
+		dir := filepath.Join(root, "projects", e2eProjDir)
+		alpha, err := os.ReadFile(filepath.Join(dir, e2eAlphaID+".jsonl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fixture{dir: dir, alpha: alpha}
+	}
+	write := func(t *testing.T, path string, data []byte, mtime time.Time) {
+		t.Helper()
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		setMtime(t, path, mtime)
+	}
+	line := func(ts, id string) []byte {
+		return []byte(e2eMsg(ts, id, "claude-opus-4-8", 100, 300, 0, 0, 5000) + "\n")
+	}
+	// note is the table's note on copies, on one line, or "" without one.
+	note := func(t *testing.T, args ...string) string {
+		t.Helper()
+		out, err := executeCLI(t, append([]string{"show", projFlag, "--no-color"}, args...)...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+		// It sits between the footer's stats and its closing rule.
+		lines := strings.Split(out, "\n")
+		i := slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(l, "Total: ") })
+		if i < 0 {
+			t.Fatalf("no footer:\n%s", out)
+		}
+		var text []string
+		for _, l := range lines[i+1:] {
+			if strings.HasPrefix(l, "─") {
+				break
+			}
+			if !strings.Contains(l, "Last active: ") {
+				text = append(text, l)
+			}
+		}
+		return strings.Join(text, " ")
+	}
+	listCost := func(t *testing.T, id string) float64 {
+		t.Helper()
+		out, err := executeCLI(t, "list", projFlag, "-f", "json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var list []struct {
+			SessionID string `json:"session_id"`
+			TotalCost struct {
+				TotalCost float64 `json:"total_cost"`
+			} `json:"total_cost"`
+		}
+		mustJSON(t, out, &list)
+		for _, r := range list {
+			if r.SessionID == id {
+				return r.TotalCost.TotalCost
+			}
+		}
+		t.Fatalf("%s isn't in list json:\n%s", id, out)
+		return 0
+	}
+	// wantNote is the note for n copies kept by keeper, or by sessions
+	// sessions when keeper is "", priced at what show counts and list
+	// leaves out.
+	wantNote := func(t *testing.T, id string, n int, keeper string, sessions int) string {
+		t.Helper()
+		out, err := executeCLI(t, "show", projFlag, id, "-f", "json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var show struct {
+			MessageCount int `json:"message_count"`
+			TotalCost    struct {
+				TotalCost float64 `json:"total_cost"`
+			} `json:"total_cost"`
+		}
+		mustJSON(t, out, &show)
+		c := models.CopiedReplies{Messages: n, Cost: show.TotalCost.TotalCost - listCost(t, id), SessionID: keeper, Sessions: sessions}
+		return render.CopiesNoteFor(c, show.MessageCount, show.TotalCost.TotalCost)
+	}
+	base := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
+
+	t.Run("fork that added replies names the original", func(t *testing.T) {
+		f := setup(t)
+		setMtime(t, filepath.Join(f.dir, e2eAlphaID+".jsonl"), base)
+		write(t, filepath.Join(f.dir, forkID+".jsonl"), append(f.alpha, line("2026-02-06T10:00:00Z", "f1")...), base.Add(time.Hour))
+		if got, want := note(t, forkID), wantNote(t, forkID, 2, e2eAlphaID, 1); got != want {
+			t.Errorf("fork's note:\n got %q\nwant %q", got, want)
+		}
+		if got := note(t, e2eAlphaID); got != "" {
+			t.Errorf("the original keeps its replies, so it has no note; got %q", got)
+		}
+	})
+
+	t.Run("fork that added nothing", func(t *testing.T) {
+		f := setup(t)
+		setMtime(t, filepath.Join(f.dir, e2eAlphaID+".jsonl"), base)
+		write(t, filepath.Join(f.dir, forkID+".jsonl"), f.alpha, base.Add(time.Hour))
+		if listCost(t, forkID) != 0 {
+			t.Fatal("list should leave the copy nothing to price")
+		}
+		got, want := note(t, forkID), wantNote(t, forkID, 2, e2eAlphaID, 1)
+		if got != want || !strings.HasPrefix(got, "Every message here") || !strings.Contains(got, "(copy)") {
+			t.Errorf("copy's note:\n got %q\nwant %q, which says it's a copy", got, want)
+		}
+	})
+
+	t.Run("original resumed after its fork, without an index", func(t *testing.T) {
+		// Without the index, the tie between a fork and its original goes
+		// to the file written first. Resuming the original after forking
+		// makes that the fork, which then keeps the shared replies.
+		f := setup(t)
+		write(t, filepath.Join(f.dir, forkID+".jsonl"), append(f.alpha, line("2026-02-06T10:00:00Z", "f1")...), base)
+		write(t, filepath.Join(f.dir, e2eAlphaID+".jsonl"), append(f.alpha, line("2026-02-07T10:00:00Z", "a3")...), base.Add(time.Hour))
+		if got, want := note(t, e2eAlphaID), wantNote(t, e2eAlphaID, 2, forkID, 1); got != want {
+			t.Errorf("original's note:\n got %q\nwant %q", got, want)
+		}
+		if got := note(t, forkID); got != "" {
+			t.Errorf("list credits the fork, so it has no note; got %q", got)
+		}
+
+		// The index's creation times say which came first.
+		index := fmt.Sprintf(`{"entries":[{"sessionId":%q,"created":"2026-02-01T09:59:00Z"},{"sessionId":%q,"created":"2026-02-06T09:59:00Z"}]}`, e2eAlphaID, forkID)
+		if err := os.WriteFile(filepath.Join(f.dir, "sessions-index.json"), []byte(index), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := note(t, forkID), wantNote(t, forkID, 2, e2eAlphaID, 1); got != want {
+			t.Errorf("with the index, fork's note:\n got %q\nwant %q", got, want)
+		}
+		if got := note(t, e2eAlphaID); got != "" {
+			t.Errorf("with the index, the original has no note; got %q", got)
+		}
+	})
+
+	t.Run("copies credited to two sessions name neither", func(t *testing.T) {
+		f := setup(t)
+		setMtime(t, filepath.Join(f.dir, e2eAlphaID+".jsonl"), base)
+		fork := append(f.alpha, line("2026-02-06T10:00:00Z", "f1")...)
+		write(t, filepath.Join(f.dir, forkID+".jsonl"), fork, base.Add(time.Hour))
+		write(t, filepath.Join(f.dir, fork2ID+".jsonl"), append(fork, line("2026-02-08T10:00:00Z", "g1")...), base.Add(2*time.Hour))
+		if got, want := note(t, fork2ID), wantNote(t, fork2ID, 3, "", 2); got != want || !strings.Contains(got, "also in 2 other sessions.") {
+			t.Errorf("fork of a fork's note:\n got %q\nwant %q", got, want)
+		}
+		if got, want := note(t, forkID), wantNote(t, forkID, 2, e2eAlphaID, 1); got != want {
+			t.Errorf("first fork's note:\n got %q\nwant %q", got, want)
+		}
+	})
+
+	t.Run("a transcript outside the projects directory has no note", func(t *testing.T) {
+		f := setup(t)
+		setMtime(t, filepath.Join(f.dir, e2eAlphaID+".jsonl"), base)
+		write(t, filepath.Join(f.dir, forkID+".jsonl"), f.alpha, base.Add(time.Hour))
+		outside := filepath.Join(t.TempDir(), forkID+".jsonl")
+		write(t, outside, f.alpha, base.Add(time.Hour))
+		out, err := executeCLI(t, "show", outside, "--no-color")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out, "also in") {
+			t.Errorf("a path outside the projects directory can't be compared, so no note:\n%s", out)
+		}
+	})
+
+	t.Run("json and csv stay file-local and say nothing", func(t *testing.T) {
+		f := setup(t)
+		setMtime(t, filepath.Join(f.dir, e2eAlphaID+".jsonl"), base)
+		write(t, filepath.Join(f.dir, forkID+".jsonl"), f.alpha, base.Add(time.Hour))
+		for _, format := range []string{"json", "csv"} {
+			out, err := executeCLI(t, "show", projFlag, forkID, "-f", format)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(out, "also in") || strings.Contains(out, "Includes") {
+				t.Errorf("-f %s carries the note:\n%s", format, out)
+			}
+		}
+	})
 }
 
 // TestE2EListNamesACopy: a fork that added nothing holds only replies
