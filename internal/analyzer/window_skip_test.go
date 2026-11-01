@@ -49,7 +49,6 @@ func diskEntry(t *testing.T, path string) models.SessionEntry {
 		SessionID: strings.TrimSuffix(filepath.Base(path), ".jsonl"),
 		FullPath:  path,
 		Modified:  info.ModTime(),
-		Created:   info.ModTime(),
 	}
 }
 

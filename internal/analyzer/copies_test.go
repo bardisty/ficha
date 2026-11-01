@@ -131,15 +131,30 @@ func TestForkFamilyRecheck(t *testing.T) {
 			}
 			touch(orig, day.Add(time.Hour))
 			touch(fork, day)
-			appendTo(fork, `{"type":"user","timestamp":"2026-02-03T09:59:00Z","message":{"role":"user","content":"go on"}}`+"\n")
 			if next := f.Recheck(); next != nil {
-				t.Fatalf("mtimes and a prompt moved the copies: %+v", next.Copies)
+				t.Fatalf("mtimes moved the copies: %+v", next.Copies)
+			}
+			// A prompt isn't a reply. The fork comes back at its new size,
+			// so the next recheck doesn't parse it again.
+			appendTo(fork, `{"type":"user","timestamp":"2026-02-03T09:59:00Z","message":{"role":"user","content":"go on"}}`+"\n")
+			next := f.Recheck()
+			if indexed && next != nil {
+				t.Fatalf("with an index a prompt rechecked the family: %+v", next)
+			}
+			if !indexed {
+				if next == nil || next.Copies == nil || next.Copies.SessionID != "aaaaaaaa" || next.Copies.Messages != f.Copies.Messages {
+					t.Fatalf("a prompt moved the copies: %+v", next)
+				}
+				if again := next.Recheck(); again != nil {
+					t.Fatalf("the fork's size didn't move with the prompt: %+v", again)
+				}
+				f = next
 			}
 
 			// The original replies first, so it diverged first, and the
 			// fork, which hasn't yet, keeps the shared replies.
 			appendTo(orig, copiesReply("2026-02-03T10:00:00Z", "a3"))
-			next := f.Recheck()
+			next = f.Recheck()
 			if indexed {
 				if next != nil {
 					t.Errorf("with an index a reply moved the copies: %+v", next.Copies)

@@ -126,9 +126,11 @@ func (f *ForkFamily) Includes(sessionID string) bool {
 // Recheck returns the family with its copies found again, or nil when it's
 // as it was. Only a member with no reply of its own can move the order, by
 // gaining one, so a recheck stats those alone, and parses one only when its
-// file grew. Once every member has a reply of its own, it does neither.
+// file grew. Once every member has a reply of its own, it does neither. A
+// member that grew without one comes back at its new size, with the same
+// copies, so the next recheck doesn't parse it again.
 func (f *ForkFamily) Recheck() *ForkFamily {
-	diverged := false
+	var sizes []int64
 	for j, i := range f.open {
 		info, err := os.Stat(f.members[i].FullPath)
 		if err != nil || info.Size() == f.sizes[j] {
@@ -144,18 +146,22 @@ func (f *ForkFamily) Recheck() *ForkFamily {
 			k, ok := parser.DedupKeyOf(msg)
 			return ok && !msg.Timestamp.IsZero() && f.held[k] == 0
 		}) {
-			diverged = true
-			break
+			// The order may hold, but the member leaves open either way.
+			next := &ForkFamily{members: f.members, self: f.self}
+			next.find()
+			return next
 		}
+		if sizes == nil {
+			sizes = slices.Clone(f.sizes)
+		}
+		sizes[j] = info.Size()
 	}
-	if !diverged {
+	if sizes == nil {
 		return nil
 	}
-	// The order may hold, but the member that diverged leaves open, so the
-	// next recheck doesn't parse it again.
-	next := &ForkFamily{members: f.members, self: f.self}
-	next.find()
-	return next
+	next := *f
+	next.sizes = sizes
+	return &next
 }
 
 // find parses the family's transcripts and sets Copies, and what Recheck

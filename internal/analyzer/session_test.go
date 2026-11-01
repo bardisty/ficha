@@ -1022,8 +1022,8 @@ func TestAnalyzeMultipleSessions_CrossFileDedup(t *testing.T) {
 
 	// Fork first in input order: the earliest-timestamp keys tie (the fork
 	// clones the original's lines, timestamps included) and no Created is
-	// set, so attribution falls back to mtime — the original (earlier mtime)
-	// keeps the shared history; results stay in input order.
+	// set, so the session that diverged last keeps the shared history: the
+	// original, which has no reply of its own. Results stay in input order.
 	entries := []models.SessionEntry{
 		{SessionID: "fork", FullPath: forkPath, Modified: time.Date(2024, 1, 16, 9, 0, 0, 0, time.UTC)},
 		{SessionID: "original", FullPath: originalPath, Modified: time.Date(2024, 1, 15, 10, 10, 0, 0, time.UTC)},

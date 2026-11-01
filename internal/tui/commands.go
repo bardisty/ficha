@@ -97,7 +97,7 @@ type copiesResult struct {
 }
 
 // copiesMsg ends a recheck of the fork family, for the session numbered
-// gen. family is nil when the family is as it was.
+// gen. family is nil when the recheck found nothing new.
 type copiesMsg struct {
 	gen    int
 	family *analyzer.ForkFamily
