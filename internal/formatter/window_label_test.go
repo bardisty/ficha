@@ -3,6 +3,7 @@ package formatter
 import (
 	"testing"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/bardisty/ficha/internal/models"
 )
@@ -45,5 +46,33 @@ func TestWindowLabel(t *testing.T) {
 	useASCII(t)
 	if got, want := windowLabel(models.TimeWindow{Since: day(1, 14), Until: day(1, 16)}), "Jan 14 -> Jan 15"; got != want {
 		t.Errorf("--ascii: label %q, want %q", got, want)
+	}
+}
+
+// Santiago's clocks jump from 00:00 to 01:00 on 2026-09-06, so that day
+// starts at 01:00, and a whole day there must still read as its date.
+func TestWindowLabelSkippedMidnight(t *testing.T) {
+	loc, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := time.Local
+	time.Local = loc
+	t.Cleanup(func() { time.Local = orig })
+
+	dayStart := time.Date(2026, 9, 6, 1, 0, 0, 0, loc)
+	tests := []struct {
+		name string
+		w    models.TimeWindow
+		want string
+	}{
+		{"one whole day", models.TimeWindow{Since: dayStart, Until: time.Date(2026, 9, 7, 0, 0, 0, 0, loc)}, "Sep 06"},
+		{"up to the day before", models.TimeWindow{Until: dayStart}, "up to Sep 05"},
+		{"two whole days", models.TimeWindow{Since: time.Date(2026, 9, 5, 0, 0, 0, 0, loc), Until: time.Date(2026, 9, 7, 0, 0, 0, 0, loc)}, "Sep 05 → Sep 06"},
+	}
+	for _, tt := range tests {
+		if got := windowLabel(tt.w); got != tt.want {
+			t.Errorf("%s: label %q, want %q", tt.name, got, tt.want)
+		}
 	}
 }

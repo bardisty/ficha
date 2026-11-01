@@ -156,12 +156,14 @@ func spanOrWindow(w *models.TimeWindow, first, last time.Time) string {
 // before, the one typed. Only whole days fold: "--since 2h --until 1h"
 // keeps both times.
 func windowLabel(w models.TimeWindow) string {
-	midnight := func(t time.Time) bool {
-		l := t.Local()
-		return l.Hour() == 0 && l.Minute() == 0 && l.Second() == 0 && l.Nanosecond() == 0
+	// dayStart reports whether t is the first instant of its local day. Where
+	// daylight saving skips midnight that is 01:00, so the clock alone won't
+	// do: the instant before it falls on the day before.
+	dayStart := func(t time.Time) bool {
+		return !render.SameLocalDay(t, t.Add(-time.Nanosecond))
 	}
 	point := func(t time.Time) string {
-		if midnight(t) {
+		if dayStart(t) {
 			return render.Date(t, now())
 		}
 		return render.DateTime(t, now())
@@ -169,15 +171,17 @@ func windowLabel(w models.TimeWindow) string {
 	to := "now"
 	if !w.Until.IsZero() {
 		until := w.Until
-		if midnight(until) {
-			until = until.AddDate(0, 0, -1)
+		if dayStart(until) {
+			// The exclusive bound of a whole day: name the day before.
+			to = render.Date(until.Add(-time.Nanosecond), now())
+		} else {
+			to = point(until)
 		}
-		to = point(until)
 	}
 	switch {
 	case w.Since.IsZero():
 		return "up to " + to
-	case midnight(w.Since) && w.Until.Equal(w.Since.Local().AddDate(0, 0, 1)):
+	case dayStart(w.Since) && dayStart(w.Until) && render.SameLocalDay(w.Until.Add(-time.Nanosecond), w.Since):
 		return point(w.Since)
 	}
 	return point(w.Since) + " " + styles.Arrow + " " + to

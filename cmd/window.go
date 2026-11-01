@@ -59,24 +59,23 @@ func (cfg *config) timeWindow(now time.Time) (models.TimeWindow, error) {
 // "--until 2026-09-28" includes the 28th. An age counts back from now.
 func parseWindowBound(s string, now time.Time, end bool) (time.Time, error) {
 	s = strings.TrimSpace(s)
-	midnight := func(t time.Time) time.Time {
-		y, m, d := t.Date()
-		return time.Date(y, m, d, 0, 0, 0, 0, time.Local)
-	}
-	day := func(t time.Time) time.Time {
+	// bound is the start of local date y-m-d, or of the day after it for --until.
+	bound := func(y int, m time.Month, d int) time.Time {
 		if end {
-			return t.AddDate(0, 0, 1)
+			d++
 		}
-		return t
+		return dayStart(y, m, d)
 	}
 	switch strings.ToLower(s) {
 	case "today":
-		return day(midnight(now.Local())), nil
+		return bound(now.Local().Date()), nil
 	case "yesterday":
-		return day(midnight(now.Local()).AddDate(0, 0, -1)), nil
+		return bound(now.Local().AddDate(0, 0, -1).Date()), nil
 	}
-	if t, err := time.ParseInLocation("2006-01-02", s, time.Local); err == nil {
-		return day(t), nil
+	// Read the date's parts directly: a local time.Date for a midnight that
+	// daylight saving skipped would already have moved to the day before.
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return bound(t.Date()), nil
 	}
 	for _, layout := range []string{"2006-01-02T15:04", "2006-01-02 15:04", "2006-01-02T15:04Z07:00", time.RFC3339} {
 		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
@@ -87,6 +86,20 @@ func parseWindowBound(s string, now time.Time, end bool) (time.Time, error) {
 		return now.Add(-age), nil
 	}
 	return time.Time{}, fmt.Errorf("want %s", windowHelp)
+}
+
+// dayStart returns the first instant of local date y-m-d. Where daylight
+// saving skips midnight, Go resolves that midnight to the day before, so it
+// steps forward until the local date is d. Noon always exists, so it bounds
+// the walk.
+func dayStart(y int, m time.Month, d int) time.Time {
+	noon := time.Date(y, m, d, 12, 0, 0, 0, time.Local)
+	y, m, d = noon.Date()
+	t := time.Date(y, m, d, 0, 0, 0, 0, time.Local)
+	for t.Day() != d && t.Before(noon) {
+		t = t.Add(time.Minute)
+	}
+	return t
 }
 
 // maxAge bounds an age well past any transcript, and short of where
