@@ -498,7 +498,7 @@ func TestE2EShowNamesAForksCopies(t *testing.T) {
 		}
 		mustJSON(t, out, &show)
 		c := models.CopiedReplies{Messages: n, Cost: show.TotalCost.TotalCost - listCost(t, id), SessionID: keeper, Sessions: sessions}
-		return render.CopiesNote(c, show.MessageCount, show.TotalCost.TotalCost)
+		return render.CopiesNoteFor(c, show.MessageCount, show.TotalCost.TotalCost)
 	}
 	base := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
 

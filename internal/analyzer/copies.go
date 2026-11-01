@@ -1,8 +1,6 @@
 package analyzer
 
 import (
-	"errors"
-	"io/fs"
 	"path/filepath"
 
 	"github.com/bardisty/ficha/internal/models"
@@ -81,17 +79,14 @@ func FindCopies(sessionPath, sessionID string) (copies *models.CopiedReplies, ch
 }
 
 // projectSessions lists a project's sessions as list does, index and all,
-// since the index's creation times break ties in attribution. list warns of
-// an index it can't read; here it's left out the same way.
+// since the index's creation times break ties in attribution. An index it
+// can't read is left out, as list leaves it out after warning.
 func projectSessions(projectDir string) []models.SessionEntry {
 	disk, err := parser.DiscoverSessionsFromDisk(projectDir)
 	if err != nil {
 		return nil
 	}
-	index, err := parser.ParseSessionsIndex(paths.GetSessionsIndexPath(projectDir))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		index = nil
-	}
+	index, _ := parser.ParseSessionsIndex(paths.GetSessionsIndexPath(projectDir))
 	entries, _ := parser.MergeSessionSources(index, disk, projectDir)
 	return entries
 }

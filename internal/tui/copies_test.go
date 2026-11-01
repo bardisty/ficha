@@ -84,7 +84,7 @@ func TestWatchNamesAForksCopiesOnce(t *testing.T) {
 			if n := strings.Count(body, copiesNoteStart); n != 1 {
 				t.Fatalf("note appears %d times, want once:\n%s", n, body)
 			}
-			if !strings.Contains(strings.Join(strings.Fields(body), " "), "also in session 66666666. list and summary count them there, leaving this session") {
+			if !strings.Contains(strings.Join(strings.Fields(body), " "), "also in session 66666666. list and summary count them there.") {
 				t.Errorf("the note should name the original:\n%s", body)
 			}
 			// It closes the totals, ahead of the context gauge.
@@ -148,5 +148,50 @@ func TestWatchLooksForCopiesUntilTheSessionHasReplies(t *testing.T) {
 	m = loadFrom(t, m)
 	if !strings.Contains(stripANSI(m.renderAnalysis()), copiesNoteStart) {
 		t.Errorf("the copies written later weren't found:\n%s", stripANSI(m.renderAnalysis()))
+	}
+}
+
+// The note reads only what the first load found, so as the session grows
+// it keeps its lines, and the body under it stays where it was: here a
+// fork that added nothing gets replies that take its own cost past $1.
+func TestWatchCopiesNoteKeepsItsLinesAsTheSessionGrows(t *testing.T) {
+	for _, width := range []int{45, 50, 70, 77, 80} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			projectDir, forkPath := copiesProject(t)
+			data, err := os.ReadFile(forkPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.SplitAfter(string(data), "\n")
+			if err := os.WriteFile(forkPath, []byte(strings.Join(lines[:3], "")), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			m := sized(t, NewModel(forkPath, "77777777-0000-4000-8000-000000000007", true, projectDir, false), width, 40)
+			m = loadFrom(t, m)
+			contextLine := func() int {
+				for i, l := range strings.Split(stripANSI(m.renderAnalysis()), "\n") {
+					if strings.Contains(l, "Context") {
+						return i
+					}
+				}
+				t.Fatalf("no context line:\n%s", stripANSI(m.renderAnalysis()))
+				return 0
+			}
+			before := contextLine()
+			grown := strings.Join(lines[:3], "")
+			for i := range 80 {
+				grown += copiesLine(time.Date(2026, 10, 31, 9, 0, i, 0, time.UTC), fmt.Sprintf("g%d", i))
+			}
+			if err := os.WriteFile(forkPath, []byte(grown), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			m = loadFrom(t, m)
+			if m.analysis.TotalCost.TotalCost-m.copies.Cost < 1 {
+				t.Fatalf("the fork's own cost %v should pass $1", m.analysis.TotalCost.TotalCost-m.copies.Cost)
+			}
+			if got := contextLine(); got != before {
+				t.Errorf("the context gauge moved from line %d to %d", before, got)
+			}
+		})
 	}
 }

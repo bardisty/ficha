@@ -1169,24 +1169,44 @@ func wrapHangingLine(line string, width int) string {
 }
 
 // CopiesNote says which of a session's messages other sessions also hold,
-// for show and watch, which count the file alone, where list and summary
-// count each shared reply once. messages and total are the session's own
-// counts, so the note can give the cost list shows for it, the number a
-// reader comparing the two needs. Duration's label isn't on every screen
-// the note is, so it speaks of the time the copies span instead.
-func CopiesNote(c models.CopiedReplies, messages int, total float64) string {
-	where := "session " + TruncateID(c.SessionID, 8)
-	if c.SessionID == "" {
-		where = Count(c.Sessions) + " other sessions"
-	}
+// for watch, which counts the file alone, where list and summary count each
+// shared reply once. It reads c alone, so as the session grows the note
+// keeps its lines and the body below it stays put. Duration's label isn't
+// on every screen the note is, so it speaks of the time the copies span.
+func CopiesNote(c models.CopiedReplies) string {
+	return copiesHeld(c) + ". list and summary count " + copiesPronoun(c) + " there."
+}
+
+// CopiesNoteFor is CopiesNote for show, which draws one frame and so can
+// also give what list puts the session at, from its own messages and total:
+// the number a reader comparing the two needs. A session that's all copies
+// says list titles it (copy).
+func CopiesNoteFor(c models.CopiedReplies, messages int, total float64) string {
 	if c.Messages >= messages {
 		return fmt.Sprintf("Every message here (%s) is also in %s, where list and summary count them, and they title this session (copy).",
-			Cost(c.Cost), where)
+			Cost(c.Cost), copiesWhere(c))
 	}
-	what, span, them := Count(c.Messages)+" messages", "they span", "them"
+	return fmt.Sprintf("%s. list and summary count %s there, leaving this session %s.", copiesHeld(c), copiesPronoun(c), Cost(total-c.Cost))
+}
+
+func copiesHeld(c models.CopiedReplies) string {
+	what, span := Count(c.Messages)+" messages", "they span"
 	if c.Messages == 1 {
-		what, span, them = "1 message", "it spans", "it"
+		what, span = "1 message", "it spans"
 	}
-	return fmt.Sprintf("Includes %s (%s) and the time %s, also in %s. list and summary count %s there, leaving this session %s.",
-		what, Cost(c.Cost), span, where, them, Cost(total-c.Cost))
+	return fmt.Sprintf("Includes %s (%s) and the time %s, also in %s", what, Cost(c.Cost), span, copiesWhere(c))
+}
+
+func copiesWhere(c models.CopiedReplies) string {
+	if c.SessionID == "" {
+		return Count(c.Sessions) + " other sessions"
+	}
+	return "session " + TruncateID(c.SessionID, 8)
+}
+
+func copiesPronoun(c models.CopiedReplies) string {
+	if c.Messages == 1 {
+		return "it"
+	}
+	return "them"
 }

@@ -402,7 +402,8 @@ func createdOrModified(entry models.SessionEntry) time.Time {
 // attributionOrder is the order sessions take up their replies in, so that
 // shared history is credited to the original session, not the file written
 // to last: the first session in it to hold a reply keeps it. entries and
-// parsed are parallel, and a session skip marks is left in its input place.
+// parsed are parallel. A session skip marks sorts by its mtime: its caller
+// passes it over, so its place is moot.
 //
 // Sessions go in ascending order of their earliest message. A fork clones
 // the original transcript verbatim, timestamps included, so within a fork

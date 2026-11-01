@@ -116,7 +116,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool, width in
 // copiesNote is show's note under the footer on the messages its file
 // shares with other sessions, wrapped to width.
 func copiesNote(a *models.SessionAnalysis, width int, noColor bool) string {
-	note := render.CopiesNote(*a.Copies, a.MessageCount, a.TotalCost.TotalCost)
+	note := render.CopiesNoteFor(*a.Copies, a.MessageCount, a.TotalCost.TotalCost)
 	lines := strings.Split(render.WrapHanging(note, width), "\n")
 	if !noColor {
 		for i, l := range lines {
