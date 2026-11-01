@@ -2059,8 +2059,13 @@ func TestE2EListWindowAgreesWithSummaryDetails(t *testing.T) {
 		Messages int
 		Cost     float64
 	}
+	// A date-only bound starts at local midnight, so take the date of beta's
+	// first message in the local zone. A fixed date leaves the window empty
+	// where that midnight falls after the project's last message, as it does
+	// at UTC-11.
+	betaDay := time.Date(2026, 2, 2, 9, 0, 0, 0, time.UTC).In(time.Local).Format(time.DateOnly)
 	for _, window := range [][]string{
-		{"--since", "2026-02-02"},
+		{"--since", betaDay},
 		{"--since", "2026-02-01T10:03Z"},
 		{"--until", "2026-02-01T23:00Z"},
 		{"--since", "2026-02-01T10:03Z", "--until", "2026-02-02T09:06Z"},
