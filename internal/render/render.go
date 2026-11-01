@@ -1171,30 +1171,33 @@ func wrapHangingLine(line string, width int) string {
 // CopiesNote says which of a session's messages other sessions also hold,
 // for watch, which counts the file alone, where list and summary count each
 // shared reply once. It reads c alone, so as the session grows the note
-// keeps its lines and the body below it stays put. Duration's label isn't
-// on every screen the note is, so it speaks of the time the copies span.
+// keeps its lines and the body below it stays put.
 func CopiesNote(c models.CopiedReplies) string {
-	return copiesHeld(c) + ". list and summary count " + copiesPronoun(c) + " there."
+	return copiesHeld(c) + " list and summary count " + copiesPronoun(c) + " there."
 }
 
 // CopiesNoteFor is CopiesNote for show, which draws one frame and so can
-// also give what list puts the session at, from its own messages and total:
-// the number a reader comparing the two needs. A session that's all copies
-// says list titles it (copy).
+// also give what list shows the session at, from its own messages and
+// total: the number a reader comparing the two needs. list's LENGTH starts
+// at the session's first message of its own, so it's shorter than show's
+// Duration, which starts at the first copy; the note points at that rather
+// than at Duration, whose label show drops at 45 columns. A session that's
+// all copies says list titles it (copy).
 func CopiesNoteFor(c models.CopiedReplies, messages int, total float64) string {
 	if c.Messages >= messages {
-		return fmt.Sprintf("Every message here (%s) is also in %s, where list and summary count them, and they title this session (copy).",
+		return fmt.Sprintf("Every message here (%s) is also in %s. list and summary count them there, and list titles this session (copy).",
 			Cost(c.Cost), copiesWhere(c))
 	}
-	return fmt.Sprintf("%s. list and summary count %s there, leaving this session %s.", copiesHeld(c), copiesPronoun(c), Cost(total-c.Cost))
+	return fmt.Sprintf("%s list and summary count %s there, so list shows this session at %s with a shorter length.",
+		copiesHeld(c), copiesPronoun(c), Cost(total-c.Cost))
 }
 
 func copiesHeld(c models.CopiedReplies) string {
-	what, span := Count(c.Messages)+" messages", "they span"
+	what, verb := Count(c.Messages)+" messages", "are"
 	if c.Messages == 1 {
-		what, span = "1 message", "it spans"
+		what, verb = "1 message", "is"
 	}
-	return fmt.Sprintf("Includes %s (%s) and the time %s, also in %s", what, Cost(c.Cost), span, copiesWhere(c))
+	return fmt.Sprintf("%s here (%s) %s also in %s.", what, Cost(c.Cost), verb, copiesWhere(c))
 }
 
 func copiesWhere(c models.CopiedReplies) string {
