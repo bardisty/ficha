@@ -104,7 +104,7 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool, width in
 	sb.WriteString(footerStats(fields, sectionWidth, noColor))
 	sb.WriteString("\n")
 	if !isSummary && analysis.Copies != nil {
-		sb.WriteString(copiesNote(*analysis.Copies, sectionWidth, noColor))
+		sb.WriteString(copiesNote(analysis, sectionWidth, noColor))
 	}
 
 	// Single-line help separator
@@ -115,8 +115,9 @@ func FormatSessionTable(analysis *models.SessionAnalysis, noColor bool, width in
 
 // copiesNote is show's note under the footer on the messages its file
 // shares with other sessions, wrapped to width.
-func copiesNote(c models.CopiedReplies, width int, noColor bool) string {
-	lines := strings.Split(render.WrapHanging(render.CopiesNote(c), width), "\n")
+func copiesNote(a *models.SessionAnalysis, width int, noColor bool) string {
+	note := render.CopiesNote(*a.Copies, a.MessageCount, a.TotalCost.TotalCost)
+	lines := strings.Split(render.WrapHanging(note, width), "\n")
 	if !noColor {
 		for i, l := range lines {
 			lines[i] = styles.FooterStyle.Render(l)

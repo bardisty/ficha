@@ -1170,17 +1170,23 @@ func wrapHangingLine(line string, width int) string {
 
 // CopiesNote says which of a session's messages other sessions also hold,
 // for show and watch, which count the file alone, where list and summary
-// count each shared reply once. The session's Duration runs from its first
-// message, copied or not, so the note says it spans them too.
-func CopiesNote(c models.CopiedReplies) string {
-	what, verb, them := Count(c.Messages)+" messages", "are", "them"
-	if c.Messages == 1 {
-		what, verb, them = "1 message", "is", "it"
-	}
+// count each shared reply once. messages and total are the session's own
+// counts, so the note can give the cost list shows for it, the number a
+// reader comparing the two needs. Duration's label isn't on every screen
+// the note is, so it speaks of the time the copies span instead.
+func CopiesNote(c models.CopiedReplies, messages int, total float64) string {
 	where := "session " + TruncateID(c.SessionID, 8)
 	if c.SessionID == "" {
 		where = Count(c.Sessions) + " other sessions"
 	}
-	return fmt.Sprintf("%s here (%s) %s also in %s, and list and summary count %s there. Duration spans %s too.",
-		what, Cost(c.Cost), verb, where, them, them)
+	if c.Messages >= messages {
+		return fmt.Sprintf("Every message here (%s) is also in %s, where list and summary count them, and they title this session (copy).",
+			Cost(c.Cost), where)
+	}
+	what, span, them := Count(c.Messages)+" messages", "they span", "them"
+	if c.Messages == 1 {
+		what, span, them = "1 message", "it spans", "it"
+	}
+	return fmt.Sprintf("Includes %s (%s), and the time %s, also in %s. list and summary count %s there and put this session at %s.",
+		what, Cost(c.Cost), span, where, them, Cost(total-c.Cost))
 }

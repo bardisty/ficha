@@ -61,7 +61,7 @@ func loadFrom(t *testing.T, m Model) Model {
 	return updated.(Model)
 }
 
-const copiesNoteStart = "3 messages here ("
+const copiesNoteStart = "Includes 3 messages ("
 
 // watch names a fork's copies under its cost rows from the first frame of
 // the body, so the note never arrives later and pushes the body down. A
@@ -84,7 +84,7 @@ func TestWatchNamesAForksCopiesOnce(t *testing.T) {
 			if n := strings.Count(body, copiesNoteStart); n != 1 {
 				t.Fatalf("note appears %d times, want once:\n%s", n, body)
 			}
-			if !strings.Contains(strings.Join(strings.Fields(body), " "), "are also in session 66666666, and list and summary count them there.") {
+			if !strings.Contains(strings.Join(strings.Fields(body), " "), "also in session 66666666. list and summary count them there and put this session at") {
 				t.Errorf("the note should name the original:\n%s", body)
 			}
 			// It closes the totals, ahead of the context gauge.

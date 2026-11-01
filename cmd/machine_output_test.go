@@ -481,25 +481,24 @@ func TestE2EShowNamesAForksCopies(t *testing.T) {
 		t.Fatalf("%s isn't in list json:\n%s", id, out)
 		return 0
 	}
-	showCost := func(t *testing.T, id string) float64 {
+	// wantNote is the note for n copies kept by keeper, or by sessions
+	// sessions when keeper is "", priced at what show counts and list
+	// leaves out.
+	wantNote := func(t *testing.T, id string, n int, keeper string, sessions int) string {
 		t.Helper()
 		out, err := executeCLI(t, "show", projFlag, id, "-f", "json")
 		if err != nil {
 			t.Fatal(err)
 		}
 		var show struct {
-			TotalCost struct {
+			MessageCount int `json:"message_count"`
+			TotalCost    struct {
 				TotalCost float64 `json:"total_cost"`
 			} `json:"total_cost"`
 		}
 		mustJSON(t, out, &show)
-		return show.TotalCost.TotalCost
-	}
-	// wantNote is the note for n copies credited to where, priced at what
-	// show counts and list leaves out.
-	wantNote := func(t *testing.T, id string, n int, where string) string {
-		copied := showCost(t, id) - listCost(t, id)
-		return fmt.Sprintf("%d messages here (%s) are also in %s, and list and summary count them there. Duration spans them too.", n, render.Cost(copied), where)
+		c := models.CopiedReplies{Messages: n, Cost: show.TotalCost.TotalCost - listCost(t, id), SessionID: keeper, Sessions: sessions}
+		return render.CopiesNote(c, show.MessageCount, show.TotalCost.TotalCost)
 	}
 	base := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
 
@@ -507,7 +506,7 @@ func TestE2EShowNamesAForksCopies(t *testing.T) {
 		f := setup(t)
 		setMtime(t, filepath.Join(f.dir, e2eAlphaID+".jsonl"), base)
 		write(t, filepath.Join(f.dir, forkID+".jsonl"), append(f.alpha, line("2026-02-06T10:00:00Z", "f1")...), base.Add(time.Hour))
-		if got, want := note(t, forkID), wantNote(t, forkID, 2, "session "+e2eAlphaID[:8]); got != want {
+		if got, want := note(t, forkID), wantNote(t, forkID, 2, e2eAlphaID, 1); got != want {
 			t.Errorf("fork's note:\n got %q\nwant %q", got, want)
 		}
 		if got := note(t, e2eAlphaID); got != "" {
@@ -522,8 +521,9 @@ func TestE2EShowNamesAForksCopies(t *testing.T) {
 		if listCost(t, forkID) != 0 {
 			t.Fatal("list should leave the copy nothing to price")
 		}
-		if got, want := note(t, forkID), wantNote(t, forkID, 2, "session "+e2eAlphaID[:8]); got != want {
-			t.Errorf("copy's note:\n got %q\nwant %q", got, want)
+		got, want := note(t, forkID), wantNote(t, forkID, 2, e2eAlphaID, 1)
+		if got != want || !strings.HasPrefix(got, "Every message here") || !strings.Contains(got, "(copy)") {
+			t.Errorf("copy's note:\n got %q\nwant %q, which says it's a copy", got, want)
 		}
 	})
 
@@ -534,7 +534,7 @@ func TestE2EShowNamesAForksCopies(t *testing.T) {
 		f := setup(t)
 		write(t, filepath.Join(f.dir, forkID+".jsonl"), append(f.alpha, line("2026-02-06T10:00:00Z", "f1")...), base)
 		write(t, filepath.Join(f.dir, e2eAlphaID+".jsonl"), append(f.alpha, line("2026-02-07T10:00:00Z", "a3")...), base.Add(time.Hour))
-		if got, want := note(t, e2eAlphaID), wantNote(t, e2eAlphaID, 2, "session "+forkID[:8]); got != want {
+		if got, want := note(t, e2eAlphaID), wantNote(t, e2eAlphaID, 2, forkID, 1); got != want {
 			t.Errorf("original's note:\n got %q\nwant %q", got, want)
 		}
 		if got := note(t, forkID); got != "" {
@@ -546,7 +546,7 @@ func TestE2EShowNamesAForksCopies(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(f.dir, "sessions-index.json"), []byte(index), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got, want := note(t, forkID), wantNote(t, forkID, 2, "session "+e2eAlphaID[:8]); got != want {
+		if got, want := note(t, forkID), wantNote(t, forkID, 2, e2eAlphaID, 1); got != want {
 			t.Errorf("with the index, fork's note:\n got %q\nwant %q", got, want)
 		}
 		if got := note(t, e2eAlphaID); got != "" {
@@ -560,10 +560,10 @@ func TestE2EShowNamesAForksCopies(t *testing.T) {
 		fork := append(f.alpha, line("2026-02-06T10:00:00Z", "f1")...)
 		write(t, filepath.Join(f.dir, forkID+".jsonl"), fork, base.Add(time.Hour))
 		write(t, filepath.Join(f.dir, fork2ID+".jsonl"), append(fork, line("2026-02-08T10:00:00Z", "g1")...), base.Add(2*time.Hour))
-		if got, want := note(t, fork2ID), wantNote(t, fork2ID, 3, "2 other sessions"); got != want {
+		if got, want := note(t, fork2ID), wantNote(t, fork2ID, 3, "", 2); got != want || !strings.Contains(got, "also in 2 other sessions.") {
 			t.Errorf("fork of a fork's note:\n got %q\nwant %q", got, want)
 		}
-		if got, want := note(t, forkID), wantNote(t, forkID, 2, "session "+e2eAlphaID[:8]); got != want {
+		if got, want := note(t, forkID), wantNote(t, forkID, 2, e2eAlphaID, 1); got != want {
 			t.Errorf("first fork's note:\n got %q\nwant %q", got, want)
 		}
 	})
@@ -578,7 +578,7 @@ func TestE2EShowNamesAForksCopies(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(out, " here ($") {
+		if strings.Contains(out, "also in") {
 			t.Errorf("a path outside the projects directory can't be compared, so no note:\n%s", out)
 		}
 	})
@@ -592,7 +592,7 @@ func TestE2EShowNamesAForksCopies(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(out, "also in") {
+			if strings.Contains(out, "also in") || strings.Contains(out, "Includes") {
 				t.Errorf("-f %s carries the note:\n%s", format, out)
 			}
 		}
