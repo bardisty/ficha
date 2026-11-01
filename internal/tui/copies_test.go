@@ -5,8 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // copiesLine is an assistant reply as a transcript holds it.
@@ -75,8 +78,8 @@ func TestWatchNamesAForksCopiesOnce(t *testing.T) {
 			m = sized(t, m, size[0], size[1])
 
 			first, ok := m.loadAnalysis().(analysisMsg)
-			if !ok || !first.copiesFound || first.copies == nil {
-				t.Fatalf("the first load should come with the copies: found %v, %+v", first.copiesFound, first.copies)
+			if !ok || !first.copiesFound || first.family == nil || first.family.Copies == nil {
+				t.Fatalf("the first load should come with the copies: found %v, %+v", first.copiesFound, first.family)
 			}
 			updated, _ := m.Update(first)
 			m = updated.(Model)
@@ -193,5 +196,178 @@ func TestWatchCopiesNoteKeepsItsLinesAsTheSessionGrows(t *testing.T) {
 				t.Errorf("the context gauge moved from line %d to %d", before, got)
 			}
 		})
+	}
+}
+
+// copiesFromCmd runs cmd, batches and all, and returns the copiesMsg that
+// ends the recheck it starts, if it starts one. A batch can hold a clock tick that sleeps for seconds, so
+// its commands run side by side, and the first copiesMsg ends the wait.
+func copiesFromCmd(cmd tea.Cmd) (copiesMsg, bool) {
+	if cmd == nil {
+		return copiesMsg{}, false
+	}
+	switch msg := cmd().(type) {
+	case copiesMsg:
+		return msg, true
+	case tea.BatchMsg:
+		found := make(chan copiesMsg, len(msg))
+		var wg sync.WaitGroup
+		for _, c := range msg {
+			wg.Go(func() {
+				if m, ok := copiesFromCmd(c); ok {
+					found <- m
+				}
+			})
+		}
+		go func() { wg.Wait(); close(found) }()
+		m, ok := <-found
+		return m, ok
+	}
+	return copiesMsg{}, false
+}
+
+// Without sessions-index.json, credit for a fork's copies goes by file
+// mtime, so resuming the original while watch runs on the fork moves the
+// copies to the fork, and the fork's next write moves them back. watch
+// follows both without a restart, and the reader's line holds as the note
+// goes and comes. With an index, writes move nothing.
+func TestWatchRechecksWhoKeepsTheCopies(t *testing.T) {
+	const origID = "66666666-ffff-4fff-8fff-000000000006"
+	for _, indexed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("indexed=%v", indexed), func(t *testing.T) {
+			projectDir, forkPath := copiesProject(t)
+			origPath := filepath.Join(projectDir, origID+".jsonl")
+			if indexed {
+				index := fmt.Sprintf(`{"version":1,"entries":[{"sessionId":%q,"fullPath":%q,"created":"2026-10-25T09:00:00Z"},{"sessionId":"77777777-0000-4000-8000-000000000007","fullPath":%q,"created":"2026-10-31T09:00:00Z"}]}`, origID, origPath, forkPath)
+				if err := os.WriteFile(filepath.Join(projectDir, "sessions-index.json"), []byte(index), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			m := loadFrom(t, sized(t, NewModel(forkPath, "77777777-0000-4000-8000-000000000007", true, projectDir, false), 80, 8))
+			if !strings.Contains(stripANSI(m.renderAnalysis()), copiesNoteStart) {
+				t.Fatal("the fork should open with a note")
+			}
+			m = scrollToLine(t, m, "Context")
+			top := topLine(m)
+
+			// A write to an unrelated session rechecks nothing.
+			if _, ok := copiesFromCmd(func() tea.Cmd {
+				_, cmd := m.Update(sessionActivityMsg{path: filepath.Join(projectDir, "x.jsonl"), id: "x"})
+				return cmd
+			}()); ok {
+				t.Error("a write outside the family rechecked the copies")
+			}
+
+			later := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+			if err := os.Chtimes(origPath, later, later); err != nil {
+				t.Fatal(err)
+			}
+			updated, cmd := m.Update(sessionActivityMsg{path: origPath, id: origID})
+			m = updated.(Model)
+			found, ok := copiesFromCmd(cmd)
+			if !ok {
+				t.Fatal("the original's write didn't recheck the copies")
+			}
+			if indexed {
+				if found.family != nil {
+					t.Errorf("with an index the original's write moved the copies: %+v", found.family.Copies)
+				}
+				return
+			}
+			if found.family == nil {
+				t.Fatal("the original's write didn't move the copies")
+			}
+			updated, _ = m.Update(found)
+			m = updated.(Model)
+			if body := stripANSI(m.renderAnalysis()); strings.Contains(body, "also in") {
+				t.Errorf("the fork keeps its replies now, yet has a note:\n%s", body)
+			}
+			if got := topLine(m); got != top {
+				t.Errorf("the note going moved the reader from %q to %q", top, got)
+			}
+
+			// The fork writes next, so it's the later file again, and the
+			// reload that write starts rechecks.
+			if err := os.Chtimes(forkPath, later.Add(time.Hour), later.Add(time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			reload, ok := m.loadAnalysis().(analysisMsg)
+			if !ok {
+				t.Fatal("load didn't return an analysis")
+			}
+			updated, cmd = m.Update(reload)
+			m = updated.(Model)
+			if found, ok = copiesFromCmd(cmd); !ok || found.family == nil {
+				t.Fatal("the fork's reload didn't move the copies back")
+			}
+			updated, _ = m.Update(found)
+			m = updated.(Model)
+			if !strings.Contains(stripANSI(m.renderAnalysis()), copiesNoteStart) {
+				t.Errorf("the fork's write didn't bring the note back:\n%s", stripANSI(m.renderAnalysis()))
+			}
+			if got := topLine(m); got != top {
+				t.Errorf("the note coming back moved the reader from %q to %q", top, got)
+			}
+		})
+	}
+}
+
+// A recheck that parses the family takes longer than one that only stats,
+// so a write during it waits for its result and rechecks from there,
+// rather than race it and be undone. A recheck for a session watch has left
+// changes nothing, and doesn't hold up the next session's.
+func TestWatchRechecksOneAtATime(t *testing.T) {
+	const origID = "66666666-ffff-4fff-8fff-000000000006"
+	projectDir, forkPath := copiesProject(t)
+	origPath := filepath.Join(projectDir, origID+".jsonl")
+	m := loadFrom(t, sized(t, NewModel(forkPath, "77777777-0000-4000-8000-000000000007", true, projectDir, false), 80, 24))
+
+	later := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(origPath, later, later); err != nil {
+		t.Fatal(err)
+	}
+	updated, cmd := m.Update(sessionActivityMsg{path: origPath, id: origID})
+	m = updated.(Model)
+	first, ok := copiesFromCmd(cmd)
+	if !ok || first.family == nil {
+		t.Fatal("the original's write didn't move the copies")
+	}
+	// The fork writes while that recheck is still out.
+	if err := os.Chtimes(forkPath, later.Add(time.Hour), later.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	reload, ok := m.loadAnalysis().(analysisMsg)
+	if !ok {
+		t.Fatal("load didn't return an analysis")
+	}
+	updated, cmd = m.Update(reload)
+	m = updated.(Model)
+	if _, ok := copiesFromCmd(cmd); ok {
+		t.Fatal("a second recheck started while the first was out")
+	}
+	updated, cmd = m.Update(first)
+	m = updated.(Model)
+	again, ok := copiesFromCmd(cmd)
+	if !ok || again.family == nil {
+		t.Fatal("the fork's write during the recheck wasn't rechecked after it")
+	}
+	updated, _ = m.Update(again)
+	m = updated.(Model)
+	if !strings.Contains(stripANSI(m.renderAnalysis()), copiesNoteStart) {
+		t.Errorf("the fork wrote last, yet its note is gone:\n%s", stripANSI(m.renderAnalysis()))
+	}
+
+	// Switch to the original with a recheck still out.
+	updated, _ = m.Update(sessionActivityMsg{path: origPath, id: origID})
+	switched, _ := updated.(Model).switchTo(origPath, origID, false)
+	m = loadFrom(t, switched.(Model))
+	updated, _ = m.Update(again)
+	m = updated.(Model)
+	if m.copies != nil {
+		t.Errorf("a recheck for the fork changed the original's copies: %+v", m.copies)
+	}
+	_, cmd = m.Update(sessionActivityMsg{path: forkPath, id: "77777777-0000-4000-8000-000000000007"})
+	if _, ok := copiesFromCmd(cmd); !ok {
+		t.Error("the original never rechecks: the fork's recheck left behind still counts as out")
 	}
 }

@@ -414,14 +414,23 @@ func createdOrModified(entry models.SessionEntry) time.Time {
 // nil parse failed, and sorts by the file's mtime: it consumes no keys, so
 // its place is moot.
 func attributionOrder(entries []models.SessionEntry, parsed []*parser.ParseResult, skip []bool) []int {
+	earliest := make([]time.Time, len(entries))
+	for i := range entries {
+		if !skip[i] && parsed[i] != nil {
+			earliest[i] = earliestMessageTime(parsed[i].Messages)
+		}
+	}
+	return orderByEarliest(entries, earliest)
+}
+
+// orderByEarliest is attributionOrder given each entry's earliest message
+// time, zero for an entry that sorts by its mtime.
+func orderByEarliest(entries []models.SessionEntry, earliest []time.Time) []int {
 	sortKeys := make([]time.Time, len(entries))
 	for i, entry := range entries {
 		sortKeys[i] = entry.Modified
-		if skip[i] || parsed[i] == nil {
-			continue
-		}
-		if ts := earliestMessageTime(parsed[i].Messages); !ts.IsZero() {
-			sortKeys[i] = ts
+		if !earliest[i].IsZero() {
+			sortKeys[i] = earliest[i]
 		}
 	}
 	order := make([]int, len(entries))
