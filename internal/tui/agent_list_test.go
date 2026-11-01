@@ -418,6 +418,34 @@ func TestAgentColumnsDropCountBeforeReading(t *testing.T) {
 	}
 }
 
+// A workflow session on a terminal too narrow for the rows must not panic when
+// watch resizes to it, and the frame is the too-small screen with no body
+// built behind it. Growing back draws the agent section again.
+func TestWorkflowSessionResizesThroughTooSmallAtNarrowWidths(t *testing.T) {
+	for width := 1; width <= 20; width++ {
+		m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
+		m.now = func() time.Time { return foldNow }
+		m.analysis = foldAnalysis()
+		m.agentsOpen = true
+		m = sized(t, m, width, 30)
+		if got := frameOf(m); strings.Contains(got, "$") {
+			t.Errorf("width %d: frame draws agent rows behind the too-small screen:\n%s", width, got)
+		}
+		if len(m.bodySections) != 0 {
+			t.Errorf("width %d: built %d body sections behind the too-small screen", width, len(m.bodySections))
+		}
+	}
+	m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
+	m.now = func() time.Time { return foldNow }
+	m.analysis = foldAnalysis()
+	m.agentsOpen = true
+	m = sized(t, m, 15, 30)
+	m = sized(t, m, 80, 30)
+	if got := frameOf(m); strings.Contains(got, "terminal too small") || len(m.bodySections) == 0 {
+		t.Errorf("80 columns: no body after growing back from 15 columns:\n%s", got)
+	}
+}
+
 // Unfolded, every agent has its own row, running ones keep their dots, and
 // the rows still sum to the subtotal.
 func TestGoldenWatchAgentsUnfolded(t *testing.T) {

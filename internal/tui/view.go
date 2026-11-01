@@ -458,7 +458,7 @@ func (m Model) renderAgentBreakdownContent() string {
 			if lipgloss.Width(heading) > labelWidth {
 				heading = withEllipsis(heading, labelWidth)
 			}
-			pad := strings.Repeat(" ", labelWidth-lipgloss.Width(heading)+3)
+			pad := strings.Repeat(" ", max(labelWidth-lipgloss.Width(heading)+3, 0))
 			cost := workflowCost(a.Agents, row.runID)
 			switch {
 			case m.noColor:
