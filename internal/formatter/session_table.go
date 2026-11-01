@@ -171,12 +171,15 @@ func agentMsgsWidth(agents []models.AgentAnalysis) int {
 func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, noColor bool) string {
 	var sb strings.Builder
 
+	// costWidth is the cost cell, sized over every cost the section prints,
+	// so a five-figure amount widens the column for every row rather than
+	// push its own row's decimal point out of line.
+	costWidth := agentCostWidth(analysis)
 	// labelWidth is the room before the cost column, less the indent and a
 	// 3-space gap: 40, or as wide as the widest workflow heading with its
 	// status, or the agent rows. It narrows to fit width, but never so far
-	// that an agent row's marker, model and message count (10+1+11+1+msgs,
-	// then a space) would reach the cost. Past width, headings are cut as
-	// workflowStatuses says.
+	// that an agent row's marker and model (10+1+11, then a space) would
+	// reach the cost. Past width, headings are cut as workflowStatuses says.
 	msgsWidth := agentMsgsWidth(analysis.Agents)
 	taskWant := agentTaskWidth(analysis.Agents)
 	cellWant := taskWant
@@ -198,7 +201,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 		if rowTask > 0 {
 			want = max(want, agentRowWidth(rowMsgs, rowTask)-2)
 		}
-		return max(min(want, width-2-3-11), msgsWidth+21)
+		return max(min(want, width-2-3-costWidth), 10+1+11+1-3)
 	}
 	labelWidth := labelFor(msgsWidth, taskWant)
 
@@ -216,8 +219,8 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	// cell, which is never cut either: a cell without room for it goes, and
 	// the short tasks with it.
 	// Where the context reading, " 38% ctx", would leave no gap, it takes
-	// the count's place, as in watch; labelWidth's floor always leaves it
-	// room there.
+	// the count's place, as in watch, and where even it would leave none,
+	// at the narrowest widths with a five-figure cost, it goes too.
 	// Workflow agents are grouped after regular agents; a dim header line marks
 	// each run's start.
 	showMsgs := agentRowWidth(msgsWidth, taskWant) < labelWidth+3
@@ -237,6 +240,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	// Whatever went from the rows hands its room back, so the cost column
 	// sits no further right than the rows need.
 	labelWidth = labelFor(rowMsgs, taskWidth)
+	showCtx := agentRowWidth(rowMsgs, taskWidth) < labelWidth+3
 
 	// Parent session cost, after 2(indent) + labelWidth + 3(spaces): column 45
 	// unless a workflow heading, a task or the width moved it
@@ -249,8 +253,12 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 		taskCell = 1 + taskWidth
 	}
 	label := render.MainRowLabel(analysis.LastMessageModel, 11+taskCell, labelWidth, false, noColor)
-	sb.WriteString("  " + label + "   " + formatCostStyled(analysis.ParentCost.TotalCost, 11, noColor) + "\n")
-	msgsGap := strings.Repeat(" ", max(1, labelWidth+3-agentRowWidth(rowMsgs, taskWidth)))
+	sb.WriteString("  " + label + "   " + formatCostStyled(analysis.ParentCost.TotalCost, costWidth, noColor) + "\n")
+	rowWidth := agentRowWidth(rowMsgs, taskWidth)
+	if !showCtx {
+		rowWidth -= 1 + render.AgentContextWidth
+	}
+	msgsGap := strings.Repeat(" ", max(1, labelWidth+3-rowWidth))
 	status := workflowStatuses(styles.GroupRule+" ", labelWidth, analysis)
 	prevWorkflow := ""
 	for _, agent := range analysis.Agents {
@@ -263,11 +271,11 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 				pad := strings.Repeat(" ", labelWidth-lipgloss.Width(heading)+3)
 				cost := workflowCost(analysis.Agents, agent.WorkflowID)
 				if noColor {
-					sb.WriteString("  " + heading + pad + render.CostCell(cost, 11) + "\n")
+					sb.WriteString("  " + heading + pad + render.CostCell(cost, costWidth) + "\n")
 				} else {
 					// Dim like its heading: the subtotal repeats the rows
 					// below it and isn't part of the column's sum.
-					sb.WriteString("  " + styles.DimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, 11) + "\n")
+					sb.WriteString("  " + styles.DimStyle.Render(heading) + pad + render.CostColored(cost, styles.SecondaryColor, costWidth) + "\n")
 				}
 			}
 		}
@@ -284,7 +292,10 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 		if showMsgs {
 			msgStr = fmt.Sprintf(" %*s", msgsWidth, render.MsgCount(agent.MessageCount))
 		}
-		ctx := " " + render.AgentContextCell(agent.Context, noColor)
+		ctx := ""
+		if showCtx {
+			ctx = " " + render.AgentContextCell(agent.Context, noColor)
+		}
 		task := ""
 		if taskWidth > 0 {
 			count := ""
@@ -296,7 +307,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 
 		if noColor {
 			sb.WriteString(fmt.Sprintf("  %-10s%s %-11s%s%s%s%s\n",
-				marker, task, modelLabel, msgStr, ctx, msgsGap, render.CostCell(agent.TotalCost.TotalCost, 11)))
+				marker, task, modelLabel, msgStr, ctx, msgsGap, render.CostCell(agent.TotalCost.TotalCost, costWidth)))
 		} else {
 			// Color the marker by hashing the full agent ID (matches breakdown)
 			agentColor := styles.GetAgentColor(agent.AgentID)
@@ -312,7 +323,7 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 				msgStyled = " " + styles.DimStyle.Render(msgStr[1:])
 			}
 
-			costStr := formatCostStyled(agent.TotalCost.TotalCost, 11, noColor)
+			costStr := formatCostStyled(agent.TotalCost.TotalCost, costWidth, noColor)
 
 			sb.WriteString(fmt.Sprintf("  %s%s %s%s%s%s%s\n",
 				markerStyled, task, modelStyled, msgStyled, ctx, msgsGap, costStr))
@@ -322,13 +333,29 @@ func formatAgentBreakdownContent(analysis *models.SessionAnalysis, width int, no
 	// Agents subtotal in bold green (matches TotalValueStyle for visual hierarchy)
 	// Note: Must pad BEFORE styling to avoid ANSI escape codes breaking width calculation
 	if noColor {
-		sb.WriteString(fmt.Sprintf("  %-*s   %s\n", labelWidth, "Agents subtotal", render.CostCell(analysis.AgentsCost.TotalCost, 11)))
+		sb.WriteString(fmt.Sprintf("  %-*s   %s\n", labelWidth, "Agents subtotal", render.CostCell(analysis.AgentsCost.TotalCost, costWidth)))
 	} else {
 		paddedSubtotal := fmt.Sprintf("%-*s", labelWidth, "Agents subtotal")
-		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedSubtotal, formatCostStyledBoldGreen(analysis.AgentsCost.TotalCost, 11, noColor)))
+		sb.WriteString(fmt.Sprintf("  %s   %s\n", paddedSubtotal, formatCostStyledBoldGreen(analysis.AgentsCost.TotalCost, costWidth, noColor)))
 	}
 
 	return sb.String()
+}
+
+// agentCostWidth is the agent section's cost cell: 11, or as wide as the
+// widest of the main conversation's, each agent's, each workflow run's and
+// the subtotal's costs needs.
+func agentCostWidth(analysis *models.SessionAnalysis) int {
+	costs := []float64{analysis.ParentCost.TotalCost, analysis.AgentsCost.TotalCost}
+	runs := map[string]bool{}
+	for _, a := range analysis.Agents {
+		costs = append(costs, a.TotalCost.TotalCost)
+		if a.WorkflowID != "" && !runs[a.WorkflowID] {
+			runs[a.WorkflowID] = true
+			costs = append(costs, workflowCost(analysis.Agents, a.WorkflowID))
+		}
+	}
+	return render.CostCellWidth(11, costs...)
 }
 
 // agentTaskWidth is the width of the widest task among agents, or 0 when

@@ -113,3 +113,60 @@ func TestSummaryTreeRowsMsgsColumnKeepsCostAligned(t *testing.T) {
 		})
 	}
 }
+
+// wideAmountsAnalysis is agentBreakdownAnalysis with a 1,234-message agent
+// and a $10,250 one, both with context readings, and no tasks, so the rows
+// show the count column.
+func wideAmountsAnalysis() *models.SessionAnalysis {
+	a := agentBreakdownAnalysis()
+	a.LastMessageModel = "claude-opus-4-8"
+	a.Agents[0].MessageCount = 1234
+	a.Agents[0].Context = &models.ContextUsage{Tokens: 76000, Window: 200000, Percent: 38, CompactAt: 167000}
+	a.Agents[1].TotalCost = models.CostBreakdown{TotalCost: 10250}
+	a.Agents[1].CostByModel = map[string]models.CostBreakdown{"claude-sonnet-5": {TotalCost: 10250}}
+	a.Agents[1].Context = &models.ContextUsage{Tokens: 90000, Window: 1000000, Percent: 9, CompactAt: 967000}
+	a.AgentsCost = models.CostBreakdown{TotalCost: 10250.42}
+	return a
+}
+
+// costDecimalRe finds a row's cost, as CostCell pads it, at the line's end.
+var costDecimalRe = regexp.MustCompile(`\$[\d,]+(\.)\d+ *$`)
+
+// checkDecimalsAligned fails unless every cost in out has its decimal point
+// in one column and no line is wider than width.
+func checkDecimalsAligned(t *testing.T, out string, width int) {
+	t.Helper()
+	plain := ansiRe.ReplaceAllString(out, "")
+	var cols []int
+	for line := range strings.SplitSeq(plain, "\n") {
+		if w := lipgloss.Width(line); w > width {
+			t.Errorf("width %d: line is %d columns: %q", width, w, line)
+		}
+		if m := costDecimalRe.FindStringSubmatchIndex(line); m != nil {
+			cols = append(cols, lipgloss.Width(line[:m[2]]))
+		}
+	}
+	for _, col := range cols {
+		if col != cols[0] {
+			t.Errorf("width %d: decimal points at columns %v, not one:\n%s", width, cols, plain)
+			return
+		}
+	}
+}
+
+// A 1,000-message agent and a five-figure cost widen their columns for
+// every row of show's agent section: at every width show draws, each
+// decimal point stays in one column and no row runs past the width. At 45
+// the context readings make way for the wider cost.
+func TestAgentBreakdownWideAmountsStayAligned(t *testing.T) {
+	for width := minReportWidth; width <= staticReportWidth; width++ {
+		for _, noColor := range []bool{true, false} {
+			checkDecimalsAligned(t, formatAgentBreakdownContent(wideAmountsAnalysis(), width, noColor), width)
+		}
+	}
+}
+
+func TestGoldenAgentBreakdownWideAmounts(t *testing.T) {
+	checkGolden(t, "agent_breakdown_wide_amounts", formatAgentBreakdownContent(wideAmountsAnalysis(), reportWidth(80), true))
+	checkGolden(t, "agent_breakdown_wide_amounts_w45", formatAgentBreakdownContent(wideAmountsAnalysis(), reportWidth(45), true))
+}

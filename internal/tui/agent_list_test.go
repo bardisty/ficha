@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -526,4 +527,93 @@ func TestAgentHeaderCountsAgents(t *testing.T) {
 
 	a.Agents = nil
 	check("with every agent file unreadable", 76, "AGENT SUB-SESSIONS")
+}
+
+// wideAmountsAnalysis is foldAnalysis with a five-figure agent, a running
+// 1,000-message one, and a fold of over 1,000 messages, each of the running
+// agents with a context reading.
+func wideAmountsAnalysis() *models.SessionAnalysis {
+	a := foldAnalysis()
+	a.Agents[0].MessageCount = 1200
+	a.Agents[1].TotalCost = models.CostBreakdown{TotalCost: 10250}
+	a.Agents[3].MessageCount = 1050
+	a.Agents[3].Context = &models.ContextUsage{Tokens: 76000, Window: 200000, Percent: 38, CompactAt: 167000}
+	a.Agents[9].Context = &models.ContextUsage{Tokens: 90000, Window: 1000000, Percent: 9, CompactAt: 967000}
+	a.AgentsCost = models.CostBreakdown{}
+	for _, agent := range a.Agents {
+		a.AgentsCost.Add(agent.TotalCost)
+	}
+	return a
+}
+
+// costDecimalRe finds a row's cost, as CostCell pads it, at the line's end.
+var costDecimalRe = regexp.MustCompile(`\$[\d,]+(\.)\d+ *$`)
+
+// wideAmountsRows is watch's agent section for wideAmountsAnalysis on a
+// width-column terminal.
+func wideAmountsRows(width int, noColor bool) string {
+	m := NewModel("/fixture/sess.jsonl", "sess", noColor, "", false)
+	m.now = func() time.Time { return foldNow }
+	m.width = width
+	m.analysis = wideAmountsAnalysis()
+	return m.renderAgentBreakdownContent()
+}
+
+// A 1,000-message count and a five-figure cost widen their columns for
+// every row of watch's agent section, as show's do: at every width watch
+// draws, each decimal point stays in one column and no row runs past the
+// terminal.
+func TestAgentRowsWideAmountsStayAligned(t *testing.T) {
+	for width := minTermWidth; width <= 80; width++ {
+		for _, noColor := range []bool{true, false} {
+			plain := stripANSI(wideAmountsRows(width, noColor))
+			var cols []int
+			for line := range strings.SplitSeq(plain, "\n") {
+				if w := lipgloss.Width(line); w > width {
+					t.Errorf("width %d: line is %d columns: %q", width, w, line)
+				}
+				if m := costDecimalRe.FindStringSubmatchIndex(line); m != nil {
+					cols = append(cols, lipgloss.Width(line[:m[2]]))
+				}
+			}
+			for _, col := range cols {
+				if col != cols[0] {
+					t.Errorf("width %d: decimal points at columns %v, not one:\n%s", width, cols, plain)
+					break
+				}
+			}
+		}
+	}
+}
+
+func TestGoldenWatchAgentsWideAmounts(t *testing.T) {
+	checkGolden(t, "watch_agents_wide_amounts_80", wideAmountsRows(80, true))
+	checkGolden(t, "watch_agents_wide_amounts_45", wideAmountsRows(45, true))
+}
+
+// A fold of over 1,000 messages beside agents under 1,000 takes the room
+// for its count from its label's padding: the agent rows don't move, and
+// the fold's count ends where theirs do.
+func TestFoldCountBorrowsLabelPadding(t *testing.T) {
+	render := func(foldMsgs int) string {
+		m := NewModel("/fixture/sess.jsonl", "sess", true, "", false)
+		m.now = func() time.Time { return foldNow }
+		m.width = 80
+		m.analysis = foldAnalysis()
+		m.analysis.Agents[0].MessageCount = foldMsgs
+		return m.renderAgentBreakdownContent()
+	}
+	small, big := render(32), render(1200)
+	for _, marker := range []string{"[A1000000]", "[A2000000]", "[Ad200000]"} {
+		if got, want := lineWith(big, marker), lineWith(small, marker); got != want {
+			t.Errorf("%s moved:\n got %q\nwant %q", marker, got, want)
+		}
+	}
+	fold, agent := lineWith(big, "finished agents"), lineWith(big, "[A1000000]")
+	if !strings.Contains(fold, "1,214 msgs") {
+		t.Fatalf("want the fold's count whole: %q", fold)
+	}
+	if got, want := strings.Index(fold, "msgs"), strings.Index(agent, "msgs"); got != want {
+		t.Errorf("fold's count ends at column %d, the agents' at %d:\n%s", got, want, big)
+	}
 }
