@@ -371,7 +371,7 @@ func TestGoldenSessionTableShowWindowUnknown(t *testing.T) {
 
 // A fork's file holds replies another session in its project also has. Its
 // footer says how many, their cost, where list and summary count them and
-// what they put the session at, wrapped to the width, dim in color, and in
+// what that leaves the session at, wrapped to the width, dim in color, and in
 // plain words under --ascii. Copies credited to several sessions name none
 // of them, and a file that's all copies says list calls it one.
 func TestGoldenSessionTableShowFork(t *testing.T) {

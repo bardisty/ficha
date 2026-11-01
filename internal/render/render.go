@@ -1187,6 +1187,6 @@ func CopiesNote(c models.CopiedReplies, messages int, total float64) string {
 	if c.Messages == 1 {
 		what, span, them = "1 message", "it spans", "it"
 	}
-	return fmt.Sprintf("Includes %s (%s), and the time %s, also in %s. list and summary count %s there and put this session at %s.",
+	return fmt.Sprintf("Includes %s (%s) and the time %s, also in %s. list and summary count %s there, leaving this session %s.",
 		what, Cost(c.Cost), span, where, them, Cost(total-c.Cost))
 }

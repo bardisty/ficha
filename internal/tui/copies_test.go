@@ -84,7 +84,7 @@ func TestWatchNamesAForksCopiesOnce(t *testing.T) {
 			if n := strings.Count(body, copiesNoteStart); n != 1 {
 				t.Fatalf("note appears %d times, want once:\n%s", n, body)
 			}
-			if !strings.Contains(strings.Join(strings.Fields(body), " "), "also in session 66666666. list and summary count them there and put this session at") {
+			if !strings.Contains(strings.Join(strings.Fields(body), " "), "also in session 66666666. list and summary count them there, leaving this session") {
 				t.Errorf("the note should name the original:\n%s", body)
 			}
 			// It closes the totals, ahead of the context gauge.
