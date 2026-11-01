@@ -126,6 +126,11 @@ func runShow(cfg *config, args []string, live bool) error {
 	warnUnknownModels(&warnings, analysis.UnpricedModels)
 
 	analysis.Project = parser.ProjectDisplayName(projectDir)
+	// Only the table says what the file shares with other sessions, and json
+	// and csv stay a pure read of the one file.
+	if cfg.format == "table" {
+		analysis.Copies, _ = analyzer.FindCopies(analysis.SessionFile, analysis.SessionID)
+	}
 
 	// Output in requested format
 	output, err := formatOutput(cfg, analysis, includeMessages)

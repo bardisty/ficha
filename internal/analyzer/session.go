@@ -70,7 +70,7 @@ func AnalyzeSessionWithCache(sessionPath string, sessionID string, scope Message
 // are added to seen. Only parent-file messages participate: agent sub-session
 // files are never cloned by fork, so they stay file-local. A nil seen keeps
 // the session fully file-local.
-func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[parser.DedupKey]struct{}) (*models.SessionAnalysis, error) {
+func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope MessageScope, cache *AgentParseCache, seen map[parser.DedupKey]string) (*models.SessionAnalysis, error) {
 	result, agents, err := parseSession(sessionPath, sessionID, cache)
 	if err != nil {
 		return nil, err
@@ -88,11 +88,11 @@ func analyzeSessionExcludingSeen(sessionPath string, sessionID string, scope Mes
 // A non-zero window counts only the messages timestamped inside it, parent
 // and agents alike, so a session that straddles a bound splits at it.
 // Agents with nothing inside it are left out.
-func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessionID string, scope MessageScope, agents *sessionAgents, seen map[parser.DedupKey]struct{}, window models.TimeWindow) *models.SessionAnalysis {
+func analyzeParsedSession(result *parser.ParseResult, sessionPath string, sessionID string, scope MessageScope, agents *sessionAgents, seen map[parser.DedupKey]string, window models.TimeWindow) *models.SessionAnalysis {
 	messages := result.Messages
 	transcriptMessages := len(messages)
 	if seen != nil {
-		messages = parser.ExcludeSeenMessages(messages, seen)
+		messages = parser.ExcludeSeenMessages(messages, seen, sessionID)
 	}
 	if !window.IsZero() {
 		var inside []models.JSONLMessage
@@ -399,6 +399,43 @@ func createdOrModified(entry models.SessionEntry) time.Time {
 	return entry.Created
 }
 
+// attributionOrder is the order sessions take up their replies in, so that
+// shared history is credited to the original session, not the file written
+// to last: the first session in it to hold a reply keeps it. entries and
+// parsed are parallel, and a session skip marks is left in its input place.
+//
+// Sessions go in ascending order of their earliest message. A fork clones
+// the original transcript verbatim, timestamps included, so within a fork
+// family those tie, and the entry's Created time (genuine session creation
+// when the index supplied it) breaks the tie: the original predates its
+// forks. Disk-only entries carry Created == Modified, so without the index
+// attribution degrades to mtime order. Remaining ties keep input order. A
+// nil parse failed, and sorts by the file's mtime: it consumes no keys, so
+// its place is moot.
+func attributionOrder(entries []models.SessionEntry, parsed []*parser.ParseResult, skip []bool) []int {
+	sortKeys := make([]time.Time, len(entries))
+	for i, entry := range entries {
+		sortKeys[i] = entry.Modified
+		if skip[i] || parsed[i] == nil {
+			continue
+		}
+		if ts := earliestMessageTime(parsed[i].Messages); !ts.IsZero() {
+			sortKeys[i] = ts
+		}
+	}
+	order := make([]int, len(entries))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		if !sortKeys[order[a]].Equal(sortKeys[order[b]]) {
+			return sortKeys[order[a]].Before(sortKeys[order[b]])
+		}
+		return createdOrModified(entries[order[a]]).Before(createdOrModified(entries[order[b]]))
+	})
+	return order
+}
+
 // AnalyzeSessionFromMessages analyzes already-parsed messages. It discovers no
 // agent sub-sessions, so includeMessages retains the parent transcript only —
 // there is no AllMessages equivalent here.
@@ -490,10 +527,11 @@ func buildSessionAnalysis(sessionID string, sessionPath string, messageAnalyses 
 // transcript (billed assistant lines included) into a new session file, and
 // summing file-local totals would bill those responses once per file. Files
 // are processed in ascending earliest-message-timestamp order (session
-// Created time, then input order, break ties — see the sort below) so shared
-// history is attributed to the original session; later copies are excluded
-// from both the aggregate and their session's result, so per-session results
-// sum to the aggregate. Standalone single-session views stay file-local.
+// Created time, then input order, break ties — see attributionOrder) so
+// shared history is attributed to the original session; later copies are
+// excluded from both the aggregate and their session's result, so
+// per-session results sum to the aggregate. Single-session views price the
+// file alone, and show names the part it shares (see FindCopies).
 //
 // The aggregate carries the parent/agent cost partition (ParentCost, AgentsCost,
 // AgentCount, ...) summed across sessions, but not the nested Agents/Workflows
@@ -601,51 +639,23 @@ func analyzeSessionParses(entries []models.SessionEntry, window models.TimeWindo
 	parsedSessions := 0
 	oldSessions := 0
 	outside := make([]bool, len(entries))
-	seen := make(map[parser.DedupKey]struct{})
+	seen := make(map[parser.DedupKey]string)
 
 	// Every parent is parsed up front: processing order derives from each
 	// session's earliest message timestamp, which only the parse can provide.
 	// Parsed messages carry usage metadata, not content, so holding them all
-	// is cheap. A nil result failed to parse; its sort key falls back to the
-	// file mtime (position is moot — it consumes no dedup keys).
+	// is cheap.
 	parsed := parses.parsed
-	sortKeys := make([]time.Time, len(entries))
-	for i, entry := range entries {
-		sortKeys[i] = entry.Modified
+	for i := range entries {
 		if parses.old[i] {
 			// It can hold no message inside the window. Skipping it leaves
 			// its keys out of seen, which is safe: a fork's copies of its
 			// lines keep their timestamps, so the window drops them too.
 			outside[i] = true
 			oldSessions++
-			continue
-		}
-		if parsed[i] == nil {
-			continue
-		}
-		if ts := earliestMessageTime(parsed[i].Messages); !ts.IsZero() {
-			sortKeys[i] = ts
 		}
 	}
-
-	// Analyze in ascending earliest-timestamp order so shared history is
-	// attributed to the original session, not the file written to last. A
-	// fork clones the original transcript verbatim, timestamps included, so
-	// within a fork family the primary keys tie; the entry's Created time
-	// (genuine session creation when the index supplied it) breaks the tie —
-	// the original predates its forks. Disk-only entries carry Created ==
-	// Modified, so without the index attribution degrades to mtime order.
-	// Remaining ties keep input order; results stay in input order.
-	order := make([]int, len(entries))
-	for i := range order {
-		order[i] = i
-	}
-	sort.SliceStable(order, func(a, b int) bool {
-		if !sortKeys[order[a]].Equal(sortKeys[order[b]]) {
-			return sortKeys[order[a]].Before(sortKeys[order[b]])
-		}
-		return createdOrModified(entries[order[a]]).Before(createdOrModified(entries[order[b]]))
-	})
+	order := attributionOrder(entries, parsed, outside)
 
 	for _, idx := range order {
 		entry := entries[idx]

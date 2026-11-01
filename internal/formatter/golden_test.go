@@ -369,6 +369,24 @@ func TestGoldenSessionTableShowWindowUnknown(t *testing.T) {
 	checkGolden(t, "session_table_show_window_unknown_w45", FormatSessionTable(a, true, 45))
 }
 
+// A fork's file holds replies another session in its project also has. Its
+// footer says how many, their cost and where list and summary count them,
+// wrapped to the width, dim in color, and in plain words under --ascii.
+// Copies credited to several sessions name none of them.
+func TestGoldenSessionTableShowFork(t *testing.T) {
+	a := multiDayShowAnalysis()
+	a.Copies = &models.CopiedReplies{Messages: 20, Cost: 0.4072, SessionID: "66666666-ffff-4fff-8fff-000000000006", Sessions: 1}
+	checkGolden(t, "session_table_show_fork", FormatSessionTable(a, true, 0))
+	checkGolden(t, "session_table_show_fork_w45", FormatSessionTable(a, true, 45))
+	checkGolden(t, "session_table_show_fork_color", FormatSessionTable(a, false, 0))
+	a.Copies = &models.CopiedReplies{Messages: 1, Cost: 0.0205, Sessions: 1, SessionID: "66666666-ffff-4fff-8fff-000000000006"}
+	checkGolden(t, "session_table_show_fork_one_w45", FormatSessionTable(a, true, 45))
+	a.Copies = &models.CopiedReplies{Messages: 1234, Cost: 31.13, Sessions: 2}
+	checkGolden(t, "session_table_show_fork_split_w45", FormatSessionTable(a, true, 45))
+	useASCII(t)
+	checkGolden(t, "session_table_show_fork_ascii", FormatSessionTable(a, true, 0))
+}
+
 // multiDayShowAnalysis is goldenShowAnalysis picked up eleven days after it
 // began: its first message from then, its peak from yesterday and its last
 // from today.

@@ -1167,3 +1167,20 @@ func wrapHangingLine(line string, width int) string {
 	}
 	return sb.String()
 }
+
+// CopiesNote says which of a session's messages other sessions also hold,
+// for show and watch, which count the file alone, where list and summary
+// count each shared reply once. The session's Duration runs from its first
+// message, copied or not, so the note says it spans them too.
+func CopiesNote(c models.CopiedReplies) string {
+	what, verb, them := Count(c.Messages)+" messages", "are", "them"
+	if c.Messages == 1 {
+		what, verb, them = "1 message", "is", "it"
+	}
+	where := "session " + TruncateID(c.SessionID, 8)
+	if c.SessionID == "" {
+		where = Count(c.Sessions) + " other sessions"
+	}
+	return fmt.Sprintf("%s here (%s) %s also in %s, and list and summary count %s there. Duration spans %s too.",
+		what, Cost(c.Cost), verb, where, them, them)
+}

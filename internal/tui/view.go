@@ -255,6 +255,10 @@ func (m Model) renderAnalysisSections() (string, []bodySection) {
 		}
 	}
 
+	if m.copies != nil {
+		sb.WriteString(m.renderCopiesNote())
+	}
+
 	// Context window section
 	begin("context")
 	sb.WriteString("\n")
@@ -301,6 +305,25 @@ func (m Model) renderAnalysisSections() (string, []bodySection) {
 	// Note: Footer is rendered separately in View() after the separators
 
 	return sb.String(), sections
+}
+
+// renderCopiesNote is the note under the cost rows on the messages the
+// session's file shares with other sessions. It sits with the totals it
+// qualifies, indented like their rows and wrapped to the columns on screen.
+func (m Model) renderCopiesNote() string {
+	width := columnsWidthFor(m.width)
+	if m.width > 0 {
+		width = min(width, m.width-2)
+	}
+	text := render.WrapHanging(render.CopiesNote(*m.copies), width-2)
+	var sb strings.Builder
+	for _, line := range strings.Split(text, "\n") {
+		if !m.noColor {
+			line = styles.DimStyle.Render(line)
+		}
+		sb.WriteString("    " + line + "\n")
+	}
+	return sb.String()
 }
 
 // renderContextSection renders the context gauge sized to the panel, with
