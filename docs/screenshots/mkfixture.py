@@ -127,7 +127,7 @@ def write_meta(path, agent_type, description=None):
 # the bottom of breakdown interleaves agent rows with the main conversation.
 # The third has no meta file, as an agent from an older Claude Code would.
 for end, n, model, meta in [(ago(hours=2, minutes=20), 25, "claude-sonnet-5-5", ("Explore", "Find the auth middleware")),
-                            (ago(hours=1, minutes=45), 32, "claude-haiku-4-5-20251001", ("general-purpose", "Summarize the failing tests")),
+                            (ago(hours=1, minutes=45), 32, "claude-haiku-5-5", ("general-purpose", "Summarize the failing tests")),
                             (ago(hours=1, minutes=5), 14, "claude-sonnet-5-5", None),
                             (ago(seconds=40), 22, "claude-sonnet-5-5", ("general-purpose", "Move sessions to Redis"))]:
     path = os.path.join(wp, big, "subagents", "agent-a%016x.jsonl" % rng.getrandbits(64))
