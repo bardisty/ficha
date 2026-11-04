@@ -21,9 +21,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # v6.4.0, not v7.0.0: GitHub's archive server answers 404 for v7.0.0's
-      # commit, so runners without a cached copy fail at set-up. v7 changed
-      # only the action's own packaging and dependencies.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -58,9 +55,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # v6.4.0, not v7.0.0: GitHub's archive server answers 404 for v7.0.0's
-      # commit, so runners without a cached copy fail at set-up. v7 changed
-      # only the action's own packaging and dependencies.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
