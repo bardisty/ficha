@@ -98,7 +98,10 @@ type ModelInfo struct {
 // adding a model means adding one row here.
 var modelCatalog = []ModelInfo{
 	// Claude 5 family
-	// Fable 5.1 / Mythos 5.1 cache reads are $0.25/MTok (0.025x), not the 0.1x default.
+	// Fable 5.2 / Mythos 5.2 and Fable 5.1 / Mythos 5.1 cache reads are 0.025x
+	// input ($0.20 and $0.25/MTok), not the 0.1x default.
+	{ID: "claude-fable-5-2", DisplayName: "Fable 5.2", InputRate: 8.00, OutputRate: 40.00, CacheReadRate: 0.20, MaxContextTokens: 1000000},
+	{ID: "claude-mythos-5-2", DisplayName: "Mythos 5.2", InputRate: 8.00, OutputRate: 40.00, CacheReadRate: 0.20, MaxContextTokens: 1000000},
 	{ID: "claude-fable-5-1", DisplayName: "Fable 5.1", InputRate: 10.00, OutputRate: 50.00, CacheReadRate: 0.25, MaxContextTokens: 1000000},
 	{ID: "claude-mythos-5-1", DisplayName: "Mythos 5.1", InputRate: 10.00, OutputRate: 50.00, CacheReadRate: 0.25, MaxContextTokens: 1000000},
 	{ID: "claude-fable-5", DisplayName: "Fable 5", InputRate: 10.00, OutputRate: 50.00, MaxContextTokens: 1000000},

@@ -182,8 +182,9 @@ func TestCalculateCostCacheSavings(t *testing.T) {
 }
 
 func TestCalculateCostPerModelCacheReadRate(t *testing.T) {
-	// Fable 5.1 / Mythos 5.1, Opus 5.5 and Sonnet 5.5 override the 0.1x
-	// cache-read multiplier with $0.25, $0.20 and $0.10/MTok; Fable 5 (same
+	// Fable 5.2 / Mythos 5.2, Fable 5.1 / Mythos 5.1, Opus 5.5 and Sonnet 5.5
+	// override the 0.1x cache-read multiplier with $0.20, $0.25, $0.20 and
+	// $0.10/MTok; Fable 5 (same
 	// $10 input rate as Fable 5.1) and Sonnet 5 (same $2 input rate as
 	// Sonnet 5.5) are the controls on the derived path.
 	usage := models.TokenUsage{CacheReadInputTokens: 1_000_000}
@@ -193,6 +194,8 @@ func TestCalculateCostPerModelCacheReadRate(t *testing.T) {
 		expectedReadCost float64
 		expectedSavings  float64
 	}{
+		{"claude-fable-5-2", 0.20, 7.80},
+		{"claude-mythos-5-2", 0.20, 7.80},
 		{"claude-fable-5-1", 0.25, 9.75},
 		{"claude-mythos-5-1", 0.25, 9.75},
 		{"claude-fable-5", 1.00, 9.00},
