@@ -318,7 +318,7 @@ In a directory with no sessions, ficha exits 1 and prints nothing on stdout, so 
 
 ## How ficha prices a session
 
-ficha parses the JSONL transcripts and multiplies each message's token counts by the bundled list price for its model. Cache writes and cache reads have prices of their own. Cache reads get a steep discount: 90% off the input rate on most models, 95% on Opus 5.5, and 97.5% on Fable 5.1 and Mythos 5.1. ficha shows the difference as Savings.
+ficha parses the JSONL transcripts and multiplies each message's token counts by the bundled list price for its model. Cache writes and cache reads have prices of their own. Cache reads get a steep discount: 90% off the input rate on most models, 95% on Opus 5.5 and Sonnet 5.5, and 97.5% on Fable 5.2, Mythos 5.2, Fable 5.1 and Mythos 5.1. ficha shows the difference as Savings.
 
 Agents count too, both regular subagents and Claude Code Workflow agents. ficha groups workflow agents by run, with the run's name and status taken from its metadata.
 

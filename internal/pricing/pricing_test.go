@@ -11,6 +11,11 @@ func TestGetModelPricing(t *testing.T) {
 		expectedInput  float64
 		expectedOutput float64
 	}{
+		{"fable 5.2 exact", "claude-fable-5-2", 8.00, 40.00},
+		{"fable 5.2 versioned", "claude-fable-5-2-20261101", 8.00, 40.00},
+		{"fable 5.2 1m", "claude-fable-5-2[1m]", 8.00, 40.00},
+		{"mythos 5.2 exact", "claude-mythos-5-2", 8.00, 40.00},
+		{"mythos 5.2 versioned", "claude-mythos-5-2-20261101", 8.00, 40.00},
 		{"fable 5.1 exact", "claude-fable-5-1", 10.00, 50.00},
 		{"fable 5.1 versioned", "claude-fable-5-1-20260901", 10.00, 50.00},
 		{"mythos 5.1 exact", "claude-mythos-5-1", 10.00, 50.00},
@@ -75,7 +80,10 @@ func TestGetModelPricing(t *testing.T) {
 		// "claude-fable-5-10" shares the "claude-fable-5-1" byte prefix but its
 		// next byte is not a boundary, so it must not inherit the 5.1 row.
 		{"unlisted fable 5.10 uses default", "claude-fable-5-10", 3.00, 15.00},
-		{"unlisted mythos 5.2 uses default", "claude-mythos-5-2", 3.00, 15.00},
+		{"unlisted fable 5.3 uses default", "claude-fable-5-3", 3.00, 15.00},
+		{"unlisted mythos 5.3 uses default", "claude-mythos-5-3", 3.00, 15.00},
+		// "claude-fable-5-20" shares the "claude-fable-5-2" byte prefix.
+		{"unlisted fable 5.20 uses default", "claude-fable-5-20", 3.00, 15.00},
 		{"unlisted sonnet 5.6 uses default", "claude-sonnet-5-6", 3.00, 15.00},
 		{"unlisted opus 5.6 uses default", "claude-opus-5-6", 3.00, 15.00},
 		{"unlisted haiku 5.6 uses default", "claude-haiku-5-6", 3.00, 15.00},
@@ -115,6 +123,7 @@ func TestGetModelPricing(t *testing.T) {
 
 		// Serving-tier variants are a premium tier, not the base model — they must
 		// NOT bill at the base Opus row's $5/$25, but fall to default.
+		{"fast-mode fable 5.2 uses default", "claude-fable-5-2-fast", 3.00, 15.00},
 		{"fast-mode fable 5.1 uses default", "claude-fable-5-1-fast", 3.00, 15.00},
 		{"fast-mode sonnet 5.5 uses default", "claude-sonnet-5-5-fast", 3.00, 15.00},
 		{"fast-mode opus 5.5 uses default", "claude-opus-5-5-fast", 3.00, 15.00},
@@ -142,6 +151,11 @@ func TestGetModelDisplayName(t *testing.T) {
 		modelID      string
 		expectedName string
 	}{
+		{"claude-fable-5-2", "Fable 5.2"},
+		{"claude-fable-5-2-20261101", "Fable 5.2"},
+		{"claude-fable-5-2[1m]", "Fable 5.2"},
+		{"claude-mythos-5-2", "Mythos 5.2"},
+		{"claude-mythos-5-2-20261101", "Mythos 5.2"},
 		{"claude-fable-5-1", "Fable 5.1"},
 		{"claude-fable-5-1-20260901", "Fable 5.1"},
 		{"claude-fable-5-1[1m]", "Fable 5.1"},
@@ -258,7 +272,8 @@ func TestCacheRates(t *testing.T) {
 }
 
 // TestCacheReadRateOverride pins which catalog rows carry an absolute cache-read
-// rate: Fable 5.1 and Mythos 5.1 bill $0.25/MTok, Opus 5.5 $0.20/MTok,
+// rate: Fable 5.2 and Mythos 5.2 bill $0.20/MTok, Fable 5.1 and Mythos 5.1
+// $0.25/MTok, Opus 5.5 $0.20/MTok,
 // Sonnet 5.5 $0.10/MTok, everything else derives 0.1x from input.
 func TestCacheReadRateOverride(t *testing.T) {
 	tests := []struct {
@@ -266,6 +281,10 @@ func TestCacheReadRateOverride(t *testing.T) {
 		expectedOverride float64 // 0 = derived
 		expectedRate     float64
 	}{
+		{"claude-fable-5-2", 0.20, 0.20},
+		{"claude-fable-5-2-20261101", 0.20, 0.20},
+		{"claude-fable-5-2[1m]", 0.20, 0.20},
+		{"claude-mythos-5-2", 0.20, 0.20},
 		{"claude-fable-5-1", 0.25, 0.25},
 		{"claude-fable-5-1-20260901", 0.25, 0.25},
 		{"claude-fable-5-1[1m]", 0.25, 0.25},
@@ -342,6 +361,9 @@ func TestNormalizeModelID(t *testing.T) {
 		input    string
 		expected string
 	}{
+		{"claude-fable-5-2-20261101", "claude-fable-5-2"},
+		{"claude-fable-5-2", "claude-fable-5-2"},
+		{"claude-mythos-5-2-20261101", "claude-mythos-5-2"},
 		{"claude-fable-5-1-20260901", "claude-fable-5-1"},
 		{"claude-fable-5-1", "claude-fable-5-1"},
 		{"claude-mythos-5-1-20260901", "claude-mythos-5-1"},
@@ -390,6 +412,8 @@ func TestNormalizeModelID(t *testing.T) {
 		{"claude-sonnet-4-9", "claude-sonnet-4-9"},
 		{"claude-fable-5-5", "claude-fable-5-5"},
 		{"claude-fable-5-10", "claude-fable-5-10"},
+		{"claude-fable-5-3", "claude-fable-5-3"},
+		{"claude-fable-5-20", "claude-fable-5-20"},
 		{"claude-sonnet-5-6", "claude-sonnet-5-6"},
 		{"claude-opus-5-6", "claude-opus-5-6"},
 		{"some-other-model", "some-other-model"},
@@ -466,6 +490,8 @@ func TestIsKnownModel(t *testing.T) {
 		expected bool
 	}{
 		// All known models - exact matches
+		{"claude-fable-5-2", true},
+		{"claude-mythos-5-2", true},
 		{"claude-fable-5-1", true},
 		{"claude-mythos-5-1", true},
 		{"claude-fable-5", true},
@@ -495,6 +521,8 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-3-haiku", true},
 
 		// All known models - versioned variants
+		{"claude-fable-5-2-20261101", true},
+		{"claude-mythos-5-2-20261101", true},
 		{"claude-fable-5-1-20260901", true},
 		{"claude-mythos-5-1-20260901", true},
 		{"claude-fable-5-20260301", true},
@@ -531,10 +559,11 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-sonnet-5-6", false},
 		{"claude-opus-5-6", false},
 		{"claude-sonnet-4-9", false},
-		{"claude-fable-5-2", false},
+		{"claude-fable-5-3", false},
 		{"claude-fable-5-5", false},
 		{"claude-fable-5-10", false},
-		{"claude-mythos-5-2", false},
+		{"claude-fable-5-20", false},
+		{"claude-mythos-5-3", false},
 
 		// Vertex, Bedrock, and 1M-beta forms of catalogued models are known.
 		{"claude-opus-4-5@20251101", true},
@@ -569,6 +598,8 @@ func TestIsKnownModel(t *testing.T) {
 		{"claude-sonnet-5-5-fast", false},
 		{"claude-opus-5-5-fast", false},
 		{"claude-fable-5-1-fast", false},
+		{"claude-fable-5-2-fast", false},
+		{"claude-mythos-5-2-fast", false},
 
 		// Unknown models - should return false
 		{"unknown-model", false},
@@ -672,6 +703,9 @@ func TestGetModelPricingContextWindow(t *testing.T) {
 		modelID  string
 		expected int
 	}{
+		{"claude-fable-5-2", 1000000},
+		{"claude-fable-5-2-20261101", 1000000},
+		{"claude-mythos-5-2", 1000000},
 		{"claude-fable-5-1", 1000000},
 		{"claude-fable-5-1-20260901", 1000000},
 		{"claude-mythos-5-1", 1000000},
@@ -736,6 +770,7 @@ func TestGetModelPricingCompactAt(t *testing.T) {
 	}{
 		{"claude-opus-5-5", 967000},
 		{"claude-opus-5-5-20260901", 967000},
+		{"claude-fable-5-2", 967000},
 		{"claude-fable-5-1", 967000},
 		{"claude-haiku-5-5", 967000},
 		{"claude-opus-4-7", 967000},
@@ -940,8 +975,9 @@ func TestUnlistedFamilyVersionsNeverResolve(t *testing.T) {
 		"claude-opus-4-9[1m]", "us.anthropic.claude-opus-4-9-20260101-v1:0",
 		"claude-sonnet-4-9", "claude-sonnet-4-9@20260101", "claude-fable-5-5",
 		"claude-opus-5-1", "claude-opus-5-1-20260901", "claude-opus-5-fast",
-		"claude-fable-5-2", "claude-fable-5-10", "claude-fable-5-1-fast",
-		"claude-mythos-5-2", "claude-mythos-5-1-fast",
+		"claude-fable-5-3", "claude-fable-5-10", "claude-fable-5-1-fast",
+		"claude-fable-5-20", "claude-fable-5-2-fast", "claude-fable-5-3-20261101",
+		"claude-mythos-5-3", "claude-mythos-5-1-fast", "claude-mythos-5-2-fast",
 		"claude-sonnet-5-6", "claude-sonnet-5-5-fast", "claude-sonnet-5-50",
 		"claude-opus-5-6", "claude-opus-5-5-fast", "claude-opus-5-50",
 		"claude-haiku-5-6", "claude-haiku-5-5-fast", "claude-haiku-5-50", "claude-haiku-5",
