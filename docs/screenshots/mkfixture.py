@@ -152,7 +152,7 @@ for run, name, status, agents in runs:
     rd = os.path.join(wp, big, "subagents", "workflows", run)
     for end, n, growth, task in agents:
         path = os.path.join(rd, "agent-a%016x.jsonl" % rng.getrandbits(64))
-        write_jsonl(path, convo(end, n or rng.randint(8, 22), [rng.choice(["claude-fable-5-1", "claude-opus-5-5"])], big, wd, ctx_cap=1_000_000, growth=growth))
+        write_jsonl(path, convo(end, n or rng.randint(8, 22), [rng.choice(["claude-fable-5-2", "claude-opus-5-5"])], big, wd, ctx_cap=1_000_000, growth=growth))
         write_meta(path, "general-purpose", task)
     os.makedirs(os.path.join(wp, big, "workflows"), exist_ok=True)
     with open(os.path.join(wp, big, "workflows", run + ".json"), "w") as fh:

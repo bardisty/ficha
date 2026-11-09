@@ -67,7 +67,7 @@ PAD = "x" * 2500  # tool output, so files weigh what real ones do per message
 # Turns in a session. A turn weighs about 3 KB without --skew and 9 KB with
 # it, so the skewed sessions are half as long to keep the history under 1 GB.
 TURNS = (50, 350) if args.skew else (100, 700)
-MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-haiku-5-5"]
+MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2", "claude-haiku-5-5"]
 
 
 def ts(dt):
